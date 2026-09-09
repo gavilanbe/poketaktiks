@@ -25,12 +25,35 @@ load lazily; if one is missing the scene draws the mini icon at 2× instead.
   the unit's level, the standard damage formula, STAB (+25%), a softened type
   chart (super effective ×1.5, ×2.25 for a double weakness, resisted ×0.67,
   immunities stay at 0). The defender counters if the attacker stands in one
-  of its move ranges and is still standing. Speed 8+ higher than the foe = you
-  strike twice (×2). The forecast walks the exchange in order (strike, counter,
-  double): a counter or double that only happens if an earlier hit misses is
-  shown in brackets and named ("KO first · counters on miss"), and chance
-  effects (status %, drain, recharge) are listed separately from the numbers.
+  of its move ranges and is still standing. Only Scouts and Strikers follow
+  up: 10+ SPE over the foe = a second strike. Crits are a flat 4% (24% for
+  high-crit moves, certain on a frozen target), ×1.5; speed no longer feeds
+  them. The forecast walks the exchange in order (strike, counter, follow-up)
+  and its HP-after numbers assume normal hits: every line shows the hit and
+  crit odds, and a strike whose critical would KO where the normal hit would
+  not carries a KO tag on the crit. A counter or follow-up that only happens
+  if an earlier hit misses is greyed and named ("KO first · counters on
+  miss"), and chance effects (status %, drain, recharge) are listed separately.
   The forecast is deterministic apart from HIT and CRIT and never rolls dice.
+- **Roles.** Type says whom a Pokémon beats; its role (one per evolution
+  line, a badge on the unit card and sheet) says how to use it on the board.
+  Scout (Pidgey, Spearow, Zubat, Rattata, Meowth, Doduo, Diglett, Scyther,
+  Aerodactyl, Ponyta): **Dart**, after attacking it may still move 2 tiles.
+  Defender (Geodude, Onix, Sandshrew, Shellder, Rhyhorn, Cubone, Koffing,
+  Snorlax, Lickitung, Grimer, Omanyte, Kabuto): **Brace**, spend the action to
+  take 40% less damage until its next turn. Amphibious (Squirtle, Psyduck,
+  Poliwag, Seel, Krabby, Goldeen, Horsea, Staryu, Tentacool, Slowpoke,
+  Magikarp, Lapras): **Tide**, DEF 20% and AVO 20 on water. Controller
+  (Bulbasaur, Oddish, Bellsprout, Paras, Tangela, Exeggcute, Venonat, Ekans,
+  Drowzee, Jynx): **Root** a foe within 2 tiles so it cannot move on its next
+  turn (fliers immune, every other turn). Ranged (Abra, Gastly, Voltorb,
+  Magnemite, Porygon, Mr. Mime): **Reach**, ranged moves hit one tile further.
+  Support (Clefairy, Jigglypuff, Chansey): **Mend** an adjacent ally for 30%
+  of its HP and cure it (every other turn). Everyone else is a Striker: a
+  plain attacker that follows up. Brace, Root and Mend sit in the action menu
+  next to Attack, use the action, earn a little XP, and show their exact
+  effect on a card before you confirm; the AI uses them under the same rules.
+  A Poké Center, Full Heal or Mend frees a rooted unit.
 - **Moves come from types.** Every Pokémon carries a small loadout: the best
   unlocked move of each of its types, the best adjacent-capable move of that
   type when the strongest one only fires at range (Fire Blast keeps

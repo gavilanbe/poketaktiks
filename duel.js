@@ -64,7 +64,7 @@ function duelBiome(q) {
 }
 // Immutable presentation snapshot of each unit before the exchange: the resolver may level, evolve or inflict a
 // status before the scene starts, and the scene must show the old form and advance statuses on its own beats.
-function duelView(units) { const v = {}; for (const u of units) v[u.id] = { name: u.name, num: u.num, level: u.level, maxHp: u.maxHp, types: u.types.slice(), status: u.status, boss: u.boss, team: u.team }; return v; }
+function duelView(units) { const v = {}; for (const u of units) v[u.id] = { name: u.name, num: u.num, level: u.level, maxHp: u.maxHp, types: u.types.slice(), status: u.status, boss: u.boss, team: u.team, brace: !!u.brace, root: !!u.root }; return v; }
 // Status changes the scene shows: inflicted on the hit that caused them, cleared on a thaw.
 function duelApplyBeat(q, b) { if (b.kind === 'impact' && b.ev.status) q.view[b.def.id].status = b.ev.status; else if (b.kind === 'thaw') q.view[b.unit.id].status = null; }
 function duelActive() { return BT.mode === 'anim' && BT.anim && BT.anim.kind === 'duel' && BT.anim.started ? BT.anim : null; }
@@ -220,7 +220,8 @@ function duelPanel(q, u, L) {
   // HP: the current value in the big face, the maximum small, the bar across the rest of the panel
   const ratio = clamp(hp / v.maxHp, 0, 1); const hs = String(Math.max(0, hp)), hw = textWidth(hs, BIG) + textWidth('/' + v.maxHp) + 3;
   bar(x, y + 11, P.w - 14 - hw, 6, ratio, hpColor(ratio)); bigText(hs, P.x + P.w - 6 - hw, y + 9, hp <= 0 ? UI.red : UI.ink, { outline: '#000' }); textR('/' + v.maxHp, P.x + P.w - 6, y + 11, UI.muted);
-  miniBadge(duelTeamTag(u), col, x, y + 21); v.types.forEach((tp, i) => typeBadge(tp, x + 18 + i * 26, y + 20, 24)); if (v.status) statusBadge(v.status, P.x + P.w - 21, y + 21);
+  miniBadge(duelTeamTag(u), col, x, y + 21); v.types.forEach((tp, i) => typeBadge(tp, x + 18 + i * 26, y + 20, 24)); let bx = P.x + P.w - 21; if (v.status) { statusBadge(v.status, bx, y + 21); bx -= 17; }
+  if (v.brace) miniBadge('BRC', BRACE_COL, bx, y + 21); else if (v.root) miniBadge('RT', ROOT_COL, bx, y + 21); // the braced numbers are already in the damage shown
   const sy = P.y + P.h + 2; rrect(P.x + 1, sy + 1, P.w, L.TH, UI.shadow, 1); rrect(P.x, sy, P.w, L.TH, UI.panelDark, 1);
   ctx.drawImage(tileImg(t.ch, 0, 0), 0, 0, 32, 32, P.x + 3, sy + 2, 7, 7);
   text(t.name.toUpperCase() + '  DEF ' + terrainDef(t, u) + '%  AVO ' + terrainEva(t, u), P.x + 13, sy + 2, UI.muted);

@@ -571,6 +571,182 @@ test('every UI label uses glyphs the pixel font has (no "?" fallbacks)', T => {
   for (const s of ['OK: attack  ·  X: back  ·  C: move', '◂ ▸ browse  ·  X close', 'READY 3/5', 'ZOOM -', 'ZOOM +', '32 →', '×1.5', '×2.25']) check(s, 'label');
 });
 
+// Stage 4: roles, skills, speed rules, AI use, saves and the menu/target flow.
+// vm arrays have another realm's prototype, so structural equality goes through JSON.
+const same = (a, b, msg) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b), msg);
+test('roles: every species has one, evolution lines keep it, the six representatives match, restore and old saves keep it', T => {
+  const { g, G, C } = T; const ROLES = G('ROLES'), LINE_ROOT = G('LINE_ROOT');
+  for (const d of C.DEX_LIST) { const r = g.roleFor(d); assert(ROLES[r], d.name + ' has role ' + r); for (const e of d.evos) assert.strictEqual(g.roleFor(C.DEX[e[0]]), r, d.name + ' → ' + C.DEX[e[0]].name + ' keeps the role'); assert.strictEqual(LINE_ROOT[d.num] <= d.num, true); }
+  const want = { 16: 'scout', 17: 'scout', 18: 'scout', 74: 'defender', 76: 'defender', 7: 'amphibious', 9: 'amphibious', 1: 'controller', 3: 'controller', 63: 'ranged', 65: 'ranged', 35: 'support', 36: 'support', 4: 'striker', 25: 'striker', 150: 'striker', 133: 'striker', 134: 'striker' };
+  for (const n in want) assert.strictEqual(g.makeUnit(+n, 20, 0).role, want[n], C.DEX[n].name);
+  const counts = {}; for (const d of C.DEX_LIST) counts[g.roleFor(d)] = (counts[g.roleFor(d)] || 0) + 1; for (const r in ROLES) assert(counts[r] >= 3, r + ' is used by at least three species (' + counts[r] + ')');
+  // the skill follows the role; passive roles have no menu action
+  assert.strictEqual(g.makeUnit(16, 5, 0).skill.id, 'dart'); assert.strictEqual(g.makeUnit(74, 5, 0).skill.id, 'brace'); assert.strictEqual(g.makeUnit(1, 5, 0).skill.id, 'root'); assert.strictEqual(g.makeUnit(35, 5, 0).skill.id, 'mend'); assert.strictEqual(g.makeUnit(63, 5, 0).skill.id, 'reach'); assert.strictEqual(g.makeUnit(7, 5, 0).skill.id, 'tide'); assert.strictEqual(g.makeUnit(4, 5, 0).skill, null);
+  for (const n of [16, 7, 63, 4]) assert.strictEqual(g.skillBlock(g.makeUnit(n, 5, 0)), 'none', 'no active skill for ' + n);
+  // evolving on the board keeps the role and the skill; a level-up recomputes the reach bonus
+  const abra = g.makeUnit(63, 15, 0); same(abra.moves.find(m => m.name === 'Confusion').rng, [1, 3], 'Reach: Confusion 1-3'); assert(abra.moves.every(m => m.rng[0] === 1 || m.rng[0] === 2), 'minimum ranges unchanged'); assert.strictEqual(abra.rngMax, 3);
+  same(g.makeUnit(25, 15, 0).moves.find(m => m.name === 'Thunder Shock').rng, [1, 2], 'a striker keeps the printed range'); same(T.G('MOVES').Confusion.rng, [1, 2], 'the move table itself is untouched');
+  g.levelUp(abra); g.evolve(abra, C.DEX[64]); assert.strictEqual(abra.role, 'ranged'); assert.strictEqual(abra.rngMax, 3); assert(abra.moves.every(m => m.rng[1] <= 3 && (m.rng[1] === 1 || m.rng[1] >= 3)), 'Kadabra: melee stays 1, ranged goes to 3');
+  const tackle = abra.moves.find(m => m.rng[1] === 1); assert(tackle, 'the melee fallback is still melee');
+  // serialize / restore carries cd, brace and root; a save from before this stage restores with nothing pending
+  const geo = g.makeUnit(74, 20, 0); geo.brace = 1; geo.cd = 2; geo.root = 1; const s = g.serializeUnit(geo); same([s.cd, s.brace, s.root], [2, 1, 1]);
+  const r = g.restoreUnit(s); same([r.cd, r.brace, r.root, r.role, r.skill.id], [2, 1, 1, 'defender', 'brace']);
+  const old = g.restoreUnit({ num: 35, level: 9, xp: 0, hp: 20, team: 0 }); same([old.cd, old.brace, old.root, old.role], [0, 0, 0, 'support'], 'legacy record');
+  // party write-back after a battle clears anything pending
+  arena(T); const B = T.B(); const p = place(T, 74, 20, 0, 1, 1); p.pid = 0; p.brace = 1; p.cd = 2; p.root = 2; G('SAVE = { chapter: 0, party: [null], bag: {}, stars: {}, beaten: false }'); g.applyBattleToParty(); const sp = G('SAVE').party[0]; same([sp.cd, sp.brace, sp.root], [0, 0, 0]);
+  assert(B);
+});
+
+test('speed rules: crits are flat (4 / 24 / 100 on frozen), hit bonus capped at 10, only scouts and strikers follow up at +10 SPE', T => {
+  const { g } = T; arena(T);
+  const fast = place(T, 25, 30, 0, 1, 1), slow = place(T, 79, 30, 1, 2, 1); // Pikachu (striker) vs Slowpoke (amphibious)
+  assert(fast.spe >= slow.spe + 30, 'a big speed gap');
+  assert.strictEqual(g.calcCrit(fast, slow, T.G('MOVES')['Thunder Shock']), 4, 'no crit from speed'); assert.strictEqual(g.calcCrit(slow, fast, T.G('MOVES')['Tackle']), 4);
+  assert.strictEqual(g.calcCrit(fast, slow, T.G('MOVES')['Karate Chop']), 24, 'high-crit move'); slow.status = 'frz'; assert.strictEqual(g.calcCrit(fast, slow, T.G('MOVES')['Tackle']), 100); slow.status = null;
+  const m = T.G('MOVES')['Thunder Shock']; assert.strictEqual(g.calcHit(fast, slow, m, g.terrAt(2, 1)), 100); assert.strictEqual(g.calcHit(slow, fast, T.G('MOVES').Tackle, g.terrAt(1, 1)), 90, 'the slow side loses at most 10');
+  assert.strictEqual(g.doubles(fast, slow), true, 'a striker follows up'); assert.strictEqual(g.doubles(slow, fast), false);
+  const geo = place(T, 76, 30, 0, 3, 3), cat = place(T, 11, 5, 1, 4, 3); assert(geo.spe >= cat.spe + 10); assert.strictEqual(g.doubles(geo, cat), false, 'a defender never follows up whatever its speed');
+  const cle = place(T, 36, 30, 0, 3, 4), sq = place(T, 9, 30, 0, 4, 4), bul = place(T, 3, 30, 0, 5, 4), abra = place(T, 65, 30, 0, 6, 4); for (const u of [cle, sq, bul, abra]) assert.strictEqual(g.doubles(u, cat), false, u.name + ' never follows up');
+  const pid = place(T, 18, 30, 0, 7, 4); assert.strictEqual(g.doubles(pid, cat), true, 'a scout follows up'); pid.status = 'par'; assert.strictEqual(g.doubles(pid, cat), false);
+  const near = place(T, 19, 30, 0, 8, 4); near.spe = cat.spe + 9; assert.strictEqual(g.doubles(near, cat), false, '9 SPE is not enough'); near.spe = cat.spe + 10; assert.strictEqual(g.doubles(near, cat), true);
+  // forecast lines always carry the crit odds and flag a strike whose critical would KO where the normal hit would not
+  arena(T); fixedRoll(T, .5); const a = place(T, 6, 30, 0, 1, 1), d = place(T, 20, 30, 1, 2, 1); const mv = move(a, 'Flamethrower'); let fc = g.forecast(a, d, mv, a);
+  d.hp = fc.a.dmg + 1; fc = g.forecast(a, d, mv, a); assert.strictEqual(fc.strikes[0].critDmg, g.calcDmg(a, d, mv, g.terrAt(2, 1), true)); assert(fc.strikes[0].critDmg >= d.hp && fc.a.dmg < d.hp);
+  let L = g.forecastLines(fc, a, d); assert.strictEqual(L[0].crit, 4); assert.strictEqual(L[0].critKo, true, 'crit would KO'); assert.strictEqual(L[0].ko, false); assert.strictEqual(fc.hpD, 1, 'HP after is the normal-hit number');
+  d.hp = fc.a.dmg; fc = g.forecast(a, d, mv, a); L = g.forecastLines(fc, a, d); assert.strictEqual(L[0].ko, true); assert.strictEqual(L[0].critKo, false, 'no crit flag when the normal hit already KOs');
+  d.hp = 500; fc = g.forecast(a, d, mv, a); L = g.forecastLines(fc, a, d); assert.strictEqual(L[0].critKo, false); assert.strictEqual(L[0].crit, 4);
+  const G = T.G; G('VIEW.w = 480; VIEW.h = 270'); const BT = G('BT'); BT.sel = a; BT.targets = [d]; BT.tIdx = 0; BT.moveIdx = a.moves.indexOf(mv); BT.mode = 'target'; d.hp = fc.a.dmg + 1; const boxes = textHook(T); g.drawHUD(); const strs = boxes().map(b => b.text);
+  assert(strs.some(s => s.includes('NORMAL HITS')), 'the forecast title says the numbers are for normal hits'); assert(strs.some(s => /crit 4% KO/.test(s)), 'the crit KO risk is spelled out: ' + strs.filter(s => s.includes('crit')).join(' | '));
+});
+
+test('skills: legal targets, action cost, cooldown, brace and root expiry, cleanse, danger zone and dart', T => {
+  const { g, C } = T; const MOVES = T.G('MOVES');
+  // Brace: self only; 40% less damage in preview and resolver; gone at its own next upkeep; the AI counter is reduced too
+  arena(T); fixedRoll(T, .5); const geo = place(T, 74, 20, 0, 2, 2), foe = place(T, 7, 20, 1, 3, 2); geo.hp = geo.maxHp = 500; foe.hp = foe.maxHp = 500;
+  same(g.skillTargetsAt(geo), [geo]); assert.strictEqual(g.skillBlock(geo), null);
+  const wg = move(foe, 'Bubble Beam'); const plain = g.calcDmg(foe, geo, wg, g.terrAt(2, 2)); const ev = g.useSkill(geo, geo.skill, geo); assert.strictEqual(geo.brace, 1); assert(ev.some(e => e.type === 'brace')); assert.strictEqual(geo.cd, 0, 'Brace has no cooldown');
+  const fc = g.forecast(foe, geo, wg, foe); assert.strictEqual(fc.a.dmg, Math.floor(plain * .6)); assert.strictEqual(fc.strikes[0].braced, true); assert.strictEqual(fc.c.braced, false, 'the counter on the unbraced attacker is full');
+  const before = geo.hp; g.resolveCombat(foe, geo, wg, foe); assert.strictEqual(before - geo.hp, Math.floor(plain * .6), 'resolver agrees with the preview');
+  g.upkeep(1); assert.strictEqual(geo.brace, 1, 'the enemy upkeep does not end it'); g.upkeep(0); assert.strictEqual(geo.brace, 0, 'ends at its own upkeep'); assert.strictEqual(g.calcDmg(foe, geo, wg, g.terrAt(2, 2)), plain);
+  // Mend: an adjacent hurt or statused ally, never itself, never a full-HP clean ally, never a foe; heals 30% capped by missing HP, cures, cooldown 2
+  arena(T, Array(9).fill('.'.repeat(9))); const cle = place(T, 35, 20, 0, 4, 4), hurt = place(T, 4, 20, 0, 5, 4), fine = place(T, 7, 20, 0, 4, 5), far = place(T, 1, 20, 0, 6, 4), en = place(T, 19, 20, 1, 3, 4);
+  hurt.hp = 10; far.hp = 10; en.hp = 1; cle.hp = 5;
+  same(g.skillTargetsAt(cle).map(u => u.name), ['Charmander'], 'only the adjacent hurt ally'); fine.status = 'psn'; same(g.skillTargetsAt(cle).map(u => u.name).sort(), ['Charmander', 'Squirtle'], 'a statused ally counts');
+  assert.strictEqual(g.mendAmount(hurt), Math.floor(hurt.maxHp * .3)); hurt.hp = hurt.maxHp - 2; assert.strictEqual(g.mendAmount(hurt), 2, 'capped by the missing HP'); hurt.hp = 10;
+  assert.strictEqual(g.skillPreview(cle, cle.skill, hurt), '+' + Math.floor(hurt.maxHp * .3) + ' HP (10 → ' + (10 + Math.floor(hurt.maxHp * .3)) + ')');
+  const before2 = cle.hp; const ev2 = g.useSkill(cle, cle.skill, hurt); assert.strictEqual(hurt.hp, 10 + Math.floor(hurt.maxHp * .3)); assert(ev2.some(e => e.type === 'heal' && e.amount === Math.floor(hurt.maxHp * .3))); assert.strictEqual(cle.hp, before2, 'Mend never heals the healer');
+  assert.strictEqual(cle.cd, 2); assert.strictEqual(g.skillBlock(cle), 'cooldown 2'); assert.strictEqual(g.skillReady(cle), false); assert(ev2.some(e => e.type === 'xp' && e.unit === cle), 'using a skill earns XP');
+  g.upkeep(0); assert.strictEqual(cle.cd, 1); assert.strictEqual(g.skillReady(cle), false); g.upkeep(0); assert.strictEqual(cle.cd, 0); assert.strictEqual(g.skillReady(cle), true, 'usable every other turn');
+  g.useSkill(cle, cle.skill, fine); assert.strictEqual(fine.status, null, 'cured'); assert.strictEqual(fine.hp, fine.maxHp);
+  cle.cd = 0; fine.hp = fine.maxHp; hurt.hp = hurt.maxHp; assert.strictEqual(g.skillBlock(cle), 'no target', 'nothing to mend'); cle.recharge = 1; assert.strictEqual(g.skillReady(cle), false, 'not while recharging'); cle.recharge = 0;
+  // Root: a hostile within 1-2 that is not flying and not already rooted; MOV 0 for exactly the target's next phase; refresh and cleanse rules
+  arena(T, Array(11).fill('.'.repeat(11))); const bul = place(T, 1, 20, 0, 5, 5), rat = place(T, 19, 20, 1, 7, 5), bird = place(T, 16, 20, 1, 5, 7), off = place(T, 19, 20, 1, 8, 5), ally = place(T, 4, 20, 0, 4, 5);
+  same(g.skillTargetsAt(bul).map(u => u.name), ['Rattata'], 'in range, not the flier at 2, not the one at 3, not the ally'); assert.strictEqual(g.skillTargetsAt(bul, bul.skill, { x: 7, y: 6 }).map(u => u.name).join(), 'Rattata,Rattata', 'from another tile both Rattata are in range');
+  const ev3 = g.useSkill(bul, bul.skill, rat); assert.strictEqual(rat.root, 2); assert(ev3.some(e => e.type === 'root' && e.unit === rat)); assert.strictEqual(bul.cd, 2); assert(!g.skillTargetsAt(bul).includes(rat), 'an already rooted foe is not a target');
+  assert.strictEqual(g.effMov(rat), 0); assert.strictEqual(g.reachable(rat).size, 1, 'a rooted unit cannot move'); assert.strictEqual(g.rootAfterUpkeep(rat), 1); assert.strictEqual(g.effMov(rat, rat.status, g.rootAfterUpkeep(rat)), 0);
+  bird.recharge = 1; off.recharge = 1; // leave the rooted Rattata as the only threat
+  const dz = g.dangerZones(0); assert.strictEqual([...dz.trainer].sort().join(' '), [C.key(6, 5), C.key(7, 4), C.key(7, 6), C.key(8, 5)].sort().join(' '), 'the danger zone shows the rooted unit threatening only from where it stands');
+  g.upkeep(1); assert.strictEqual(rat.root, 1, 'held during its own phase'); assert.strictEqual(g.effMov(rat), 0); assert.strictEqual(g.rootAfterUpkeep(rat), 0); off.recharge = 1; bird.recharge = 1; assert(g.dangerZones(0).trainer.size > 20, 'next phase it moves again: the danger zone grows');
+  const evu = g.upkeep(1); assert.strictEqual(rat.root, 0, 'free after one held phase'); assert(evu.some(e => e.type === 'unroot' && e.unit === rat)); assert(g.effMov(rat) > 0);
+  const d2 = g.aiDecide(rat); assert(d2, 'the freed Rattata acts'); rat.root = 2; const d3 = g.aiDecide(rat); assert(!d3 || (d3.x === rat.x && d3.y === rat.y), 'a rooted unit acts from its tile: ' + JSON.stringify(d3 && [d3.x, d3.y]));
+  // cleanse: Full Heal and a Poké Center free a rooted unit; Mend does too; the rooted unit still counters
+  rat.root = 2; g.useItem(rat, 'fullheal'); assert.strictEqual(rat.root, 0, 'Full Heal frees'); rat.root = 2; ally.root = 2; const cl = place(T, 35, 20, 0, 3, 5); g.useSkill(cl, cl.skill, ally); assert.strictEqual(ally.root, 0, 'Mend frees an ally');
+  arena(T, ['C....']); const rooted = place(T, 19, 20, 1, 0, 0); rooted.root = 2; assert.strictEqual(g.rootAfterUpkeep(rooted), 0, 'the center will free it'); g.upkeep(1); assert.strictEqual(rooted.root, 0);
+  arena(T); fixedRoll(T, .5); const r2 = place(T, 19, 20, 1, 2, 2), p2 = place(T, 25, 20, 0, 3, 2); r2.root = 2; const fc2 = g.forecast(p2, r2, move(p2, 'Thunder Shock'), p2); assert(fc2.c, 'a rooted unit still counters');
+  assert(bird.fly && off && MOVES);
+  // Dart: after attacking a scout may move up to 2 tiles (1 when paralyzed, none when rooted or recharging or frozen); anyone else cannot
+  arena(T, Array(9).fill('.'.repeat(9))); const pid = place(T, 16, 20, 0, 4, 4), tgt = place(T, 10, 5, 1, 5, 4); assert.strictEqual(g.canDart(pid), true); assert.strictEqual(g.dartMov(pid), 2);
+  pid.status = 'par'; assert.strictEqual(g.dartMov(pid), 2, 'paralysis leaves MOV 5-2=3, dart still 2'); pid.mov = 3; assert.strictEqual(g.dartMov(pid), 1); pid.status = null; pid.mov = 5;
+  pid.root = 2; assert.strictEqual(g.canDart(pid), false, 'rooted: no dart'); pid.root = 0; pid.recharge = 1; assert.strictEqual(g.canDart(pid), false); pid.recharge = 0; pid.status = 'frz'; assert.strictEqual(g.canDart(pid), false); pid.status = null;
+  assert.strictEqual(g.canDart(place(T, 4, 20, 0, 1, 1)), false, 'a striker never darts'); assert.strictEqual(g.canDart(place(T, 74, 20, 0, 1, 2)), false);
+  const c = g.aiDart(pid); assert(c && g.dist(c, pid) <= 2 && g.dist(c, pid) >= 1, 'the AI dart lands within 2 tiles: ' + JSON.stringify(c)); assert(g.dist(c, tgt) > 1, 'and away from the foe');
+  // Tide: an amphibious unit on water gets DEF 20 / AVO 20, another swimmer only the small bonus, a flier nothing
+  arena(T, ['~~~~~', '.....']); const sq = place(T, 7, 20, 0, 0, 0), gy = place(T, 130, 20, 0, 1, 0), lap = place(T, 131, 20, 0, 2, 0); const W = g.terrAt(0, 0);
+  assert.strictEqual(g.terrainDef(W, sq), 20); assert.strictEqual(g.terrainEva(W, sq), 20); assert.strictEqual(g.terrainDef(W, lap), 20); assert.strictEqual(g.terrainDef(W, gy), 20, 'Gyarados keeps the Magikarp line role');
+  const sta = g.makeUnit(120, 20, 0); assert.strictEqual(sta.role, 'amphibious'); const om = g.makeUnit(138, 20, 0); assert.strictEqual(om.role, 'defender'); assert.strictEqual(g.terrainDef(W, om), 5, 'a non-amphibious swimmer keeps swimDef'); assert.strictEqual(g.terrainEva(W, om), 0);
+  assert.strictEqual(g.terrainDef(g.terrAt(0, 1), sq), 0, 'nothing on land');
+});
+
+test('AI: a support mends, a controller roots a threat, a defender braces when threatened, cooldowns and ranges are obeyed, a scout darts', T => {
+  const { g, C } = T; const MOVES = T.G('MOVES');
+  // Support: a hurt ally beside it beats a weak poke at a distant foe; on cooldown it attacks or waits instead
+  arena(T, Array(11).fill('.'.repeat(11))); const cle = place(T, 35, 20, 1, 5, 5), ally = place(T, 74, 20, 1, 6, 5), foe = place(T, 25, 20, 0, 5, 9); ally.hp = 10;
+  let d = g.aiDecide(cle); assert(d && d.skill && d.skill.id === 'mend' && d.target === ally, 'mends the hurt ally: ' + JSON.stringify(d && { x: d.x, y: d.y, s: d.skill && d.skill.id, t: d.target && d.target.name }));
+  cle.cd = 2; d = g.aiDecide(cle); assert(!d || !d.skill, 'no Mend on cooldown'); cle.cd = 0; ally.hp = ally.maxHp; d = g.aiDecide(cle); assert(!d || !d.skill, 'nothing to mend');
+  // it walks to the ally when it must: the ally two tiles away still gets mended from an adjacent tile
+  ally.hp = 10; ally.x = 8; d = g.aiDecide(cle); assert(d && d.skill && d.target === ally && g.dist(d, ally) === 1, 'moves next to the ally first: ' + JSON.stringify(d && [d.x, d.y]));
+  // Controller: roots the mobile foe that could reach its side next phase, from its own tile, never a flier, never a guard that will not move
+  arena(T, Array(11).fill('.'.repeat(11))); const bul = place(T, 1, 20, 1, 5, 5), rat = place(T, 20, 22, 0, 7, 5), guard = place(T, 74, 20, 1, 4, 5); bul.hp = bul.maxHp = 300; rat.hp = rat.maxHp = 300;
+  let d0 = g.aiDecide(bul); assert(d0 && d0.move && d0.move.name === 'Sludge' && !d0.skill, 'a free ranged hit beats the root'); bul.atk = bul.spa = 5; // a weak hitter: holding the Raticate is worth more than scratching it
+  d = g.aiDecide(bul); assert(d && d.skill && d.skill.id === 'root' && d.target === rat, 'roots the Raticate: ' + JSON.stringify(d && { s: d.skill && d.skill.id, t: d.target && d.target.name, m: d.move && d.move.name }));
+  rat.root = 2; d = g.aiDecide(bul); assert(!d || !d.skill, 'not twice'); rat.root = 0; bul.cd = 1; d = g.aiDecide(bul); assert(!d || !d.skill, 'cooldown respected'); bul.cd = 0;
+  const bird = place(T, 16, 20, 0, 5, 7); d = g.aiDecide(bul); assert(!d || !d.skill || d.target !== bird, 'never roots a flier');
+  arena(T, Array(11).fill('.'.repeat(11))); const bul2 = place(T, 1, 20, 0, 5, 5), gd = place(T, 74, 20, 1, 7, 5, { ai: 'guard' }); bul2.hp = bul2.maxHp = 300; bul2.atk = bul2.spa = 5;
+  d = g.aiDecide(bul2); assert(!d || !d.skill, 'no Root on an unprovoked guard that never moves'); gd.provoked = true; d = g.aiDecide(bul2); assert(d && d.skill && d.target === gd, 'a provoked guard is worth rooting');
+  // Defender: braces when it is threatened and has nobody worth hitting; attacks when it can; never braces out of danger
+  arena(T, Array(11).fill('.'.repeat(11))); const geo = place(T, 74, 20, 1, 5, 5, { ai: 'guard' }), pik = place(T, 25, 20, 0, 6, 10); geo.provoked = true; // six tiles off: Pikachu (MOV 5, range 2) threatens it, Geodude (MOV 3, range 2) cannot reach back
+  d = g.aiDecide(geo); assert(d && d.skill && d.skill.id === 'brace' && d.x === 5 && d.y === 5, 'braces in place under threat: ' + JSON.stringify(d)); pik.x = 5; pik.y = 10; pik.mov = 1;
+  d = g.aiDecide(geo); assert(!d || !d.skill, 'no brace when nothing can reach it');
+  pik.x = 5; pik.y = 6; pik.mov = 5; d = g.aiDecide(geo); assert(d && d.target === pik && d.move, 'attacks the adjacent Pikachu instead of bracing');
+  // every AI skill decision is a legal one: the target is in the skill's list from the chosen tile, and the queue applies it with the same cost
+  arena(T, Array(11).fill('.'.repeat(11))); const c2 = place(T, 35, 20, 1, 5, 5), a2 = place(T, 74, 20, 1, 7, 5); a2.hp = 10; place(T, 25, 20, 0, 5, 9);
+  d = g.aiDecide(c2); assert(d && d.skill); assert(g.skillTargetsAt(c2, d.skill, d).includes(d.target)); c2.x = d.x; c2.y = d.y; const q = g.skillQueue(c2, d.skill, d.target); assert(q.every(x => x.kind === 'event')); assert.strictEqual(c2.cd, 2); assert(a2.hp > 10);
+  // Scout: the enemy phase attack is followed by a dart in the model paths (simBattle / autoTurn) and the unit ends out of reach when a tile allows
+  arena(T, Array(11).fill('.'.repeat(11))); fixedRoll(T, .5); const zub = place(T, 41, 20, 1, 5, 5), me = place(T, 66, 20, 0, 6, 5); zub.hp = zub.maxHp = 300; me.hp = me.maxHp = 300;
+  d = g.aiDecide(zub); assert(d && d.target === me); g.aiAct(zub, d); assert(g.dist(zub, me) >= 2, 'darted away after the hit: ' + JSON.stringify([zub.x, zub.y])); assert(me.hp < 300, 'the attack happened');
+  assert(C && MOVES);
+});
+
+test('player flow: the skill sits in the action menu with its reason when unusable, the target mode confirms/cancels, a dart follows an attack, resume keeps everything', T => {
+  const { g, G, C } = T; G('VIEW.w = 480; VIEW.h = 270');
+  // menu: Mend listed, greyed with the reason when there is no target; Brace usable at once
+  arena(T, Array(9).fill('.'.repeat(9))); const BT = G('BT'); const cle = place(T, 35, 20, 0, 4, 4), hurt = place(T, 4, 20, 0, 5, 4), foe = place(T, 19, 20, 1, 4, 6); T.B().phase = 0;
+  BT.sel = cle; g.openActionMenu(cle); let it = BT.menu.items.find(i => i.id === 'skill'); assert(it && it.label === 'Mend' && it.off, 'Mend listed but off: ' + JSON.stringify(it)); assert(/no target/.test(it.sub));
+  g.menuChoose('skill'); assert.strictEqual(BT.mode, 'menu', 'choosing an unusable skill does nothing');
+  hurt.hp = 10; g.openActionMenu(cle); it = BT.menu.items.find(i => i.id === 'skill'); assert(it && !it.off && /1 target/.test(it.sub) && /every 3 turns/.test(it.sub), it.sub);
+  g.menuChoose('skill'); assert.strictEqual(BT.mode, 'skillTarget'); same(BT.targets, [hurt]); same([BT.cx, BT.cy], [5, 4], 'cursor on the target');
+  const boxes = textHook(T); g.battleDraw(); const strs = boxes().map(b => b.text); assert(strs.some(s => s === 'MEND'), 'skill card title'); assert(strs.some(s => /\+\d+ HP/.test(s)), 'the card shows the exact heal: ' + strs.join(' | ')); assert(strs.some(s => /uses the action/.test(s)));
+  g.cancel(); assert.strictEqual(BT.mode, 'menu', 'back to the menu'); assert.strictEqual(hurt.hp, 10, 'nothing applied'); assert.strictEqual(cle.cd, 0);
+  g.menuChoose('skill'); g.keyInput('ok'); assert.strictEqual(BT.mode, 'anim'); let n = 0; while (BT.mode === 'anim' && n++ < 2000) { g.battleUpdate(1 / 60); g.battleDraw(); }
+  assert.strictEqual(BT.mode, 'idle'); assert.strictEqual(cle.acted, true, 'the action is spent'); assert.strictEqual(hurt.hp, 10 + Math.floor(hurt.maxHp * .3)); assert.strictEqual(cle.cd, 2); assert(cle.xp > 0);
+  // Brace via the pointer: self is the only target, tapping the forecast area confirms
+  const geo = place(T, 74, 20, 0, 2, 2); BT.sel = geo; g.openActionMenu(geo); it = BT.menu.items.find(i => i.id === 'skill'); assert(it && it.label === 'Brace' && !it.off); g.menuChoose('skill'); same(BT.targets, [geo]);
+  const fr = g.forecastRect(); g.pointerInput({ type: 'down', x: fr.x + 5, y: fr.y + 5, btn: 0 }); g.pointerInput({ type: 'up', x: fr.x + 5, y: fr.y + 5, btn: 0 }); n = 0; while (BT.mode === 'anim' && n++ < 2000) { g.battleUpdate(1 / 60); g.battleDraw(); }
+  assert.strictEqual(geo.brace, 1); assert.strictEqual(geo.acted, true); assert.strictEqual(BT.mode, 'idle');
+  // the unit sheet and card mention the role and the state; the HUD stays inside every size in skillTarget mode
+  for (const [w, h] of SIZES) { G('VIEW.w = ' + w + '; VIEW.h = ' + h); const HUD = G('HUD'); BT.sel = cle; cle.acted = false; cle.cd = 0; hurt.hp = 10; g.openActionMenu(cle); g.menuChoose('skill'); assert.strictEqual(BT.mode, 'skillTarget'); g.battleDraw(); for (const p of HUD.panels) assert(inside(p, w, h), w + 'x' + h + ': skill card inside'); for (const b of HUD.hits) assert(inside(b, w, h)); g.cancel(); g.cancel(); g.cancel(); BT.mode = 'idle'; }
+  G('VIEW.w = 480; VIEW.h = 270'); BT.info = geo; BT.mode = 'unitinfo'; const bx = textHook(T); g.battleDraw(); const sheet = bx().map(b => b.text); assert(sheet.some(s => s.startsWith('DEFENDER')), 'role on the sheet'); assert(sheet.some(s => /Brace:.*BRACED/.test(s)), 'skill line with the state: ' + sheet.filter(s => /Brace/.test(s)).join(' | ')); BT.mode = 'idle';
+  BT.cx = geo.x; BT.cy = geo.y; const bx2 = textHook(T); g.battleDraw(); assert(bx2().some(b => b.text === 'DEF'), 'role badge on the unit card');
+  // dart: after a player attack the scout gets a 2-tile move, no undo, and ends spent; X stays put and ends the turn too
+  fixedRoll(T, .5); const pid = place(T, 16, 20, 0, 6, 6), cat = place(T, 10, 5, 1, 7, 6); cat.hp = cat.maxHp = 500; pid.hp = pid.maxHp = 500;
+  BT.sel = pid; BT.targets = [cat]; BT.tIdx = 0; BT.moveIdx = pid.moves.indexOf(move(pid, 'Wing Attack')); BT.mode = 'target'; g.confirmAttack(); n = 0; while (BT.mode === 'anim' && n++ < 3000) { g.battleUpdate(1 / 60); g.battleDraw(); }
+  assert.strictEqual(BT.mode, 'move', 'dart move offered'); assert.strictEqual(BT.dart, true); assert.strictEqual(BT.sel, pid); assert.strictEqual(pid.acted, false); assert.strictEqual(BT.undo, null, 'no undo of the attack');
+  const reach = [...BT.reach.values()]; assert(reach.every(c => g.dist(c, pid) <= 2) && reach.length > 1, 'two tiles of reach'); assert.strictEqual(BT.atk.length, 0, 'no second attack');
+  const bx3 = textHook(T); g.battleDraw(); assert(bx3().some(b => /DART 2/.test(b.text)), 'the HUD names the dart');
+  g.tileAction(6, 4); n = 0; while (BT.mode === 'anim' && n++ < 2000) { g.battleUpdate(1 / 60); g.battleDraw(); } same([pid.x, pid.y], [6, 4]); assert.strictEqual(pid.acted, true); assert.strictEqual(BT.mode, 'idle'); assert.strictEqual(BT.dart, false);
+  const pid2 = place(T, 16, 20, 0, 2, 7); BT.sel = pid2; BT.targets = [cat]; cat.x = 3; cat.y = 7; BT.tIdx = 0; BT.moveIdx = pid2.moves.indexOf(move(pid2, 'Wing Attack')); BT.mode = 'target'; g.confirmAttack(); n = 0; while (BT.mode === 'anim' && n++ < 3000) { g.battleUpdate(1 / 60); g.battleDraw(); }
+  assert.strictEqual(BT.mode, 'move'); g.cancel(); assert.strictEqual(pid2.acted, true, 'staying ends the turn'); same([pid2.x, pid2.y], [2, 7]); assert.strictEqual(BT.mode, 'idle');
+  // a KO that wins the map ends the battle instead of offering a dart
+  arena(T, Array(9).fill('.'.repeat(9))); fixedRoll(T, .5); const pid3 = place(T, 18, 40, 0, 1, 1), last = place(T, 10, 2, 1, 2, 1, { hp: 1 }); BT.sel = pid3; BT.targets = [last]; BT.tIdx = 0; BT.moveIdx = 0; BT.mode = 'target'; g.confirmAttack(); n = 0; while (BT.mode === 'anim' && n++ < 3000) { g.battleUpdate(1 / 60); g.battleDraw(); }
+  assert.strictEqual(T.B().result, 'win'); assert.strictEqual(BT.mode, 'end', 'no dart after the winning blow');
+  // resume: brace, root and cooldown survive a suspend save written at the start of the phase; nothing is applied twice
+  g.startBattle(C.CHAPTERS[0].map, [g.partyUnit(74, 5), g.partyUnit(35, 5), g.partyUnit(1, 5)], { pokeball: 1 }, { chapter: 0, seed: 7, defer: true }); let B = T.B();
+  const geo2 = B.units.find(u => u.num === 74), cle2 = B.units.find(u => u.num === 35), en = B.units.find(u => u.team === 1); cle2.cd = 2; en.root = 2; geo2.brace = 1; G('BT.fast = true'); g.beginPhase(0, true);
+  assert.strictEqual(cle2.cd, 1, 'cooldown ticked once'); assert.strictEqual(geo2.brace, 0, 'own upkeep ended the brace'); assert.strictEqual(en.root, 2, 'the enemy upkeep has not run');
+  g.resumeSuspend(); B = T.B(); const c3 = B.units.find(u => u.num === 35), e3 = B.units.find(u => u.team === 1 && u.x === en.x && u.y === en.y);
+  assert.strictEqual(c3.cd, 1, 'not ticked again'); assert.strictEqual(e3.root, 2, 'root restored'); assert.strictEqual(c3.skill.id, 'mend');
+});
+
+test('help and menu labels for the roles use real glyphs, the sheet fits at phone widths and the balance sim tool runs one chapter', T => {
+  const { g, G, C } = T; const has = c => G('!!(FONT[' + JSON.stringify(c) + '] || FONT[stripAccents(' + JSON.stringify(c) + ')])');
+  const check = (s, where) => { for (const c of String(s)) if (c !== ' ') assert(has(c), where + ': glyph missing for U+' + c.codePointAt(0).toString(16) + ' in "' + s + '"'); };
+  const ROLES = G('ROLES'), SKILLS = G('SKILLS'); for (const r in ROLES) { check(ROLES[r].name, 'role'); check(ROLES[r].abbr, 'role'); check(ROLES[r].desc, 'role'); } for (const s in SKILLS) { check(SKILLS[s].blurb, 'skill'); if (SKILLS[s].menu) check(SKILLS[s].menu, 'skill'); }
+  assert(G('HELP_PAGES').some(p => p[0] === 'ROLES'), 'a help page explains the roles'); assert(G('HELP_PAGES').some(p => p.join(' ').includes('normal hits')), 'help states the forecast rule');
+  for (const [w, h] of [[180, 390], [195, 422], [480, 270]]) { G('VIEW.w = ' + w + '; VIEW.h = ' + h); g.startBattle(C.CHAPTERS[2].map, [g.partyUnit(74, 10), g.partyUnit(35, 10)], { pokeball: 1 }, { chapter: 2, seed: 7, defer: true }); const BT = G('BT'); for (const u of T.B().units.slice(0, 6)) { BT.info = u; BT.mode = 'unitinfo'; const boxes = textHook(T); g.battleDraw(); const bad = boxes().filter(b => b.x < -1 || b.x + b.w > w + 1 || b.y < -1 || b.y + b.h > h + 1); assert(!bad.length, w + 'x' + h + ' sheet of ' + u.name + ': ' + JSON.stringify(bad.slice(0, 2))); } }
+  G('VIEW.w = 480; VIEW.h = 270');
+  const r = require('child_process').spawnSync(process.execPath, [require('path').join(__dirname, 'sim.cjs'), '1', '1-1'], { encoding: 'utf8', env: Object.assign({}, process.env, { SIM_TURNS: '12' }) }); assert.strictEqual(r.status, 0, r.stderr); assert(/^ch1: [wl-]\d+ p\d+e\d+/.test(r.stdout), r.stdout);
+});
+
 // ---------------------------------------------------------------- runner
 function run() {
   let failed = 0;

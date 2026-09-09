@@ -77,7 +77,7 @@ const ITEMS = {
   ultraball: { name: 'Ultra Ball', desc: 'The best ball. ×2 catch rate.', rate: 2, kind: 'ball', col: '#f8d030' },
   potion: { name: 'Potion', desc: 'Restores 50% HP.', heal: .5, kind: 'heal', col: '#c060e0' },
   superpotion: { name: 'Super Potion', desc: 'Restores all HP.', heal: 1, kind: 'heal', col: '#f08030' },
-  fullheal: { name: 'Full Heal', desc: 'Cures any status.', cure: true, kind: 'heal', col: '#48d0a0' },
+  fullheal: { name: 'Full Heal', desc: 'Cures any status, frees a rooted unit.', cure: true, kind: 'heal', col: '#48d0a0' },
   candy: { name: 'Rare Candy', desc: 'Raises a Pokémon one level.', kind: 'candy', col: '#f8a0d0' },
 };
 
@@ -119,14 +119,59 @@ function moveCost(terr, unit) {
   if (unit.desert && c.desert != null) best = Math.min(best, c.desert);
   return best;
 }
-function terrainDef(terr, unit) { if (terr.id === 'water' && unit.swim) return terr.swimDef; if (unit.fly && (terr.id === 'forest' || terr.id === 'mountain' || terr.id === 'tall' || terr.id === 'rubble' || terr.id === 'crate')) return 0; return terr.def; }
-function terrainEva(terr, unit) { if (unit.fly && terr.id !== 'gym' && terr.id !== 'center') return 0; return terr.eva; }
+// Water: an amphibious unit is at home there (Tide: DEF 20 / AVO 20); other swimmers get the small swimDef.
+function terrainDef(terr, unit) { if (terr.id === 'water' && unit.swim) return unit.role === 'amphibious' ? TIDE.def : terr.swimDef; if (unit.fly && (terr.id === 'forest' || terr.id === 'mountain' || terr.id === 'tall' || terr.id === 'rubble' || terr.id === 'crate')) return 0; return terr.def; }
+function terrainEva(terr, unit) { if (terr.id === 'water' && unit.swim && unit.role === 'amphibious') return TIDE.eva; if (unit.fly && terr.id !== 'gym' && terr.id !== 'center') return 0; return terr.eva; }
 
 // ---------------------------------------------------------------- dex
 const DEX = {}; const DEX_LIST = [];
 for (const r of DEX_RAW) { const d = { num: r[0], name: r[1], types: r[2], base: { hp: r[3][0], atk: r[3][1], def: r[3][2], spa: r[3][3], spd: r[3][4], spe: r[3][5] }, evos: r[4] }; DEX[d.num] = d; DEX_LIST.push(d); }
 const BY_NAME = {}; for (const d of DEX_LIST) BY_NAME[d.name.toLowerCase()] = d;
 function dexOf(x) { return typeof x === 'number' ? DEX[x] : BY_NAME[String(x).toLowerCase()]; }
+
+// ---------------------------------------------------------------- roles & skills
+// Type says whom a Pokémon beats; role says how it is used on the board. One role per evolution line,
+// keyed by the line's first form, so evolving never changes a unit's role. Lines not listed are plain
+// strikers. Every role's skill is shared by the whole role: there are six skills, not 151.
+const ROLE_LINES = {
+  scout: [16, 21, 41, 19, 52, 84, 50, 123, 142, 77],           // Pidgey, Spearow, Zubat, Rattata, Meowth, Doduo, Diglett, Scyther, Aerodactyl, Ponyta
+  defender: [74, 95, 27, 90, 111, 104, 109, 143, 108, 88, 138, 140], // Geodude, Onix, Sandshrew, Shellder, Rhyhorn, Cubone, Koffing, Snorlax, Lickitung, Grimer, Omanyte, Kabuto
+  amphibious: [7, 54, 60, 86, 98, 118, 116, 120, 72, 79, 129, 131], // Squirtle, Psyduck, Poliwag, Seel, Krabby, Goldeen, Horsea, Staryu, Tentacool, Slowpoke, Magikarp, Lapras
+  controller: [1, 43, 69, 46, 114, 102, 48, 23, 96, 124],      // Bulbasaur, Oddish, Bellsprout, Paras, Tangela, Exeggcute, Venonat, Ekans, Drowzee, Jynx
+  ranged: [63, 92, 100, 81, 137, 122],                          // Abra, Gastly, Voltorb, Magnemite, Porygon, Mr. Mime
+  support: [35, 39, 113],                                       // Clefairy, Jigglypuff, Chansey
+};
+// followUp: the role that turns a 10+ SPE lead into a second strike. Everyone else strikes once, whatever their speed.
+const ROLES = {
+  scout: { name: 'Scout', abbr: 'SCT', col: '#f0a040', skill: 'dart', followUp: true, desc: 'Flanker. After attacking it darts up to 2 tiles. Strikes twice when 10+ SPE faster.' },
+  defender: { name: 'Defender', abbr: 'DEF', col: '#a0a0b0', skill: 'brace', followUp: false, desc: 'Wall. Brace instead of attacking to take 40% less damage until its next turn.' },
+  amphibious: { name: 'Amphibious', abbr: 'AMP', col: '#5090f0', skill: 'tide', followUp: false, desc: 'Swims. On water it is at home: DEF 20% and AVO 20.' },
+  controller: { name: 'Controller', abbr: 'CTL', col: '#70c060', skill: 'root', followUp: false, desc: 'Root a foe within 2 tiles: it cannot move on its next turn. Every other turn; fliers are immune.' },
+  ranged: { name: 'Ranged', abbr: 'RNG', col: '#e070c0', skill: 'reach', followUp: false, desc: 'Reach: its ranged moves hit one tile further, out of most counters.' },
+  support: { name: 'Support', abbr: 'SUP', col: '#60d0a0', skill: 'mend', followUp: false, desc: 'Mend an adjacent ally: 30% HP and cures status and root. Every other turn.' },
+  striker: { name: 'Striker', abbr: 'STK', col: '#e05050', skill: null, followUp: true, desc: 'Plain attacker. Strikes twice when 10+ SPE faster.' },
+};
+// Active skills take the unit's action (like Attack) and go on cooldown for `cd` of the unit's own turns.
+// Passive ones are always on. Nothing here rolls dice.
+const SKILLS = {
+  dart: { id: 'dart', name: 'Dart', passive: true, blurb: 'Dart: moves up to 2 tiles after attacking' },
+  brace: { id: 'brace', name: 'Brace', target: 'self', rng: [0, 0], cd: 0, blurb: 'Brace: 40% less damage until its next turn', menu: 'Take 40% less damage until your next turn' },
+  root: { id: 'root', name: 'Root', target: 'foe', rng: [1, 2], cd: 2, blurb: 'Root: a foe within 2 cannot move next turn', menu: 'A foe within 2 tiles cannot move on its next turn' },
+  mend: { id: 'mend', name: 'Mend', target: 'ally', rng: [1, 1], cd: 2, blurb: 'Mend: adjacent ally +30% HP, cures status', menu: 'Heal an adjacent ally 30% and cure it' },
+  reach: { id: 'reach', name: 'Reach', passive: true, blurb: 'Reach: ranged moves hit one tile further' },
+  tide: { id: 'tide', name: 'Tide', passive: true, blurb: 'Tide: DEF 20% and AVO 20 on water' },
+};
+const TIDE = { def: 20, eva: 20 };
+const BRACE_MULT = .6;   // damage taken while braced
+const MEND_RATIO = .3;   // share of max HP Mend restores
+const DART_MOV = 2;      // tiles a scout may move after attacking
+const SKILL_XP = 12;     // experience for using an active skill (human teams, like combat)
+// First form of every evolution line, then role by line.
+const LINE_ROOT = {}; for (const d of DEX_LIST) if (!LINE_ROOT[d.num]) LINE_ROOT[d.num] = d.num; for (const d of DEX_LIST) for (const e of d.evos) LINE_ROOT[e[0]] = LINE_ROOT[d.num];
+const ROLE_OF = {}; for (const r in ROLE_LINES) for (const n of ROLE_LINES[r]) ROLE_OF[n] = r;
+function roleFor(dex) { return ROLE_OF[LINE_ROOT[dex.num]] || 'striker'; }
+function skillOf(role) { const s = ROLES[role] && ROLES[role].skill; return s ? SKILLS[s] : null; }
+
 // Some evolutions in Showdown are stones/trades: dex.py assigns levels. Legendaries and one-offs never evolve.
 const SIGNATURE = { 25: 'Thunderbolt', 6: 'Flamethrower', 9: 'Surf', 3: 'Razor Leaf', 150: 'Psychic', 151: 'Psychic', 130: 'Bite', 143: 'Body Slam', 144: 'Ice Beam', 145: 'Thunderbolt', 146: 'Flamethrower', 149: 'Dragon Claw', 65: 'Psychic', 94: 'Shadow Ball', 59: 'Flamethrower', 26: 'Thunderbolt', 131: 'Ice Beam', 134: 'Surf', 135: 'Thunderbolt', 136: 'Flamethrower', 68: 'Cross Chop', 112: 'Earthquake', 142: 'Wing Attack', 121: 'Psychic', 34: 'Earthquake', 31: 'Earthquake' };
 // Fun one-liners when a unit is selected.
@@ -143,7 +188,7 @@ let UID = 1;
 const BOND_HP = 1.2;
 // extra: x, y, ai, boss, nick, hp, hpBonus (HP multiplier, default 1).
 function makeUnit(numOrName, level, team, extra = {}) {
-  const dex = dexOf(numOrName); const u = { id: UID++, num: dex.num, team, level, xp: 0, status: null, statusTurns: 0, recharge: 0, acted: false, moved: false, x: extra.x | 0, y: extra.y | 0, ai: extra.ai || 'aggro', boss: !!extra.boss, nick: extra.nick || null, wild: team === 2, hpBonus: extra.hpBonus || 1, fx: { dx: 0, dy: 0, sx: 1, sy: 1, alpha: 1, flash: 0 } };
+  const dex = dexOf(numOrName); const u = { id: UID++, num: dex.num, team, level, xp: 0, status: null, statusTurns: 0, recharge: 0, acted: false, moved: false, x: extra.x | 0, y: extra.y | 0, ai: extra.ai || 'aggro', boss: !!extra.boss, nick: extra.nick || null, wild: team === 2, hpBonus: extra.hpBonus || 1, cd: 0, brace: 0, root: 0, fx: { dx: 0, dy: 0, sx: 1, sy: 1, alpha: 1, flash: 0 } };
   applyDex(u, dex); u.hp = u.maxHp; if (extra.hp != null) u.hp = extra.hp;
   return u;
 }
@@ -157,7 +202,10 @@ function applyDex(u, dex) {
   u.fly = dex.types.includes('Flying') || dex.num === 92 || dex.num === 93 || dex.num === 94 || dex.num === 81 || dex.num === 82 || dex.num === 109 || dex.num === 110 || dex.num === 151; // ghosts, magnets, koffing and Mew float
   u.swim = dex.types.includes('Water'); u.climb = dex.types.includes('Rock') || dex.types.includes('Ground') || dex.types.includes('Fighting') || dex.types.includes('Steel');
   u.forester = dex.types.includes('Bug') || dex.types.includes('Grass'); u.desert = dex.types.includes('Ground') || dex.types.includes('Rock');
+  u.role = roleFor(dex); u.skill = skillOf(u.role);
   u.moves = movesFor(dex.types, L, SIGNATURE[dex.num]);
+  // Reach (ranged role): every move that already fires at range goes one tile further; melee moves stay melee
+  if (u.skill && u.skill.id === 'reach') u.moves = u.moves.map(m => m.rng[1] >= 2 ? Object.assign({}, m, { rng: [m.rng[0], m.rng[1] + 1] }) : m);
   u.rngMin = Math.min(...u.moves.map(m => m.rng[0])); u.rngMax = Math.max(...u.moves.map(m => m.rng[1]));
 }
 function levelUp(u) { const before = { maxHp: u.maxHp, atk: u.atk, def: u.def, spa: u.spa, spd: u.spd, spe: u.spe }; u.level++; const oldMax = u.maxHp; applyDex(u, u.dex); u.hp = Math.min(u.maxHp, u.hp + (u.maxHp - oldMax)); return { maxHp: u.maxHp - before.maxHp, atk: u.atk - before.atk, def: u.def - before.def, spa: u.spa - before.spa, spd: u.spd - before.spd, spe: u.spe - before.spe }; }
@@ -165,6 +213,7 @@ function evolutionFor(u) { const evs = u.dex.evos.filter(e => u.level >= e[1] &&
 function evolve(u, dex) { const oldMax = u.maxHp; u.dex = dex; applyDex(u, dex); u.hp = Math.min(u.maxHp, u.hp + (u.maxHp - oldMax)); }
 function xpToNext() { return 100; }
 function xpGain(att, def, kill) { const diff = clamp(def.level - att.level, -8, 8); let xp = 15 + diff * 2 + (kill ? 35 + diff * 3 : 0); if (def.boss && kill) xp += 40; return Math.max(3, Math.round(xp)); }
-function serializeUnit(u) { return { num: u.num, level: u.level, xp: u.xp, hp: u.hp, nick: u.nick, team: u.team, x: u.x, y: u.y, ai: u.ai, boss: u.boss, status: u.status, statusTurns: u.statusTurns, recharge: u.recharge || 0, acted: u.acted, hpBonus: u.hpBonus || 1, id: u.id }; }
+function serializeUnit(u) { return { num: u.num, level: u.level, xp: u.xp, hp: u.hp, nick: u.nick, team: u.team, x: u.x, y: u.y, ai: u.ai, boss: u.boss, status: u.status, statusTurns: u.statusTurns, recharge: u.recharge || 0, acted: u.acted, hpBonus: u.hpBonus || 1, id: u.id, cd: u.cd || 0, brace: u.brace || 0, root: u.root || 0 }; }
 // Older saves have no hpBonus: callers that know the unit is a campaign party member pass BOND_HP themselves.
-function restoreUnit(s) { const u = makeUnit(s.num, s.level, s.team, { x: s.x, y: s.y, ai: s.ai, boss: s.boss, nick: s.nick, hpBonus: s.hpBonus }); u.xp = s.xp || 0; u.hp = s.hp != null ? Math.min(u.maxHp, s.hp) : u.maxHp; u.status = s.status || null; u.statusTurns = s.statusTurns || 0; u.recharge = s.recharge ? 1 : 0; u.acted = !!s.acted; if (s.id) { u.id = s.id; UID = Math.max(UID, s.id + 1); } return u; }
+// Saves from before the roles stage have no cd/brace/root: they restore as 0 (nothing pending).
+function restoreUnit(s) { const u = makeUnit(s.num, s.level, s.team, { x: s.x, y: s.y, ai: s.ai, boss: s.boss, nick: s.nick, hpBonus: s.hpBonus }); u.xp = s.xp || 0; u.hp = s.hp != null ? Math.min(u.maxHp, s.hp) : u.maxHp; u.status = s.status || null; u.statusTurns = s.statusTurns || 0; u.recharge = s.recharge ? 1 : 0; u.acted = !!s.acted; u.cd = s.cd | 0; u.brace = s.brace | 0; u.root = s.root | 0; if (s.id) { u.id = s.id; UID = Math.max(UID, s.id + 1); } return u; }

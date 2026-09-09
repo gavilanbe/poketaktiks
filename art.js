@@ -615,6 +615,7 @@ const ICONS = {
   vs: ['OO.....OO', 'OWO...OWO', '.OWO.OWO.', '..OWOWO..', '...OWO...', '..OWOWO..', '.OWOYOWO.', 'OWO.Y.OWO', 'OO..Y..OO'],
   crown: ['O...O...O', 'OO.OYO.OO', 'OYOYYYOYO', 'OYYYYYYYO', 'OYYYYYYYO', '.OYYYYYO.', '.OOOOOOO.', '.OYYYYYO.', '.OOOOOOO.'],
   book: ['.OOOOOOO.', 'OWWWOWWWO', 'OWLWOWLWO', 'OWWWOWWWO', 'OWLWOWLWO', 'OWWWOWWWO', 'OWLWOWLWO', 'OWWWOWWWO', '.OOOOOOO.'],
+  skill: ['....O....', '...OWO...', '...OWO...', 'OOOOWOOOO', 'OWWWYWWWO', 'OOOOWOOOO', '...OWO...', '...OWO...', '....O....'],
 };
 // Draw a UI icon; `col` overrides the main (W) colour.
 function iconAt(id, x, y, col) {

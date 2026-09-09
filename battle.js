@@ -33,7 +33,7 @@ function teamName(t) { return B && B.versus ? (t === 0 ? 'PLAYER 1' : t === 1 ? 
 function phaseLabel(t) { return teamName(t) + ' PHASE'; }
 // Screen bands the HUD keeps for itself (in board pixels): the turn card on top and, on narrow portrait screens,
 // the context/forecast area and the button bar at the bottom. A board that fits is centred between them.
-function hudReserve() { const z = BT.zoom; if (narrowView() && portraitView()) return { top: 30 / z, bottom: (BT.mode === 'target' || BT.mode === 'catchTarget' ? 170 : 118) / z }; return { top: 30 / z, bottom: 40 / z }; }
+function hudReserve() { const z = BT.zoom; if (narrowView() && portraitView()) return { top: 30 / z, bottom: (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget' ? 170 : 118) / z }; return { top: 30 / z, bottom: 40 / z }; }
 // Range of camera positions: a board that fits sits centred (between the HUD bands vertically); a bigger board can
 // be panned edge to edge, and far enough past its top and bottom rows for them to clear the HUD bands.
 function camRange() {
@@ -137,6 +137,11 @@ function setupEvent(q) {
     case 'capture': q.dur = BT.fast ? 1.6 : 2.6 + e.shakes * .5; Audio.sfx('catch'); break;
     case 'miss': q.dur = BT.fast ? .3 : .55; break;
     case 'status': floatText(ux(e.unit), uy(e.unit) - 6, STATUS[e.status].text.toUpperCase() + '!', STATUS[e.status].col, { outline: '#000' }); Audio.sfx(e.status === 'par' ? 'para' : e.status === 'brn' ? 'burn' : 'poison'); break;
+    // role skills: a short card names the skill, then its effect floats over the target
+    case 'skill': q.dur = BT.fast ? .4 : .8; Audio.sfx('select'); if (!unitVisible(e.unit) || !unitVisible(e.target)) centerCamBetween(e.unit, e.target); spawnParts(ux(e.unit), uy(e.unit) + 8, 10, [ROLES[e.unit.role].col, '#ffffff'], { speed: 40, life: .5, grav: -30 }); break;
+    case 'brace': Audio.sfx('shake'); floatText(ux(e.unit), uy(e.unit) - 8, 'BRACED!', BRACE_COL, { outline: '#000' }); e.unit.fx.sy = .8; e.unit.fx.sx = 1.2; break;
+    case 'root': Audio.sfx('grass'); shake(1); floatText(ux(e.unit), uy(e.unit) - 8, 'ROOTED!', ROOT_COL, { outline: '#000' }); spawnParts(ux(e.unit), uy(e.unit) + 12, 12, ['#2a6b38', '#c8f0a0'], { speed: 30, grav: 40, life: .6 }); break;
+    case 'unroot': q.dur = BT.fast ? .2 : .4; floatText(ux(e.unit), uy(e.unit) - 8, 'Free!', ROOT_COL, { outline: '#000' }); break;
   }
 }
 function updateAnim(dt) {
@@ -225,6 +230,7 @@ function extendPath(x, y) {
 }
 function confirmMove() {
   const u = BT.sel; const dest = BT.path[BT.path.length - 1]; if (!canStand(u, dest.x, dest.y)) { Audio.sfx('error'); return; }
+  if (BT.dart) { BT.dart = false; Audio.sfx('ok'); BT.queue = [{ kind: 'move', unit: u, path: BT.path.slice() }]; playQueue(() => { pickupAt(u); finishUnit(u); }); return; }
   BT.undo = { unit: u, x: u.x, y: u.y }; Audio.sfx('ok');
   BT.queue = [{ kind: 'move', unit: u, path: BT.path.slice() }];
   playQueue(() => { u.moved = true; pickupAt(u); openActionMenu(u); });
@@ -241,12 +247,16 @@ function openActionMenu(u) {
   const wildAdj = B.units.filter(v => v.hp > 0 && v.team === 2 && dist(v, u) === 1); const hasBall = Object.keys(B.bag).some(k => ITEMS[k].kind === 'ball' && B.bag[k] > 0);
   if (wildAdj.length && hasBall) items.push({ id: 'catch', label: 'Catch', icon: 'ball', sub: 'Throw a ball' });
   if (B.map.objective.type === 'seize' && B.map.seize && u.x === B.map.seize.x && u.y === B.map.seize.y) items.unshift({ id: 'seize', label: 'Seize', icon: 'flag', sub: 'Win the map!' });
+  // the role skill: always listed so the player learns it exists; greyed with the reason when it cannot be used now
+  if (u.skill && !u.skill.passive) { const why = skillBlock(u); const n = why ? 0 : skillTargetsAt(u).length; items.push({ id: 'skill', label: u.skill.name, icon: 'skill', off: !!why, sub: why ? u.skill.menu + ' (' + why + ')' : u.skill.menu + (u.skill.target === 'self' ? '' : ' · ' + n + (n > 1 ? ' targets' : ' target')) + (u.skill.cd ? ' · every ' + (u.skill.cd + 1) + ' turns' : '') }); }
   if (Object.keys(B.bag).some(k => ITEMS[k].kind !== 'ball' && B.bag[k] > 0)) items.push({ id: 'item', label: 'Bag', icon: 'bag', sub: 'Use an item' });
   items.push({ id: 'wait', label: 'Wait', icon: 'wait', sub: 'End this unit\'s turn' });
   BT.menu = { items, i: 0 }; BT.mode = 'menu'; BT.cx = u.x; BT.cy = u.y;
 }
 function menuChoose(id) {
-  const u = BT.sel; Audio.sfx('ok');
+  const u = BT.sel;
+  if (id === 'skill') { if (skillBlock(u)) { Audio.sfx('error'); return; } Audio.sfx('ok'); BT.targets = skillTargetsAt(u); BT.tIdx = 0; BT.mode = 'skillTarget'; setTargetCursor(); return; }
+  Audio.sfx('ok');
   if (id === 'wait') finishUnit(u);
   else if (id === 'attack') { BT.targets = targetsFrom(u, u.x, u.y); BT.tIdx = 0; BT.moveIdx = 0; BT.mode = 'target'; setTargetCursor(); }
   else if (id === 'catch') { BT.targets = B.units.filter(v => v.hp > 0 && v.team === 2 && dist(v, u) === 1); BT.tIdx = 0; BT.mode = 'catchTarget'; setTargetCursor(); }
@@ -260,8 +270,24 @@ function confirmAttack() {
   if (t.team === 1 && t.ai !== 'aggro') t.provoked = true; if (t.boss) t.provoked = true;
   for (const e of B.units) if (e.team === 1 && e.hp > 0 && e.ai === 'boss' && dist(e, t) <= 3) e.provoked = true;
   BT.queue = combatQueue(u, t, cf.move, u); BT.mode = 'anim';
+  playQueue(() => { afterAttack(u); });
+}
+// After an attack a scout that is still standing may dart; everyone else is spent. The map's objective is checked
+// first so a winning blow ends the battle without a pointless dart.
+function afterAttack(u) { if (checkObjective()) { finishUnit(u); return; } if (canDart(u)) startDart(u); else finishUnit(u); }
+// Dart: a second, short move with no menu afterwards. Reuses the move mode (blue tiles, arrow, BACK) with BT.dart set;
+// confirming a tile or pressing back/OK on the unit's own tile ends the unit's turn. There is no undo of the attack.
+function startDart(u) {
+  BT.sel = u; BT.reach = reachable(u, u.x, u.y, dartMov(u)); BT.atk = []; BT.path = [{ x: u.x, y: u.y }]; BT.mode = 'move'; BT.dart = true; BT.undo = null; BT.cx = u.x; BT.cy = u.y; keepCursorVisible();
+  Audio.sfx('select'); floatText(u.x * TILE + TILE / 2, u.y * TILE - 6, 'DART!', ROLES.scout.col, { outline: '#000', life: .9 });
+}
+// The player's skill: apply it, play the events, spend the unit.
+function confirmSkill() {
+  const u = BT.sel, t = BT.targets[BT.tIdx]; if (!u || !t || !skillReady(u)) { Audio.sfx('error'); return; } Audio.sfx('ok');
+  const ev = useSkill(u, u.skill, t); BT.queue = ev.map(e => ({ kind: 'event', ev: e })); BT.mode = 'anim';
   playQueue(() => { finishUnit(u); });
 }
+function skillQueue(u, sk, t) { return useSkill(u, sk, t).map(e => ({ kind: 'event', ev: e })); }
 // The one place an exchange is resolved for display: snapshot both HP values, roll the combat once, and
 // hand the same event list to whichever presentation is active (duel scene or strikes on the board).
 // The resolver also levels up, evolves and inflicts statuses before any of it is shown, so the scene works from
@@ -298,16 +324,17 @@ function confirmCatch() {
   playQueue(() => { finishUnit(u); });
 }
 function finishUnit(u) {
-  u.acted = true; u.moved = true; BT.sel = null; BT.reach = null; BT.atk = null; BT.undo = null; BT.menu = null; BT.hpShow.clear();
+  u.acted = true; u.moved = true; BT.sel = null; BT.reach = null; BT.atk = null; BT.undo = null; BT.menu = null; BT.dart = false; BT.hpShow.clear();
   for (const v of B.units) { v.fx.dx = v.fx.dy = 0; v.fx.sx = v.fx.sy = 1; v.fx.alpha = 1; v.fx.flash = 0; v.fx.showNum = null; }
   if (checkObjective()) { endBattle(); return; }
   if (alive(HT()).every(v => v.acted)) { BT.mode = 'idle'; BT.autoEnd = .6; return; }
   BT.mode = 'idle'; const f = alive(HT()).find(v => !v.acted); if (f && !VIEW.touch) { /* keep the cursor where it is; the player picks the next unit */ }
 }
 function cancel() {
-  if (BT.mode === 'move') { BT.sel.fx.sx = BT.sel.fx.sy = 1; BT.cx = BT.sel.x; BT.cy = BT.sel.y; BT.sel = null; BT.reach = null; BT.atk = null; BT.mode = 'idle'; Audio.sfx('cancel'); }
+  if (BT.mode === 'move' && BT.dart) { const u = BT.sel; BT.cx = u.x; BT.cy = u.y; Audio.sfx('cancel'); finishUnit(u); } // staying put ends the darting unit's turn
+  else if (BT.mode === 'move') { BT.sel.fx.sx = BT.sel.fx.sy = 1; BT.cx = BT.sel.x; BT.cy = BT.sel.y; BT.sel = null; BT.reach = null; BT.atk = null; BT.mode = 'idle'; Audio.sfx('cancel'); }
   else if (BT.mode === 'menu') { const u = BT.sel; if (BT.undo && BT.undo.unit === u) { u.x = BT.undo.x; u.y = BT.undo.y; u.moved = false; BT.undo = null; } BT.menu = null; selectUnit(u); BT.cx = u.x; BT.cy = u.y; Audio.sfx('cancel'); }
-  else if (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'item') { BT.mode = 'menu'; BT.cx = BT.sel.x; BT.cy = BT.sel.y; openActionMenu(BT.sel); Audio.sfx('cancel'); }
+  else if (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget' || BT.mode === 'item') { BT.mode = 'menu'; BT.cx = BT.sel.x; BT.cy = BT.sel.y; openActionMenu(BT.sel); Audio.sfx('cancel'); }
   else if (BT.mode === 'ballPick') { BT.mode = 'catchTarget'; Audio.sfx('cancel'); }
   else if (BT.mode === 'itemTarget') { BT.mode = 'item'; Audio.sfx('cancel'); }
   else if (BT.mode === 'help' || BT.mode === 'unitinfo' || BT.mode === 'endmenu') { BT.mode = 'idle'; Audio.sfx('cancel'); }
@@ -332,7 +359,12 @@ function runEnemyPhase(team) {
     if (!d) { step(); return; }
     BT.queue = [];
     if (d.x !== u.x || d.y !== u.y) { const reach = reachable(u); const p = pathTo(reach, d.x, d.y); if (p) BT.queue.push({ kind: 'fn', fn: () => { centerCam(u.x, u.y); } }, { kind: 'wait', t2: .25 }, { kind: 'move', unit: u, path: p }); }
-    if (d.target) { BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...combatQueue(u, d.target, d.move, { x: d.x, y: d.y })); } }); }
+    if (d.skill) { BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...skillQueue(u, d.skill, d.target)); } }); }
+    else if (d.target) {
+      BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...combatQueue(u, d.target, d.move, { x: d.x, y: d.y })); } });
+      // a scout darts once the exchange has played out (the queue item runs after the duel, so the outcome is known)
+      BT.queue.push({ kind: 'fn', fn: () => { const c = aiDart(u); if (!c) return; const p = pathTo(reachable(u, u.x, u.y, dartMov(u)), c.x, c.y); if (p) BT.queue.unshift({ kind: 'fn', fn: () => floatText(u.x * TILE + TILE / 2, u.y * TILE - 6, 'DART!', ROLES.scout.col, { outline: '#000', life: .9 }) }, { kind: 'move', unit: u, path: p }); } });
+    }
     BT.queue.push({ kind: 'wait', t2: .15 });
     playQueue(() => { u.acted = true; step(); });
   };
@@ -359,7 +391,7 @@ function menuNav(dir) { const m = BT.menu; if (!m) return; m.i = (m.i + dir + m.
 function keyInput(k) {
   const m = BT.mode;
   if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { if (k === 'up') menuNav(-1); else if (k === 'down') menuNav(1); else if (k === 'ok') activateMenu(); else if (k === 'back') cancel(); return; }
-  if (m === 'target' || m === 'catchTarget') { if (k === 'left' || k === 'up' || k === 'prev') { BT.tIdx = (BT.tIdx - 1 + BT.targets.length) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'right' || k === 'down' || k === 'next') { BT.tIdx = (BT.tIdx + 1) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'info') { BT.moveIdx++; Audio.sfx('menu'); } else if (k === 'ok') { if (m === 'target') confirmAttack(); else pickBall(); } else if (k === 'back') cancel(); return; }
+  if (m === 'target' || m === 'catchTarget' || m === 'skillTarget') { if (k === 'left' || k === 'up' || k === 'prev') { BT.tIdx = (BT.tIdx - 1 + BT.targets.length) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'right' || k === 'down' || k === 'next') { BT.tIdx = (BT.tIdx + 1) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'info') { BT.moveIdx++; Audio.sfx('menu'); } else if (k === 'ok') { if (m === 'target') confirmAttack(); else if (m === 'skillTarget') confirmSkill(); else pickBall(); } else if (k === 'back') cancel(); return; }
   if (m === 'itemTarget') { if (k === 'ok') useItemOn(BT.sel); else if (k === 'back') cancel(); return; }
   if (k === 'help') { BT.mode = 'help'; BT.helpPage = 0; return; }
   const dx = k === 'left' ? -1 : k === 'right' ? 1 : 0, dy = k === 'up' ? -1 : k === 'down' ? 1 : 0;
@@ -387,8 +419,8 @@ function tileAction(x, y) {
   }
   if (m === 'move') {
     if (u && u === BT.sel) { BT.path = [{ x: u.x, y: u.y }]; confirmMove(); return; }
-    if (u && u.team === HT() && !u.acted) { cancel(); selectUnit(u); return; }
-    if (u && hostile(u.team, HT()) && BT.atk.some(c => c.x === x && c.y === y) || (u && hostile(u.team, HT()) && BT.reach.has(key(x, y)))) { // quick-attack: move next to it and attack
+    if (u && u.team === HT() && !u.acted) { cancel(); selectUnit(u); return; } // during a dart this ends the darting unit first
+    if (!BT.dart && (u && hostile(u.team, HT()) && BT.atk.some(c => c.x === x && c.y === y) || (u && hostile(u.team, HT()) && BT.reach.has(key(x, y))))) { // quick-attack: move next to it and attack
       const spots = [...BT.reach.values()].filter(n => canStand(BT.sel, n.x, n.y) && usableMoves(BT.sel, Math.abs(n.x - u.x) + Math.abs(n.y - u.y)).length);
       if (spots.length) { spots.sort((a, b) => (terrainDef(terrAt(b.x, b.y), BT.sel) - terrainDef(terrAt(a.x, a.y), BT.sel)) || (dist(a, BT.sel) - dist(b, BT.sel))); const s = spots[0]; BT.path = pathTo(BT.reach, s.x, s.y); BT.pendingTarget = u; confirmMoveThenAttack(); return; }
     }
@@ -408,7 +440,7 @@ function pointerInput(ev) {
     if (ev.touch || hoverLocked(ev)) return;
     const { x: tx, y: ty } = screenToTile(ev.x, ev.y);
     if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { const h = menuHit(ev.x, ev.y); if (h >= 0 && h !== BT.menu.i) { BT.menu.i = h; Audio.sfx('menu'); } return; }
-    if (m === 'target' || m === 'catchTarget') { const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0 && ti !== BT.tIdx) { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } return; }
+    if (m === 'target' || m === 'catchTarget' || m === 'skillTarget') { const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0 && ti !== BT.tIdx) { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } return; }
     if (hudCovers(ev.x, ev.y)) return; // pointer over a HUD panel: the board underneath is not being pointed at
     if (inMap(tx, ty) && (tx !== BT.cx || ty !== BT.cy) && (m === 'idle' || m === 'move')) { BT.cx = tx; BT.cy = ty; if (m === 'move') extendPath(tx, ty); }
     return;
@@ -418,7 +450,7 @@ function pointerInput(ev) {
     const { x: tx, y: ty } = screenToTile(ev.x, ev.y);
     if (hudHit(ev.x, ev.y)) return;
     if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { const h = menuHit(ev.x, ev.y); if (h >= 0) { BT.menu.i = h; activateMenu(); } else cancel(); return; }
-    if (m === 'target' || m === 'catchTarget') { const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0) { if (ti === BT.tIdx) { if (m === 'target') confirmAttack(); else pickBall(); } else { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } } else if (forecastHit(ev.x, ev.y)) { if (m === 'target') confirmAttack(); else pickBall(); } else if (moveSwitchHit(ev.x, ev.y)) { BT.moveIdx++; Audio.sfx('menu'); } else cancel(); return; }
+    if (m === 'target' || m === 'catchTarget' || m === 'skillTarget') { const go = () => { if (m === 'target') confirmAttack(); else if (m === 'skillTarget') confirmSkill(); else pickBall(); }; const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0) { if (ti === BT.tIdx) go(); else { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } } else if (forecastHit(ev.x, ev.y)) go(); else if (m === 'target' && moveSwitchHit(ev.x, ev.y)) { BT.moveIdx++; Audio.sfx('menu'); } else cancel(); return; }
     if (m === 'itemTarget') { useItemOn(BT.sel); return; }
     if (hudCovers(ev.x, ev.y)) return; // a tap on a card is not a tap on the tile under it
     if (!inMap(tx, ty)) { if (m === 'move') cancel(); return; }
@@ -483,17 +515,18 @@ function drawBoardLayer() {
     rangeOverlay(BT.atk, (x, y) => BT.reach.has(key(x, y)) || BT.atk.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6));
   }
   if (BT.mode === 'unitinfo' && BT.info && BT.info.team !== HT()) { const r = reachable(BT.info); const cells = [...r.values()].filter(n => canStand(BT.info, n.x, n.y)); rangeOverlay(cells, (x, y) => r.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6)); const ac = attackCells(BT.info, r); rangeOverlay(ac, (x, y) => r.has(key(x, y)) || ac.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e07030', '#ffc0a0', Math.floor(BT.time * 6)); }
-  // target highlights
-  if (BT.mode === 'target' || BT.mode === 'catchTarget') for (const t of BT.targets) { const X = tileX(t.x), Y = tileY(t.y); const k = Math.floor(BT.time * 8) % 2; outline(X + 1 + k, Y + 1 + k, TILE - 2 - 2 * k, TILE - 2 - 2 * k, t === BT.targets[BT.tIdx] ? '#ffffff' : '#ff6060'); }
+  // target highlights: red for foes, green for allies and self (skills), the chosen one white
+  if (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget') for (const t of BT.targets) { const X = tileX(t.x), Y = tileY(t.y); const k = Math.floor(BT.time * 8) % 2; const friendly = !hostile(t.team, HT()); outline(X + 1 + k, Y + 1 + k, TILE - 2 - 2 * k, TILE - 2 - 2 * k, t === BT.targets[BT.tIdx] ? '#ffffff' : friendly ? '#60e070' : '#ff6060'); }
+  if (BT.mode === 'skillTarget' && BT.sel && BT.sel.skill && BT.sel.skill.rng[1] > 0) { const rc = ring(BT.sel.x, BT.sel.y, BT.sel.skill.rng[0], BT.sel.skill.rng[1]); rangeOverlay(rc, (x, y) => rc.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, BT.sel.skill.target === 'foe' ? '#e03030' : '#30a050', BT.sel.skill.target === 'foe' ? '#ffa0a0' : '#a0ffb0', Math.floor(BT.time * 6)); }
   if (BT.mode === 'move' && BT.path.length > 1) drawArrow(BT.path, -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, BT.time * 1000);
-  if (['idle', 'move', 'target', 'catchTarget', 'unitinfo'].includes(BT.mode)) drawCursorGlow(tileX(BT.cx), tileY(BT.cy), BT.time * 1000);
+  if (['idle', 'move', 'target', 'catchTarget', 'skillTarget', 'unitinfo'].includes(BT.mode)) drawCursorGlow(tileX(BT.cx), tileY(BT.cy), BT.time * 1000);
   // units (sorted by y so southern sprites overlap northern ones)
   // a unit whose KO the duel scene has not shown yet stays on the board (its HP bar is held at the pre-exchange value)
   const held = u => { const h = BT.hpShow.get(u.id); return h && h.hold; };
   const units = B.units.filter(u => u.hp > 0 || (BT.anim && BT.anim.kind === 'event' && (BT.anim.ev.unit === u)) || held(u)).sort((a, b) => (a.y + a.fx.dy / TILE) - (b.y + b.fx.dy / TILE));
   for (const u of units) drawUnit(u);
   // cursor
-  if (['idle', 'move', 'target', 'catchTarget', 'unitinfo'].includes(BT.mode)) { const hostileCur = unitAt(BT.cx, BT.cy) && hostile(unitAt(BT.cx, BT.cy).team, HT()); drawCursor(tileX(BT.cx), tileY(BT.cy), BT.time * 1000, '#ffffff', (BT.mode === 'target' || hostileCur) ? '#ff5a5a' : '#ffd24a'); }
+  if (['idle', 'move', 'target', 'catchTarget', 'skillTarget', 'unitinfo'].includes(BT.mode)) { const hostileCur = unitAt(BT.cx, BT.cy) && hostile(unitAt(BT.cx, BT.cy).team, HT()); drawCursor(tileX(BT.cx), tileY(BT.cy), BT.time * 1000, '#ffffff', (BT.mode === 'target' || hostileCur) ? '#ff5a5a' : BT.mode === 'skillTarget' ? '#60e070' : '#ffd24a'); }
   if (BT.anim && BT.anim.ball) { const b = BT.anim.ball; drawBall(Math.round(b.x - CAM.x), Math.round(b.y - CAM.y), ITEMS[BT.anim.ev.ball].col, 5); }
   drawFX(-CAM.x + FX.shakeX, -CAM.y + FX.shakeY, false);
 }
@@ -529,7 +562,7 @@ function unitLook(u) {
   const q = BT.anim; const busy = !!q && BT.mode === 'anim' && (q.unit === u || q.att === u || q.def === u || (q.ev && q.ev.unit === u));
   const grey = mine && u.acted && !busy;
   const ready = mine && !u.acted && BT.mode !== 'anim' && BT.mode !== 'banner' && BT.mode !== 'end';
-  const sel = BT.sel === u && (BT.mode === 'move' || BT.mode === 'target' || BT.mode === 'menu');
+  const sel = BT.sel === u && (BT.mode === 'move' || BT.mode === 'target' || BT.mode === 'skillTarget' || BT.mode === 'menu');
   const hovered = BT.cx === u.x && BT.cy === u.y && (BT.mode === 'idle' || BT.mode === 'unitinfo');
   return { grey, ready, sel, hovered, busy };
 }
@@ -568,7 +601,8 @@ function drawUnit(u) {
     const k = Math.round(Math.sin(BT.time * 5) * 1); let tl = Y - 3;
     if (u.leader) { drawCrown(X - 1, tl + k); tl += 6; } else if (u.boss) { drawSkull(X - 1, tl + k); tl += 8; }
     if (u.recharge) miniBadge('CHG', RECHARGE_COL, X - 1, tl);
-    if (u.status) statusBadge(u.status, X + TILE - 15, Y - 3);
+    let tr = Y - 3; if (u.status) { statusBadge(u.status, X + TILE - 15, tr); tr += 7; }
+    if (u.brace) { miniBadge('BRC', BRACE_COL, X + TILE - 15, tr); tr += 7; } if (u.root) miniBadge('RT', ROOT_COL, X + TILE - 15, tr);
     ctx.globalAlpha = 1;
   }
 }
@@ -603,21 +637,22 @@ function hudLayout() {
 function drawHUD() {
   HUD.hits = []; HUD.panels = []; const W = VIEW.w, H = VIEW.h; const L = hudLayout();
   if (BT.mode === 'end') { drawEndScreen(); return; }
-  const boardModes = ['idle', 'move', 'target', 'catchTarget', 'unitinfo', 'menu'];
+  const boardModes = ['idle', 'move', 'target', 'catchTarget', 'skillTarget', 'unitinfo', 'menu'];
   // turn / objective / ready-count card (top-left)
   drawTurnCard(L.top);
   // context cards: the hovered unit and its terrain, side by side or as one strip on portrait phones
   const hov = unitAt(BT.cx, BT.cy); const t = terrAt(BT.cx, BT.cy);
-  if (boardModes.includes(BT.mode) && BT.mode !== 'target' && BT.mode !== 'catchTarget') {
+  if (boardModes.includes(BT.mode) && BT.mode !== 'target' && BT.mode !== 'catchTarget' && BT.mode !== 'skillTarget') {
     const ref = hov || BT.sel || { fly: false, swim: false }; const showUnit = hov && BT.mode !== 'menu';
     if (L.stack) { const c = L.ctx; hudPanel(c.x, c.y, c.w, c.h); if (showUnit) { unitCardBody(hov, c.x, c.y, c.w - 62); vline(c.x + c.w - 60, c.y + 4, c.h - 8, UI.border2); terrainCardBody(t, ref, c.x + c.w - 56, c.y, 54, true); } else terrainCardBody(t, ref, c.x, c.y, c.w, false); }
     else { const c = L.ctx; hudPanel(c.terrX, c.y + 12, c.terrW, 30); terrainCardBody(t, ref, c.terrX, c.y + 12, c.terrW, false); if (showUnit) { hudPanel(c.unitX, c.y, c.unitW, c.h); unitCardBody(hov, c.unitX, c.y, c.unitW); } }
   }
-  if (BT.mode === 'move' && BT.sel) { const c = BT.sel; textC(c.name + '  MOV ' + effMov(c) + (BT.path.length > 1 ? '  →' + (BT.path.length - 1) : ''), W / 2, L.top.y + L.top.h + 4, UI.ink, { outline: UI.shadow }); }
+  if (BT.mode === 'move' && BT.sel) { const c = BT.sel; textC(c.name + (BT.dart ? '  DART ' + dartMov(c) + ' · X: stay' : '  MOV ' + effMov(c)) + (BT.path.length > 1 ? '  →' + (BT.path.length - 1) : ''), W / 2, L.top.y + L.top.h + 4, BT.dart ? ROLES.scout.col : UI.ink, { outline: UI.shadow }); }
   if (BT.quip && BT.quip.unit.hp > 0) { const u = BT.quip.unit; const x = toScreenX(tileX(u.x) + TILE / 2) + 16, y = toScreenY(tileY(u.y)) - 12 - Math.min(6, BT.quip.t * 30); const tw = textWidth(BT.quip.text) + 8; rrect(x - 2, y - 2, tw, 11, UI.shadow, 1); rrect(x - 3, y - 3, tw, 11, '#ffffff', 1); text(BT.quip.text, x + 1, y - 1, '#202030'); px(x, y + 8, '#ffffff'); px(x - 1, y + 9, '#ffffff'); }
   if (BT.mode === 'menu' || BT.mode === 'item' || BT.mode === 'endmenu' || BT.mode === 'ballPick') drawMenu();
   if (BT.mode === 'target') drawForecast();
   if (BT.mode === 'catchTarget') drawCatchCard();
+  if (BT.mode === 'skillTarget') drawSkillCard();
   if (BT.mode === 'itemTarget') { const w = Math.min(160, W - 12); hudPanel(W / 2 - w / 2, H / 2 - 16, w, 32); textC('Use ' + ITEMS[BT.item].name + ' on ' + BT.sel.name + '?', W / 2, H / 2 - 10, UI.ink); textC('OK: confirm · X: cancel', W / 2, H / 2 + 1, UI.muted); }
   if (BT.mode === 'unitinfo' && BT.info) drawUnitSheet(BT.info);
   if (BT.mode === 'help') drawHelp();
@@ -640,11 +675,11 @@ function drawTurnCard(r) {
 }
 function drawButtons(L) {
   const W = VIEW.w, bh = L.bh, m = BT.mode;
-  const idle = m === 'idle', acting = m === 'move' || m === 'target' || m === 'catchTarget' || m === 'menu', enemyAnim = m === 'anim' && !isHuman(B.phase);
+  const idle = m === 'idle', acting = m === 'move' || m === 'target' || m === 'catchTarget' || m === 'skillTarget' || m === 'menu', enemyAnim = m === 'anim' && !isHuman(B.phase);
   if (enemyAnim) textC(phaseLabel(B.phase) + (BT.fast ? ' · FAST' : ''), W / 2, L.top.y + L.top.h + 4, UI.red, { outline: UI.shadow });
   const items = [];
   if (idle) items.push({ label: 'END TURN', col: '#7a3030', run: () => { Audio.sfx('ok'); endTurn(); } }, { label: BT.showDanger ? 'DANGER ●' : 'DANGER ○', run: () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); } });
-  if (acting) items.push({ label: 'BACK', col: '#5a4a30', run: () => cancel() });
+  if (acting) items.push({ label: m === 'move' && BT.dart ? 'STAY' : 'BACK', col: '#5a4a30', run: () => cancel() });
   if (enemyAnim) items.push({ label: BT.fast ? 'FAST ●' : 'FAST ○', run: () => { BT.fast = !BT.fast; } });
   if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
   if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; Audio.sfx('menu'); } }, { label: Audio.muted ? '♪ ○' : '♪ ●', half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
@@ -661,6 +696,7 @@ function drawButtons(L) {
 // Danger overlay colours [fill, edge] per threat kind, and the recharge marker colour.
 const DANGER = { trainer: ['#b03030', '#ff8080'], wild: ['#b08a20', '#ffd24a'] };
 const RECHARGE_COL = '#a0a0ff';
+const BRACE_COL = '#8090b0', ROOT_COL = '#50a040';
 function drawDangerLegend(x, y) {
   const wild = B.units.some(u => u.hp > 0 && u.team === 2 && hostile(2, HT())); const w = wild ? 58 : 34;
   panel(x, y, w, 13, { fill: UI.panelDark, flat: true }); rect(x + 4, y + 4, 5, 5, DANGER.trainer[1]); text('foe', x + 11, y + 3, UI.ink);
@@ -673,6 +709,8 @@ function unitCardBody(u, x, y, w) {
   text(u.name, x + 46, y + 5, UI.ink); textR('Lv' + u.level, x + w - 5, y + 5, UI.gold);
   hpBar(x + 46, y + 15, w - 52, u.hp, u.maxHp); text(u.hp + '/' + u.maxHp, x + 46, y + 22, UI.ink);
   u.types.forEach((t, i) => typeBadge(t, x + 46 + i * 26, y + 31, 24)); if (u.status) statusBadge(u.status, x + w - 20, y + 22);
+  // role badge (SCT/DEF/AMP/CTL/RNG/SUP/STK), then whichever of brace/root is on the unit
+  const R = ROLES[u.role]; miniBadge(R.abbr, R.col, x + w - (u.status ? 38 : 20), y + 22); if (u.brace) miniBadge('BRC', BRACE_COL, x + w - 56, y + 22); else if (u.root) miniBadge('RT', ROOT_COL, x + w - 56, y + 22);
   if (u.boss) text('BOSS', x + w - 28, y + 31, UI.red); else if (u.recharge) miniBadge('CHG', RECHARGE_COL, x + w - 20, y + 31);
   else if (u.team === HT() && isHuman(B.phase)) textR(u.acted ? 'DONE' : 'READY', x + w - 5, y + 31, u.acted ? UI.muted : UI.green);
 }
@@ -688,7 +726,7 @@ function menuRect() { const m = BT.menu, rh = rowH(); const w = m.items.some(it 
 function menuHit(px2, py) { const r = menuRect(); if (px2 < r.x || px2 >= r.x + r.w || py < r.y || py >= r.y + r.h) return -1; return clamp(Math.floor((py - r.y - 4) / rowH()), 0, BT.menu.items.length - 1); }
 function drawMenu() {
   const m = BT.menu, r = menuRect(), rh = rowH(), ty = (rh - 7) >> 1; hudPanel(r.x, r.y, r.w, r.h, { title: BT.mode === 'item' ? 'BAG' : BT.mode === 'ballPick' ? 'BALLS' : BT.mode === 'endmenu' ? 'MENU' : null });
-  m.items.forEach((it, i) => { const y = r.y + 4 + i * rh; const hot = i === m.i; if (hot) { rrect(r.x + 3, y, r.w - 6, rh - 1, UI.menuSel, 1); hline(r.x + 4, y, r.w - 8, shade(UI.menuSel, .3)); pointerHand(r.x + 5, y + ty, BT.time * 1000); } if (it.icon) { iconAt(it.icon, r.x + 15, y + ty - 1, hot ? '#ffffff' : '#d8dce8'); text(it.label, r.x + 28, y + ty, hot ? UI.hi : UI.ink); } else text(it.label, r.x + 16, y + ty, hot ? UI.hi : UI.ink); });
+  m.items.forEach((it, i) => { const y = r.y + 4 + i * rh; const hot = i === m.i; const ink = it.off ? UI.muted : hot ? UI.hi : UI.ink; if (hot) { rrect(r.x + 3, y, r.w - 6, rh - 1, UI.menuSel, 1); hline(r.x + 4, y, r.w - 8, shade(UI.menuSel, .3)); pointerHand(r.x + 5, y + ty, BT.time * 1000); } if (it.icon) { iconAt(it.icon, r.x + 15, y + ty - 1, it.off ? '#8a8e9a' : hot ? '#ffffff' : '#d8dce8'); text(it.label, r.x + 28, y + ty, ink); } else text(it.label, r.x + 16, y + ty, ink); });
   const it = m.items[m.i]; if (it && it.sub) { const lines = wrap(it.sub, Math.min(VIEW.w - 14, 200)); const sw = Math.max(...lines.map(l => textWidth(l))) + 10, sh = lines.length * 9 + 5; const sx = clamp(r.x, 2, VIEW.w - sw - 2); const below = r.y + r.h + 3 + sh <= VIEW.h - 2; const sy = below ? r.y + r.h + 3 : r.y - sh - 3; hudPanel(sx, sy, sw, sh, { fill: UI.panelDark }); lines.forEach((l, i) => text(l, sx + 5, sy + 3 + i * 9, UI.muted)); }
 }
 // The forecast sits on the side away from the cursor on wide screens and spans the bottom on portrait phones.
@@ -724,13 +762,14 @@ function forecastLines(fc, att, def) {
     const mine = s.side === 'a'; let ko = false;
     if (s.nominal) { if (mine) { hpD = Math.max(0, hpD - s.dmg); hpA += s.drain; ko = hpD <= 0; } else { hpA = Math.max(0, hpA - s.dmg); hpD += s.drain; ko = hpA <= 0; } }
     const eff = s.eff === 0 ? 'no effect' : s.eff >= 2 ? '×2.25' : s.eff > 1 ? '×1.5' : s.eff < 1 ? '×' + s.eff : '';
-    out.push({ side: s.side, nominal: s.nominal, ko, name: s.move.name.toUpperCase(), dmg: s.dmg, hit: s.hit, crit: s.crit, eff, cond: s.cond, drain: s.drain, counter: !mine });
+    // critKo: the normal hit leaves the target standing but a critical (crit% odds) would not; never hidden behind the nominal numbers
+    out.push({ side: s.side, nominal: s.nominal, ko, name: s.move.name.toUpperCase(), dmg: s.dmg, hit: s.hit, crit: s.crit, critDmg: s.critDmg, critKo: !!s.critKo && !ko, braced: !!s.braced, eff, cond: s.cond, drain: s.drain, counter: !mine });
   }
   return out;
 }
 function drawForecast() {
   const cf = currentForecast(); if (!cf) return; const { fc, move, moves, target } = cf; const r = forecastRect(); const u = BT.sel; const a = fc.a, c = fc.c;
-  hudPanel(r.x, r.y, r.w, r.h, { title: 'BATTLE FORECAST' }); const half = Math.floor(r.w / 2);
+  hudPanel(r.x, r.y, r.w, r.h, { title: 'FORECAST · NORMAL HITS' }); const half = Math.floor(r.w / 2); // HP after assumes hits land and none is critical
   // both sides: portrait with the team glyph, name and level; then the HP bar with the loss hatched, and the HP after in the big face
   const side = (x, unit, after, right) => {
     const px0 = right ? x + half - 6 - 34 : x + 6; ctx.save(); ctx.beginPath(); ctx.rect(px0, r.y + 7, 34, 28); ctx.clip(); portraitBg(px0, r.y + 7, 34, 28, unit.team); drawMon(unit.num, px0 + 17, r.y + 34, { flip: right }); ctx.restore(); teamGlyph(px0 + 2, r.y + 9, unit.team, teamColorL(unit.team));
@@ -746,9 +785,13 @@ function drawForecast() {
   const lines = forecastLines(fc, u, target); const ly = r.y + 58;
   lines.slice(0, 3).forEach((l, i) => {
     const y = ly + i * 9; const col = !l.nominal ? UI.muted : l.side === 'a' ? '#8ab4ff' : '#ff9a9a';
-    const head = (l.side === 'a' ? '▸ ' : '◂ ') + l.name + ' ' + l.dmg + (l.ko ? ' KO' : ''); const parts = [l.hit + '%', l.crit >= 20 ? 'crit ' + l.crit + '%' : null, l.eff || null, l.drain ? '+' + l.drain : null, l.cond ? l.cond : null].filter(Boolean);
+    // the crit odds are always shown; when a critical would KO where the normal hit would not, the crit part carries a KO tag
+    const head = (l.side === 'a' ? '▸ ' : '◂ ') + l.name + ' ' + l.dmg + (l.ko ? ' KO' : ''); const critPart = 'crit ' + l.crit + '%' + (l.critKo ? ' KO' : '');
+    const parts = [l.hit + '%', critPart, l.braced ? 'braced' : null, l.eff || null, l.drain ? '+' + l.drain : null, l.cond ? l.cond : null].filter(Boolean);
     let s = head + '  ' + parts.join(' · '); const avail = r.w - 12; while (textWidth(s) > avail && parts.length > 1) { parts.splice(parts.length - (l.cond ? 2 : 1), 1); s = head + '  ' + parts.join(' · '); } while (textWidth(s) > avail && s.length > head.length) s = s.slice(0, -1);
-    text(s, r.x + 6, y, col); if (l.ko) { const kx = r.x + 6 + textWidth(head) - textWidth('KO'); rect(kx - 1, y - 1, textWidth('KO') + 2, 9, l.side === 'a' ? '#2a6a3a' : '#8a2c2c'); text('KO', kx, y, '#ffffff'); }
+    text(s, r.x + 6, y, col); const tag = (kx, colr) => { rect(kx - 1, y - 1, textWidth('KO') + 2, 9, colr); text('KO', kx, y, '#ffffff'); };
+    if (l.ko) tag(r.x + 6 + textWidth(head) - textWidth('KO'), l.side === 'a' ? '#2a6a3a' : '#8a2c2c');
+    if (l.critKo && parts.includes(critPart)) { const pre = head + '  ' + parts.slice(0, parts.indexOf(critPart)).join(' · ') + (parts.indexOf(critPart) ? ' · ' : '') + 'crit ' + l.crit + '% '; if (s.length >= pre.length + 2) tag(r.x + 6 + textWidth(pre) + 1, l.side === 'a' ? '#2a6a3a' : '#8a2c2c'); }
   });
   // summary of the exchange, then the moves' side effects (never counted in the numbers above)
   const sum = exchangeSummary(fc); const ea = a.eff === 0 ? [] : moveEffects(move), ec = c && c.eff !== 0 ? moveEffects(c.move) : [];
@@ -762,6 +805,15 @@ function drawForecast() {
   let ms = move.name + '  ' + move.pow + 'pw · rng ' + move.rng[0] + (move.rng[1] > move.rng[0] ? '-' + move.rng[1] : ''); while (textWidth(ms) > r.x + r.w - 8 - tw - mx && ms.length > 6) ms = ms.slice(0, -1);
   text(ms, mx, sy + 3, UI.ink); if (tail) textR(tail, r.x + r.w - 6, sy + 3, UI.gold);
   textC((VIEW.touch ? 'tap target: attack' : 'OK: attack') + '  ·  X: back' + (moves.length > 1 ? (VIEW.touch ? '  ·  tap bar: move' : '  ·  C: move') : ''), r.x + r.w / 2, r.y + r.h + 4, UI.muted, { outline: UI.shadow });
+}
+// The skill card: what the chosen skill does to the highlighted target, with the exact numbers, and how to confirm or back out.
+function drawSkillCard() {
+  const u = BT.sel, sk = u && u.skill, t = BT.targets[BT.tIdx]; if (!sk || !t) return; const r = forecastRect(); hudPanel(r.x, r.y, r.w, 50, { title: sk.name.toUpperCase() });
+  ctx.save(); ctx.beginPath(); ctx.rect(r.x + 6, r.y + 8, 34, 28); ctx.clip(); portraitBg(r.x + 6, r.y + 8, 34, 28, t.team); drawMon(t.num, r.x + 23, r.y + 35, { flip: t.team !== HT() }); ctx.restore(); teamGlyph(r.x + 8, r.y + 10, t.team, teamColorL(t.team));
+  let name = (t === u ? 'itself' : t.name) + '  Lv' + t.level; while (textWidth(name) > r.w - 52 && name.length > 4) name = name.slice(0, -1); text(name, r.x + 46, r.y + 8, UI.ink);
+  const lines = wrap(skillPreview(u, sk, t), r.w - 52); lines.slice(0, 2).forEach((l, i) => text(l, r.x + 46, r.y + 18 + i * 9, i === 0 ? UI.green : UI.ink));
+  const cost = 'uses the action' + (sk.cd ? ' · next in ' + (sk.cd + 1) + ' turns' : ''); text(cost, r.x + 46, r.y + 37, UI.muted);
+  textC((VIEW.touch ? 'tap target: confirm' : 'OK: confirm') + '  ·  X: back', r.x + r.w / 2, r.y + 54, UI.muted, { outline: UI.shadow });
 }
 function drawCatchCard() {
   const t = BT.targets[BT.tIdx]; if (!t) return; const r = forecastRect(); hudPanel(r.x, r.y, r.w, 50, { title: 'CATCH' });
@@ -783,6 +835,7 @@ function drawEventCard(q) {
   if (e.type === 'levelup') { const u = e.unit; const w = Math.min(176, W - 12), h = 70, x = W / 2 - w / 2; const uy = toScreenY(tileY(u.y)), ts = TILE * BT.zoom; const y = uy < H / 2 ? Math.min(H - h - 8, uy + ts + 10) : Math.max(28, uy - h - 12); const k = Math.min(1, q.t / .25); const yy = y + (1 - easeOut(k)) * -20; panel(x, yy, w, h, { title: 'LEVEL UP!' }); drawMon(u.fx.showNum || u.num, x + 26, yy + 40, {}); bigText('LV ' + e.level, x + 50, yy + 8, UI.gold, { outline: '#402000' }); const g = e.gains; const stats = [['HP', g.maxHp], ['ATK', g.atk], ['DEF', g.def], ['SPA', g.spa], ['SPD', g.spd], ['SPE', g.spe]]; const cw = Math.floor((w - 56) / 3); stats.forEach((s, i) => { const sx = x + 50 + (i % 3) * cw, sy = yy + 24 + Math.floor(i / 3) * 12; const showAt = .3 + i * .12; if (q.t > showAt) { text(s[0], sx, sy, UI.muted); text((s[1] >= 0 ? '+' : '') + s[1], sx + 20, sy, s[1] > 0 ? UI.green : UI.ink); } }); if (q.t > 1.1) { const nm = u.moves.map(m => m.name); let s = 'Moves: ' + nm.join(', '); while (textWidth(s) > w - 12 && s.length > 8) s = s.slice(0, -1); text(s, x + 6, yy + 52, UI.ink); } }
   if (e.type === 'evolve') { const k = q.t / q.dur; const msg = k < .5 ? 'What? ' + e.from.name + ' is evolving!' : e.from.name + ' evolved into ' + e.to.name + '!'; const w = Math.min(W - 12, Math.max(160, textWidth(msg) + 16)), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(msg, W / 2, y + 6, k < .5 ? UI.ink : UI.gold); if (k > .15 && k < .8 && Math.floor(q.t * 14) % 2) { ctx.globalAlpha = .25; rect(0, 0, W, H, '#ffffff'); ctx.globalAlpha = 1; } }
   if (e.type === 'capture' && q.t > q.dur - .8 && e.ok) { const w = Math.min(150, W - 12), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(e.unit.name + ' was caught!', W / 2, y + 6, UI.gold); }
+  if (e.type === 'skill') { const msg = e.unit.name + ' uses ' + e.skill.name + (e.target && e.target !== e.unit ? ' on ' + e.target.name : '') + '!'; const w = Math.min(W - 12, Math.max(120, textWidth(msg) + 16)), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20, { border: ROLES[e.unit.role].col }); let s = msg; while (textWidth(s) > w - 12 && s.length > 6) s = s.slice(0, -1); textC(s, W / 2, y + 6, UI.ink); }
 }
 function drawBanner() {
   const b = BT.banner, W = VIEW.w, H = VIEW.h; const t = b.t; const dur = BT.fast ? .9 : 1.5;
@@ -794,7 +847,7 @@ function drawBanner() {
   const list = alive(b.team).slice(0, 6); list.forEach((u, i) => { const ux = x - 60 + i * 24 + (b.team === 0 ? 1 : -1) * (1 - k) * 50; ctx.globalAlpha = k; drawMon(u.num, ux, H / 2 + 44 + Math.round(Math.sin(t * 12 + i) * 2), { flip: b.team !== 0 }); ctx.globalAlpha = 1; });
 }
 // The unit sheet: two columns on wide screens (stats + evolution | traits + moves), one taller column on narrow ones.
-function sheetRect() { const W = VIEW.w, H = VIEW.h; const narrow = W < 250; const w = narrow ? W - 12 : Math.min(260, W - 12), h = narrow ? 178 : 118; return { x: W / 2 - w / 2, y: Math.max(12, H / 2 - h / 2), w, h, narrow }; }
+function sheetRect() { const W = VIEW.w, H = VIEW.h; const narrow = W < 250; const w = narrow ? W - 12 : Math.min(260, W - 12), h = narrow ? 190 : 130; return { x: W / 2 - w / 2, y: Math.max(12, H / 2 - h / 2), w, h, narrow }; }
 function drawUnitSheet(u) {
   const W = VIEW.w; const r = sheetRect(), { x, y, w, h, narrow } = r; hudPanel(x, y, w, h, { title: B.versus ? (u.team === 2 ? 'WILD POKÉMON' : teamName(u.team)) : u.team === 0 ? 'YOUR POKÉMON' : u.team === 2 ? 'WILD POKÉMON' : u.team === 3 ? 'ALLY' : 'ENEMY' });
   portraitBg(x + 6, y + 8, 48, 40, u.team); drawMon(u.num, x + 30, y + 44, { flip: u.team !== 0, sy: 1 + Math.sin(BT.time * 4) * .03 }); teamGlyph(x + 9, y + 11, u.team, teamColorL(u.team));
@@ -802,20 +855,25 @@ function drawUnitSheet(u) {
   u.types.forEach((t, i) => typeBadge(t, x + 60 + i * 26, y + 18, 24)); if (u.status) statusBadge(u.status, x + w - 22, y + 18);
   hpBar(x + 60, y + 30, w - 66, u.hp, u.maxHp); text('HP ' + u.hp + '/' + u.maxHp, x + 60, y + 37, UI.ink);
   const stats = [['ATK', u.atk], ['DEF', u.def], ['SPA', u.spa], ['SPD', u.spd], ['SPE', u.spe], ['MOV', effMov(u)]]; const cw = narrow ? Math.floor((w - 12) / 3) : 44; stats.forEach((s, i) => { const sx = x + 6 + (i % 3) * cw, sy = y + 54 + Math.floor(i / 3) * 10; text(s[0], sx, sy, UI.muted); textR(String(s[1]), sx + cw - 6, sy, UI.ink); });
-  const traits = []; if (u.fly) traits.push('FLIES'); if (u.swim) traits.push('SWIMS'); if (u.climb) traits.push('CLIMBS'); if (u.forester) traits.push('WOODS');
+  // role first (the badge colour matches the unit card), then the terrain traits; the skill line at the bottom says what the role does
+  const R = ROLES[u.role]; const traits = [R.name.toUpperCase()]; if (u.fly) traits.push('FLIES'); if (u.swim) traits.push('SWIMS'); if (u.climb) traits.push('CLIMBS'); if (u.forester) traits.push('WOODS');
   const ev = u.dex.evos.length && isHuman(u.team) ? 'Evolves at Lv' + Math.min(...u.dex.evos.map(e => e[1])) : '';
-  const mx = narrow ? x + 6 : x + 140, my = narrow ? y + 88 : y + 54;
-  text(traits.join(' · '), mx, my, UI.green); if (narrow && ev) textR(ev, x + w - 6, my, '#98d8f8'); else if (ev) text(ev, x + 6, y + 76, '#98d8f8');
+  const mx = narrow ? x + 6 : x + 140, my = narrow ? y + 88 : y + 54; const tw = narrow ? (ev ? w - 12 - textWidth(ev) - 6 : w - 12) : w - 146;
+  let tr = traits.join(' · '); while (textWidth(tr) > tw && traits.length > 1) { traits.pop(); tr = traits.join(' · '); } miniBadge(R.abbr, R.col, mx, my - 1); text(tr, mx + 18, my, UI.green); if (narrow && ev) textR(ev, x + w - 6, my, '#98d8f8'); else if (ev) text(ev, x + 6, y + 76, '#98d8f8');
   text('Moves', mx, my + 10, UI.muted); u.moves.slice(0, 4).forEach((m, i) => { typeBadge(m.type, mx, my + 19 + i * 10, 24); text(m.name + ' ' + m.pow + (m.rng[1] > 1 ? ' R' + m.rng[0] + '-' + m.rng[1] : ''), mx + 29, my + 20 + i * 10, UI.ink); });
   if (u.recharge && !u.boss) text('RECHARGING', x + 60 + textWidth(u.name) + 6, y + 8, RECHARGE_COL);
   // type matchup hints
   const weak = TYPES.filter(t => effRaw(t, u.types) >= 2).slice(0, 4), res = TYPES.filter(t => effRaw(t, u.types) < 1).slice(0, 4);
   const wy = narrow ? y + 150 : y + 88; text('Weak:', x + 6, wy, UI.muted); weak.forEach((t, i) => typeBadge(t, x + 36 + i * 25, wy - 1, 24)); text('Resist:', x + 6, wy + 11, UI.muted); res.forEach((t, i) => typeBadge(t, x + 36 + i * 25, wy + 10, 24));
+  // what the role does right now: the skill, its state (cooldown, braced, rooted) or the plain-striker note
+  let sk = u.skill ? u.skill.blurb : 'Striker: plain attacker, strikes twice when 10+ SPE faster'; if (u.skill && !u.skill.passive && u.cd > 0) sk += ' · ready in ' + u.cd; if (u.brace) sk += ' · BRACED'; if (u.root) sk += ' · ROOTED';
+  while (textWidth(sk) > w - 12 && sk.length > 8) sk = sk.slice(0, -1); text(sk, x + 6, y + h - 10, R.col);
   textC('◂ ▸ browse  ·  X close', W / 2, y + h + 4, UI.muted, { outline: UI.shadow });
 }
 const HELP_PAGES = [
   ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back. Mouse: hover + click; right click or an empty tile opens the menu. Touch: tap to move the cursor, tap again to confirm.', 'Q/E: next unit · C: unit info / switch move · F: fast · +/-: zoom · M: mute · H: help. Drag or wheel to pan.', 'Attack scene: any key speeds it up, X skips. The menu switches between full, quick and map-only battles.'],
-  ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch, use the Bag or Wait. Blue = move, red = attack. Greyed units have acted.', 'Defenders counter if you are in their move range and still standing. Speed 8+ higher = you strike twice (×2). The forecast lists the strikes in order; a bracketed one only happens if an earlier strike misses.', 'Terrain gives DEF% and AVO. Poké Centers heal 30%/turn and cure. Danger: red = foe reach, yellow = wild reach. Hyper Beam: no counter after it, next turn recharging.'],
+  ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch, use its Skill, the Bag or Wait. Blue = move, red = attack. Greyed units have acted.', 'Defenders counter if you are in their move range and still standing. Only Scouts and Strikers strike twice, when 10+ SPE faster. The forecast lists the strikes in order; a greyed one only happens if an earlier strike misses.', 'Crits: 4% (24% for high-crit moves), ×1.5 damage. The forecast HP is for normal hits; a strike whose crit would KO says so. Terrain gives DEF% and AVO. Poké Centers heal 30%/turn and cure. Danger: red = foe reach, yellow = wild reach. Hyper Beam: no counter after it, next turn recharging.'],
+  ['ROLES', 'Types say whom you beat; the role (badge on the unit card) says how to use it. One role per evolution line.', 'SCT Scout: Dart, moves 2 tiles after attacking. DEF Defender: Brace, 40% less damage until its next turn. AMP Amphibious: DEF 20% and AVO 20 on water. CTL Controller: Root a foe within 2, it cannot move on its next turn (fliers immune). RNG Ranged: ranged moves reach 1 tile further. SUP Support: Mend an adjacent ally 30% HP and cure it. STK Striker: plain attacker.', 'Brace, Root and Mend use the action, like Attack, and earn a little XP. Root and Mend work every other turn (a cooldown counts on the unit sheet). A Poké Center or Full Heal also frees a rooted unit.'],
   ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67. STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV, Frozen skips turns and crits are guaranteed on it.', 'Wild Pokémon (dashed ring) can be caught when weak: stand next to them, choose Catch and throw a ball. Trainer Pokémon (spiked ring) cannot be stolen. Level ups can evolve!'],
 ];
 function helpRect() { const W = VIEW.w, H = VIEW.h; const w = Math.min(280, W - 12); const lines = helpLines(BT.helpPage, w - 16); const h = Math.min(H - 12, 34 + lines.length * 10); return { x: W / 2 - w / 2, y: Math.max(6, H / 2 - h / 2), w, h, lines }; }

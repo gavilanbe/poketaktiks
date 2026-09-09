@@ -626,7 +626,7 @@ const ITEMS = {
   ultraball: { name: 'Ultra Ball', desc: 'The best ball. ×2 catch rate.', rate: 2, kind: 'ball', col: '#f8d030' },
   potion: { name: 'Potion', desc: 'Restores 50% HP.', heal: .5, kind: 'heal', col: '#c060e0' },
   superpotion: { name: 'Super Potion', desc: 'Restores all HP.', heal: 1, kind: 'heal', col: '#f08030' },
-  fullheal: { name: 'Full Heal', desc: 'Cures any status.', cure: true, kind: 'heal', col: '#48d0a0' },
+  fullheal: { name: 'Full Heal', desc: 'Cures any status, frees a rooted unit.', cure: true, kind: 'heal', col: '#48d0a0' },
   candy: { name: 'Rare Candy', desc: 'Raises a Pokémon one level.', kind: 'candy', col: '#f8a0d0' },
 };
 
@@ -668,14 +668,59 @@ function moveCost(terr, unit) {
   if (unit.desert && c.desert != null) best = Math.min(best, c.desert);
   return best;
 }
-function terrainDef(terr, unit) { if (terr.id === 'water' && unit.swim) return terr.swimDef; if (unit.fly && (terr.id === 'forest' || terr.id === 'mountain' || terr.id === 'tall' || terr.id === 'rubble' || terr.id === 'crate')) return 0; return terr.def; }
-function terrainEva(terr, unit) { if (unit.fly && terr.id !== 'gym' && terr.id !== 'center') return 0; return terr.eva; }
+// Water: an amphibious unit is at home there (Tide: DEF 20 / AVO 20); other swimmers get the small swimDef.
+function terrainDef(terr, unit) { if (terr.id === 'water' && unit.swim) return unit.role === 'amphibious' ? TIDE.def : terr.swimDef; if (unit.fly && (terr.id === 'forest' || terr.id === 'mountain' || terr.id === 'tall' || terr.id === 'rubble' || terr.id === 'crate')) return 0; return terr.def; }
+function terrainEva(terr, unit) { if (terr.id === 'water' && unit.swim && unit.role === 'amphibious') return TIDE.eva; if (unit.fly && terr.id !== 'gym' && terr.id !== 'center') return 0; return terr.eva; }
 
 // ---------------------------------------------------------------- dex
 const DEX = {}; const DEX_LIST = [];
 for (const r of DEX_RAW) { const d = { num: r[0], name: r[1], types: r[2], base: { hp: r[3][0], atk: r[3][1], def: r[3][2], spa: r[3][3], spd: r[3][4], spe: r[3][5] }, evos: r[4] }; DEX[d.num] = d; DEX_LIST.push(d); }
 const BY_NAME = {}; for (const d of DEX_LIST) BY_NAME[d.name.toLowerCase()] = d;
 function dexOf(x) { return typeof x === 'number' ? DEX[x] : BY_NAME[String(x).toLowerCase()]; }
+
+// ---------------------------------------------------------------- roles & skills
+// Type says whom a Pokémon beats; role says how it is used on the board. One role per evolution line,
+// keyed by the line's first form, so evolving never changes a unit's role. Lines not listed are plain
+// strikers. Every role's skill is shared by the whole role: there are six skills, not 151.
+const ROLE_LINES = {
+  scout: [16, 21, 41, 19, 52, 84, 50, 123, 142, 77],           // Pidgey, Spearow, Zubat, Rattata, Meowth, Doduo, Diglett, Scyther, Aerodactyl, Ponyta
+  defender: [74, 95, 27, 90, 111, 104, 109, 143, 108, 88, 138, 140], // Geodude, Onix, Sandshrew, Shellder, Rhyhorn, Cubone, Koffing, Snorlax, Lickitung, Grimer, Omanyte, Kabuto
+  amphibious: [7, 54, 60, 86, 98, 118, 116, 120, 72, 79, 129, 131], // Squirtle, Psyduck, Poliwag, Seel, Krabby, Goldeen, Horsea, Staryu, Tentacool, Slowpoke, Magikarp, Lapras
+  controller: [1, 43, 69, 46, 114, 102, 48, 23, 96, 124],      // Bulbasaur, Oddish, Bellsprout, Paras, Tangela, Exeggcute, Venonat, Ekans, Drowzee, Jynx
+  ranged: [63, 92, 100, 81, 137, 122],                          // Abra, Gastly, Voltorb, Magnemite, Porygon, Mr. Mime
+  support: [35, 39, 113],                                       // Clefairy, Jigglypuff, Chansey
+};
+// followUp: the role that turns a 10+ SPE lead into a second strike. Everyone else strikes once, whatever their speed.
+const ROLES = {
+  scout: { name: 'Scout', abbr: 'SCT', col: '#f0a040', skill: 'dart', followUp: true, desc: 'Flanker. After attacking it darts up to 2 tiles. Strikes twice when 10+ SPE faster.' },
+  defender: { name: 'Defender', abbr: 'DEF', col: '#a0a0b0', skill: 'brace', followUp: false, desc: 'Wall. Brace instead of attacking to take 40% less damage until its next turn.' },
+  amphibious: { name: 'Amphibious', abbr: 'AMP', col: '#5090f0', skill: 'tide', followUp: false, desc: 'Swims. On water it is at home: DEF 20% and AVO 20.' },
+  controller: { name: 'Controller', abbr: 'CTL', col: '#70c060', skill: 'root', followUp: false, desc: 'Root a foe within 2 tiles: it cannot move on its next turn. Every other turn; fliers are immune.' },
+  ranged: { name: 'Ranged', abbr: 'RNG', col: '#e070c0', skill: 'reach', followUp: false, desc: 'Reach: its ranged moves hit one tile further, out of most counters.' },
+  support: { name: 'Support', abbr: 'SUP', col: '#60d0a0', skill: 'mend', followUp: false, desc: 'Mend an adjacent ally: 30% HP and cures status and root. Every other turn.' },
+  striker: { name: 'Striker', abbr: 'STK', col: '#e05050', skill: null, followUp: true, desc: 'Plain attacker. Strikes twice when 10+ SPE faster.' },
+};
+// Active skills take the unit's action (like Attack) and go on cooldown for `cd` of the unit's own turns.
+// Passive ones are always on. Nothing here rolls dice.
+const SKILLS = {
+  dart: { id: 'dart', name: 'Dart', passive: true, blurb: 'Dart: moves up to 2 tiles after attacking' },
+  brace: { id: 'brace', name: 'Brace', target: 'self', rng: [0, 0], cd: 0, blurb: 'Brace: 40% less damage until its next turn', menu: 'Take 40% less damage until your next turn' },
+  root: { id: 'root', name: 'Root', target: 'foe', rng: [1, 2], cd: 2, blurb: 'Root: a foe within 2 cannot move next turn', menu: 'A foe within 2 tiles cannot move on its next turn' },
+  mend: { id: 'mend', name: 'Mend', target: 'ally', rng: [1, 1], cd: 2, blurb: 'Mend: adjacent ally +30% HP, cures status', menu: 'Heal an adjacent ally 30% and cure it' },
+  reach: { id: 'reach', name: 'Reach', passive: true, blurb: 'Reach: ranged moves hit one tile further' },
+  tide: { id: 'tide', name: 'Tide', passive: true, blurb: 'Tide: DEF 20% and AVO 20 on water' },
+};
+const TIDE = { def: 20, eva: 20 };
+const BRACE_MULT = .6;   // damage taken while braced
+const MEND_RATIO = .3;   // share of max HP Mend restores
+const DART_MOV = 2;      // tiles a scout may move after attacking
+const SKILL_XP = 12;     // experience for using an active skill (human teams, like combat)
+// First form of every evolution line, then role by line.
+const LINE_ROOT = {}; for (const d of DEX_LIST) if (!LINE_ROOT[d.num]) LINE_ROOT[d.num] = d.num; for (const d of DEX_LIST) for (const e of d.evos) LINE_ROOT[e[0]] = LINE_ROOT[d.num];
+const ROLE_OF = {}; for (const r in ROLE_LINES) for (const n of ROLE_LINES[r]) ROLE_OF[n] = r;
+function roleFor(dex) { return ROLE_OF[LINE_ROOT[dex.num]] || 'striker'; }
+function skillOf(role) { const s = ROLES[role] && ROLES[role].skill; return s ? SKILLS[s] : null; }
+
 // Some evolutions in Showdown are stones/trades: dex.py assigns levels. Legendaries and one-offs never evolve.
 const SIGNATURE = { 25: 'Thunderbolt', 6: 'Flamethrower', 9: 'Surf', 3: 'Razor Leaf', 150: 'Psychic', 151: 'Psychic', 130: 'Bite', 143: 'Body Slam', 144: 'Ice Beam', 145: 'Thunderbolt', 146: 'Flamethrower', 149: 'Dragon Claw', 65: 'Psychic', 94: 'Shadow Ball', 59: 'Flamethrower', 26: 'Thunderbolt', 131: 'Ice Beam', 134: 'Surf', 135: 'Thunderbolt', 136: 'Flamethrower', 68: 'Cross Chop', 112: 'Earthquake', 142: 'Wing Attack', 121: 'Psychic', 34: 'Earthquake', 31: 'Earthquake' };
 // Fun one-liners when a unit is selected.
@@ -692,7 +737,7 @@ let UID = 1;
 const BOND_HP = 1.2;
 // extra: x, y, ai, boss, nick, hp, hpBonus (HP multiplier, default 1).
 function makeUnit(numOrName, level, team, extra = {}) {
-  const dex = dexOf(numOrName); const u = { id: UID++, num: dex.num, team, level, xp: 0, status: null, statusTurns: 0, recharge: 0, acted: false, moved: false, x: extra.x | 0, y: extra.y | 0, ai: extra.ai || 'aggro', boss: !!extra.boss, nick: extra.nick || null, wild: team === 2, hpBonus: extra.hpBonus || 1, fx: { dx: 0, dy: 0, sx: 1, sy: 1, alpha: 1, flash: 0 } };
+  const dex = dexOf(numOrName); const u = { id: UID++, num: dex.num, team, level, xp: 0, status: null, statusTurns: 0, recharge: 0, acted: false, moved: false, x: extra.x | 0, y: extra.y | 0, ai: extra.ai || 'aggro', boss: !!extra.boss, nick: extra.nick || null, wild: team === 2, hpBonus: extra.hpBonus || 1, cd: 0, brace: 0, root: 0, fx: { dx: 0, dy: 0, sx: 1, sy: 1, alpha: 1, flash: 0 } };
   applyDex(u, dex); u.hp = u.maxHp; if (extra.hp != null) u.hp = extra.hp;
   return u;
 }
@@ -706,7 +751,10 @@ function applyDex(u, dex) {
   u.fly = dex.types.includes('Flying') || dex.num === 92 || dex.num === 93 || dex.num === 94 || dex.num === 81 || dex.num === 82 || dex.num === 109 || dex.num === 110 || dex.num === 151; // ghosts, magnets, koffing and Mew float
   u.swim = dex.types.includes('Water'); u.climb = dex.types.includes('Rock') || dex.types.includes('Ground') || dex.types.includes('Fighting') || dex.types.includes('Steel');
   u.forester = dex.types.includes('Bug') || dex.types.includes('Grass'); u.desert = dex.types.includes('Ground') || dex.types.includes('Rock');
+  u.role = roleFor(dex); u.skill = skillOf(u.role);
   u.moves = movesFor(dex.types, L, SIGNATURE[dex.num]);
+  // Reach (ranged role): every move that already fires at range goes one tile further; melee moves stay melee
+  if (u.skill && u.skill.id === 'reach') u.moves = u.moves.map(m => m.rng[1] >= 2 ? Object.assign({}, m, { rng: [m.rng[0], m.rng[1] + 1] }) : m);
   u.rngMin = Math.min(...u.moves.map(m => m.rng[0])); u.rngMax = Math.max(...u.moves.map(m => m.rng[1]));
 }
 function levelUp(u) { const before = { maxHp: u.maxHp, atk: u.atk, def: u.def, spa: u.spa, spd: u.spd, spe: u.spe }; u.level++; const oldMax = u.maxHp; applyDex(u, u.dex); u.hp = Math.min(u.maxHp, u.hp + (u.maxHp - oldMax)); return { maxHp: u.maxHp - before.maxHp, atk: u.atk - before.atk, def: u.def - before.def, spa: u.spa - before.spa, spd: u.spd - before.spd, spe: u.spe - before.spe }; }
@@ -714,9 +762,10 @@ function evolutionFor(u) { const evs = u.dex.evos.filter(e => u.level >= e[1] &&
 function evolve(u, dex) { const oldMax = u.maxHp; u.dex = dex; applyDex(u, dex); u.hp = Math.min(u.maxHp, u.hp + (u.maxHp - oldMax)); }
 function xpToNext() { return 100; }
 function xpGain(att, def, kill) { const diff = clamp(def.level - att.level, -8, 8); let xp = 15 + diff * 2 + (kill ? 35 + diff * 3 : 0); if (def.boss && kill) xp += 40; return Math.max(3, Math.round(xp)); }
-function serializeUnit(u) { return { num: u.num, level: u.level, xp: u.xp, hp: u.hp, nick: u.nick, team: u.team, x: u.x, y: u.y, ai: u.ai, boss: u.boss, status: u.status, statusTurns: u.statusTurns, recharge: u.recharge || 0, acted: u.acted, hpBonus: u.hpBonus || 1, id: u.id }; }
+function serializeUnit(u) { return { num: u.num, level: u.level, xp: u.xp, hp: u.hp, nick: u.nick, team: u.team, x: u.x, y: u.y, ai: u.ai, boss: u.boss, status: u.status, statusTurns: u.statusTurns, recharge: u.recharge || 0, acted: u.acted, hpBonus: u.hpBonus || 1, id: u.id, cd: u.cd || 0, brace: u.brace || 0, root: u.root || 0 }; }
 // Older saves have no hpBonus: callers that know the unit is a campaign party member pass BOND_HP themselves.
-function restoreUnit(s) { const u = makeUnit(s.num, s.level, s.team, { x: s.x, y: s.y, ai: s.ai, boss: s.boss, nick: s.nick, hpBonus: s.hpBonus }); u.xp = s.xp || 0; u.hp = s.hp != null ? Math.min(u.maxHp, s.hp) : u.maxHp; u.status = s.status || null; u.statusTurns = s.statusTurns || 0; u.recharge = s.recharge ? 1 : 0; u.acted = !!s.acted; if (s.id) { u.id = s.id; UID = Math.max(UID, s.id + 1); } return u; }
+// Saves from before the roles stage have no cd/brace/root: they restore as 0 (nothing pending).
+function restoreUnit(s) { const u = makeUnit(s.num, s.level, s.team, { x: s.x, y: s.y, ai: s.ai, boss: s.boss, nick: s.nick, hpBonus: s.hpBonus }); u.xp = s.xp || 0; u.hp = s.hp != null ? Math.min(u.maxHp, s.hp) : u.maxHp; u.status = s.status || null; u.statusTurns = s.statusTurns || 0; u.recharge = s.recharge ? 1 : 0; u.acted = !!s.acted; u.cd = s.cd | 0; u.brace = s.brace | 0; u.root = s.root | 0; if (s.id) { u.id = s.id; UID = Math.max(UID, s.id + 1); } return u; }
 // ============================================================================
 // art.js — hand-tuned procedural pixel art: terrain tiles with autotiling
 // (shorelines, road edges, wall faces), decorations, FE-style path arrow,
@@ -1334,6 +1383,7 @@ const ICONS = {
   vs: ['OO.....OO', 'OWO...OWO', '.OWO.OWO.', '..OWOWO..', '...OWO...', '..OWOWO..', '.OWOYOWO.', 'OWO.Y.OWO', 'OO..Y..OO'],
   crown: ['O...O...O', 'OO.OYO.OO', 'OYOYYYOYO', 'OYYYYYYYO', 'OYYYYYYYO', '.OYYYYYO.', '.OOOOOOO.', '.OYYYYYO.', '.OOOOOOO.'],
   book: ['.OOOOOOO.', 'OWWWOWWWO', 'OWLWOWLWO', 'OWWWOWWWO', 'OWLWOWLWO', 'OWWWOWWWO', 'OWLWOWLWO', 'OWWWOWWWO', '.OOOOOOO.'],
+  skill: ['....O....', '...OWO...', '...OWO...', 'OOOOWOOOO', 'OWWWYWWWO', 'OOOOWOOOO', '...OWO...', '...OWO...', '....O....'],
 };
 // Draw a UI icon; `col` overrides the main (W) colour.
 function iconAt(id, x, y, col) {
@@ -1359,7 +1409,8 @@ function terrAt(x, y) { return inMap(x, y) ? B.map.tiles[y][x] : TERRAIN['^']; }
 function unitAt(x, y) { for (const u of B.units) if (u.hp > 0 && u.x === x && u.y === y) return u; return null; }
 function alive(team) { return B.units.filter(u => u.hp > 0 && u.team === team); }
 function dist(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
-function effMov(u, status = u.status) { let m = u.mov; if (status === 'par') m = Math.max(1, m - 2); return m; }
+// Paralysis cuts two tiles (never below one); a rooted unit cannot move at all.
+function effMov(u, status = u.status, root = u.root) { if (root > 0) return 0; let m = u.mov; if (status === 'par') m = Math.max(1, m - 2); return m; }
 // Dijkstra movement: returns Map key→{x,y,cost,prev}. Passing through friends allowed; ending on anyone not allowed.
 function reachable(u, fromX = u.x, fromY = u.y, mov = effMov(u)) {
   const out = new Map(); const open = [{ x: fromX, y: fromY, cost: 0, prev: null }]; out.set(key(fromX, fromY), open[0]);
@@ -1390,6 +1441,9 @@ function statusAfterUpkeep(u) {
   if (u.status === 'frz' && u.statusTurns + 1 >= 2) return null;
   return u.status;
 }
+// Root counts down one at each of the rooted unit's upkeeps (it is applied at 2, so the unit spends exactly one
+// phase held); a Poké Center clears it outright. Mirrors upkeep(), no mutation.
+function rootAfterUpkeep(u) { if (!u.root || terrAt(u.x, u.y).heal) return 0; return Math.max(0, u.root - 1); }
 // Cells every hostile unit could hit on its next phase, split by who threatens them: trainer teams
 // (enemy or rival trainer) and wild Pokémon. A unit that must recharge skips its next phase, so it
 // threatens nothing; a unit whose upkeep is sure to cure it moves at full speed; frozen units that
@@ -1398,7 +1452,7 @@ function dangerZones(team) {
   const zones = { trainer: new Set(), wild: new Set() };
   for (const e of B.units) {
     if (e.hp <= 0 || !hostile(e.team, team) || e.recharge) continue;
-    const set = e.team === 2 ? zones.wild : zones.trainer; const r = reachable(e, e.x, e.y, effMov(e, statusAfterUpkeep(e)));
+    const set = e.team === 2 ? zones.wild : zones.trainer; const r = reachable(e, e.x, e.y, effMov(e, statusAfterUpkeep(e), rootAfterUpkeep(e)));
     for (const n of r.values()) { if (unitAt(n.x, n.y) && unitAt(n.x, n.y) !== e) continue; for (const c of ring(n.x, n.y, e.rngMin, e.rngMax)) set.add(key(c.x, c.y)); }
   }
   return zones;
@@ -1409,8 +1463,11 @@ function dangerZone(team) { const z = dangerZones(team); return new Set([...z.tr
 function attackStat(u, move) { let a = move.kind === 'P' ? u.atk : u.spa; if (u.status === 'brn' && move.kind === 'P') a = Math.floor(a / 2); return a; }
 function defenseStat(u, move) { return move.kind === 'P' ? u.def : u.spd; }
 function usableMoves(att, d) { return att.moves.filter(m => d >= m.rng[0] && d <= m.rng[1]); }
-function calcHit(att, def, move, defTerr) { const eva = terrainEva(defTerr, def); const spdDiff = clamp((att.spe - def.spe) / 2, -15, 15); return clamp(Math.round(move.acc - eva + spdDiff), 20, 100); }
-function calcCrit(att, def, move) { let c = 4 + Math.max(0, Math.floor((att.spe - def.spe) / 4)); if (move.eff && move.eff.crit) c += 20; if (def.status === 'frz') c = 100; return clamp(c, 0, 100); }
+// Speed nudges accuracy a little (±10 at most). It no longer feeds the critical chance.
+function calcHit(att, def, move, defTerr) { const eva = terrainEva(defTerr, def); const spdDiff = clamp(Math.round((att.spe - def.spe) / 3), -10, 10); return clamp(Math.round(move.acc - eva + spdDiff), 20, 100); }
+// Critical hits: a flat CRIT_BASE, +20 for high-crit moves, certain against a frozen target. ×1.5 damage.
+const CRIT_BASE = 4;
+function calcCrit(att, def, move) { let c = CRIT_BASE; if (move.eff && move.eff.crit) c += 20; if (def.status === 'frz') c = 100; return clamp(c, 0, 100); }
 function calcDmg(att, def, move, defTerr, crit = false) {
   const eff = effMult(move.type, def.types); if (eff === 0) return 0;
   const A = attackStat(att, move), D = Math.max(1, defenseStat(def, move));
@@ -1418,10 +1475,13 @@ function calcDmg(att, def, move, defTerr, crit = false) {
   if (att.types.includes(move.type)) d = Math.floor(d * 1.25);
   d = Math.floor(d * eff);
   d = Math.floor(d * (1 - terrainDef(defTerr, def) / 100));
+  if (def.brace) d = Math.floor(d * BRACE_MULT);
   if (crit) d = Math.floor(d * 1.5);
   return Math.max(eff > 0 ? 1 : 0, d);
 }
-function doubles(att, def) { return att.status !== 'par' && att.spe >= def.spe + 8; }
+// Follow-up strike: only roles built for it (scouts and strikers) turn a 10+ SPE lead into a second hit.
+const FOLLOW_UP_SPE = 10;
+function doubles(att, def) { return att.status !== 'par' && !!(ROLES[att.role] && ROLES[att.role].followUp) && att.spe >= def.spe + FOLLOW_UP_SPE; }
 // Hyper Beam needs a charge: it cannot be fired as a counter, and a unit that fired it cannot counter until it has recharged.
 function needsRecharge(move) { return !!(move.eff && move.eff.recharge); }
 function counterBlock(def) { return def.status === 'frz' ? 'frozen' : def.recharge ? 'recharging' : null; }
@@ -1441,7 +1501,7 @@ function moveEffects(move) { const e = move.eff, out = []; if (!e) return out; i
 function forecast(att, def, move, from) {
   const d = Math.abs(def.x - from.x) + Math.abs(def.y - from.y);
   const aT = terrAt(from.x, from.y), dT = terrAt(def.x, def.y);
-  const side = (A, Dn, m, terr) => ({ unit: A, move: m, dmg: calcDmg(A, Dn, m, terr), hit: calcHit(A, Dn, m, terr), crit: calcCrit(A, Dn, m), dbl: doubles(A, Dn), eff: effMult(m.type, Dn.types) });
+  const side = (A, Dn, m, terr) => ({ unit: A, move: m, dmg: calcDmg(A, Dn, m, terr), critDmg: calcDmg(A, Dn, m, terr, true), hit: calcHit(A, Dn, m, terr), crit: calcCrit(A, Dn, m), dbl: doubles(A, Dn), eff: effMult(m.type, Dn.types), braced: !!Dn.brace });
   const a = side(att, def, move, dT);
   const block = counterBlock(def); const cm = block ? null : bestMove(def, att, d, aT, true);
   const c = cm ? side(def, att, cm, aT) : null;
@@ -1449,7 +1509,8 @@ function forecast(att, def, move, from) {
   let hpA = att.hp, hpD = def.hp; const strikes = [];
   for (const s of order) {
     const isA = s === a; const strikerHp = isA ? hpA : hpD, targetHp = isA ? hpD : hpA; const nominal = strikerHp > 0 && targetHp > 0;
-    const e = { side: isA ? 'a' : 'c', unit: s.unit, move: s.move, dmg: s.dmg, hit: s.hit, crit: s.crit, eff: s.eff, drain: 0, nominal, cond: null };
+    // critKo: a critical on this strike would drop the target even though the normal hit would not
+    const e = { side: isA ? 'a' : 'c', unit: s.unit, move: s.move, dmg: s.dmg, hit: s.hit, crit: s.crit, critDmg: s.critDmg, critKo: nominal && s.dmg < targetHp && s.critDmg >= targetHp, braced: s.braced, eff: s.eff, drain: 0, nominal, cond: null };
     if (nominal) {
       // drain: a share of the HP taken, then capped by what the striker is missing, so the preview promises only real healing
       const dr = Math.min(drainFor(s.move, Math.min(s.dmg, targetHp)), isA ? att.maxHp - hpA : def.maxHp - hpD); e.drain = dr;
@@ -1497,10 +1558,14 @@ function upkeep(team) {
   for (const u of alive(team)) {
     u.acted = false; u.moved = false;
     if (u.recharge) { u.recharge = 0; u.acted = true; u.moved = true; ev.push({ type: 'recharge', unit: u, done: true }); }
+    // skills: the cooldown ticks, a brace ends at its owner's next turn, a root wears off after the held phase
+    if (u.cd > 0) u.cd--;
+    if (u.brace) u.brace = 0;
+    if (u.root > 0) { u.root--; if (!u.root) ev.push({ type: 'unroot', unit: u }); }
     const t = terrAt(u.x, u.y);
     if (t.heal) {
       if (u.hp < u.maxHp) { const h = Math.max(1, Math.floor(u.maxHp * t.heal)); u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: h }); }
-      if (u.status) { ev.push({ type: 'cure', unit: u }); u.status = null; }
+      if (u.status || u.root) { ev.push({ type: 'cure', unit: u }); u.status = null; u.root = 0; }
     }
     if (t.burn && !u.fly && !u.types.includes('Fire')) { const d = Math.max(1, Math.floor(u.maxHp / 6)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'lava' }); }
     if (u.status === 'psn') { const d = Math.max(1, Math.floor(u.maxHp / 8)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'psn' }); }
@@ -1519,9 +1584,57 @@ function tryCapture(target, ball) {
 }
 function useItem(u, item) {
   const it = ITEMS[item]; const ev = [];
-  if (it.kind === 'heal') { if (it.heal) { const h = Math.max(1, Math.floor(u.maxHp * it.heal)); const before = u.hp; u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: u.hp - before }); } if (it.cure && u.status) { u.status = null; ev.push({ type: 'cure', unit: u }); } }
+  if (it.kind === 'heal') { if (it.heal) { const h = Math.max(1, Math.floor(u.maxHp * it.heal)); const before = u.hp; u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: u.hp - before }); } if (it.cure && (u.status || u.root)) { u.status = null; u.root = 0; ev.push({ type: 'cure', unit: u }); } }
   if (it.kind === 'candy') { const gains = levelUp(u); ev.push({ type: 'levelup', unit: u, gains, level: u.level }); const evo = evolutionFor(u); if (evo) { const from = u.dex; ev.push({ type: 'evolve', unit: u, from, to: evo }); evolve(u, evo); } }
   return ev;
+}
+// ---------------------------------------------------------------- role skills
+// Legal targets of an active skill for `u` standing at `from` (its own tile by default). Pure.
+//   brace: itself.  mend: an adjacent non-hostile unit (never itself) that is hurt, statused or rooted.
+//   root: a hostile within 1-2 tiles that is not flying and not already rooted.
+function skillTargetsAt(u, sk = u.skill, from = u) {
+  if (!sk || sk.passive) return [];
+  if (sk.target === 'self') return u.hp > 0 ? [u] : [];
+  const out = [];
+  for (const v of B.units) {
+    if (v.hp <= 0 || v === u) continue; const d = Math.abs(v.x - from.x) + Math.abs(v.y - from.y); if (d < sk.rng[0] || d > sk.rng[1]) continue;
+    if (sk.target === 'ally' && !hostile(u.team, v.team) && (v.hp < v.maxHp || v.status || v.root)) out.push(v);
+    if (sk.target === 'foe' && hostile(u.team, v.team) && !v.fly && !v.root) out.push(v);
+  }
+  return out;
+}
+function skillReady(u) { return !!(u.skill && !u.skill.passive && u.cd <= 0 && !u.recharge); }
+// Why a skill cannot be used right now (for the menu hint), or null.
+function skillBlock(u) { if (!u.skill || u.skill.passive) return 'none'; if (u.cd > 0) return 'cooldown ' + u.cd; if (!skillTargetsAt(u).length) return 'no target'; return null; }
+// What Mend would restore: 30% of the target's max HP, capped by what is missing.
+function mendAmount(t) { return Math.min(t.maxHp - t.hp, Math.max(1, Math.floor(t.maxHp * MEND_RATIO))); }
+// Preview text of a skill on a target (also what the card shows). Pure.
+function skillPreview(u, sk, t) {
+  if (sk.id === 'brace') return 'takes ' + Math.round((1 - BRACE_MULT) * 100) + '% less damage until its next turn';
+  if (sk.id === 'mend') { const h = mendAmount(t); const parts = []; if (h > 0) parts.push('+' + h + ' HP (' + t.hp + ' → ' + (t.hp + h) + ')'); if (t.status) parts.push('cures ' + STATUS[t.status].name); if (t.root) parts.push('frees it'); return parts.join(' · '); }
+  if (sk.id === 'root') return 'cannot move on its next turn';
+  return '';
+}
+// Apply an active skill. Mutates; returns events for the animation layer. The action is spent by the caller.
+// Deterministic: no dice anywhere in here.
+function useSkill(u, sk, t) {
+  const ev = [{ type: 'skill', unit: u, skill: sk, target: t }];
+  if (sk.id === 'brace') { u.brace = 1; ev.push({ type: 'brace', unit: u }); }
+  else if (sk.id === 'mend') { const h = mendAmount(t); if (h > 0) { t.hp += h; ev.push({ type: 'heal', unit: t, amount: h }); } if (t.status || t.root) { t.status = null; t.root = 0; ev.push({ type: 'cure', unit: t }); } }
+  else if (sk.id === 'root') { t.root = 2; if (t.team === 1 && t.ai !== 'aggro') t.provoked = true; ev.push({ type: 'root', unit: t, by: u }); }
+  u.cd = sk.cd;
+  if (isHuman(u.team)) awardXp(u, SKILL_XP, ev);
+  return ev;
+}
+// Dart (scout): after an attack the unit may still move up to DART_MOV tiles (less if paralyzed, none if rooted or recharging).
+function dartMov(u) { return Math.min(DART_MOV, effMov(u)); }
+function canDart(u) { return !!(u.skill && u.skill.id === 'dart' && u.hp > 0 && !u.recharge && u.status !== 'frz' && dartMov(u) > 0 && !B.result); }
+// The AI's dart: the tile within reach that is out of hostile reach, or failing that the best-covered one farthest from foes. Null to stay.
+function aiDart(u) {
+  if (!canDart(u)) return null; const reach = reachable(u, u.x, u.y, dartMov(u)); const threat = dangerZone(u.team); const foes = aiTargetsOf(u);
+  let best = null, bs = -1e9;
+  for (const n of reach.values()) { if (!canStand(u, n.x, n.y)) continue; const near = foes.length ? Math.min(...foes.map(f => Math.abs(f.x - n.x) + Math.abs(f.y - n.y))) : 0; const s = (threat.has(key(n.x, n.y)) ? 0 : 12) + terrainDef(terrAt(n.x, n.y), u) * .3 + near * 1.5 + (n.x === u.x && n.y === u.y ? .5 : 0); if (s > bs) { bs = s; best = n; } }
+  return best && (best.x !== u.x || best.y !== u.y) ? { x: best.x, y: best.y } : null;
 }
 function checkObjective() {
   const o = B.map.objective; if (B.result) return B.result;
@@ -1544,15 +1657,27 @@ function distField(u, goals) {
   return d;
 }
 function aiTargetsOf(u) { return B.units.filter(v => v.hp > 0 && hostile(u.team, v.team) && !(u.team === 2 && v.team === 2)); }
-// Decide an action: {x,y,target,move} to attack, {x,y} to move, or null to wait.
+// Score of using the unit's active skill from cell n on target t, on the same scale as the attack scores
+// (roughly expected damage dealt), or null when it is not worth it. `threat` is the set of cells hostiles reach next phase.
+function aiSkillScore(u, sk, n, t, threat, aT) {
+  if (sk.id === 'mend') { const h = mendAmount(t); if (h <= 0 && !t.status && !t.root) return null; return h * 1.1 + (t.status ? 8 : 0) + (t.root ? 4 : 0) + (t.leader || t.boss ? 4 : 0) + terrainDef(aT, u) * .2 - (threat.has(key(n.x, n.y)) ? 4 : 0); }
+  if (sk.id === 'root') { // worth it only against a unit that would otherwise move next phase and could then reach one of ours
+    const mobile = effMov(t, statusAfterUpkeep(t), rootAfterUpkeep(t)); if (!mobile || (!isHuman(t.team) && (t.ai === 'guard' || t.ai === 'stay') && !t.provoked)) return null;
+    const allies = B.units.filter(v => v.hp > 0 && !hostile(u.team, v.team) && v !== t); const menace = allies.some(a => dist(a, t) <= mobile + t.rngMax); if (!menace) return null; return 6 + t.level * .3 + (t.boss ? 5 : 0) + terrainDef(aT, u) * .2; }
+  if (sk.id === 'brace') { if (!threat.has(key(n.x, n.y))) return null; return 7 + (1 - u.hp / u.maxHp) * 10 + terrainDef(aT, u) * .3; }
+  return null;
+}
+// Decide an action: {x,y,target,move} to attack, {x,y,skill,target} to use a skill, {x,y} to move, or null to wait.
 function aiDecide(u, cautious = false) {
   const reach = reachable(u); const targets = aiTargetsOf(u); if (!targets.length) return null;
   const provoked = u.ai === 'aggro' || u.provoked || targets.some(t => dist(t, u) <= (u.ai === 'guard' ? Math.max(u.rngMax, 1) : 2));
   let best = null, bestScore = -1e9;
+  const sk = skillReady(u) ? u.skill : null; const threat = sk ? dangerZone(u.team) : null;
   for (const n of reach.values()) {
     if (!canStand(u, n.x, n.y)) continue;
     if (u.ai !== 'aggro' && !u.provoked && !(n.x === u.x && n.y === u.y) && u.ai === 'guard') continue; // guards never move
     const aT = terrAt(n.x, n.y);
+    if (sk) for (const t of skillTargetsAt(u, sk, n)) { const s = aiSkillScore(u, sk, n, t, threat, aT); if (s != null && s + (n.x === u.x && n.y === u.y ? 1.5 : 0) > bestScore) { bestScore = s + (n.x === u.x && n.y === u.y ? 1.5 : 0); best = { x: n.x, y: n.y, skill: sk, target: t }; } }
     for (const t of targets) {
       const d = Math.abs(t.x - n.x) + Math.abs(t.y - n.y); const tT = terrAt(t.x, t.y); let mv = bestMove(u, t, d, tT); if (!mv) continue;
       // a recharge move is only worth its lost turn when it finishes the target
@@ -1617,7 +1742,7 @@ function teamName(t) { return B && B.versus ? (t === 0 ? 'PLAYER 1' : t === 1 ? 
 function phaseLabel(t) { return teamName(t) + ' PHASE'; }
 // Screen bands the HUD keeps for itself (in board pixels): the turn card on top and, on narrow portrait screens,
 // the context/forecast area and the button bar at the bottom. A board that fits is centred between them.
-function hudReserve() { const z = BT.zoom; if (narrowView() && portraitView()) return { top: 30 / z, bottom: (BT.mode === 'target' || BT.mode === 'catchTarget' ? 170 : 118) / z }; return { top: 30 / z, bottom: 40 / z }; }
+function hudReserve() { const z = BT.zoom; if (narrowView() && portraitView()) return { top: 30 / z, bottom: (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget' ? 170 : 118) / z }; return { top: 30 / z, bottom: 40 / z }; }
 // Range of camera positions: a board that fits sits centred (between the HUD bands vertically); a bigger board can
 // be panned edge to edge, and far enough past its top and bottom rows for them to clear the HUD bands.
 function camRange() {
@@ -1721,6 +1846,11 @@ function setupEvent(q) {
     case 'capture': q.dur = BT.fast ? 1.6 : 2.6 + e.shakes * .5; Audio.sfx('catch'); break;
     case 'miss': q.dur = BT.fast ? .3 : .55; break;
     case 'status': floatText(ux(e.unit), uy(e.unit) - 6, STATUS[e.status].text.toUpperCase() + '!', STATUS[e.status].col, { outline: '#000' }); Audio.sfx(e.status === 'par' ? 'para' : e.status === 'brn' ? 'burn' : 'poison'); break;
+    // role skills: a short card names the skill, then its effect floats over the target
+    case 'skill': q.dur = BT.fast ? .4 : .8; Audio.sfx('select'); if (!unitVisible(e.unit) || !unitVisible(e.target)) centerCamBetween(e.unit, e.target); spawnParts(ux(e.unit), uy(e.unit) + 8, 10, [ROLES[e.unit.role].col, '#ffffff'], { speed: 40, life: .5, grav: -30 }); break;
+    case 'brace': Audio.sfx('shake'); floatText(ux(e.unit), uy(e.unit) - 8, 'BRACED!', BRACE_COL, { outline: '#000' }); e.unit.fx.sy = .8; e.unit.fx.sx = 1.2; break;
+    case 'root': Audio.sfx('grass'); shake(1); floatText(ux(e.unit), uy(e.unit) - 8, 'ROOTED!', ROOT_COL, { outline: '#000' }); spawnParts(ux(e.unit), uy(e.unit) + 12, 12, ['#2a6b38', '#c8f0a0'], { speed: 30, grav: 40, life: .6 }); break;
+    case 'unroot': q.dur = BT.fast ? .2 : .4; floatText(ux(e.unit), uy(e.unit) - 8, 'Free!', ROOT_COL, { outline: '#000' }); break;
   }
 }
 function updateAnim(dt) {
@@ -1809,6 +1939,7 @@ function extendPath(x, y) {
 }
 function confirmMove() {
   const u = BT.sel; const dest = BT.path[BT.path.length - 1]; if (!canStand(u, dest.x, dest.y)) { Audio.sfx('error'); return; }
+  if (BT.dart) { BT.dart = false; Audio.sfx('ok'); BT.queue = [{ kind: 'move', unit: u, path: BT.path.slice() }]; playQueue(() => { pickupAt(u); finishUnit(u); }); return; }
   BT.undo = { unit: u, x: u.x, y: u.y }; Audio.sfx('ok');
   BT.queue = [{ kind: 'move', unit: u, path: BT.path.slice() }];
   playQueue(() => { u.moved = true; pickupAt(u); openActionMenu(u); });
@@ -1825,12 +1956,16 @@ function openActionMenu(u) {
   const wildAdj = B.units.filter(v => v.hp > 0 && v.team === 2 && dist(v, u) === 1); const hasBall = Object.keys(B.bag).some(k => ITEMS[k].kind === 'ball' && B.bag[k] > 0);
   if (wildAdj.length && hasBall) items.push({ id: 'catch', label: 'Catch', icon: 'ball', sub: 'Throw a ball' });
   if (B.map.objective.type === 'seize' && B.map.seize && u.x === B.map.seize.x && u.y === B.map.seize.y) items.unshift({ id: 'seize', label: 'Seize', icon: 'flag', sub: 'Win the map!' });
+  // the role skill: always listed so the player learns it exists; greyed with the reason when it cannot be used now
+  if (u.skill && !u.skill.passive) { const why = skillBlock(u); const n = why ? 0 : skillTargetsAt(u).length; items.push({ id: 'skill', label: u.skill.name, icon: 'skill', off: !!why, sub: why ? u.skill.menu + ' (' + why + ')' : u.skill.menu + (u.skill.target === 'self' ? '' : ' · ' + n + (n > 1 ? ' targets' : ' target')) + (u.skill.cd ? ' · every ' + (u.skill.cd + 1) + ' turns' : '') }); }
   if (Object.keys(B.bag).some(k => ITEMS[k].kind !== 'ball' && B.bag[k] > 0)) items.push({ id: 'item', label: 'Bag', icon: 'bag', sub: 'Use an item' });
   items.push({ id: 'wait', label: 'Wait', icon: 'wait', sub: 'End this unit\'s turn' });
   BT.menu = { items, i: 0 }; BT.mode = 'menu'; BT.cx = u.x; BT.cy = u.y;
 }
 function menuChoose(id) {
-  const u = BT.sel; Audio.sfx('ok');
+  const u = BT.sel;
+  if (id === 'skill') { if (skillBlock(u)) { Audio.sfx('error'); return; } Audio.sfx('ok'); BT.targets = skillTargetsAt(u); BT.tIdx = 0; BT.mode = 'skillTarget'; setTargetCursor(); return; }
+  Audio.sfx('ok');
   if (id === 'wait') finishUnit(u);
   else if (id === 'attack') { BT.targets = targetsFrom(u, u.x, u.y); BT.tIdx = 0; BT.moveIdx = 0; BT.mode = 'target'; setTargetCursor(); }
   else if (id === 'catch') { BT.targets = B.units.filter(v => v.hp > 0 && v.team === 2 && dist(v, u) === 1); BT.tIdx = 0; BT.mode = 'catchTarget'; setTargetCursor(); }
@@ -1844,8 +1979,24 @@ function confirmAttack() {
   if (t.team === 1 && t.ai !== 'aggro') t.provoked = true; if (t.boss) t.provoked = true;
   for (const e of B.units) if (e.team === 1 && e.hp > 0 && e.ai === 'boss' && dist(e, t) <= 3) e.provoked = true;
   BT.queue = combatQueue(u, t, cf.move, u); BT.mode = 'anim';
+  playQueue(() => { afterAttack(u); });
+}
+// After an attack a scout that is still standing may dart; everyone else is spent. The map's objective is checked
+// first so a winning blow ends the battle without a pointless dart.
+function afterAttack(u) { if (checkObjective()) { finishUnit(u); return; } if (canDart(u)) startDart(u); else finishUnit(u); }
+// Dart: a second, short move with no menu afterwards. Reuses the move mode (blue tiles, arrow, BACK) with BT.dart set;
+// confirming a tile or pressing back/OK on the unit's own tile ends the unit's turn. There is no undo of the attack.
+function startDart(u) {
+  BT.sel = u; BT.reach = reachable(u, u.x, u.y, dartMov(u)); BT.atk = []; BT.path = [{ x: u.x, y: u.y }]; BT.mode = 'move'; BT.dart = true; BT.undo = null; BT.cx = u.x; BT.cy = u.y; keepCursorVisible();
+  Audio.sfx('select'); floatText(u.x * TILE + TILE / 2, u.y * TILE - 6, 'DART!', ROLES.scout.col, { outline: '#000', life: .9 });
+}
+// The player's skill: apply it, play the events, spend the unit.
+function confirmSkill() {
+  const u = BT.sel, t = BT.targets[BT.tIdx]; if (!u || !t || !skillReady(u)) { Audio.sfx('error'); return; } Audio.sfx('ok');
+  const ev = useSkill(u, u.skill, t); BT.queue = ev.map(e => ({ kind: 'event', ev: e })); BT.mode = 'anim';
   playQueue(() => { finishUnit(u); });
 }
+function skillQueue(u, sk, t) { return useSkill(u, sk, t).map(e => ({ kind: 'event', ev: e })); }
 // The one place an exchange is resolved for display: snapshot both HP values, roll the combat once, and
 // hand the same event list to whichever presentation is active (duel scene or strikes on the board).
 // The resolver also levels up, evolves and inflicts statuses before any of it is shown, so the scene works from
@@ -1882,16 +2033,17 @@ function confirmCatch() {
   playQueue(() => { finishUnit(u); });
 }
 function finishUnit(u) {
-  u.acted = true; u.moved = true; BT.sel = null; BT.reach = null; BT.atk = null; BT.undo = null; BT.menu = null; BT.hpShow.clear();
+  u.acted = true; u.moved = true; BT.sel = null; BT.reach = null; BT.atk = null; BT.undo = null; BT.menu = null; BT.dart = false; BT.hpShow.clear();
   for (const v of B.units) { v.fx.dx = v.fx.dy = 0; v.fx.sx = v.fx.sy = 1; v.fx.alpha = 1; v.fx.flash = 0; v.fx.showNum = null; }
   if (checkObjective()) { endBattle(); return; }
   if (alive(HT()).every(v => v.acted)) { BT.mode = 'idle'; BT.autoEnd = .6; return; }
   BT.mode = 'idle'; const f = alive(HT()).find(v => !v.acted); if (f && !VIEW.touch) { /* keep the cursor where it is; the player picks the next unit */ }
 }
 function cancel() {
-  if (BT.mode === 'move') { BT.sel.fx.sx = BT.sel.fx.sy = 1; BT.cx = BT.sel.x; BT.cy = BT.sel.y; BT.sel = null; BT.reach = null; BT.atk = null; BT.mode = 'idle'; Audio.sfx('cancel'); }
+  if (BT.mode === 'move' && BT.dart) { const u = BT.sel; BT.cx = u.x; BT.cy = u.y; Audio.sfx('cancel'); finishUnit(u); } // staying put ends the darting unit's turn
+  else if (BT.mode === 'move') { BT.sel.fx.sx = BT.sel.fx.sy = 1; BT.cx = BT.sel.x; BT.cy = BT.sel.y; BT.sel = null; BT.reach = null; BT.atk = null; BT.mode = 'idle'; Audio.sfx('cancel'); }
   else if (BT.mode === 'menu') { const u = BT.sel; if (BT.undo && BT.undo.unit === u) { u.x = BT.undo.x; u.y = BT.undo.y; u.moved = false; BT.undo = null; } BT.menu = null; selectUnit(u); BT.cx = u.x; BT.cy = u.y; Audio.sfx('cancel'); }
-  else if (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'item') { BT.mode = 'menu'; BT.cx = BT.sel.x; BT.cy = BT.sel.y; openActionMenu(BT.sel); Audio.sfx('cancel'); }
+  else if (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget' || BT.mode === 'item') { BT.mode = 'menu'; BT.cx = BT.sel.x; BT.cy = BT.sel.y; openActionMenu(BT.sel); Audio.sfx('cancel'); }
   else if (BT.mode === 'ballPick') { BT.mode = 'catchTarget'; Audio.sfx('cancel'); }
   else if (BT.mode === 'itemTarget') { BT.mode = 'item'; Audio.sfx('cancel'); }
   else if (BT.mode === 'help' || BT.mode === 'unitinfo' || BT.mode === 'endmenu') { BT.mode = 'idle'; Audio.sfx('cancel'); }
@@ -1916,7 +2068,12 @@ function runEnemyPhase(team) {
     if (!d) { step(); return; }
     BT.queue = [];
     if (d.x !== u.x || d.y !== u.y) { const reach = reachable(u); const p = pathTo(reach, d.x, d.y); if (p) BT.queue.push({ kind: 'fn', fn: () => { centerCam(u.x, u.y); } }, { kind: 'wait', t2: .25 }, { kind: 'move', unit: u, path: p }); }
-    if (d.target) { BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...combatQueue(u, d.target, d.move, { x: d.x, y: d.y })); } }); }
+    if (d.skill) { BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...skillQueue(u, d.skill, d.target)); } }); }
+    else if (d.target) {
+      BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...combatQueue(u, d.target, d.move, { x: d.x, y: d.y })); } });
+      // a scout darts once the exchange has played out (the queue item runs after the duel, so the outcome is known)
+      BT.queue.push({ kind: 'fn', fn: () => { const c = aiDart(u); if (!c) return; const p = pathTo(reachable(u, u.x, u.y, dartMov(u)), c.x, c.y); if (p) BT.queue.unshift({ kind: 'fn', fn: () => floatText(u.x * TILE + TILE / 2, u.y * TILE - 6, 'DART!', ROLES.scout.col, { outline: '#000', life: .9 }) }, { kind: 'move', unit: u, path: p }); } });
+    }
     BT.queue.push({ kind: 'wait', t2: .15 });
     playQueue(() => { u.acted = true; step(); });
   };
@@ -1943,7 +2100,7 @@ function menuNav(dir) { const m = BT.menu; if (!m) return; m.i = (m.i + dir + m.
 function keyInput(k) {
   const m = BT.mode;
   if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { if (k === 'up') menuNav(-1); else if (k === 'down') menuNav(1); else if (k === 'ok') activateMenu(); else if (k === 'back') cancel(); return; }
-  if (m === 'target' || m === 'catchTarget') { if (k === 'left' || k === 'up' || k === 'prev') { BT.tIdx = (BT.tIdx - 1 + BT.targets.length) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'right' || k === 'down' || k === 'next') { BT.tIdx = (BT.tIdx + 1) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'info') { BT.moveIdx++; Audio.sfx('menu'); } else if (k === 'ok') { if (m === 'target') confirmAttack(); else pickBall(); } else if (k === 'back') cancel(); return; }
+  if (m === 'target' || m === 'catchTarget' || m === 'skillTarget') { if (k === 'left' || k === 'up' || k === 'prev') { BT.tIdx = (BT.tIdx - 1 + BT.targets.length) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'right' || k === 'down' || k === 'next') { BT.tIdx = (BT.tIdx + 1) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'info') { BT.moveIdx++; Audio.sfx('menu'); } else if (k === 'ok') { if (m === 'target') confirmAttack(); else if (m === 'skillTarget') confirmSkill(); else pickBall(); } else if (k === 'back') cancel(); return; }
   if (m === 'itemTarget') { if (k === 'ok') useItemOn(BT.sel); else if (k === 'back') cancel(); return; }
   if (k === 'help') { BT.mode = 'help'; BT.helpPage = 0; return; }
   const dx = k === 'left' ? -1 : k === 'right' ? 1 : 0, dy = k === 'up' ? -1 : k === 'down' ? 1 : 0;
@@ -1971,8 +2128,8 @@ function tileAction(x, y) {
   }
   if (m === 'move') {
     if (u && u === BT.sel) { BT.path = [{ x: u.x, y: u.y }]; confirmMove(); return; }
-    if (u && u.team === HT() && !u.acted) { cancel(); selectUnit(u); return; }
-    if (u && hostile(u.team, HT()) && BT.atk.some(c => c.x === x && c.y === y) || (u && hostile(u.team, HT()) && BT.reach.has(key(x, y)))) { // quick-attack: move next to it and attack
+    if (u && u.team === HT() && !u.acted) { cancel(); selectUnit(u); return; } // during a dart this ends the darting unit first
+    if (!BT.dart && (u && hostile(u.team, HT()) && BT.atk.some(c => c.x === x && c.y === y) || (u && hostile(u.team, HT()) && BT.reach.has(key(x, y))))) { // quick-attack: move next to it and attack
       const spots = [...BT.reach.values()].filter(n => canStand(BT.sel, n.x, n.y) && usableMoves(BT.sel, Math.abs(n.x - u.x) + Math.abs(n.y - u.y)).length);
       if (spots.length) { spots.sort((a, b) => (terrainDef(terrAt(b.x, b.y), BT.sel) - terrainDef(terrAt(a.x, a.y), BT.sel)) || (dist(a, BT.sel) - dist(b, BT.sel))); const s = spots[0]; BT.path = pathTo(BT.reach, s.x, s.y); BT.pendingTarget = u; confirmMoveThenAttack(); return; }
     }
@@ -1992,7 +2149,7 @@ function pointerInput(ev) {
     if (ev.touch || hoverLocked(ev)) return;
     const { x: tx, y: ty } = screenToTile(ev.x, ev.y);
     if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { const h = menuHit(ev.x, ev.y); if (h >= 0 && h !== BT.menu.i) { BT.menu.i = h; Audio.sfx('menu'); } return; }
-    if (m === 'target' || m === 'catchTarget') { const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0 && ti !== BT.tIdx) { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } return; }
+    if (m === 'target' || m === 'catchTarget' || m === 'skillTarget') { const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0 && ti !== BT.tIdx) { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } return; }
     if (hudCovers(ev.x, ev.y)) return; // pointer over a HUD panel: the board underneath is not being pointed at
     if (inMap(tx, ty) && (tx !== BT.cx || ty !== BT.cy) && (m === 'idle' || m === 'move')) { BT.cx = tx; BT.cy = ty; if (m === 'move') extendPath(tx, ty); }
     return;
@@ -2002,7 +2159,7 @@ function pointerInput(ev) {
     const { x: tx, y: ty } = screenToTile(ev.x, ev.y);
     if (hudHit(ev.x, ev.y)) return;
     if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { const h = menuHit(ev.x, ev.y); if (h >= 0) { BT.menu.i = h; activateMenu(); } else cancel(); return; }
-    if (m === 'target' || m === 'catchTarget') { const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0) { if (ti === BT.tIdx) { if (m === 'target') confirmAttack(); else pickBall(); } else { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } } else if (forecastHit(ev.x, ev.y)) { if (m === 'target') confirmAttack(); else pickBall(); } else if (moveSwitchHit(ev.x, ev.y)) { BT.moveIdx++; Audio.sfx('menu'); } else cancel(); return; }
+    if (m === 'target' || m === 'catchTarget' || m === 'skillTarget') { const go = () => { if (m === 'target') confirmAttack(); else if (m === 'skillTarget') confirmSkill(); else pickBall(); }; const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0) { if (ti === BT.tIdx) go(); else { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } } else if (forecastHit(ev.x, ev.y)) go(); else if (m === 'target' && moveSwitchHit(ev.x, ev.y)) { BT.moveIdx++; Audio.sfx('menu'); } else cancel(); return; }
     if (m === 'itemTarget') { useItemOn(BT.sel); return; }
     if (hudCovers(ev.x, ev.y)) return; // a tap on a card is not a tap on the tile under it
     if (!inMap(tx, ty)) { if (m === 'move') cancel(); return; }
@@ -2067,17 +2224,18 @@ function drawBoardLayer() {
     rangeOverlay(BT.atk, (x, y) => BT.reach.has(key(x, y)) || BT.atk.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6));
   }
   if (BT.mode === 'unitinfo' && BT.info && BT.info.team !== HT()) { const r = reachable(BT.info); const cells = [...r.values()].filter(n => canStand(BT.info, n.x, n.y)); rangeOverlay(cells, (x, y) => r.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6)); const ac = attackCells(BT.info, r); rangeOverlay(ac, (x, y) => r.has(key(x, y)) || ac.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e07030', '#ffc0a0', Math.floor(BT.time * 6)); }
-  // target highlights
-  if (BT.mode === 'target' || BT.mode === 'catchTarget') for (const t of BT.targets) { const X = tileX(t.x), Y = tileY(t.y); const k = Math.floor(BT.time * 8) % 2; outline(X + 1 + k, Y + 1 + k, TILE - 2 - 2 * k, TILE - 2 - 2 * k, t === BT.targets[BT.tIdx] ? '#ffffff' : '#ff6060'); }
+  // target highlights: red for foes, green for allies and self (skills), the chosen one white
+  if (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget') for (const t of BT.targets) { const X = tileX(t.x), Y = tileY(t.y); const k = Math.floor(BT.time * 8) % 2; const friendly = !hostile(t.team, HT()); outline(X + 1 + k, Y + 1 + k, TILE - 2 - 2 * k, TILE - 2 - 2 * k, t === BT.targets[BT.tIdx] ? '#ffffff' : friendly ? '#60e070' : '#ff6060'); }
+  if (BT.mode === 'skillTarget' && BT.sel && BT.sel.skill && BT.sel.skill.rng[1] > 0) { const rc = ring(BT.sel.x, BT.sel.y, BT.sel.skill.rng[0], BT.sel.skill.rng[1]); rangeOverlay(rc, (x, y) => rc.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, BT.sel.skill.target === 'foe' ? '#e03030' : '#30a050', BT.sel.skill.target === 'foe' ? '#ffa0a0' : '#a0ffb0', Math.floor(BT.time * 6)); }
   if (BT.mode === 'move' && BT.path.length > 1) drawArrow(BT.path, -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, BT.time * 1000);
-  if (['idle', 'move', 'target', 'catchTarget', 'unitinfo'].includes(BT.mode)) drawCursorGlow(tileX(BT.cx), tileY(BT.cy), BT.time * 1000);
+  if (['idle', 'move', 'target', 'catchTarget', 'skillTarget', 'unitinfo'].includes(BT.mode)) drawCursorGlow(tileX(BT.cx), tileY(BT.cy), BT.time * 1000);
   // units (sorted by y so southern sprites overlap northern ones)
   // a unit whose KO the duel scene has not shown yet stays on the board (its HP bar is held at the pre-exchange value)
   const held = u => { const h = BT.hpShow.get(u.id); return h && h.hold; };
   const units = B.units.filter(u => u.hp > 0 || (BT.anim && BT.anim.kind === 'event' && (BT.anim.ev.unit === u)) || held(u)).sort((a, b) => (a.y + a.fx.dy / TILE) - (b.y + b.fx.dy / TILE));
   for (const u of units) drawUnit(u);
   // cursor
-  if (['idle', 'move', 'target', 'catchTarget', 'unitinfo'].includes(BT.mode)) { const hostileCur = unitAt(BT.cx, BT.cy) && hostile(unitAt(BT.cx, BT.cy).team, HT()); drawCursor(tileX(BT.cx), tileY(BT.cy), BT.time * 1000, '#ffffff', (BT.mode === 'target' || hostileCur) ? '#ff5a5a' : '#ffd24a'); }
+  if (['idle', 'move', 'target', 'catchTarget', 'skillTarget', 'unitinfo'].includes(BT.mode)) { const hostileCur = unitAt(BT.cx, BT.cy) && hostile(unitAt(BT.cx, BT.cy).team, HT()); drawCursor(tileX(BT.cx), tileY(BT.cy), BT.time * 1000, '#ffffff', (BT.mode === 'target' || hostileCur) ? '#ff5a5a' : BT.mode === 'skillTarget' ? '#60e070' : '#ffd24a'); }
   if (BT.anim && BT.anim.ball) { const b = BT.anim.ball; drawBall(Math.round(b.x - CAM.x), Math.round(b.y - CAM.y), ITEMS[BT.anim.ev.ball].col, 5); }
   drawFX(-CAM.x + FX.shakeX, -CAM.y + FX.shakeY, false);
 }
@@ -2113,7 +2271,7 @@ function unitLook(u) {
   const q = BT.anim; const busy = !!q && BT.mode === 'anim' && (q.unit === u || q.att === u || q.def === u || (q.ev && q.ev.unit === u));
   const grey = mine && u.acted && !busy;
   const ready = mine && !u.acted && BT.mode !== 'anim' && BT.mode !== 'banner' && BT.mode !== 'end';
-  const sel = BT.sel === u && (BT.mode === 'move' || BT.mode === 'target' || BT.mode === 'menu');
+  const sel = BT.sel === u && (BT.mode === 'move' || BT.mode === 'target' || BT.mode === 'skillTarget' || BT.mode === 'menu');
   const hovered = BT.cx === u.x && BT.cy === u.y && (BT.mode === 'idle' || BT.mode === 'unitinfo');
   return { grey, ready, sel, hovered, busy };
 }
@@ -2152,7 +2310,8 @@ function drawUnit(u) {
     const k = Math.round(Math.sin(BT.time * 5) * 1); let tl = Y - 3;
     if (u.leader) { drawCrown(X - 1, tl + k); tl += 6; } else if (u.boss) { drawSkull(X - 1, tl + k); tl += 8; }
     if (u.recharge) miniBadge('CHG', RECHARGE_COL, X - 1, tl);
-    if (u.status) statusBadge(u.status, X + TILE - 15, Y - 3);
+    let tr = Y - 3; if (u.status) { statusBadge(u.status, X + TILE - 15, tr); tr += 7; }
+    if (u.brace) { miniBadge('BRC', BRACE_COL, X + TILE - 15, tr); tr += 7; } if (u.root) miniBadge('RT', ROOT_COL, X + TILE - 15, tr);
     ctx.globalAlpha = 1;
   }
 }
@@ -2187,21 +2346,22 @@ function hudLayout() {
 function drawHUD() {
   HUD.hits = []; HUD.panels = []; const W = VIEW.w, H = VIEW.h; const L = hudLayout();
   if (BT.mode === 'end') { drawEndScreen(); return; }
-  const boardModes = ['idle', 'move', 'target', 'catchTarget', 'unitinfo', 'menu'];
+  const boardModes = ['idle', 'move', 'target', 'catchTarget', 'skillTarget', 'unitinfo', 'menu'];
   // turn / objective / ready-count card (top-left)
   drawTurnCard(L.top);
   // context cards: the hovered unit and its terrain, side by side or as one strip on portrait phones
   const hov = unitAt(BT.cx, BT.cy); const t = terrAt(BT.cx, BT.cy);
-  if (boardModes.includes(BT.mode) && BT.mode !== 'target' && BT.mode !== 'catchTarget') {
+  if (boardModes.includes(BT.mode) && BT.mode !== 'target' && BT.mode !== 'catchTarget' && BT.mode !== 'skillTarget') {
     const ref = hov || BT.sel || { fly: false, swim: false }; const showUnit = hov && BT.mode !== 'menu';
     if (L.stack) { const c = L.ctx; hudPanel(c.x, c.y, c.w, c.h); if (showUnit) { unitCardBody(hov, c.x, c.y, c.w - 62); vline(c.x + c.w - 60, c.y + 4, c.h - 8, UI.border2); terrainCardBody(t, ref, c.x + c.w - 56, c.y, 54, true); } else terrainCardBody(t, ref, c.x, c.y, c.w, false); }
     else { const c = L.ctx; hudPanel(c.terrX, c.y + 12, c.terrW, 30); terrainCardBody(t, ref, c.terrX, c.y + 12, c.terrW, false); if (showUnit) { hudPanel(c.unitX, c.y, c.unitW, c.h); unitCardBody(hov, c.unitX, c.y, c.unitW); } }
   }
-  if (BT.mode === 'move' && BT.sel) { const c = BT.sel; textC(c.name + '  MOV ' + effMov(c) + (BT.path.length > 1 ? '  →' + (BT.path.length - 1) : ''), W / 2, L.top.y + L.top.h + 4, UI.ink, { outline: UI.shadow }); }
+  if (BT.mode === 'move' && BT.sel) { const c = BT.sel; textC(c.name + (BT.dart ? '  DART ' + dartMov(c) + ' · X: stay' : '  MOV ' + effMov(c)) + (BT.path.length > 1 ? '  →' + (BT.path.length - 1) : ''), W / 2, L.top.y + L.top.h + 4, BT.dart ? ROLES.scout.col : UI.ink, { outline: UI.shadow }); }
   if (BT.quip && BT.quip.unit.hp > 0) { const u = BT.quip.unit; const x = toScreenX(tileX(u.x) + TILE / 2) + 16, y = toScreenY(tileY(u.y)) - 12 - Math.min(6, BT.quip.t * 30); const tw = textWidth(BT.quip.text) + 8; rrect(x - 2, y - 2, tw, 11, UI.shadow, 1); rrect(x - 3, y - 3, tw, 11, '#ffffff', 1); text(BT.quip.text, x + 1, y - 1, '#202030'); px(x, y + 8, '#ffffff'); px(x - 1, y + 9, '#ffffff'); }
   if (BT.mode === 'menu' || BT.mode === 'item' || BT.mode === 'endmenu' || BT.mode === 'ballPick') drawMenu();
   if (BT.mode === 'target') drawForecast();
   if (BT.mode === 'catchTarget') drawCatchCard();
+  if (BT.mode === 'skillTarget') drawSkillCard();
   if (BT.mode === 'itemTarget') { const w = Math.min(160, W - 12); hudPanel(W / 2 - w / 2, H / 2 - 16, w, 32); textC('Use ' + ITEMS[BT.item].name + ' on ' + BT.sel.name + '?', W / 2, H / 2 - 10, UI.ink); textC('OK: confirm · X: cancel', W / 2, H / 2 + 1, UI.muted); }
   if (BT.mode === 'unitinfo' && BT.info) drawUnitSheet(BT.info);
   if (BT.mode === 'help') drawHelp();
@@ -2224,11 +2384,11 @@ function drawTurnCard(r) {
 }
 function drawButtons(L) {
   const W = VIEW.w, bh = L.bh, m = BT.mode;
-  const idle = m === 'idle', acting = m === 'move' || m === 'target' || m === 'catchTarget' || m === 'menu', enemyAnim = m === 'anim' && !isHuman(B.phase);
+  const idle = m === 'idle', acting = m === 'move' || m === 'target' || m === 'catchTarget' || m === 'skillTarget' || m === 'menu', enemyAnim = m === 'anim' && !isHuman(B.phase);
   if (enemyAnim) textC(phaseLabel(B.phase) + (BT.fast ? ' · FAST' : ''), W / 2, L.top.y + L.top.h + 4, UI.red, { outline: UI.shadow });
   const items = [];
   if (idle) items.push({ label: 'END TURN', col: '#7a3030', run: () => { Audio.sfx('ok'); endTurn(); } }, { label: BT.showDanger ? 'DANGER ●' : 'DANGER ○', run: () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); } });
-  if (acting) items.push({ label: 'BACK', col: '#5a4a30', run: () => cancel() });
+  if (acting) items.push({ label: m === 'move' && BT.dart ? 'STAY' : 'BACK', col: '#5a4a30', run: () => cancel() });
   if (enemyAnim) items.push({ label: BT.fast ? 'FAST ●' : 'FAST ○', run: () => { BT.fast = !BT.fast; } });
   if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
   if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; Audio.sfx('menu'); } }, { label: Audio.muted ? '♪ ○' : '♪ ●', half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
@@ -2245,6 +2405,7 @@ function drawButtons(L) {
 // Danger overlay colours [fill, edge] per threat kind, and the recharge marker colour.
 const DANGER = { trainer: ['#b03030', '#ff8080'], wild: ['#b08a20', '#ffd24a'] };
 const RECHARGE_COL = '#a0a0ff';
+const BRACE_COL = '#8090b0', ROOT_COL = '#50a040';
 function drawDangerLegend(x, y) {
   const wild = B.units.some(u => u.hp > 0 && u.team === 2 && hostile(2, HT())); const w = wild ? 58 : 34;
   panel(x, y, w, 13, { fill: UI.panelDark, flat: true }); rect(x + 4, y + 4, 5, 5, DANGER.trainer[1]); text('foe', x + 11, y + 3, UI.ink);
@@ -2257,6 +2418,8 @@ function unitCardBody(u, x, y, w) {
   text(u.name, x + 46, y + 5, UI.ink); textR('Lv' + u.level, x + w - 5, y + 5, UI.gold);
   hpBar(x + 46, y + 15, w - 52, u.hp, u.maxHp); text(u.hp + '/' + u.maxHp, x + 46, y + 22, UI.ink);
   u.types.forEach((t, i) => typeBadge(t, x + 46 + i * 26, y + 31, 24)); if (u.status) statusBadge(u.status, x + w - 20, y + 22);
+  // role badge (SCT/DEF/AMP/CTL/RNG/SUP/STK), then whichever of brace/root is on the unit
+  const R = ROLES[u.role]; miniBadge(R.abbr, R.col, x + w - (u.status ? 38 : 20), y + 22); if (u.brace) miniBadge('BRC', BRACE_COL, x + w - 56, y + 22); else if (u.root) miniBadge('RT', ROOT_COL, x + w - 56, y + 22);
   if (u.boss) text('BOSS', x + w - 28, y + 31, UI.red); else if (u.recharge) miniBadge('CHG', RECHARGE_COL, x + w - 20, y + 31);
   else if (u.team === HT() && isHuman(B.phase)) textR(u.acted ? 'DONE' : 'READY', x + w - 5, y + 31, u.acted ? UI.muted : UI.green);
 }
@@ -2272,7 +2435,7 @@ function menuRect() { const m = BT.menu, rh = rowH(); const w = m.items.some(it 
 function menuHit(px2, py) { const r = menuRect(); if (px2 < r.x || px2 >= r.x + r.w || py < r.y || py >= r.y + r.h) return -1; return clamp(Math.floor((py - r.y - 4) / rowH()), 0, BT.menu.items.length - 1); }
 function drawMenu() {
   const m = BT.menu, r = menuRect(), rh = rowH(), ty = (rh - 7) >> 1; hudPanel(r.x, r.y, r.w, r.h, { title: BT.mode === 'item' ? 'BAG' : BT.mode === 'ballPick' ? 'BALLS' : BT.mode === 'endmenu' ? 'MENU' : null });
-  m.items.forEach((it, i) => { const y = r.y + 4 + i * rh; const hot = i === m.i; if (hot) { rrect(r.x + 3, y, r.w - 6, rh - 1, UI.menuSel, 1); hline(r.x + 4, y, r.w - 8, shade(UI.menuSel, .3)); pointerHand(r.x + 5, y + ty, BT.time * 1000); } if (it.icon) { iconAt(it.icon, r.x + 15, y + ty - 1, hot ? '#ffffff' : '#d8dce8'); text(it.label, r.x + 28, y + ty, hot ? UI.hi : UI.ink); } else text(it.label, r.x + 16, y + ty, hot ? UI.hi : UI.ink); });
+  m.items.forEach((it, i) => { const y = r.y + 4 + i * rh; const hot = i === m.i; const ink = it.off ? UI.muted : hot ? UI.hi : UI.ink; if (hot) { rrect(r.x + 3, y, r.w - 6, rh - 1, UI.menuSel, 1); hline(r.x + 4, y, r.w - 8, shade(UI.menuSel, .3)); pointerHand(r.x + 5, y + ty, BT.time * 1000); } if (it.icon) { iconAt(it.icon, r.x + 15, y + ty - 1, it.off ? '#8a8e9a' : hot ? '#ffffff' : '#d8dce8'); text(it.label, r.x + 28, y + ty, ink); } else text(it.label, r.x + 16, y + ty, ink); });
   const it = m.items[m.i]; if (it && it.sub) { const lines = wrap(it.sub, Math.min(VIEW.w - 14, 200)); const sw = Math.max(...lines.map(l => textWidth(l))) + 10, sh = lines.length * 9 + 5; const sx = clamp(r.x, 2, VIEW.w - sw - 2); const below = r.y + r.h + 3 + sh <= VIEW.h - 2; const sy = below ? r.y + r.h + 3 : r.y - sh - 3; hudPanel(sx, sy, sw, sh, { fill: UI.panelDark }); lines.forEach((l, i) => text(l, sx + 5, sy + 3 + i * 9, UI.muted)); }
 }
 // The forecast sits on the side away from the cursor on wide screens and spans the bottom on portrait phones.
@@ -2308,13 +2471,14 @@ function forecastLines(fc, att, def) {
     const mine = s.side === 'a'; let ko = false;
     if (s.nominal) { if (mine) { hpD = Math.max(0, hpD - s.dmg); hpA += s.drain; ko = hpD <= 0; } else { hpA = Math.max(0, hpA - s.dmg); hpD += s.drain; ko = hpA <= 0; } }
     const eff = s.eff === 0 ? 'no effect' : s.eff >= 2 ? '×2.25' : s.eff > 1 ? '×1.5' : s.eff < 1 ? '×' + s.eff : '';
-    out.push({ side: s.side, nominal: s.nominal, ko, name: s.move.name.toUpperCase(), dmg: s.dmg, hit: s.hit, crit: s.crit, eff, cond: s.cond, drain: s.drain, counter: !mine });
+    // critKo: the normal hit leaves the target standing but a critical (crit% odds) would not; never hidden behind the nominal numbers
+    out.push({ side: s.side, nominal: s.nominal, ko, name: s.move.name.toUpperCase(), dmg: s.dmg, hit: s.hit, crit: s.crit, critDmg: s.critDmg, critKo: !!s.critKo && !ko, braced: !!s.braced, eff, cond: s.cond, drain: s.drain, counter: !mine });
   }
   return out;
 }
 function drawForecast() {
   const cf = currentForecast(); if (!cf) return; const { fc, move, moves, target } = cf; const r = forecastRect(); const u = BT.sel; const a = fc.a, c = fc.c;
-  hudPanel(r.x, r.y, r.w, r.h, { title: 'BATTLE FORECAST' }); const half = Math.floor(r.w / 2);
+  hudPanel(r.x, r.y, r.w, r.h, { title: 'FORECAST · NORMAL HITS' }); const half = Math.floor(r.w / 2); // HP after assumes hits land and none is critical
   // both sides: portrait with the team glyph, name and level; then the HP bar with the loss hatched, and the HP after in the big face
   const side = (x, unit, after, right) => {
     const px0 = right ? x + half - 6 - 34 : x + 6; ctx.save(); ctx.beginPath(); ctx.rect(px0, r.y + 7, 34, 28); ctx.clip(); portraitBg(px0, r.y + 7, 34, 28, unit.team); drawMon(unit.num, px0 + 17, r.y + 34, { flip: right }); ctx.restore(); teamGlyph(px0 + 2, r.y + 9, unit.team, teamColorL(unit.team));
@@ -2330,9 +2494,13 @@ function drawForecast() {
   const lines = forecastLines(fc, u, target); const ly = r.y + 58;
   lines.slice(0, 3).forEach((l, i) => {
     const y = ly + i * 9; const col = !l.nominal ? UI.muted : l.side === 'a' ? '#8ab4ff' : '#ff9a9a';
-    const head = (l.side === 'a' ? '▸ ' : '◂ ') + l.name + ' ' + l.dmg + (l.ko ? ' KO' : ''); const parts = [l.hit + '%', l.crit >= 20 ? 'crit ' + l.crit + '%' : null, l.eff || null, l.drain ? '+' + l.drain : null, l.cond ? l.cond : null].filter(Boolean);
+    // the crit odds are always shown; when a critical would KO where the normal hit would not, the crit part carries a KO tag
+    const head = (l.side === 'a' ? '▸ ' : '◂ ') + l.name + ' ' + l.dmg + (l.ko ? ' KO' : ''); const critPart = 'crit ' + l.crit + '%' + (l.critKo ? ' KO' : '');
+    const parts = [l.hit + '%', critPart, l.braced ? 'braced' : null, l.eff || null, l.drain ? '+' + l.drain : null, l.cond ? l.cond : null].filter(Boolean);
     let s = head + '  ' + parts.join(' · '); const avail = r.w - 12; while (textWidth(s) > avail && parts.length > 1) { parts.splice(parts.length - (l.cond ? 2 : 1), 1); s = head + '  ' + parts.join(' · '); } while (textWidth(s) > avail && s.length > head.length) s = s.slice(0, -1);
-    text(s, r.x + 6, y, col); if (l.ko) { const kx = r.x + 6 + textWidth(head) - textWidth('KO'); rect(kx - 1, y - 1, textWidth('KO') + 2, 9, l.side === 'a' ? '#2a6a3a' : '#8a2c2c'); text('KO', kx, y, '#ffffff'); }
+    text(s, r.x + 6, y, col); const tag = (kx, colr) => { rect(kx - 1, y - 1, textWidth('KO') + 2, 9, colr); text('KO', kx, y, '#ffffff'); };
+    if (l.ko) tag(r.x + 6 + textWidth(head) - textWidth('KO'), l.side === 'a' ? '#2a6a3a' : '#8a2c2c');
+    if (l.critKo && parts.includes(critPart)) { const pre = head + '  ' + parts.slice(0, parts.indexOf(critPart)).join(' · ') + (parts.indexOf(critPart) ? ' · ' : '') + 'crit ' + l.crit + '% '; if (s.length >= pre.length + 2) tag(r.x + 6 + textWidth(pre) + 1, l.side === 'a' ? '#2a6a3a' : '#8a2c2c'); }
   });
   // summary of the exchange, then the moves' side effects (never counted in the numbers above)
   const sum = exchangeSummary(fc); const ea = a.eff === 0 ? [] : moveEffects(move), ec = c && c.eff !== 0 ? moveEffects(c.move) : [];
@@ -2346,6 +2514,15 @@ function drawForecast() {
   let ms = move.name + '  ' + move.pow + 'pw · rng ' + move.rng[0] + (move.rng[1] > move.rng[0] ? '-' + move.rng[1] : ''); while (textWidth(ms) > r.x + r.w - 8 - tw - mx && ms.length > 6) ms = ms.slice(0, -1);
   text(ms, mx, sy + 3, UI.ink); if (tail) textR(tail, r.x + r.w - 6, sy + 3, UI.gold);
   textC((VIEW.touch ? 'tap target: attack' : 'OK: attack') + '  ·  X: back' + (moves.length > 1 ? (VIEW.touch ? '  ·  tap bar: move' : '  ·  C: move') : ''), r.x + r.w / 2, r.y + r.h + 4, UI.muted, { outline: UI.shadow });
+}
+// The skill card: what the chosen skill does to the highlighted target, with the exact numbers, and how to confirm or back out.
+function drawSkillCard() {
+  const u = BT.sel, sk = u && u.skill, t = BT.targets[BT.tIdx]; if (!sk || !t) return; const r = forecastRect(); hudPanel(r.x, r.y, r.w, 50, { title: sk.name.toUpperCase() });
+  ctx.save(); ctx.beginPath(); ctx.rect(r.x + 6, r.y + 8, 34, 28); ctx.clip(); portraitBg(r.x + 6, r.y + 8, 34, 28, t.team); drawMon(t.num, r.x + 23, r.y + 35, { flip: t.team !== HT() }); ctx.restore(); teamGlyph(r.x + 8, r.y + 10, t.team, teamColorL(t.team));
+  let name = (t === u ? 'itself' : t.name) + '  Lv' + t.level; while (textWidth(name) > r.w - 52 && name.length > 4) name = name.slice(0, -1); text(name, r.x + 46, r.y + 8, UI.ink);
+  const lines = wrap(skillPreview(u, sk, t), r.w - 52); lines.slice(0, 2).forEach((l, i) => text(l, r.x + 46, r.y + 18 + i * 9, i === 0 ? UI.green : UI.ink));
+  const cost = 'uses the action' + (sk.cd ? ' · next in ' + (sk.cd + 1) + ' turns' : ''); text(cost, r.x + 46, r.y + 37, UI.muted);
+  textC((VIEW.touch ? 'tap target: confirm' : 'OK: confirm') + '  ·  X: back', r.x + r.w / 2, r.y + 54, UI.muted, { outline: UI.shadow });
 }
 function drawCatchCard() {
   const t = BT.targets[BT.tIdx]; if (!t) return; const r = forecastRect(); hudPanel(r.x, r.y, r.w, 50, { title: 'CATCH' });
@@ -2367,6 +2544,7 @@ function drawEventCard(q) {
   if (e.type === 'levelup') { const u = e.unit; const w = Math.min(176, W - 12), h = 70, x = W / 2 - w / 2; const uy = toScreenY(tileY(u.y)), ts = TILE * BT.zoom; const y = uy < H / 2 ? Math.min(H - h - 8, uy + ts + 10) : Math.max(28, uy - h - 12); const k = Math.min(1, q.t / .25); const yy = y + (1 - easeOut(k)) * -20; panel(x, yy, w, h, { title: 'LEVEL UP!' }); drawMon(u.fx.showNum || u.num, x + 26, yy + 40, {}); bigText('LV ' + e.level, x + 50, yy + 8, UI.gold, { outline: '#402000' }); const g = e.gains; const stats = [['HP', g.maxHp], ['ATK', g.atk], ['DEF', g.def], ['SPA', g.spa], ['SPD', g.spd], ['SPE', g.spe]]; const cw = Math.floor((w - 56) / 3); stats.forEach((s, i) => { const sx = x + 50 + (i % 3) * cw, sy = yy + 24 + Math.floor(i / 3) * 12; const showAt = .3 + i * .12; if (q.t > showAt) { text(s[0], sx, sy, UI.muted); text((s[1] >= 0 ? '+' : '') + s[1], sx + 20, sy, s[1] > 0 ? UI.green : UI.ink); } }); if (q.t > 1.1) { const nm = u.moves.map(m => m.name); let s = 'Moves: ' + nm.join(', '); while (textWidth(s) > w - 12 && s.length > 8) s = s.slice(0, -1); text(s, x + 6, yy + 52, UI.ink); } }
   if (e.type === 'evolve') { const k = q.t / q.dur; const msg = k < .5 ? 'What? ' + e.from.name + ' is evolving!' : e.from.name + ' evolved into ' + e.to.name + '!'; const w = Math.min(W - 12, Math.max(160, textWidth(msg) + 16)), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(msg, W / 2, y + 6, k < .5 ? UI.ink : UI.gold); if (k > .15 && k < .8 && Math.floor(q.t * 14) % 2) { ctx.globalAlpha = .25; rect(0, 0, W, H, '#ffffff'); ctx.globalAlpha = 1; } }
   if (e.type === 'capture' && q.t > q.dur - .8 && e.ok) { const w = Math.min(150, W - 12), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(e.unit.name + ' was caught!', W / 2, y + 6, UI.gold); }
+  if (e.type === 'skill') { const msg = e.unit.name + ' uses ' + e.skill.name + (e.target && e.target !== e.unit ? ' on ' + e.target.name : '') + '!'; const w = Math.min(W - 12, Math.max(120, textWidth(msg) + 16)), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20, { border: ROLES[e.unit.role].col }); let s = msg; while (textWidth(s) > w - 12 && s.length > 6) s = s.slice(0, -1); textC(s, W / 2, y + 6, UI.ink); }
 }
 function drawBanner() {
   const b = BT.banner, W = VIEW.w, H = VIEW.h; const t = b.t; const dur = BT.fast ? .9 : 1.5;
@@ -2378,7 +2556,7 @@ function drawBanner() {
   const list = alive(b.team).slice(0, 6); list.forEach((u, i) => { const ux = x - 60 + i * 24 + (b.team === 0 ? 1 : -1) * (1 - k) * 50; ctx.globalAlpha = k; drawMon(u.num, ux, H / 2 + 44 + Math.round(Math.sin(t * 12 + i) * 2), { flip: b.team !== 0 }); ctx.globalAlpha = 1; });
 }
 // The unit sheet: two columns on wide screens (stats + evolution | traits + moves), one taller column on narrow ones.
-function sheetRect() { const W = VIEW.w, H = VIEW.h; const narrow = W < 250; const w = narrow ? W - 12 : Math.min(260, W - 12), h = narrow ? 178 : 118; return { x: W / 2 - w / 2, y: Math.max(12, H / 2 - h / 2), w, h, narrow }; }
+function sheetRect() { const W = VIEW.w, H = VIEW.h; const narrow = W < 250; const w = narrow ? W - 12 : Math.min(260, W - 12), h = narrow ? 190 : 130; return { x: W / 2 - w / 2, y: Math.max(12, H / 2 - h / 2), w, h, narrow }; }
 function drawUnitSheet(u) {
   const W = VIEW.w; const r = sheetRect(), { x, y, w, h, narrow } = r; hudPanel(x, y, w, h, { title: B.versus ? (u.team === 2 ? 'WILD POKÉMON' : teamName(u.team)) : u.team === 0 ? 'YOUR POKÉMON' : u.team === 2 ? 'WILD POKÉMON' : u.team === 3 ? 'ALLY' : 'ENEMY' });
   portraitBg(x + 6, y + 8, 48, 40, u.team); drawMon(u.num, x + 30, y + 44, { flip: u.team !== 0, sy: 1 + Math.sin(BT.time * 4) * .03 }); teamGlyph(x + 9, y + 11, u.team, teamColorL(u.team));
@@ -2386,20 +2564,25 @@ function drawUnitSheet(u) {
   u.types.forEach((t, i) => typeBadge(t, x + 60 + i * 26, y + 18, 24)); if (u.status) statusBadge(u.status, x + w - 22, y + 18);
   hpBar(x + 60, y + 30, w - 66, u.hp, u.maxHp); text('HP ' + u.hp + '/' + u.maxHp, x + 60, y + 37, UI.ink);
   const stats = [['ATK', u.atk], ['DEF', u.def], ['SPA', u.spa], ['SPD', u.spd], ['SPE', u.spe], ['MOV', effMov(u)]]; const cw = narrow ? Math.floor((w - 12) / 3) : 44; stats.forEach((s, i) => { const sx = x + 6 + (i % 3) * cw, sy = y + 54 + Math.floor(i / 3) * 10; text(s[0], sx, sy, UI.muted); textR(String(s[1]), sx + cw - 6, sy, UI.ink); });
-  const traits = []; if (u.fly) traits.push('FLIES'); if (u.swim) traits.push('SWIMS'); if (u.climb) traits.push('CLIMBS'); if (u.forester) traits.push('WOODS');
+  // role first (the badge colour matches the unit card), then the terrain traits; the skill line at the bottom says what the role does
+  const R = ROLES[u.role]; const traits = [R.name.toUpperCase()]; if (u.fly) traits.push('FLIES'); if (u.swim) traits.push('SWIMS'); if (u.climb) traits.push('CLIMBS'); if (u.forester) traits.push('WOODS');
   const ev = u.dex.evos.length && isHuman(u.team) ? 'Evolves at Lv' + Math.min(...u.dex.evos.map(e => e[1])) : '';
-  const mx = narrow ? x + 6 : x + 140, my = narrow ? y + 88 : y + 54;
-  text(traits.join(' · '), mx, my, UI.green); if (narrow && ev) textR(ev, x + w - 6, my, '#98d8f8'); else if (ev) text(ev, x + 6, y + 76, '#98d8f8');
+  const mx = narrow ? x + 6 : x + 140, my = narrow ? y + 88 : y + 54; const tw = narrow ? (ev ? w - 12 - textWidth(ev) - 6 : w - 12) : w - 146;
+  let tr = traits.join(' · '); while (textWidth(tr) > tw && traits.length > 1) { traits.pop(); tr = traits.join(' · '); } miniBadge(R.abbr, R.col, mx, my - 1); text(tr, mx + 18, my, UI.green); if (narrow && ev) textR(ev, x + w - 6, my, '#98d8f8'); else if (ev) text(ev, x + 6, y + 76, '#98d8f8');
   text('Moves', mx, my + 10, UI.muted); u.moves.slice(0, 4).forEach((m, i) => { typeBadge(m.type, mx, my + 19 + i * 10, 24); text(m.name + ' ' + m.pow + (m.rng[1] > 1 ? ' R' + m.rng[0] + '-' + m.rng[1] : ''), mx + 29, my + 20 + i * 10, UI.ink); });
   if (u.recharge && !u.boss) text('RECHARGING', x + 60 + textWidth(u.name) + 6, y + 8, RECHARGE_COL);
   // type matchup hints
   const weak = TYPES.filter(t => effRaw(t, u.types) >= 2).slice(0, 4), res = TYPES.filter(t => effRaw(t, u.types) < 1).slice(0, 4);
   const wy = narrow ? y + 150 : y + 88; text('Weak:', x + 6, wy, UI.muted); weak.forEach((t, i) => typeBadge(t, x + 36 + i * 25, wy - 1, 24)); text('Resist:', x + 6, wy + 11, UI.muted); res.forEach((t, i) => typeBadge(t, x + 36 + i * 25, wy + 10, 24));
+  // what the role does right now: the skill, its state (cooldown, braced, rooted) or the plain-striker note
+  let sk = u.skill ? u.skill.blurb : 'Striker: plain attacker, strikes twice when 10+ SPE faster'; if (u.skill && !u.skill.passive && u.cd > 0) sk += ' · ready in ' + u.cd; if (u.brace) sk += ' · BRACED'; if (u.root) sk += ' · ROOTED';
+  while (textWidth(sk) > w - 12 && sk.length > 8) sk = sk.slice(0, -1); text(sk, x + 6, y + h - 10, R.col);
   textC('◂ ▸ browse  ·  X close', W / 2, y + h + 4, UI.muted, { outline: UI.shadow });
 }
 const HELP_PAGES = [
   ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back. Mouse: hover + click; right click or an empty tile opens the menu. Touch: tap to move the cursor, tap again to confirm.', 'Q/E: next unit · C: unit info / switch move · F: fast · +/-: zoom · M: mute · H: help. Drag or wheel to pan.', 'Attack scene: any key speeds it up, X skips. The menu switches between full, quick and map-only battles.'],
-  ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch, use the Bag or Wait. Blue = move, red = attack. Greyed units have acted.', 'Defenders counter if you are in their move range and still standing. Speed 8+ higher = you strike twice (×2). The forecast lists the strikes in order; a bracketed one only happens if an earlier strike misses.', 'Terrain gives DEF% and AVO. Poké Centers heal 30%/turn and cure. Danger: red = foe reach, yellow = wild reach. Hyper Beam: no counter after it, next turn recharging.'],
+  ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch, use its Skill, the Bag or Wait. Blue = move, red = attack. Greyed units have acted.', 'Defenders counter if you are in their move range and still standing. Only Scouts and Strikers strike twice, when 10+ SPE faster. The forecast lists the strikes in order; a greyed one only happens if an earlier strike misses.', 'Crits: 4% (24% for high-crit moves), ×1.5 damage. The forecast HP is for normal hits; a strike whose crit would KO says so. Terrain gives DEF% and AVO. Poké Centers heal 30%/turn and cure. Danger: red = foe reach, yellow = wild reach. Hyper Beam: no counter after it, next turn recharging.'],
+  ['ROLES', 'Types say whom you beat; the role (badge on the unit card) says how to use it. One role per evolution line.', 'SCT Scout: Dart, moves 2 tiles after attacking. DEF Defender: Brace, 40% less damage until its next turn. AMP Amphibious: DEF 20% and AVO 20 on water. CTL Controller: Root a foe within 2, it cannot move on its next turn (fliers immune). RNG Ranged: ranged moves reach 1 tile further. SUP Support: Mend an adjacent ally 30% HP and cure it. STK Striker: plain attacker.', 'Brace, Root and Mend use the action, like Attack, and earn a little XP. Root and Mend work every other turn (a cooldown counts on the unit sheet). A Poké Center or Full Heal also frees a rooted unit.'],
   ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67. STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV, Frozen skips turns and crits are guaranteed on it.', 'Wild Pokémon (dashed ring) can be caught when weak: stand next to them, choose Catch and throw a ball. Trainer Pokémon (spiked ring) cannot be stolen. Level ups can evolve!'],
 ];
 function helpRect() { const W = VIEW.w, H = VIEW.h; const w = Math.min(280, W - 12); const lines = helpLines(BT.helpPage, w - 16); const h = Math.min(H - 12, 34 + lines.length * 10); return { x: W / 2 - w / 2, y: Math.max(6, H / 2 - h / 2), w, h, lines }; }
@@ -2495,7 +2678,7 @@ function duelBiome(q) {
 }
 // Immutable presentation snapshot of each unit before the exchange: the resolver may level, evolve or inflict a
 // status before the scene starts, and the scene must show the old form and advance statuses on its own beats.
-function duelView(units) { const v = {}; for (const u of units) v[u.id] = { name: u.name, num: u.num, level: u.level, maxHp: u.maxHp, types: u.types.slice(), status: u.status, boss: u.boss, team: u.team }; return v; }
+function duelView(units) { const v = {}; for (const u of units) v[u.id] = { name: u.name, num: u.num, level: u.level, maxHp: u.maxHp, types: u.types.slice(), status: u.status, boss: u.boss, team: u.team, brace: !!u.brace, root: !!u.root }; return v; }
 // Status changes the scene shows: inflicted on the hit that caused them, cleared on a thaw.
 function duelApplyBeat(q, b) { if (b.kind === 'impact' && b.ev.status) q.view[b.def.id].status = b.ev.status; else if (b.kind === 'thaw') q.view[b.unit.id].status = null; }
 function duelActive() { return BT.mode === 'anim' && BT.anim && BT.anim.kind === 'duel' && BT.anim.started ? BT.anim : null; }
@@ -2651,7 +2834,8 @@ function duelPanel(q, u, L) {
   // HP: the current value in the big face, the maximum small, the bar across the rest of the panel
   const ratio = clamp(hp / v.maxHp, 0, 1); const hs = String(Math.max(0, hp)), hw = textWidth(hs, BIG) + textWidth('/' + v.maxHp) + 3;
   bar(x, y + 11, P.w - 14 - hw, 6, ratio, hpColor(ratio)); bigText(hs, P.x + P.w - 6 - hw, y + 9, hp <= 0 ? UI.red : UI.ink, { outline: '#000' }); textR('/' + v.maxHp, P.x + P.w - 6, y + 11, UI.muted);
-  miniBadge(duelTeamTag(u), col, x, y + 21); v.types.forEach((tp, i) => typeBadge(tp, x + 18 + i * 26, y + 20, 24)); if (v.status) statusBadge(v.status, P.x + P.w - 21, y + 21);
+  miniBadge(duelTeamTag(u), col, x, y + 21); v.types.forEach((tp, i) => typeBadge(tp, x + 18 + i * 26, y + 20, 24)); let bx = P.x + P.w - 21; if (v.status) { statusBadge(v.status, bx, y + 21); bx -= 17; }
+  if (v.brace) miniBadge('BRC', BRACE_COL, bx, y + 21); else if (v.root) miniBadge('RT', ROOT_COL, bx, y + 21); // the braced numbers are already in the damage shown
   const sy = P.y + P.h + 2; rrect(P.x + 1, sy + 1, P.w, L.TH, UI.shadow, 1); rrect(P.x, sy, P.w, L.TH, UI.panelDark, 1);
   ctx.drawImage(tileImg(t.ch, 0, 0), 0, 0, 32, 32, P.x + 3, sy + 2, 7, 7);
   text(t.name.toUpperCase() + '  DEF ' + terrainDef(t, u) + '%  AVO ' + terrainEva(t, u), P.x + 13, sy + 2, UI.muted);
@@ -3103,7 +3287,7 @@ function versusDraw() {
     if (t >= 0) ctx.globalAlpha = .45; drawMon(n, x + cw / 2, y + chh - 2 + (hot ? Math.round(Math.sin(SC.t * 8)) : 0), {}); ctx.globalAlpha = 1;
     if (t >= 0) { rrect(x + cw - 13, y + 2, 11, 8, teamColor(t), 1); textC('P' + (t + 1), x + cw - 8, y + 2, '#ffffff'); }
     hit(x, y, cw, chh, () => { SC.i = i; vsPick(S, n); }); });
-  const d = DEX[VS_ROSTER[SC.i]]; if (d) { const iy = gy + rows * chh + 5; const u = makeUnit(d.num, S.level, 0); text(d.name, gx, iy, UI.ink, { outline: UI.shadow }); d.types.forEach((tp, j) => typeBadge(tp, gx + textWidth(d.name) + 6 + j * 26, iy - 1, 24)); const mv = u.moves.slice(0, 3).map(m => m.name).join(' / '); if (narrow) text(mv, gx, iy + 10, '#98d8f8', { outline: UI.shadow }); else { textR(mv, gx + cols * cw, iy, '#98d8f8', { outline: UI.shadow }); text('HP ' + u.maxHp + '  ATK ' + u.atk + '  DEF ' + u.def + '  SPA ' + u.spa + '  SPE ' + u.spe + '  MOV ' + u.mov, gx, iy + 10, UI.muted, { outline: UI.shadow }); } }
+  const d = DEX[VS_ROSTER[SC.i]]; if (d) { const iy = gy + rows * chh + 5; const u = makeUnit(d.num, S.level, 0); text(d.name, gx, iy, UI.ink, { outline: UI.shadow }); d.types.forEach((tp, j) => typeBadge(tp, gx + textWidth(d.name) + 6 + j * 26, iy - 1, 24)); const mv = u.moves.slice(0, 3).map(m => m.name).join(' / '); const R = ROLES[u.role]; if (narrow) text(mv, gx, iy + 10, '#98d8f8', { outline: UI.shadow }); else { textR(mv, gx + cols * cw, iy, '#98d8f8', { outline: UI.shadow }); text('HP ' + u.maxHp + '  ATK ' + u.atk + '  DEF ' + u.def + '  SPA ' + u.spa + '  SPE ' + u.spe + '  MOV ' + u.mov, gx, iy + 10, UI.muted, { outline: UI.shadow }); const rx0 = gx + textWidth(d.name) + 6 + d.types.length * 26 + 4; let rs = R.name + ': ' + (u.skill ? u.skill.blurb.replace(/^[^:]+: /, '') : 'plain attacker'); while (textWidth(rs) > gx + cols * cw - textWidth(mv) - 8 - rx0 && rs.length > 8) rs = rs.slice(0, -1); text(rs, rx0, iy, R.col, { outline: UI.shadow }); } }
   // settings and the bottom row: one row each on wide screens, two rows each on phones
   // a setting is label, [-], value, [+]; on phones the two settings share one row at 84 px each so the [+] stays inside 180 px
   const sy = narrow ? H - 2 * (bh + 4) - sbh - 8 : H - 44; const o = narrow ? { m: 28, v: 55, p: 64 } : { m: 34, v: 64, p: 76 };
@@ -3211,7 +3395,7 @@ function prepDraw() {
     panel(rx, ry, rw, 62, { title: 'BAG' }); let i = 0; for (const k in P.bag) { if (P.bag[k] <= 0) continue; const y = ry + 6 + i * 10; drawBall(rx + 9, y + 4, ITEMS[k].col, 3); text(ITEMS[k].name, rx + 16, y + 1, UI.ink); textR('×' + P.bag[k], rx + rw - 5, y + 1, UI.gold); i++; if (i >= 5) break; }
     if (!i) text('empty', rx + 8, ry + 8, UI.muted);
   }
-  const sel = party[SC.i]; if (sel && rx > gx + 200) { const u = restoreUnit(sel); panel(rx, ry + 68, rw, 48, { title: u.name.toUpperCase() }); const st = [['ATK', u.atk], ['DEF', u.def], ['SPA', u.spa], ['SPD', u.spd], ['SPE', u.spe], ['MOV', u.mov]]; st.forEach((s, j) => { const sx = rx + 6 + (j % 3) * 38, sy = ry + 74 + Math.floor(j / 3) * 10; text(s[0], sx, sy, UI.muted); textR(String(s[1]), sx + 34, sy, UI.ink); }); text(u.moves.map(m => m.name).join(', ').slice(0, 28), rx + 6, ry + 96, '#98d8f8'); const ev = u.dex.evos.length ? 'Evolves Lv' + Math.min(...u.dex.evos.map(e => e[1])) : 'Final form'; text(ev, rx + 6, ry + 106, UI.green); }
+  const sel = party[SC.i]; if (sel && rx > gx + 200) { const u = restoreUnit(sel); panel(rx, ry + 68, rw, 48, { title: u.name.toUpperCase() }); const st = [['ATK', u.atk], ['DEF', u.def], ['SPA', u.spa], ['SPD', u.spd], ['SPE', u.spe], ['MOV', u.mov]]; st.forEach((s, j) => { const sx = rx + 6 + (j % 3) * 38, sy = ry + 74 + Math.floor(j / 3) * 10; text(s[0], sx, sy, UI.muted); textR(String(s[1]), sx + 34, sy, UI.ink); }); text(u.moves.map(m => m.name).join(', ').slice(0, 28), rx + 6, ry + 96, '#98d8f8'); const ev = u.dex.evos.length ? 'Evolves Lv' + Math.min(...u.dex.evos.map(e => e[1])) : 'Final form'; let rl = ROLES[u.role].name + ' · ' + ev; while (textWidth(rl) > rw - 12 && rl.length > 6) rl = rl.slice(0, -1); text(rl, rx + 6, ry + 106, UI.green); }
   const start = () => { if (!P.deploy.length) { Audio.sfx('error'); return; } Audio.sfx('select'); P.start(); }, auto = () => { Audio.sfx('ok'); autoDeploy(P); }, back = () => { Audio.sfx('cancel'); goScene('title'); };
   if (narrow) { const r1 = H - 2 * (bh + 4), r2 = H - bh - 4; text('Deployed ' + P.deploy.length + '/' + ch.slots + ' · tap a card · first leads', 6, r1 - 10, UI.muted, { outline: UI.shadow });
     bigButton(6, r1, 60, bh, 'BACK', back, { col: '#5a4a30' }); bigButton(72, r1, W - 78, bh, 'AUTO PICK', auto); bigButton(6, r2, W - 12, bh, 'START', start, { col: '#2a6a3a' }); return; }
@@ -3348,8 +3532,8 @@ function onBattleEnd(result) {
 // Write the battle's team-0 units back into SAVE.party (levels, evolutions), heal everyone, add captures.
 function applyBattleToParty() {
   if (!SAVE) return;
-  for (const u of B.units) { if (u.team !== 0 || u.pid == null) continue; const s = serializeUnit(u); s.hp = u.maxHp; s.status = null; s.acted = false; s.recharge = 0; SAVE.party[u.pid] = s; }
-  for (const c of B.captured) { const s = Object.assign({}, c, { team: 0, acted: false, status: null, recharge: 0, hpBonus: BOND_HP }); const u = restoreUnit(s); u.hp = u.maxHp; SAVE.party.push(serializeUnit(u)); }
+  for (const u of B.units) { if (u.team !== 0 || u.pid == null) continue; const s = serializeUnit(u); s.hp = u.maxHp; s.status = null; s.acted = false; s.recharge = 0; s.cd = 0; s.brace = 0; s.root = 0; SAVE.party[u.pid] = s; }
+  for (const c of B.captured) { const s = Object.assign({}, c, { team: 0, acted: false, status: null, recharge: 0, cd: 0, brace: 0, root: 0, hpBonus: BOND_HP }); const u = restoreUnit(s); u.hp = u.maxHp; SAVE.party.push(serializeUnit(u)); }
   SAVE.bag = Object.assign({}, B.bag);
 }
 // ---------------------------------------------------------------- suspend (mid-battle save at the start of each player phase)
@@ -3435,10 +3619,16 @@ function boot() {
 loadSprites(() => { boot(); });
 requestAnimationFrame(frame);
 // Debug: play one player phase with the enemy AI (used by tools/cdp.cjs balance script).
-function autoTurn() { if (!B || B.phase !== 0 || BT.mode !== 'idle') return false; for (const u of alive(0)) { if (u.acted) continue; const d = aiDecide(u); if (d) { u.x = d.x; u.y = d.y; if (d.target) { resolveCombat(u, d.target, d.move, u); } } u.acted = true; if (checkObjective()) { endBattle(); return true; } } endTurn(); return true; }
+// Model-only action for one AI decision: skill, or attack then dart. Shared by autoTurn and simBattle.
+function aiAct(u, d, log) {
+  u.x = d.x; u.y = d.y;
+  if (d.skill) { useSkill(u, d.skill, d.target); if (log) log.push('T' + B.turn + ' ' + u.name + '(' + u.team + ') ' + d.skill.name + '→' + d.target.name); return; }
+  if (d.target) { const ev = resolveCombat(u, d.target, d.move, u); if (log) for (const e of ev) if (e.type === 'hit' || e.type === 'ko') log.push('T' + B.turn + ' ' + (e.type === 'ko' ? 'KO ' + e.unit.name + ' by ' + e.by.name : e.att.name + '(' + e.att.team + ')L' + e.att.level + ' ' + e.move.name + '→' + e.def.name + 'L' + e.def.level + ' ' + e.dmg + (e.crit ? '!' : '') + ' hp' + e.hpAfter + '/' + e.def.maxHp)); const c = aiDart(u); if (c) { u.x = c.x; u.y = c.y; if (log) log.push('T' + B.turn + ' ' + u.name + ' darts'); } }
+}
+function autoTurn() { if (!B || B.phase !== 0 || BT.mode !== 'idle') return false; for (const u of alive(0)) { if (u.acted) continue; const d = aiDecide(u); if (d) aiAct(u, d); u.acted = true; if (checkObjective()) { endBattle(); return true; } } endTurn(); return true; }
 // Debug: simulate a whole battle model-only (no animation), AI on both sides. Returns a summary.
 function simBattle(maxTurns = 30, cautious = true) {
-  const log = B.simLog = []; const act = team => { for (const u of alive(team)) { if (u.status === 'frz' || u.acted) continue; const d = aiDecide(u, team === 0 && cautious); if (d) { u.x = d.x; u.y = d.y; if (d.target) { const ev = resolveCombat(u, d.target, d.move, u); for (const e of ev) if (e.type === 'hit' || e.type === 'ko') log.push('T' + B.turn + ' ' + (e.type === 'ko' ? 'KO ' + e.unit.name + ' by ' + e.by.name : e.att.name + '(' + e.att.team + ')L' + e.att.level + ' ' + e.move.name + '→' + e.def.name + 'L' + e.def.level + ' ' + e.dmg + (e.crit ? '!' : '') + ' hp' + e.hpAfter + '/' + e.def.maxHp)); } } u.acted = true; if (checkObjective()) return true; } return false; };
+  const log = B.simLog = []; const act = team => { for (const u of alive(team)) { if (u.status === 'frz' || u.acted) continue; const d = aiDecide(u, team === 0 && cautious); if (d) aiAct(u, d, log); u.acted = true; if (checkObjective()) return true; } return false; };
   while (!B.result && B.turn <= maxTurns) {
     if (act(0)) break;
     let done = false; for (const t of [1, 2, 3]) { if (!alive(t).length) continue; upkeep(t); if (t === 1) spawnReinforcements(); if (act(t)) { done = true; break; } } if (done) break;

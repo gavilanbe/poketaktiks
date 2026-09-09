@@ -17,7 +17,8 @@ function terrAt(x, y) { return inMap(x, y) ? B.map.tiles[y][x] : TERRAIN['^']; }
 function unitAt(x, y) { for (const u of B.units) if (u.hp > 0 && u.x === x && u.y === y) return u; return null; }
 function alive(team) { return B.units.filter(u => u.hp > 0 && u.team === team); }
 function dist(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
-function effMov(u, status = u.status) { let m = u.mov; if (status === 'par') m = Math.max(1, m - 2); return m; }
+// Paralysis cuts two tiles (never below one); a rooted unit cannot move at all.
+function effMov(u, status = u.status, root = u.root) { if (root > 0) return 0; let m = u.mov; if (status === 'par') m = Math.max(1, m - 2); return m; }
 // Dijkstra movement: returns Map key→{x,y,cost,prev}. Passing through friends allowed; ending on anyone not allowed.
 function reachable(u, fromX = u.x, fromY = u.y, mov = effMov(u)) {
   const out = new Map(); const open = [{ x: fromX, y: fromY, cost: 0, prev: null }]; out.set(key(fromX, fromY), open[0]);
@@ -48,6 +49,9 @@ function statusAfterUpkeep(u) {
   if (u.status === 'frz' && u.statusTurns + 1 >= 2) return null;
   return u.status;
 }
+// Root counts down one at each of the rooted unit's upkeeps (it is applied at 2, so the unit spends exactly one
+// phase held); a Poké Center clears it outright. Mirrors upkeep(), no mutation.
+function rootAfterUpkeep(u) { if (!u.root || terrAt(u.x, u.y).heal) return 0; return Math.max(0, u.root - 1); }
 // Cells every hostile unit could hit on its next phase, split by who threatens them: trainer teams
 // (enemy or rival trainer) and wild Pokémon. A unit that must recharge skips its next phase, so it
 // threatens nothing; a unit whose upkeep is sure to cure it moves at full speed; frozen units that
@@ -56,7 +60,7 @@ function dangerZones(team) {
   const zones = { trainer: new Set(), wild: new Set() };
   for (const e of B.units) {
     if (e.hp <= 0 || !hostile(e.team, team) || e.recharge) continue;
-    const set = e.team === 2 ? zones.wild : zones.trainer; const r = reachable(e, e.x, e.y, effMov(e, statusAfterUpkeep(e)));
+    const set = e.team === 2 ? zones.wild : zones.trainer; const r = reachable(e, e.x, e.y, effMov(e, statusAfterUpkeep(e), rootAfterUpkeep(e)));
     for (const n of r.values()) { if (unitAt(n.x, n.y) && unitAt(n.x, n.y) !== e) continue; for (const c of ring(n.x, n.y, e.rngMin, e.rngMax)) set.add(key(c.x, c.y)); }
   }
   return zones;
@@ -67,8 +71,11 @@ function dangerZone(team) { const z = dangerZones(team); return new Set([...z.tr
 function attackStat(u, move) { let a = move.kind === 'P' ? u.atk : u.spa; if (u.status === 'brn' && move.kind === 'P') a = Math.floor(a / 2); return a; }
 function defenseStat(u, move) { return move.kind === 'P' ? u.def : u.spd; }
 function usableMoves(att, d) { return att.moves.filter(m => d >= m.rng[0] && d <= m.rng[1]); }
-function calcHit(att, def, move, defTerr) { const eva = terrainEva(defTerr, def); const spdDiff = clamp((att.spe - def.spe) / 2, -15, 15); return clamp(Math.round(move.acc - eva + spdDiff), 20, 100); }
-function calcCrit(att, def, move) { let c = 4 + Math.max(0, Math.floor((att.spe - def.spe) / 4)); if (move.eff && move.eff.crit) c += 20; if (def.status === 'frz') c = 100; return clamp(c, 0, 100); }
+// Speed nudges accuracy a little (±10 at most). It no longer feeds the critical chance.
+function calcHit(att, def, move, defTerr) { const eva = terrainEva(defTerr, def); const spdDiff = clamp(Math.round((att.spe - def.spe) / 3), -10, 10); return clamp(Math.round(move.acc - eva + spdDiff), 20, 100); }
+// Critical hits: a flat CRIT_BASE, +20 for high-crit moves, certain against a frozen target. ×1.5 damage.
+const CRIT_BASE = 4;
+function calcCrit(att, def, move) { let c = CRIT_BASE; if (move.eff && move.eff.crit) c += 20; if (def.status === 'frz') c = 100; return clamp(c, 0, 100); }
 function calcDmg(att, def, move, defTerr, crit = false) {
   const eff = effMult(move.type, def.types); if (eff === 0) return 0;
   const A = attackStat(att, move), D = Math.max(1, defenseStat(def, move));
@@ -76,10 +83,13 @@ function calcDmg(att, def, move, defTerr, crit = false) {
   if (att.types.includes(move.type)) d = Math.floor(d * 1.25);
   d = Math.floor(d * eff);
   d = Math.floor(d * (1 - terrainDef(defTerr, def) / 100));
+  if (def.brace) d = Math.floor(d * BRACE_MULT);
   if (crit) d = Math.floor(d * 1.5);
   return Math.max(eff > 0 ? 1 : 0, d);
 }
-function doubles(att, def) { return att.status !== 'par' && att.spe >= def.spe + 8; }
+// Follow-up strike: only roles built for it (scouts and strikers) turn a 10+ SPE lead into a second hit.
+const FOLLOW_UP_SPE = 10;
+function doubles(att, def) { return att.status !== 'par' && !!(ROLES[att.role] && ROLES[att.role].followUp) && att.spe >= def.spe + FOLLOW_UP_SPE; }
 // Hyper Beam needs a charge: it cannot be fired as a counter, and a unit that fired it cannot counter until it has recharged.
 function needsRecharge(move) { return !!(move.eff && move.eff.recharge); }
 function counterBlock(def) { return def.status === 'frz' ? 'frozen' : def.recharge ? 'recharging' : null; }
@@ -99,7 +109,7 @@ function moveEffects(move) { const e = move.eff, out = []; if (!e) return out; i
 function forecast(att, def, move, from) {
   const d = Math.abs(def.x - from.x) + Math.abs(def.y - from.y);
   const aT = terrAt(from.x, from.y), dT = terrAt(def.x, def.y);
-  const side = (A, Dn, m, terr) => ({ unit: A, move: m, dmg: calcDmg(A, Dn, m, terr), hit: calcHit(A, Dn, m, terr), crit: calcCrit(A, Dn, m), dbl: doubles(A, Dn), eff: effMult(m.type, Dn.types) });
+  const side = (A, Dn, m, terr) => ({ unit: A, move: m, dmg: calcDmg(A, Dn, m, terr), critDmg: calcDmg(A, Dn, m, terr, true), hit: calcHit(A, Dn, m, terr), crit: calcCrit(A, Dn, m), dbl: doubles(A, Dn), eff: effMult(m.type, Dn.types), braced: !!Dn.brace });
   const a = side(att, def, move, dT);
   const block = counterBlock(def); const cm = block ? null : bestMove(def, att, d, aT, true);
   const c = cm ? side(def, att, cm, aT) : null;
@@ -107,7 +117,8 @@ function forecast(att, def, move, from) {
   let hpA = att.hp, hpD = def.hp; const strikes = [];
   for (const s of order) {
     const isA = s === a; const strikerHp = isA ? hpA : hpD, targetHp = isA ? hpD : hpA; const nominal = strikerHp > 0 && targetHp > 0;
-    const e = { side: isA ? 'a' : 'c', unit: s.unit, move: s.move, dmg: s.dmg, hit: s.hit, crit: s.crit, eff: s.eff, drain: 0, nominal, cond: null };
+    // critKo: a critical on this strike would drop the target even though the normal hit would not
+    const e = { side: isA ? 'a' : 'c', unit: s.unit, move: s.move, dmg: s.dmg, hit: s.hit, crit: s.crit, critDmg: s.critDmg, critKo: nominal && s.dmg < targetHp && s.critDmg >= targetHp, braced: s.braced, eff: s.eff, drain: 0, nominal, cond: null };
     if (nominal) {
       // drain: a share of the HP taken, then capped by what the striker is missing, so the preview promises only real healing
       const dr = Math.min(drainFor(s.move, Math.min(s.dmg, targetHp)), isA ? att.maxHp - hpA : def.maxHp - hpD); e.drain = dr;
@@ -155,10 +166,14 @@ function upkeep(team) {
   for (const u of alive(team)) {
     u.acted = false; u.moved = false;
     if (u.recharge) { u.recharge = 0; u.acted = true; u.moved = true; ev.push({ type: 'recharge', unit: u, done: true }); }
+    // skills: the cooldown ticks, a brace ends at its owner's next turn, a root wears off after the held phase
+    if (u.cd > 0) u.cd--;
+    if (u.brace) u.brace = 0;
+    if (u.root > 0) { u.root--; if (!u.root) ev.push({ type: 'unroot', unit: u }); }
     const t = terrAt(u.x, u.y);
     if (t.heal) {
       if (u.hp < u.maxHp) { const h = Math.max(1, Math.floor(u.maxHp * t.heal)); u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: h }); }
-      if (u.status) { ev.push({ type: 'cure', unit: u }); u.status = null; }
+      if (u.status || u.root) { ev.push({ type: 'cure', unit: u }); u.status = null; u.root = 0; }
     }
     if (t.burn && !u.fly && !u.types.includes('Fire')) { const d = Math.max(1, Math.floor(u.maxHp / 6)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'lava' }); }
     if (u.status === 'psn') { const d = Math.max(1, Math.floor(u.maxHp / 8)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'psn' }); }
@@ -177,9 +192,57 @@ function tryCapture(target, ball) {
 }
 function useItem(u, item) {
   const it = ITEMS[item]; const ev = [];
-  if (it.kind === 'heal') { if (it.heal) { const h = Math.max(1, Math.floor(u.maxHp * it.heal)); const before = u.hp; u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: u.hp - before }); } if (it.cure && u.status) { u.status = null; ev.push({ type: 'cure', unit: u }); } }
+  if (it.kind === 'heal') { if (it.heal) { const h = Math.max(1, Math.floor(u.maxHp * it.heal)); const before = u.hp; u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: u.hp - before }); } if (it.cure && (u.status || u.root)) { u.status = null; u.root = 0; ev.push({ type: 'cure', unit: u }); } }
   if (it.kind === 'candy') { const gains = levelUp(u); ev.push({ type: 'levelup', unit: u, gains, level: u.level }); const evo = evolutionFor(u); if (evo) { const from = u.dex; ev.push({ type: 'evolve', unit: u, from, to: evo }); evolve(u, evo); } }
   return ev;
+}
+// ---------------------------------------------------------------- role skills
+// Legal targets of an active skill for `u` standing at `from` (its own tile by default). Pure.
+//   brace: itself.  mend: an adjacent non-hostile unit (never itself) that is hurt, statused or rooted.
+//   root: a hostile within 1-2 tiles that is not flying and not already rooted.
+function skillTargetsAt(u, sk = u.skill, from = u) {
+  if (!sk || sk.passive) return [];
+  if (sk.target === 'self') return u.hp > 0 ? [u] : [];
+  const out = [];
+  for (const v of B.units) {
+    if (v.hp <= 0 || v === u) continue; const d = Math.abs(v.x - from.x) + Math.abs(v.y - from.y); if (d < sk.rng[0] || d > sk.rng[1]) continue;
+    if (sk.target === 'ally' && !hostile(u.team, v.team) && (v.hp < v.maxHp || v.status || v.root)) out.push(v);
+    if (sk.target === 'foe' && hostile(u.team, v.team) && !v.fly && !v.root) out.push(v);
+  }
+  return out;
+}
+function skillReady(u) { return !!(u.skill && !u.skill.passive && u.cd <= 0 && !u.recharge); }
+// Why a skill cannot be used right now (for the menu hint), or null.
+function skillBlock(u) { if (!u.skill || u.skill.passive) return 'none'; if (u.cd > 0) return 'cooldown ' + u.cd; if (!skillTargetsAt(u).length) return 'no target'; return null; }
+// What Mend would restore: 30% of the target's max HP, capped by what is missing.
+function mendAmount(t) { return Math.min(t.maxHp - t.hp, Math.max(1, Math.floor(t.maxHp * MEND_RATIO))); }
+// Preview text of a skill on a target (also what the card shows). Pure.
+function skillPreview(u, sk, t) {
+  if (sk.id === 'brace') return 'takes ' + Math.round((1 - BRACE_MULT) * 100) + '% less damage until its next turn';
+  if (sk.id === 'mend') { const h = mendAmount(t); const parts = []; if (h > 0) parts.push('+' + h + ' HP (' + t.hp + ' → ' + (t.hp + h) + ')'); if (t.status) parts.push('cures ' + STATUS[t.status].name); if (t.root) parts.push('frees it'); return parts.join(' · '); }
+  if (sk.id === 'root') return 'cannot move on its next turn';
+  return '';
+}
+// Apply an active skill. Mutates; returns events for the animation layer. The action is spent by the caller.
+// Deterministic: no dice anywhere in here.
+function useSkill(u, sk, t) {
+  const ev = [{ type: 'skill', unit: u, skill: sk, target: t }];
+  if (sk.id === 'brace') { u.brace = 1; ev.push({ type: 'brace', unit: u }); }
+  else if (sk.id === 'mend') { const h = mendAmount(t); if (h > 0) { t.hp += h; ev.push({ type: 'heal', unit: t, amount: h }); } if (t.status || t.root) { t.status = null; t.root = 0; ev.push({ type: 'cure', unit: t }); } }
+  else if (sk.id === 'root') { t.root = 2; if (t.team === 1 && t.ai !== 'aggro') t.provoked = true; ev.push({ type: 'root', unit: t, by: u }); }
+  u.cd = sk.cd;
+  if (isHuman(u.team)) awardXp(u, SKILL_XP, ev);
+  return ev;
+}
+// Dart (scout): after an attack the unit may still move up to DART_MOV tiles (less if paralyzed, none if rooted or recharging).
+function dartMov(u) { return Math.min(DART_MOV, effMov(u)); }
+function canDart(u) { return !!(u.skill && u.skill.id === 'dart' && u.hp > 0 && !u.recharge && u.status !== 'frz' && dartMov(u) > 0 && !B.result); }
+// The AI's dart: the tile within reach that is out of hostile reach, or failing that the best-covered one farthest from foes. Null to stay.
+function aiDart(u) {
+  if (!canDart(u)) return null; const reach = reachable(u, u.x, u.y, dartMov(u)); const threat = dangerZone(u.team); const foes = aiTargetsOf(u);
+  let best = null, bs = -1e9;
+  for (const n of reach.values()) { if (!canStand(u, n.x, n.y)) continue; const near = foes.length ? Math.min(...foes.map(f => Math.abs(f.x - n.x) + Math.abs(f.y - n.y))) : 0; const s = (threat.has(key(n.x, n.y)) ? 0 : 12) + terrainDef(terrAt(n.x, n.y), u) * .3 + near * 1.5 + (n.x === u.x && n.y === u.y ? .5 : 0); if (s > bs) { bs = s; best = n; } }
+  return best && (best.x !== u.x || best.y !== u.y) ? { x: best.x, y: best.y } : null;
 }
 function checkObjective() {
   const o = B.map.objective; if (B.result) return B.result;
@@ -202,15 +265,27 @@ function distField(u, goals) {
   return d;
 }
 function aiTargetsOf(u) { return B.units.filter(v => v.hp > 0 && hostile(u.team, v.team) && !(u.team === 2 && v.team === 2)); }
-// Decide an action: {x,y,target,move} to attack, {x,y} to move, or null to wait.
+// Score of using the unit's active skill from cell n on target t, on the same scale as the attack scores
+// (roughly expected damage dealt), or null when it is not worth it. `threat` is the set of cells hostiles reach next phase.
+function aiSkillScore(u, sk, n, t, threat, aT) {
+  if (sk.id === 'mend') { const h = mendAmount(t); if (h <= 0 && !t.status && !t.root) return null; return h * 1.1 + (t.status ? 8 : 0) + (t.root ? 4 : 0) + (t.leader || t.boss ? 4 : 0) + terrainDef(aT, u) * .2 - (threat.has(key(n.x, n.y)) ? 4 : 0); }
+  if (sk.id === 'root') { // worth it only against a unit that would otherwise move next phase and could then reach one of ours
+    const mobile = effMov(t, statusAfterUpkeep(t), rootAfterUpkeep(t)); if (!mobile || (!isHuman(t.team) && (t.ai === 'guard' || t.ai === 'stay') && !t.provoked)) return null;
+    const allies = B.units.filter(v => v.hp > 0 && !hostile(u.team, v.team) && v !== t); const menace = allies.some(a => dist(a, t) <= mobile + t.rngMax); if (!menace) return null; return 6 + t.level * .3 + (t.boss ? 5 : 0) + terrainDef(aT, u) * .2; }
+  if (sk.id === 'brace') { if (!threat.has(key(n.x, n.y))) return null; return 7 + (1 - u.hp / u.maxHp) * 10 + terrainDef(aT, u) * .3; }
+  return null;
+}
+// Decide an action: {x,y,target,move} to attack, {x,y,skill,target} to use a skill, {x,y} to move, or null to wait.
 function aiDecide(u, cautious = false) {
   const reach = reachable(u); const targets = aiTargetsOf(u); if (!targets.length) return null;
   const provoked = u.ai === 'aggro' || u.provoked || targets.some(t => dist(t, u) <= (u.ai === 'guard' ? Math.max(u.rngMax, 1) : 2));
   let best = null, bestScore = -1e9;
+  const sk = skillReady(u) ? u.skill : null; const threat = sk ? dangerZone(u.team) : null;
   for (const n of reach.values()) {
     if (!canStand(u, n.x, n.y)) continue;
     if (u.ai !== 'aggro' && !u.provoked && !(n.x === u.x && n.y === u.y) && u.ai === 'guard') continue; // guards never move
     const aT = terrAt(n.x, n.y);
+    if (sk) for (const t of skillTargetsAt(u, sk, n)) { const s = aiSkillScore(u, sk, n, t, threat, aT); if (s != null && s + (n.x === u.x && n.y === u.y ? 1.5 : 0) > bestScore) { bestScore = s + (n.x === u.x && n.y === u.y ? 1.5 : 0); best = { x: n.x, y: n.y, skill: sk, target: t }; } }
     for (const t of targets) {
       const d = Math.abs(t.x - n.x) + Math.abs(t.y - n.y); const tT = terrAt(t.x, t.y); let mv = bestMove(u, t, d, tT); if (!mv) continue;
       // a recharge move is only worth its lost turn when it finishes the target

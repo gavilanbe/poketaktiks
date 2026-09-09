@@ -58,8 +58,8 @@ function onBattleEnd(result) {
 // Write the battle's team-0 units back into SAVE.party (levels, evolutions), heal everyone, add captures.
 function applyBattleToParty() {
   if (!SAVE) return;
-  for (const u of B.units) { if (u.team !== 0 || u.pid == null) continue; const s = serializeUnit(u); s.hp = u.maxHp; s.status = null; s.acted = false; s.recharge = 0; SAVE.party[u.pid] = s; }
-  for (const c of B.captured) { const s = Object.assign({}, c, { team: 0, acted: false, status: null, recharge: 0, hpBonus: BOND_HP }); const u = restoreUnit(s); u.hp = u.maxHp; SAVE.party.push(serializeUnit(u)); }
+  for (const u of B.units) { if (u.team !== 0 || u.pid == null) continue; const s = serializeUnit(u); s.hp = u.maxHp; s.status = null; s.acted = false; s.recharge = 0; s.cd = 0; s.brace = 0; s.root = 0; SAVE.party[u.pid] = s; }
+  for (const c of B.captured) { const s = Object.assign({}, c, { team: 0, acted: false, status: null, recharge: 0, cd: 0, brace: 0, root: 0, hpBonus: BOND_HP }); const u = restoreUnit(s); u.hp = u.maxHp; SAVE.party.push(serializeUnit(u)); }
   SAVE.bag = Object.assign({}, B.bag);
 }
 // ---------------------------------------------------------------- suspend (mid-battle save at the start of each player phase)
@@ -145,10 +145,16 @@ function boot() {
 loadSprites(() => { boot(); });
 requestAnimationFrame(frame);
 // Debug: play one player phase with the enemy AI (used by tools/cdp.cjs balance script).
-function autoTurn() { if (!B || B.phase !== 0 || BT.mode !== 'idle') return false; for (const u of alive(0)) { if (u.acted) continue; const d = aiDecide(u); if (d) { u.x = d.x; u.y = d.y; if (d.target) { resolveCombat(u, d.target, d.move, u); } } u.acted = true; if (checkObjective()) { endBattle(); return true; } } endTurn(); return true; }
+// Model-only action for one AI decision: skill, or attack then dart. Shared by autoTurn and simBattle.
+function aiAct(u, d, log) {
+  u.x = d.x; u.y = d.y;
+  if (d.skill) { useSkill(u, d.skill, d.target); if (log) log.push('T' + B.turn + ' ' + u.name + '(' + u.team + ') ' + d.skill.name + '→' + d.target.name); return; }
+  if (d.target) { const ev = resolveCombat(u, d.target, d.move, u); if (log) for (const e of ev) if (e.type === 'hit' || e.type === 'ko') log.push('T' + B.turn + ' ' + (e.type === 'ko' ? 'KO ' + e.unit.name + ' by ' + e.by.name : e.att.name + '(' + e.att.team + ')L' + e.att.level + ' ' + e.move.name + '→' + e.def.name + 'L' + e.def.level + ' ' + e.dmg + (e.crit ? '!' : '') + ' hp' + e.hpAfter + '/' + e.def.maxHp)); const c = aiDart(u); if (c) { u.x = c.x; u.y = c.y; if (log) log.push('T' + B.turn + ' ' + u.name + ' darts'); } }
+}
+function autoTurn() { if (!B || B.phase !== 0 || BT.mode !== 'idle') return false; for (const u of alive(0)) { if (u.acted) continue; const d = aiDecide(u); if (d) aiAct(u, d); u.acted = true; if (checkObjective()) { endBattle(); return true; } } endTurn(); return true; }
 // Debug: simulate a whole battle model-only (no animation), AI on both sides. Returns a summary.
 function simBattle(maxTurns = 30, cautious = true) {
-  const log = B.simLog = []; const act = team => { for (const u of alive(team)) { if (u.status === 'frz' || u.acted) continue; const d = aiDecide(u, team === 0 && cautious); if (d) { u.x = d.x; u.y = d.y; if (d.target) { const ev = resolveCombat(u, d.target, d.move, u); for (const e of ev) if (e.type === 'hit' || e.type === 'ko') log.push('T' + B.turn + ' ' + (e.type === 'ko' ? 'KO ' + e.unit.name + ' by ' + e.by.name : e.att.name + '(' + e.att.team + ')L' + e.att.level + ' ' + e.move.name + '→' + e.def.name + 'L' + e.def.level + ' ' + e.dmg + (e.crit ? '!' : '') + ' hp' + e.hpAfter + '/' + e.def.maxHp)); } } u.acted = true; if (checkObjective()) return true; } return false; };
+  const log = B.simLog = []; const act = team => { for (const u of alive(team)) { if (u.status === 'frz' || u.acted) continue; const d = aiDecide(u, team === 0 && cautious); if (d) aiAct(u, d, log); u.acted = true; if (checkObjective()) return true; } return false; };
   while (!B.result && B.turn <= maxTurns) {
     if (act(0)) break;
     let done = false; for (const t of [1, 2, 3]) { if (!alive(t).length) continue; upkeep(t); if (t === 1) spawnReinforcements(); if (act(t)) { done = true; break; } } if (done) break;
