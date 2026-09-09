@@ -32,7 +32,9 @@ function startBattle(mapDef, party, bag, opts = {}) {
   // enemies / wild / allies from the map definition
   for (const d of mapDef.units) { const u = makeUnit(d.mon, d.level, d.team == null ? 1 : d.team, { x: d.x, y: d.y, ai: d.ai, boss: d.boss, nick: d.nick }); if (d.hp) u.hp = Math.max(1, Math.floor(u.maxHp * d.hp)); u.provoked = false; B.units.push(u); }
   // player party on deploy tiles: the campaign party keeps its HP edge, Versus trainers are built identically
-  const fresh = { acted: false, status: null, recharge: 0 };
+  // id: 0 drops the id a serialized party member carried from an earlier battle so restoreUnit assigns a fresh
+  // one: enemies were just numbered 1..N, and a duplicate id would make the duel scene overlay both sides.
+  const fresh = { acted: false, status: null, recharge: 0, id: 0 };
   party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus ? 1 : BOND_HP })); u.hp = u.maxHp; u.leader = i === 0; B.units.push(u); });
   if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fx.facing = -1; B.units.push(u); });
   BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.log = []; BT.showDanger = false; BT.hpShow.clear();
@@ -230,12 +232,19 @@ function confirmAttack() {
 }
 // The one place an exchange is resolved for display: snapshot both HP values, roll the combat once, and
 // hand the same event list to whichever presentation is active (duel scene or strikes on the board).
-function combatQueue(att, def, move, from) { const hp0 = { [att.id]: att.hp, [def.id]: def.hp }; return eventsToQueue(resolveCombat(att, def, move, from), att, def, hp0); }
+// The resolver also levels up, evolves and inflicts statuses before any of it is shown, so the scene works from
+// immutable snapshots of what both units looked like beforehand (duelView) and the board keeps drawing the
+// pre-evolution form until the evolution event plays.
+function combatQueue(att, def, move, from) {
+  const hp0 = { [att.id]: att.hp, [def.id]: def.hp }, view = duelView([att, def]); const ev = resolveCombat(att, def, move, from);
+  for (const e of ev) if (e.type === 'evolve' && !e.unit.fx.showNum) e.unit.fx.showNum = e.from.num;
+  return eventsToQueue(ev, att, def, { hp0, view });
+}
 const DUEL_EVENTS = new Set(['hit', 'miss', 'ko', 'thaw']);
-function eventsToQueue(ev, u, t, hp0) {
+function eventsToQueue(ev, u, t, snap) {
   const q = [];
-  if (hp0 && PREF.battle !== 'map') { // the strikes and KOs play in the scene; recharge, XP, level ups and evolutions follow on the board
-    const scene = ev.filter(e => DUEL_EVENTS.has(e.type)); if (scene.length) q.push({ kind: 'duel', att: u, def: t, events: scene, hp0 });
+  if (snap && PREF.battle !== 'map') { // the strikes and KOs play in the scene; recharge, XP, level ups and evolutions follow on the board
+    const scene = ev.filter(e => DUEL_EVENTS.has(e.type)); if (scene.length) q.push({ kind: 'duel', att: u, def: t, events: scene, hp0: snap.hp0, view: snap.view });
     for (const e of ev) if (!DUEL_EVENTS.has(e.type)) q.push({ kind: 'event', ev: e });
     return q;
   }
@@ -258,7 +267,7 @@ function confirmCatch() {
 }
 function finishUnit(u) {
   u.acted = true; u.moved = true; BT.sel = null; BT.reach = null; BT.atk = null; BT.undo = null; BT.menu = null; BT.hpShow.clear();
-  for (const v of B.units) { v.fx.dx = v.fx.dy = 0; v.fx.sx = v.fx.sy = 1; v.fx.alpha = 1; v.fx.flash = 0; }
+  for (const v of B.units) { v.fx.dx = v.fx.dy = 0; v.fx.sx = v.fx.sy = 1; v.fx.alpha = 1; v.fx.flash = 0; v.fx.showNum = null; }
   if (checkObjective()) { endBattle(); return; }
   if (alive(HT()).every(v => v.acted)) { BT.mode = 'idle'; BT.autoEnd = .6; return; }
   BT.mode = 'idle'; const f = alive(HT()).find(v => !v.acted); if (f && !VIEW.touch) { /* keep the cursor where it is; the player picks the next unit */ }
@@ -632,7 +641,7 @@ function drawDuelCard(q) {
 function drawEventCard(q) {
   const e = q.ev, W = VIEW.w, H = VIEW.h;
   if (e.type === 'xp') { const u = e.unit; const w = 120, x = W / 2 - w / 2, y = H - 40; panel(x, y, w, 24); const k = Math.min(1, q.t / q.dur); const shown = Math.min(100, q.from + e.amount * k); text(u.name, x + 6, y + 4, UI.ink); textR('+' + e.amount + ' EXP', x + w - 6, y + 4, UI.gold); bar(x + 6, y + 14, w - 12, 6, (shown % 100) / 100, '#6ad0ff'); }
-  if (e.type === 'levelup') { const u = e.unit; const w = 176, h = 70, x = W / 2 - w / 2; const uy = tileY(u.y); const y = uy < H / 2 ? Math.min(H - h - 8, uy + TILE + 10) : Math.max(28, uy - h - 12); const k = Math.min(1, q.t / .25); const yy = y + (1 - easeOut(k)) * -20; panel(x, yy, w, h, { title: 'LEVEL UP!' }); drawMon(u.num, x + 26, yy + 40, {}); bigText('LV ' + e.level, x + 50, yy + 8, UI.gold, { outline: '#402000' }); const g = e.gains; const stats = [['HP', g.maxHp], ['ATK', g.atk], ['DEF', g.def], ['SPA', g.spa], ['SPD', g.spd], ['SPE', g.spe]]; stats.forEach((s, i) => { const sx = x + 50 + (i % 3) * 40, sy = yy + 24 + Math.floor(i / 3) * 12; const showAt = .3 + i * .12; if (q.t > showAt) { text(s[0], sx, sy, UI.muted); text((s[1] >= 0 ? '+' : '') + s[1], sx + 20, sy, s[1] > 0 ? UI.green : UI.ink); } }); if (q.t > 1.1) { const nm = u.moves.map(m => m.name); text('Moves: ' + nm.join(', ').slice(0, 34), x + 6, yy + 52, UI.ink); } }
+  if (e.type === 'levelup') { const u = e.unit; const w = 176, h = 70, x = W / 2 - w / 2; const uy = tileY(u.y); const y = uy < H / 2 ? Math.min(H - h - 8, uy + TILE + 10) : Math.max(28, uy - h - 12); const k = Math.min(1, q.t / .25); const yy = y + (1 - easeOut(k)) * -20; panel(x, yy, w, h, { title: 'LEVEL UP!' }); drawMon(u.fx.showNum || u.num, x + 26, yy + 40, {}); bigText('LV ' + e.level, x + 50, yy + 8, UI.gold, { outline: '#402000' }); const g = e.gains; const stats = [['HP', g.maxHp], ['ATK', g.atk], ['DEF', g.def], ['SPA', g.spa], ['SPD', g.spd], ['SPE', g.spe]]; stats.forEach((s, i) => { const sx = x + 50 + (i % 3) * 40, sy = yy + 24 + Math.floor(i / 3) * 12; const showAt = .3 + i * .12; if (q.t > showAt) { text(s[0], sx, sy, UI.muted); text((s[1] >= 0 ? '+' : '') + s[1], sx + 20, sy, s[1] > 0 ? UI.green : UI.ink); } }); if (q.t > 1.1) { const nm = u.moves.map(m => m.name); text('Moves: ' + nm.join(', ').slice(0, 34), x + 6, yy + 52, UI.ink); } }
   if (e.type === 'evolve') { const k = q.t / q.dur; const w = 160, x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(k < .5 ? 'What? ' + e.from.name + ' is evolving!' : e.from.name + ' evolved into ' + e.to.name + '!', W / 2, y + 6, k < .5 ? UI.ink : UI.gold); if (k > .15 && k < .8 && Math.floor(q.t * 14) % 2) { ctx.globalAlpha = .25; rect(0, 0, W, H, '#ffffff'); ctx.globalAlpha = 1; } }
   if (e.type === 'capture' && q.t > q.dur - .8 && e.ok) { const w = 150, x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(e.unit.name + ' was caught!', W / 2, y + 6, UI.gold); }
 }

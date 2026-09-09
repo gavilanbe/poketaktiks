@@ -62,28 +62,34 @@ function duelBiome(q) {
   if (on('snow', 'ice') || share('snow', 'ice') > .3) return 'snow';
   return on('forest') || share('forest') > .3 ? 'forest' : 'meadow';
 }
+// Immutable presentation snapshot of each unit before the exchange: the resolver may level, evolve or inflict a
+// status before the scene starts, and the scene must show the old form and advance statuses on its own beats.
+function duelView(units) { const v = {}; for (const u of units) v[u.id] = { name: u.name, num: u.num, level: u.level, maxHp: u.maxHp, types: u.types.slice(), status: u.status, boss: u.boss, team: u.team }; return v; }
+// Status changes the scene shows: inflicted on the hit that caused them, cleared on a thaw.
+function duelApplyBeat(q, b) { if (b.kind === 'impact' && b.ev.status) q.view[b.def.id].status = b.ev.status; else if (b.kind === 'thaw') q.view[b.unit.id].status = null; }
 function duelActive() { return BT.mode === 'anim' && BT.anim && BT.anim.kind === 'duel' && BT.anim.started ? BT.anim : null; }
 // Queue item {kind:'duel', att, def, events, hp0}: build the script, hold the board's HP bars at their
 // pre-exchange values, preload sprites, count the KOs for the results screen.
 function startDuel(q) {
   q.script = duelScript(q.events, q.hp0); q.t = 0; q.i = 0; q.boost = false; q.skipped = false; q.done = false; q.started = true;
+  q.view = JSON.parse(JSON.stringify(q.view || duelView([q.att, q.def]))); // a private copy: replaying the item starts from the snapshot again
   q.sides = duelSides(q.att, q.def); q.pose = null; q.hitFx = null; q.missFx = null; q.koFx = null; q.banner = null; q.big = null;
   q.terr = { [q.att.id]: terrAt(q.att.x, q.att.y), [q.def.id]: terrAt(q.def.x, q.def.y) }; q.biome = duelBiome(q); q.seed = (q.att.id * 31 + q.def.id * 7 + B.turn * 3) | 0;
-  for (const u of [q.att, q.def]) { requestBigSprite(u.num); BT.hpShow.set(u.id, { from: q.hp0[u.id], to: q.hp0[u.id], t: 0, hold: true }); }
+  for (const u of [q.att, q.def]) { requestBigSprite(q.view[u.id].num); BT.hpShow.set(u.id, { from: q.hp0[u.id], to: q.hp0[u.id], t: 0, hold: true }); }
   for (const e of q.events) if (e.type === 'ko') noteKo(e);
   FX.parts = []; FX.sprites = []; FX.texts = []; centerCamBetween(q.att, q.def); Audio.sfx('wipe');
 }
 function duelRate(q) { let r = PREF.battle === 'quick' ? 1.7 : 1; if (BT.fast) r *= 1.6; if (q.boost) r *= 3.5; return r; }
 function updateDuel(q, dt) {
   const S = q.script; q.t += dt * duelRate(q);
-  if (!q.big && q.t >= S.intro) q.big = { [q.att.id]: bigReady(q.att.num), [q.def.id]: bigReady(q.def.num) }; // decide once: no pop-in mid-scene
+  if (!q.big && q.t >= S.intro) q.big = { [q.att.id]: bigReady(q.view[q.att.id].num), [q.def.id]: bigReady(q.view[q.def.id].num) }; // decide once: no pop-in mid-scene
   while (q.i < S.beats.length && S.beats[q.i].t <= q.t) duelBeat(q, S.beats[q.i++]);
   if (q.t >= S.total) q.done = true;
 }
 // Jump to the outro: the HP shown is the script's end state, identical to what playing it out reaches.
 function skipDuel(q) {
   if (q.skipped) return; q.skipped = true; q.boost = true; const S = q.script, outroAt = S.total - S.outro;
-  if (q.t < outroAt) { q.t = outroAt; while (q.i < S.beats.length && S.beats[q.i].t <= q.t) { const b = S.beats[q.i++]; if (b.kind === 'outro') duelBeat(q, b); } }
+  if (q.t < outroAt) { q.t = outroAt; while (q.i < S.beats.length && S.beats[q.i].t <= q.t) { const b = S.beats[q.i++]; if (b.kind === 'outro') duelBeat(q, b); else duelApplyBeat(q, b); } }
   q.pose = q.hitFx = q.missFx = q.banner = null; FX.parts = []; FX.sprites = []; FX.texts = []; FX.hitstop = 0;
 }
 // First press speeds the scene up, a second press (or X / right click) skips to the result.
@@ -93,7 +99,7 @@ function duelInput(q, ev) {
   if (hard || q.boost) skipDuel(q); else q.boost = true;
 }
 function duelBeat(q, b) {
-  const L = duelLayout(q), P = id => L.pos[id];
+  const L = duelLayout(q), P = id => L.pos[id]; duelApplyBeat(q, b);
   switch (b.kind) {
     case 'windup': { q.pose = { unit: b.att, kind: 'windup', t0: q.t, fam: b.fam }; q.banner = { move: b.move, counter: b.counter, t0: q.t, until: q.t + DUEL_T.windup + duelLaunchTime(b.fam) + .5 }; if (b.fam === 'contact') Audio.sfx('swing'); break; }
     case 'launch': { q.pose = { unit: b.att, kind: b.fam === 'contact' ? 'lunge' : 'cast', t0: q.t, fam: b.fam, dur: duelLaunchTime(b.fam) }; duelLaunchFx(b, P(b.att.id), P(b.def.id)); break; }
@@ -196,16 +202,16 @@ function duelDrawUnit(q, u, L, t) {
   if (ko >= 0) { const e = ko / DUEL_T.ko; if (e < .35) tint = Math.floor(ko * 24) % 2 ? '#ffffff' : null; else { const r = (e - .35) / .65; alpha = 1 - r; dy += r * 30 * soft; } }
   if (!REDUCED && !pose && hit < 0 && ko < 0) { const b = Math.sin(BT.time * 2.4 + u.id) * .5 + .5; sy *= 1 - b * .025; sx *= 1 + b * .012; }
   ctx.globalAlpha = .3 * alpha; ellipse(Math.round(p.x + dx), p.y + 1, Math.round(30 * sx), 6, '#000000'); ctx.globalAlpha = 1;
-  const big = q.big ? q.big[u.id] : bigReady(u.num);
-  if (big) drawBig(u.num, p.x + dx, p.y + dy, { flip, tint, alpha, sx, sy }); else drawMon(u.num, p.x + dx, p.y + dy, { flip, tint, alpha, sx: 2 * sx, sy: 2 * sy });
+  const num = q.view[u.id].num, big = q.big ? q.big[u.id] : bigReady(num);
+  if (big) drawBig(num, p.x + dx, p.y + dy, { flip, tint, alpha, sx, sy }); else drawMon(num, p.x + dx, p.y + dy, { flip, tint, alpha, sx: 2 * sx, sy: 2 * sy });
 }
 function duelPanel(q, u, L) {
-  const P = L.panels[u.id], hp = duelHpAt(q.script, q.t, u.id), t = q.terr[u.id], col = teamColor(u.team);
+  const P = L.panels[u.id], v = q.view[u.id], hp = duelHpAt(q.script, q.t, u.id), t = q.terr[u.id], col = teamColor(u.team);
   panel(P.x, P.y, P.w, P.h, { border: col });
-  const x = P.x + 6, y = P.y + 4; let name = u.name; while (textWidth(name) > P.w - 48 && name.length > 3) name = name.slice(0, -1);
-  text(name, x, y, UI.ink); textR('Lv' + u.level, P.x + P.w - 6, y, UI.gold);
-  const ratio = clamp(hp / u.maxHp, 0, 1); bar(x, y + 10, P.w - 52, 6, ratio, hpColor(ratio)); textR(hp + '/' + u.maxHp, P.x + P.w - 6, y + 9, hp <= 0 ? UI.red : UI.ink);
-  miniBadge(duelTeamTag(u), col, x, y + 19); u.types.forEach((tp, i) => typeBadge(tp, x + 18 + i * 26, y + 18, 24)); if (u.status) statusBadge(u.status, P.x + P.w - 21, y + 19);
+  const x = P.x + 6, y = P.y + 4; let name = v.name; while (textWidth(name) > P.w - 48 && name.length > 3) name = name.slice(0, -1);
+  text(name, x, y, UI.ink); textR('Lv' + v.level, P.x + P.w - 6, y, UI.gold);
+  const ratio = clamp(hp / v.maxHp, 0, 1); bar(x, y + 10, P.w - 52, 6, ratio, hpColor(ratio)); textR(hp + '/' + v.maxHp, P.x + P.w - 6, y + 9, hp <= 0 ? UI.red : UI.ink);
+  miniBadge(duelTeamTag(u), col, x, y + 19); v.types.forEach((tp, i) => typeBadge(tp, x + 18 + i * 26, y + 18, 24)); if (v.status) statusBadge(v.status, P.x + P.w - 21, y + 19);
   const sy = P.y + P.h + 2; rrect(P.x + 1, sy + 1, P.w, L.TH, UI.shadow, 1); rrect(P.x, sy, P.w, L.TH, UI.panelDark, 1);
   ctx.drawImage(tileImg(t.ch, 0, 0), 0, 0, 32, 32, P.x + 3, sy + 2, 7, 7);
   text(t.name.toUpperCase() + '  DEF ' + terrainDef(t, u) + '%  AVO ' + terrainEva(t, u), P.x + 13, sy + 2, UI.muted);

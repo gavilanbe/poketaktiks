@@ -251,10 +251,10 @@ test('drain heals from HP actually taken, not overkill, in preview and resolver'
 // Stage 2: the duel scene replays the resolver's events; it never rerolls, never touches units, and skipping lands on the same numbers.
 const sceneEvents = ev => ev.filter(e => ['hit', 'miss', 'ko', 'thaw'].includes(e.type));
 // Play a duel queue item to the end in fixed steps; optionally skip part-way. Returns the beats fired and the HP shown at the end.
-function playDuel(T, q, skipAt = -1) {
+function playDuel(T, q, skipAt = -1, boostAt = -1) {
   const g = T.g; g.startDuel(q); let n = 0;
-  while (!q.done && n++ < 5000) { g.updateDuel(q, 1 / 60); if (skipAt >= 0 && q.t >= skipAt && !q.skipped) g.skipDuel(q); }
-  assert(q.done, 'duel finished'); return { fired: q.i, hpA: g.duelHpAt(q.script, q.t, q.att.id), hpD: g.duelHpAt(q.script, q.t, q.def.id), t: q.t };
+  while (!q.done && n++ < 5000) { g.updateDuel(q, 1 / 60); if (boostAt >= 0 && q.t >= boostAt && !q.boost) g.duelInput(q, { type: 'key', key: 'ok' }); if (skipAt >= 0 && q.t >= skipAt && !q.skipped) g.skipDuel(q); }
+  assert(q.done, 'duel finished'); return { fired: q.i, frames: n, hpA: g.duelHpAt(q.script, q.t, q.att.id), hpD: g.duelHpAt(q.script, q.t, q.def.id), t: q.t };
 }
 
 test('duel script mirrors the resolver: pre-hit HP holds, drops in event order, skipping matches playing', T => {
@@ -277,10 +277,12 @@ test('duel script mirrors the resolver: pre-hit HP holds, drops in event order, 
   // playing through, speeding up and skipping all reach the same numbers, and none of them touches the units
   const snap = () => JSON.stringify([g.serializeUnit(att), g.serializeUnit(def)]); const before = snap(); const kills = T.B().kills;
   const mk = () => ({ kind: 'duel', att, def, events: sceneEvents(ev), hp0 });
-  const full = playDuel(T, mk()); const skipped = playDuel(T, mk(), impacts[0].t + .05); const boosted = mk(); boosted.boost = true; const fast = playDuel(T, boosted);
+  const full = playDuel(T, mk()); const skipped = playDuel(T, mk(), impacts[0].t + .05); const fast = playDuel(T, mk(), -1, S.intro); // one key press after the wipe
   assert.strictEqual(full.fired, S.beats.length, 'every beat fired'); assert.strictEqual(full.hpD, def.hp); assert.strictEqual(full.hpA, att.hp);
-  for (const r of [skipped, fast]) { assert.strictEqual(r.hpD, full.hpD); assert.strictEqual(r.hpA, full.hpA); }
-  assert(fast.t >= S.total, 'speeding up still reaches the end of the script');
+  for (const r of [skipped, fast]) { assert.strictEqual(r.hpD, full.hpD); assert.strictEqual(r.hpA, full.hpA); assert.strictEqual(r.fired, S.beats.length, 'skip and boost still pass every beat'); }
+  assert(fast.t >= S.total, 'speeding up still reaches the end of the script'); assert(fast.frames < full.frames * .5, 'boost: ' + fast.frames + ' frames vs ' + full.frames); assert(skipped.frames < fast.frames, 'skip: ' + skipped.frames + ' frames');
+  G("setPref('battle', 'quick')"); assert.strictEqual(G("localStorage.getItem('pk_battle')"), 'quick'); const quick = playDuel(T, mk()); G("setPref('battle', 'full')");
+  assert(quick.frames < full.frames * .7 && quick.frames > skipped.frames, 'quick preference: ' + quick.frames + ' frames'); assert.strictEqual(quick.hpD, full.hpD); assert.strictEqual(quick.hpA, full.hpA);
   assert.strictEqual(snap(), before, 'the scene mutated a unit'); assert.strictEqual(T.B().kills, kills, 'no KO here'); assert.strictEqual(G('__rolls'), 0, 'the scene rolled dice');
 });
 
@@ -349,6 +351,74 @@ test('an attack runs through the board queue: duel, then XP on the board, then t
     assert.strictEqual(def.hp, 0, 'Caterpie down'); assert.strictEqual(att.acted, true, 'attacker spent'); assert.strictEqual(T.B().kills, 1, pref + ': one KO counted'); assert(att.xp > 0, 'XP awarded once'); assert.strictEqual(BT.hpShow.size, 0, 'no held bars left');
   }
   G("setPref('battle', 'full')");
+});
+
+// Stage 2 review follow-ups: unique ids on real launches, presentation snapshots, honest drain.
+const uniqueIds = (B, label) => { const ids = B.units.map(u => u.id); assert.strictEqual(new Set(ids).size, ids.length, label + ': duplicate unit ids ' + ids.join(',')); };
+function walkNextTo(g, u, t) { for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) { const x = t.x + dx, y = t.y + dy; if (g.inMap(x, y) && g.moveCost(g.terrAt(x, y), u) < 99 && !g.unitAt(x, y)) { u.x = x; u.y = y; return; } } assert.fail('no free tile beside ' + t.name); }
+
+test('chapter launch, Versus and resume give every unit a unique id; the chapter-6 Charmeleon vs Voltorb duel has two sides', T => {
+  const { g, G, C } = T; const ch = C.CHAPTERS[5]; const L = ch.level; assert.strictEqual(ch.title, 'Power Plant');
+  const party = [4, 7, 1, 25, 133, 66].map(n => g.partyUnit(n, L)); assert(party.every(p => p.id), 'serialized party members carry ids from their own creation');
+  g.startBattle(ch.map, party.slice(0, ch.slots), { pokeball: 1 }, { chapter: 5, seed: 7, defer: true }); const B = T.B(); uniqueIds(B, 'chapter 6');
+  const char = B.units.find(u => u.team === 0 && u.num === 5), volt = B.units.find(u => u.team === 1 && u.num === 100); assert(char && volt, 'Charmeleon and a Voltorb are on the board');
+  walkNextTo(g, char, volt); fixedRoll(T, .5); const q = g.combatQueue(char, volt, move(char, 'Ember'), char)[0]; assert.strictEqual(q.kind, 'duel');
+  g.startDuel(q); assert.strictEqual(Object.keys(q.hp0).length, 2); assert.strictEqual(Object.keys(q.terr).length, 2); assert.strictEqual(Object.keys(q.view).length, 2);
+  const Lay = g.duelLayout(q); assert.strictEqual(Object.keys(Lay.panels).length, 2); assert.strictEqual(Object.keys(Lay.pos).length, 2); assert.notStrictEqual(Lay.pos[char.id].x, Lay.pos[volt.id].x);
+  assert.strictEqual(q.sides.left, char); assert.strictEqual(q.sides.right, volt); assert.strictEqual(q.view[char.id].name, 'Charmeleon'); assert.strictEqual(q.view[volt.id].name, 'Voltorb');
+  while (!q.done) g.updateDuel(q, 1 / 30); assert.strictEqual(g.duelHpAt(q.script, q.t, volt.id), volt.hp); assert.strictEqual(g.duelHpAt(q.script, q.t, char.id), char.hp);
+  // a reinforcement and a wild catch keep getting fresh ids after the party import
+  const extra = g.makeUnit(100, L, 1, { x: 0, y: 0 }); B.units.push(extra); uniqueIds(B, 'after spawn');
+  // Versus: two imported parties plus wild
+  g.launchVersus({ seed: 5, level: 20, wild: true, teams: [[25, 5, 8, 2], [25, 5, 8, 2]], order: [0, 1, 1, 0], size: 4, cur: 0 }); uniqueIds(T.B(), 'versus');
+  // the deep-link chapter path
+  g.startBattle(C.CHAPTERS[0].map, [g.partyUnit(4, 5), g.partyUnit(7, 5), g.partyUnit(1, 5)], { pokeball: 1 }, { chapter: 0, seed: 7, defer: true }); uniqueIds(T.B(), 'chapter 1');
+  // resume: a save written by the old code with the party's ids colliding with enemies is renumbered, a clean save is kept
+  G('BT.fast = true'); g.beginPhase(0, true); const rec = JSON.parse(T.store.get('pk_suspend')); const old = rec.units.map(u => u.id); assert.strictEqual(new Set(old).size, old.length, 'suspend holds unique ids');
+  rec.units.filter(u => u.team === 0).forEach((u, i) => { u.id = i + 1; }); T.store.set('pk_suspend', JSON.stringify(rec)); g.resumeSuspend(); uniqueIds(T.B(), 'resumed legacy save');
+  const enemyIds = T.B().units.filter(u => u.team === 1).map(u => u.id); assert(enemyIds.every(id => rec.units.some(u => u.team === 1 && u.id === id)), 'enemy ids are the saved ones');
+  const fresh = g.makeUnit(19, 5, 2, { x: 0, y: 0 }); assert(!T.B().units.some(u => u.id === fresh.id), 'new units never reuse an active id');
+});
+
+test('the scene shows the pre-exchange identity, level, max HP and status; the model still ends evolved', T => {
+  const { g, G } = T;
+  for (const pref of ['full', 'quick']) {
+    G("setPref('battle', '" + pref + "')"); arena(T); fixedRoll(T, .5); const BT = G('BT');
+    const cat = place(T, 10, 6, 0, 1, 1), rat = place(T, 19, 2, 1, 2, 1, { hp: 1 }); place(T, 19, 3, 1, 6, 4); cat.xp = 90; const before = { name: cat.name, num: cat.num, level: cat.level, maxHp: cat.maxHp };
+    const q = g.combatQueue(cat, rat, move(cat, 'Bug Bite'), cat); assert.strictEqual(cat.num, 11, 'the model has already evolved'); assert.strictEqual(cat.level, 7);
+    const v = q[0].view[cat.id]; assert.strictEqual(v.name, 'Caterpie'); assert.strictEqual(v.num, before.num); assert.strictEqual(v.level, 6); assert.strictEqual(v.maxHp, before.maxHp); assert.strictEqual(q[0].hp0[cat.id], before.maxHp);
+    assert.strictEqual(cat.fx.showNum, 10, 'the board keeps drawing Caterpie until the evolution plays'); assert(q.some(x => x.kind === 'event' && x.ev.type === 'evolve'), 'evolution queued after the scene');
+    BT.queue = q.slice(); g.playQueue(() => { BT.mode = 'idle'; }); let frames = 0, sawScene = false, sawEvolve = false;
+    while (BT.mode === 'anim' && frames++ < 3000) { g.battleUpdate(1 / 60); g.battleDraw(); if (BT.anim && BT.anim.kind === 'duel') { sawScene = true; assert.strictEqual(BT.anim.view[cat.id].num, 10, 'scene draws Caterpie'); if (frames === 30 && pref === 'quick') g.skipDuel(BT.anim); } if (BT.anim && BT.anim.kind === 'event' && BT.anim.ev.type === 'evolve') { sawEvolve = true; if (BT.anim.t < BT.anim.dur * .5) assert.strictEqual(cat.fx.showNum, 10, 'still Caterpie until the evolution is half way'); } }
+    assert(sawScene && sawEvolve && BT.mode === 'idle', pref + ': scene then evolution then back'); assert.strictEqual(cat.fx.showNum, null, 'shown as its real form afterwards'); assert.strictEqual(cat.num, 11); assert.strictEqual(cat.level, 7); assert.strictEqual(cat.hp, Math.min(cat.maxHp, cat.hp), 'model untouched');
+  }
+  G("setPref('battle', 'full')");
+  // a status inflicted by the first hit appears on that hit's impact, not at the start; skipping ends with it shown
+  arena(T); fixedRoll(T, 0); const jynx = place(T, 124, 30, 0, 2, 2), cat2 = place(T, 10, 30, 1, 3, 2); jynx.hp = jynx.maxHp = cat2.hp = cat2.maxHp = 1000;
+  const q2 = g.combatQueue(jynx, cat2, move(jynx, 'Ice Beam'), jynx)[0]; assert.strictEqual(cat2.status, 'frz', 'model already frozen'); assert.strictEqual(q2.view[cat2.id].status, null, 'snapshot taken before the hit');
+  g.startDuel(q2); const imp = q2.script.beats.find(b => b.kind === 'impact'); while (q2.t < imp.t - .02) { g.updateDuel(q2, 1 / 60); assert.strictEqual(q2.view[cat2.id].status, null, 'no badge before impact'); }
+  while (!q2.done) g.updateDuel(q2, 1 / 60); assert.strictEqual(q2.view[cat2.id].status, 'frz', 'badge after the impact beat');
+  const q3 = g.combatQueue(jynx, cat2, move(jynx, 'Ice Beam'), jynx)[0]; g.startDuel(q3); g.updateDuel(q3, .05); g.skipDuel(q3); while (!q3.done) g.updateDuel(q3, 1 / 60); assert.strictEqual(q3.view[cat2.id].status, 'frz', 'skip applies the status too'); assert.strictEqual(q3.view[cat2.id].status, q3.view[cat2.id].status);
+  // a thaw beat clears the frozen badge shown from the snapshot
+  arena(T); fixedRoll(T, .5); const fire = place(T, 6, 30, 0, 2, 2), ice = place(T, 143, 30, 1, 3, 2); ice.status = 'frz'; ice.hp = ice.maxHp = 2000; fire.hp = fire.maxHp = 2000;
+  const q4 = g.combatQueue(fire, ice, move(fire, 'Flamethrower'), fire)[0]; assert(q4.events.some(e => e.type === 'thaw')); assert.strictEqual(q4.view[ice.id].status, 'frz'); g.startDuel(q4);
+  const th = q4.script.beats.find(b => b.kind === 'thaw'); while (q4.t < th.t - .02) g.updateDuel(q4, 1 / 60); assert.strictEqual(q4.view[ice.id].status, 'frz', 'frozen until the thaw beat'); while (!q4.done) g.updateDuel(q4, 1 / 60); assert.strictEqual(q4.view[ice.id].status, null);
+});
+
+test('drain reports the HP actually restored: nothing at full HP, the missing HP when nearly full, never overkill', T => {
+  const { g } = T;
+  const setup = (attHp, defHp) => { arena(T); fixedRoll(T, .5); const ven = place(T, 3, 30, 0, 2, 2), onix = place(T, 95, 30, 1, 3, 2); if (attHp != null) ven.hp = attHp; if (defHp != null) onix.hp = defHp; return [ven, onix]; };
+  let [ven, onix] = setup(null, null); const m = move(ven, 'Giga Drain'); let fc = g.forecast(ven, onix, m, ven); assert(fc.a.dmg > 4);
+  assert.strictEqual(fc.strikes[0].drain, 0, 'full HP: preview promises no healing'); assert.strictEqual(fc.hpA, ven.maxHp);
+  let ev = g.resolveCombat(ven, onix, m, ven); assert.strictEqual(ev[0].drain, 0, 'full HP: event shows no healing'); assert.strictEqual(ev[0].attHpAfter, ven.maxHp); assert.strictEqual(ven.hp, ven.maxHp);
+  let S = g.duelScript(sceneEvents(ev), { [ven.id]: ven.maxHp, [onix.id]: onix.maxHp }); assert.strictEqual(S.beats.find(b => b.kind === 'impact').attTo, ven.maxHp);
+  [ven, onix] = setup(null, null); ven.hp = ven.maxHp - 1; fc = g.forecast(ven, onix, m, ven); assert.strictEqual(fc.strikes[0].drain, 1, 'nearly full: only the missing point'); assert.strictEqual(fc.hpA, ven.maxHp);
+  ev = g.resolveCombat(ven, onix, m, ven); assert.strictEqual(ev[0].drain, 1); assert.strictEqual(ven.hp, ven.maxHp); assert.strictEqual(ev[0].attHpAfter, ven.maxHp);
+  [ven, onix] = setup(null, 5); ven.hp = ven.maxHp - 3; fc = g.forecast(ven, onix, m, ven); assert.strictEqual(fc.strikes[0].drain, 2, 'overkill on 5 HP drains from 5, not the hit'); assert.strictEqual(fc.hpA, ven.maxHp - 1);
+  ev = g.resolveCombat(ven, onix, m, ven); assert.strictEqual(ev[0].drain, 2); assert.strictEqual(ven.hp, ven.maxHp - 1); assert.strictEqual(onix.hp, 0);
+  [ven, onix] = setup(null, 9); ven.hp = ven.maxHp - 2; fc = g.forecast(ven, onix, m, ven); assert.strictEqual(fc.strikes[0].drain, 2, 'floor(9/2)=4 capped by 2 missing'); ev = g.resolveCombat(ven, onix, m, ven); assert.strictEqual(ev[0].drain, 2); assert.strictEqual(ven.hp, ven.maxHp);
+  // the scene only floats a heal popup when the event carries healing
+  [ven, onix] = setup(null, null); const q = g.combatQueue(ven, onix, m, ven)[0]; g.startDuel(q); while (!q.done) g.updateDuel(q, 1 / 60); assert(!T.G('FX.texts').some(t => String(t.s).startsWith('+')) && q.script.beats.find(b => b.kind === 'impact').attFrom === q.script.beats.find(b => b.kind === 'impact').attTo, 'no +heal popup data at full HP');
 });
 
 // ---------------------------------------------------------------- runner

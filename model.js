@@ -109,8 +109,9 @@ function forecast(att, def, move, from) {
     const isA = s === a; const strikerHp = isA ? hpA : hpD, targetHp = isA ? hpD : hpA; const nominal = strikerHp > 0 && targetHp > 0;
     const e = { side: isA ? 'a' : 'c', unit: s.unit, move: s.move, dmg: s.dmg, hit: s.hit, crit: s.crit, eff: s.eff, drain: 0, nominal, cond: null };
     if (nominal) {
-      const dr = drainFor(s.move, Math.min(s.dmg, targetHp)); e.drain = dr;
-      if (isA) { hpD = Math.max(0, hpD - s.dmg); hpA = Math.min(att.maxHp, hpA + dr); } else { hpA = Math.max(0, hpA - s.dmg); hpD = Math.min(def.maxHp, hpD + dr); }
+      // drain: a share of the HP taken, then capped by what the striker is missing, so the preview promises only real healing
+      const dr = Math.min(drainFor(s.move, Math.min(s.dmg, targetHp)), isA ? att.maxHp - hpA : def.maxHp - hpD); e.drain = dr;
+      if (isA) { hpD = Math.max(0, hpD - s.dmg); hpA += dr; } else { hpA = Math.max(0, hpA - s.dmg); hpD += dr; }
     } else e.cond = 'only if ' + (strikerHp <= 0 ? s.unit : isA ? def : att).name + ' survives';
     strikes.push(e);
   }
@@ -132,7 +133,7 @@ function resolveCombat(att, def, move, from) {
     const lost = Math.min(dmg, Dn.hp); Dn.hp -= lost; let status = null;
     const ef = s.move.eff; // secondary effects need a damaging hit: immunity blocks them
     if (ef && ef.status && dmg > 0 && !Dn.status && Dn.hp > 0 && rnd() * 100 < ef.chance) { const st = ef.status; if (!(st === 'brn' && Dn.types.includes('Fire')) && !(st === 'psn' && (Dn.types.includes('Poison') || Dn.types.includes('Steel'))) && !(st === 'par' && Dn.types.includes('Electric')) && !(st === 'frz' && Dn.types.includes('Ice'))) { Dn.status = st; Dn.statusTurns = 0; status = st; } }
-    const drain = drainFor(s.move, lost); if (drain) A.hp = Math.min(A.maxHp, A.hp + drain);
+    const drain = Math.min(drainFor(s.move, lost), A.maxHp - A.hp); A.hp += drain; // the event carries the HP actually restored
     ev.push({ type: 'hit', att: A, def: Dn, move: s.move, dmg, crit, eff: s.eff, hpAfter: Dn.hp, status, drain, attHpAfter: A.hp, counter: isCounter });
     if (Dn.hp <= 0) ev.push({ type: 'ko', unit: Dn, by: A });
     if (Dn.status === 'frz' && dmg > 0 && s.move.type === 'Fire') { Dn.status = null; ev.push({ type: 'thaw', unit: Dn }); }

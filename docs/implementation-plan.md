@@ -88,3 +88,15 @@ Not verified / limits:
 - No recoil exists in the move data, so there is no recoil beat; drain, status, immunity, crit, miss, KO and thaw are covered.
 - `spriteBottom` cannot read pixels from `file://` images, so from disk every sprite stands on row 90 (a few species with deeper margins may float by a couple of pixels).
 - `simBattle`/`autoTurn` still call `resolveCombat` directly (no presentation), as before.
+
+#### Stage 2 review follow-up (2026-09-09)
+
+Reproduced with the real launch and model paths before the fix: a chapter-6 launch (`partyUnit` party [4,7,1,25,133,66] at Lv20) gave ids `1..11` to the enemies and `1..6` again to the party, so Charmeleon and the first Voltorb shared id 1 and the duel's `hp0`, terrain, panels and positions collapsed onto one side; a Caterpie Lv6 with 90 xp KOing a Rattata reached the scene already as Metapod Lv7 with 27 max HP; Jynx's Ice Beam showed the FRZ badge from the first frame; Giga Drain at full HP floated a `+heal` the model never applied.
+
+Fixes:
+
+- **Unique battle ids.** `startBattle` imports party and Versus party2 members with `id: 0` so `restoreUnit` numbers them after the map's units (campaign `pid` is untouched). `resumeSuspend` keeps saved ids and renumbers duplicates from old saves with `UID`, which `restoreUnit` already keeps above every saved id, so spawned, caught and restored units never reuse an active id.
+- **Presentation snapshots.** `combatQueue` takes `duelView` (name, dex number, level, max HP, types, status, team) before resolving; the scene draws only from that copy, advances a status on the impact beat that inflicted it and clears it on the thaw beat, and `skipDuel` applies the same beats without playing them. The board keeps `fx.showNum` at the pre-evolution form from the moment the queue is built until the evolution event passes its half-way flash (level-up card included); `finishUnit` clears it. Model state is never touched or reapplied.
+- **Honest drain.** Both `forecast` and `resolveCombat` cap the drain by the striker's missing HP, so the strike preview, the hit event's `drain`, the scene popup and the final HP agree (0 at full HP).
+
+Checks: `node tools/model-tests.cjs` 26 passed. New: chapter-6 launch, deep-link chapter, Versus and a legacy suspend save with colliding ids (all ids unique, enemy ids preserved, the Charmeleon vs Voltorb duel has two panels, two positions, two `hp0`/terrain entries, correct end HP); Caterpie→Metapod through the real queue in full and quick (with a skip) modes showing Caterpie Lv6/24 in the scene and on the board until the evolution, ending evolved; Ice Beam FRZ hidden before impact, shown after, also when skipped; thaw clears the badge; drain at full HP, one point missing, overkill on 5 and 9 HP targets in preview, event and final HP, and no popup data. The boost test now presses a key after the wipe (fewer frames, same HP, every beat fired) and the persisted `quick` preference is timed too. All three new tests fail on the previous commit. `node --check` on every module; `sh build.sh` rebuilt `index.html` and its script parses. Still no browser run.

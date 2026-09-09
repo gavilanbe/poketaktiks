@@ -1412,8 +1412,9 @@ function forecast(att, def, move, from) {
     const isA = s === a; const strikerHp = isA ? hpA : hpD, targetHp = isA ? hpD : hpA; const nominal = strikerHp > 0 && targetHp > 0;
     const e = { side: isA ? 'a' : 'c', unit: s.unit, move: s.move, dmg: s.dmg, hit: s.hit, crit: s.crit, eff: s.eff, drain: 0, nominal, cond: null };
     if (nominal) {
-      const dr = drainFor(s.move, Math.min(s.dmg, targetHp)); e.drain = dr;
-      if (isA) { hpD = Math.max(0, hpD - s.dmg); hpA = Math.min(att.maxHp, hpA + dr); } else { hpA = Math.max(0, hpA - s.dmg); hpD = Math.min(def.maxHp, hpD + dr); }
+      // drain: a share of the HP taken, then capped by what the striker is missing, so the preview promises only real healing
+      const dr = Math.min(drainFor(s.move, Math.min(s.dmg, targetHp)), isA ? att.maxHp - hpA : def.maxHp - hpD); e.drain = dr;
+      if (isA) { hpD = Math.max(0, hpD - s.dmg); hpA += dr; } else { hpA = Math.max(0, hpA - s.dmg); hpD += dr; }
     } else e.cond = 'only if ' + (strikerHp <= 0 ? s.unit : isA ? def : att).name + ' survives';
     strikes.push(e);
   }
@@ -1435,7 +1436,7 @@ function resolveCombat(att, def, move, from) {
     const lost = Math.min(dmg, Dn.hp); Dn.hp -= lost; let status = null;
     const ef = s.move.eff; // secondary effects need a damaging hit: immunity blocks them
     if (ef && ef.status && dmg > 0 && !Dn.status && Dn.hp > 0 && rnd() * 100 < ef.chance) { const st = ef.status; if (!(st === 'brn' && Dn.types.includes('Fire')) && !(st === 'psn' && (Dn.types.includes('Poison') || Dn.types.includes('Steel'))) && !(st === 'par' && Dn.types.includes('Electric')) && !(st === 'frz' && Dn.types.includes('Ice'))) { Dn.status = st; Dn.statusTurns = 0; status = st; } }
-    const drain = drainFor(s.move, lost); if (drain) A.hp = Math.min(A.maxHp, A.hp + drain);
+    const drain = Math.min(drainFor(s.move, lost), A.maxHp - A.hp); A.hp += drain; // the event carries the HP actually restored
     ev.push({ type: 'hit', att: A, def: Dn, move: s.move, dmg, crit, eff: s.eff, hpAfter: Dn.hp, status, drain, attHpAfter: A.hp, counter: isCounter });
     if (Dn.hp <= 0) ev.push({ type: 'ko', unit: Dn, by: A });
     if (Dn.status === 'frz' && dmg > 0 && s.move.type === 'Fire') { Dn.status = null; ev.push({ type: 'thaw', unit: Dn }); }
@@ -1576,7 +1577,9 @@ function startBattle(mapDef, party, bag, opts = {}) {
   // enemies / wild / allies from the map definition
   for (const d of mapDef.units) { const u = makeUnit(d.mon, d.level, d.team == null ? 1 : d.team, { x: d.x, y: d.y, ai: d.ai, boss: d.boss, nick: d.nick }); if (d.hp) u.hp = Math.max(1, Math.floor(u.maxHp * d.hp)); u.provoked = false; B.units.push(u); }
   // player party on deploy tiles: the campaign party keeps its HP edge, Versus trainers are built identically
-  const fresh = { acted: false, status: null, recharge: 0 };
+  // id: 0 drops the id a serialized party member carried from an earlier battle so restoreUnit assigns a fresh
+  // one: enemies were just numbered 1..N, and a duplicate id would make the duel scene overlay both sides.
+  const fresh = { acted: false, status: null, recharge: 0, id: 0 };
   party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus ? 1 : BOND_HP })); u.hp = u.maxHp; u.leader = i === 0; B.units.push(u); });
   if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fx.facing = -1; B.units.push(u); });
   BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.log = []; BT.showDanger = false; BT.hpShow.clear();
@@ -1774,12 +1777,19 @@ function confirmAttack() {
 }
 // The one place an exchange is resolved for display: snapshot both HP values, roll the combat once, and
 // hand the same event list to whichever presentation is active (duel scene or strikes on the board).
-function combatQueue(att, def, move, from) { const hp0 = { [att.id]: att.hp, [def.id]: def.hp }; return eventsToQueue(resolveCombat(att, def, move, from), att, def, hp0); }
+// The resolver also levels up, evolves and inflicts statuses before any of it is shown, so the scene works from
+// immutable snapshots of what both units looked like beforehand (duelView) and the board keeps drawing the
+// pre-evolution form until the evolution event plays.
+function combatQueue(att, def, move, from) {
+  const hp0 = { [att.id]: att.hp, [def.id]: def.hp }, view = duelView([att, def]); const ev = resolveCombat(att, def, move, from);
+  for (const e of ev) if (e.type === 'evolve' && !e.unit.fx.showNum) e.unit.fx.showNum = e.from.num;
+  return eventsToQueue(ev, att, def, { hp0, view });
+}
 const DUEL_EVENTS = new Set(['hit', 'miss', 'ko', 'thaw']);
-function eventsToQueue(ev, u, t, hp0) {
+function eventsToQueue(ev, u, t, snap) {
   const q = [];
-  if (hp0 && PREF.battle !== 'map') { // the strikes and KOs play in the scene; recharge, XP, level ups and evolutions follow on the board
-    const scene = ev.filter(e => DUEL_EVENTS.has(e.type)); if (scene.length) q.push({ kind: 'duel', att: u, def: t, events: scene, hp0 });
+  if (snap && PREF.battle !== 'map') { // the strikes and KOs play in the scene; recharge, XP, level ups and evolutions follow on the board
+    const scene = ev.filter(e => DUEL_EVENTS.has(e.type)); if (scene.length) q.push({ kind: 'duel', att: u, def: t, events: scene, hp0: snap.hp0, view: snap.view });
     for (const e of ev) if (!DUEL_EVENTS.has(e.type)) q.push({ kind: 'event', ev: e });
     return q;
   }
@@ -1802,7 +1812,7 @@ function confirmCatch() {
 }
 function finishUnit(u) {
   u.acted = true; u.moved = true; BT.sel = null; BT.reach = null; BT.atk = null; BT.undo = null; BT.menu = null; BT.hpShow.clear();
-  for (const v of B.units) { v.fx.dx = v.fx.dy = 0; v.fx.sx = v.fx.sy = 1; v.fx.alpha = 1; v.fx.flash = 0; }
+  for (const v of B.units) { v.fx.dx = v.fx.dy = 0; v.fx.sx = v.fx.sy = 1; v.fx.alpha = 1; v.fx.flash = 0; v.fx.showNum = null; }
   if (checkObjective()) { endBattle(); return; }
   if (alive(HT()).every(v => v.acted)) { BT.mode = 'idle'; BT.autoEnd = .6; return; }
   BT.mode = 'idle'; const f = alive(HT()).find(v => !v.acted); if (f && !VIEW.touch) { /* keep the cursor where it is; the player picks the next unit */ }
@@ -2176,7 +2186,7 @@ function drawDuelCard(q) {
 function drawEventCard(q) {
   const e = q.ev, W = VIEW.w, H = VIEW.h;
   if (e.type === 'xp') { const u = e.unit; const w = 120, x = W / 2 - w / 2, y = H - 40; panel(x, y, w, 24); const k = Math.min(1, q.t / q.dur); const shown = Math.min(100, q.from + e.amount * k); text(u.name, x + 6, y + 4, UI.ink); textR('+' + e.amount + ' EXP', x + w - 6, y + 4, UI.gold); bar(x + 6, y + 14, w - 12, 6, (shown % 100) / 100, '#6ad0ff'); }
-  if (e.type === 'levelup') { const u = e.unit; const w = 176, h = 70, x = W / 2 - w / 2; const uy = tileY(u.y); const y = uy < H / 2 ? Math.min(H - h - 8, uy + TILE + 10) : Math.max(28, uy - h - 12); const k = Math.min(1, q.t / .25); const yy = y + (1 - easeOut(k)) * -20; panel(x, yy, w, h, { title: 'LEVEL UP!' }); drawMon(u.num, x + 26, yy + 40, {}); bigText('LV ' + e.level, x + 50, yy + 8, UI.gold, { outline: '#402000' }); const g = e.gains; const stats = [['HP', g.maxHp], ['ATK', g.atk], ['DEF', g.def], ['SPA', g.spa], ['SPD', g.spd], ['SPE', g.spe]]; stats.forEach((s, i) => { const sx = x + 50 + (i % 3) * 40, sy = yy + 24 + Math.floor(i / 3) * 12; const showAt = .3 + i * .12; if (q.t > showAt) { text(s[0], sx, sy, UI.muted); text((s[1] >= 0 ? '+' : '') + s[1], sx + 20, sy, s[1] > 0 ? UI.green : UI.ink); } }); if (q.t > 1.1) { const nm = u.moves.map(m => m.name); text('Moves: ' + nm.join(', ').slice(0, 34), x + 6, yy + 52, UI.ink); } }
+  if (e.type === 'levelup') { const u = e.unit; const w = 176, h = 70, x = W / 2 - w / 2; const uy = tileY(u.y); const y = uy < H / 2 ? Math.min(H - h - 8, uy + TILE + 10) : Math.max(28, uy - h - 12); const k = Math.min(1, q.t / .25); const yy = y + (1 - easeOut(k)) * -20; panel(x, yy, w, h, { title: 'LEVEL UP!' }); drawMon(u.fx.showNum || u.num, x + 26, yy + 40, {}); bigText('LV ' + e.level, x + 50, yy + 8, UI.gold, { outline: '#402000' }); const g = e.gains; const stats = [['HP', g.maxHp], ['ATK', g.atk], ['DEF', g.def], ['SPA', g.spa], ['SPD', g.spd], ['SPE', g.spe]]; stats.forEach((s, i) => { const sx = x + 50 + (i % 3) * 40, sy = yy + 24 + Math.floor(i / 3) * 12; const showAt = .3 + i * .12; if (q.t > showAt) { text(s[0], sx, sy, UI.muted); text((s[1] >= 0 ? '+' : '') + s[1], sx + 20, sy, s[1] > 0 ? UI.green : UI.ink); } }); if (q.t > 1.1) { const nm = u.moves.map(m => m.name); text('Moves: ' + nm.join(', ').slice(0, 34), x + 6, yy + 52, UI.ink); } }
   if (e.type === 'evolve') { const k = q.t / q.dur; const w = 160, x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(k < .5 ? 'What? ' + e.from.name + ' is evolving!' : e.from.name + ' evolved into ' + e.to.name + '!', W / 2, y + 6, k < .5 ? UI.ink : UI.gold); if (k > .15 && k < .8 && Math.floor(q.t * 14) % 2) { ctx.globalAlpha = .25; rect(0, 0, W, H, '#ffffff'); ctx.globalAlpha = 1; } }
   if (e.type === 'capture' && q.t > q.dur - .8 && e.ok) { const w = 150, x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(e.unit.name + ' was caught!', W / 2, y + 6, UI.gold); }
 }
@@ -2298,28 +2308,34 @@ function duelBiome(q) {
   if (on('snow', 'ice') || share('snow', 'ice') > .3) return 'snow';
   return on('forest') || share('forest') > .3 ? 'forest' : 'meadow';
 }
+// Immutable presentation snapshot of each unit before the exchange: the resolver may level, evolve or inflict a
+// status before the scene starts, and the scene must show the old form and advance statuses on its own beats.
+function duelView(units) { const v = {}; for (const u of units) v[u.id] = { name: u.name, num: u.num, level: u.level, maxHp: u.maxHp, types: u.types.slice(), status: u.status, boss: u.boss, team: u.team }; return v; }
+// Status changes the scene shows: inflicted on the hit that caused them, cleared on a thaw.
+function duelApplyBeat(q, b) { if (b.kind === 'impact' && b.ev.status) q.view[b.def.id].status = b.ev.status; else if (b.kind === 'thaw') q.view[b.unit.id].status = null; }
 function duelActive() { return BT.mode === 'anim' && BT.anim && BT.anim.kind === 'duel' && BT.anim.started ? BT.anim : null; }
 // Queue item {kind:'duel', att, def, events, hp0}: build the script, hold the board's HP bars at their
 // pre-exchange values, preload sprites, count the KOs for the results screen.
 function startDuel(q) {
   q.script = duelScript(q.events, q.hp0); q.t = 0; q.i = 0; q.boost = false; q.skipped = false; q.done = false; q.started = true;
+  q.view = JSON.parse(JSON.stringify(q.view || duelView([q.att, q.def]))); // a private copy: replaying the item starts from the snapshot again
   q.sides = duelSides(q.att, q.def); q.pose = null; q.hitFx = null; q.missFx = null; q.koFx = null; q.banner = null; q.big = null;
   q.terr = { [q.att.id]: terrAt(q.att.x, q.att.y), [q.def.id]: terrAt(q.def.x, q.def.y) }; q.biome = duelBiome(q); q.seed = (q.att.id * 31 + q.def.id * 7 + B.turn * 3) | 0;
-  for (const u of [q.att, q.def]) { requestBigSprite(u.num); BT.hpShow.set(u.id, { from: q.hp0[u.id], to: q.hp0[u.id], t: 0, hold: true }); }
+  for (const u of [q.att, q.def]) { requestBigSprite(q.view[u.id].num); BT.hpShow.set(u.id, { from: q.hp0[u.id], to: q.hp0[u.id], t: 0, hold: true }); }
   for (const e of q.events) if (e.type === 'ko') noteKo(e);
   FX.parts = []; FX.sprites = []; FX.texts = []; centerCamBetween(q.att, q.def); Audio.sfx('wipe');
 }
 function duelRate(q) { let r = PREF.battle === 'quick' ? 1.7 : 1; if (BT.fast) r *= 1.6; if (q.boost) r *= 3.5; return r; }
 function updateDuel(q, dt) {
   const S = q.script; q.t += dt * duelRate(q);
-  if (!q.big && q.t >= S.intro) q.big = { [q.att.id]: bigReady(q.att.num), [q.def.id]: bigReady(q.def.num) }; // decide once: no pop-in mid-scene
+  if (!q.big && q.t >= S.intro) q.big = { [q.att.id]: bigReady(q.view[q.att.id].num), [q.def.id]: bigReady(q.view[q.def.id].num) }; // decide once: no pop-in mid-scene
   while (q.i < S.beats.length && S.beats[q.i].t <= q.t) duelBeat(q, S.beats[q.i++]);
   if (q.t >= S.total) q.done = true;
 }
 // Jump to the outro: the HP shown is the script's end state, identical to what playing it out reaches.
 function skipDuel(q) {
   if (q.skipped) return; q.skipped = true; q.boost = true; const S = q.script, outroAt = S.total - S.outro;
-  if (q.t < outroAt) { q.t = outroAt; while (q.i < S.beats.length && S.beats[q.i].t <= q.t) { const b = S.beats[q.i++]; if (b.kind === 'outro') duelBeat(q, b); } }
+  if (q.t < outroAt) { q.t = outroAt; while (q.i < S.beats.length && S.beats[q.i].t <= q.t) { const b = S.beats[q.i++]; if (b.kind === 'outro') duelBeat(q, b); else duelApplyBeat(q, b); } }
   q.pose = q.hitFx = q.missFx = q.banner = null; FX.parts = []; FX.sprites = []; FX.texts = []; FX.hitstop = 0;
 }
 // First press speeds the scene up, a second press (or X / right click) skips to the result.
@@ -2329,7 +2345,7 @@ function duelInput(q, ev) {
   if (hard || q.boost) skipDuel(q); else q.boost = true;
 }
 function duelBeat(q, b) {
-  const L = duelLayout(q), P = id => L.pos[id];
+  const L = duelLayout(q), P = id => L.pos[id]; duelApplyBeat(q, b);
   switch (b.kind) {
     case 'windup': { q.pose = { unit: b.att, kind: 'windup', t0: q.t, fam: b.fam }; q.banner = { move: b.move, counter: b.counter, t0: q.t, until: q.t + DUEL_T.windup + duelLaunchTime(b.fam) + .5 }; if (b.fam === 'contact') Audio.sfx('swing'); break; }
     case 'launch': { q.pose = { unit: b.att, kind: b.fam === 'contact' ? 'lunge' : 'cast', t0: q.t, fam: b.fam, dur: duelLaunchTime(b.fam) }; duelLaunchFx(b, P(b.att.id), P(b.def.id)); break; }
@@ -2432,16 +2448,16 @@ function duelDrawUnit(q, u, L, t) {
   if (ko >= 0) { const e = ko / DUEL_T.ko; if (e < .35) tint = Math.floor(ko * 24) % 2 ? '#ffffff' : null; else { const r = (e - .35) / .65; alpha = 1 - r; dy += r * 30 * soft; } }
   if (!REDUCED && !pose && hit < 0 && ko < 0) { const b = Math.sin(BT.time * 2.4 + u.id) * .5 + .5; sy *= 1 - b * .025; sx *= 1 + b * .012; }
   ctx.globalAlpha = .3 * alpha; ellipse(Math.round(p.x + dx), p.y + 1, Math.round(30 * sx), 6, '#000000'); ctx.globalAlpha = 1;
-  const big = q.big ? q.big[u.id] : bigReady(u.num);
-  if (big) drawBig(u.num, p.x + dx, p.y + dy, { flip, tint, alpha, sx, sy }); else drawMon(u.num, p.x + dx, p.y + dy, { flip, tint, alpha, sx: 2 * sx, sy: 2 * sy });
+  const num = q.view[u.id].num, big = q.big ? q.big[u.id] : bigReady(num);
+  if (big) drawBig(num, p.x + dx, p.y + dy, { flip, tint, alpha, sx, sy }); else drawMon(num, p.x + dx, p.y + dy, { flip, tint, alpha, sx: 2 * sx, sy: 2 * sy });
 }
 function duelPanel(q, u, L) {
-  const P = L.panels[u.id], hp = duelHpAt(q.script, q.t, u.id), t = q.terr[u.id], col = teamColor(u.team);
+  const P = L.panels[u.id], v = q.view[u.id], hp = duelHpAt(q.script, q.t, u.id), t = q.terr[u.id], col = teamColor(u.team);
   panel(P.x, P.y, P.w, P.h, { border: col });
-  const x = P.x + 6, y = P.y + 4; let name = u.name; while (textWidth(name) > P.w - 48 && name.length > 3) name = name.slice(0, -1);
-  text(name, x, y, UI.ink); textR('Lv' + u.level, P.x + P.w - 6, y, UI.gold);
-  const ratio = clamp(hp / u.maxHp, 0, 1); bar(x, y + 10, P.w - 52, 6, ratio, hpColor(ratio)); textR(hp + '/' + u.maxHp, P.x + P.w - 6, y + 9, hp <= 0 ? UI.red : UI.ink);
-  miniBadge(duelTeamTag(u), col, x, y + 19); u.types.forEach((tp, i) => typeBadge(tp, x + 18 + i * 26, y + 18, 24)); if (u.status) statusBadge(u.status, P.x + P.w - 21, y + 19);
+  const x = P.x + 6, y = P.y + 4; let name = v.name; while (textWidth(name) > P.w - 48 && name.length > 3) name = name.slice(0, -1);
+  text(name, x, y, UI.ink); textR('Lv' + v.level, P.x + P.w - 6, y, UI.gold);
+  const ratio = clamp(hp / v.maxHp, 0, 1); bar(x, y + 10, P.w - 52, 6, ratio, hpColor(ratio)); textR(hp + '/' + v.maxHp, P.x + P.w - 6, y + 9, hp <= 0 ? UI.red : UI.ink);
+  miniBadge(duelTeamTag(u), col, x, y + 19); v.types.forEach((tp, i) => typeBadge(tp, x + 18 + i * 26, y + 18, 24)); if (v.status) statusBadge(v.status, P.x + P.w - 21, y + 19);
   const sy = P.y + P.h + 2; rrect(P.x + 1, sy + 1, P.w, L.TH, UI.shadow, 1); rrect(P.x, sy, P.w, L.TH, UI.panelDark, 1);
   ctx.drawImage(tileImg(t.ch, 0, 0), 0, 0, 32, 32, P.x + 3, sy + 2, 7, 7);
   text(t.name.toUpperCase() + '  DEF ' + terrainDef(t, u) + '%  AVO ' + terrainEva(t, u), P.x + 13, sy + 2, UI.muted);
@@ -3118,6 +3134,8 @@ function resumeSuspend() {
   B = { map, units: [], turn: s.turn, phase: 0, bag: s.bag, result: null, seized: false, captured: s.captured || [], kills: s.kills || 0, chapter: s.chapter, log: [], seed: s.seed, skirmish: !!s.skirmish };
   map.items.forEach((it, i) => { it.taken = !!s.items[i]; }); map.reinforce.forEach((r, i) => { r.done = !!s.reinforce[i]; });
   for (const d of s.units) { if (d.hp <= 0 && !d.leader) continue; if (d.hpBonus == null && d.team === 0) d.hpBonus = BOND_HP; const u = restoreUnit(d); u.pid = d.pid; u.leader = d.leader; u.provoked = d.provoked; if (d.hp <= 0) continue; B.units.push(u); }
+  // older suspend saves could hold the same id on a party member and an enemy: renumber the duplicates (UID is already past every saved id)
+  const seen = new Set(); for (const u of B.units) { if (seen.has(u.id)) u.id = UID++; seen.add(u.id); }
   BACKDROP = makeBackdrop(mapDef); BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.hpShow.clear(); BT.cx = s.cx; BT.cy = s.cy; centerCam(BT.cx, BT.cy, true); FX.parts = []; FX.texts = [];
   for (const u of B.units) requestBigSprite(u.num);
   if (s.skirmish && s.preset) SC.data = { preset: true };
