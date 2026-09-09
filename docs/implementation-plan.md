@@ -52,3 +52,16 @@ Not verified / limits:
 - No browser run in this stage (supervisor does browser checks): forecast card layout (height 94→104), danger legend placement and the CHG badge were only reasoned about.
 - Campaign balance shifted slightly: low-level party members no longer get their signature move early (starters at Lv5 use Ember/Water Gun/Vine Whip until the signature level), and the AI no longer fears counters that cannot happen. `tools/cdp.cjs balance` was not re-run.
 - The AI fires Hyper Beam when it is the only move usable from a spot and the score (minus a lost-turn penalty) still wins; it prefers a same-range alternative unless the beam finishes the target.
+
+#### Stage 1 review follow-up (2026-09-09)
+
+Reproduced with the supervisor's minimal harness (dex/data/model only, `rnd = () => 0`, `isHuman = () => false`, plain 15×15 map) before the fix: a Caterpie frozen by Jynx's first Ice Beam still countered; Diglett took paralysis from a zero-damage Thunder Shock; a paralyzed Pikachu with `statusTurns = 2` was not shown reaching (8,2) although its upkeep is certain to cure it; Giga Drain on a 1 HP target healed 61 in the preview and 92 in the resolver.
+
+Fixes (model.js, one line in battle.js):
+
+- `resolveCombat` re-checks the live state per strike: a striker that is frozen skips (no counter, no double), a striker that already struck and no longer `doubles()` (paralyzed mid-exchange) skips its double, and hit/crit are recomputed from the current status. No extra strikes are created; the strike list still comes from `forecast()`.
+- Secondary status and drain require a damaging hit, so type immunity blocks them. The forecast's effects line hides side effects when the move has no effect on the target.
+- `drainFor(move, lost)` heals from HP actually taken (`min(dmg, hp)`) in both preview and resolver; hit events carry the capped amount.
+- `statusAfterUpkeep(u)` previews guaranteed cures (Poké Center, paralysis timer, freeze timer) without dice or mutation; `dangerZones` uses it via `effMov(u, status)`. Wild/trainer split and the recharge exclusion are unchanged.
+
+Checks: `node tools/model-tests.cjs` 18 passed (4 new regression tests: frozen-then-no-counter plus paralyzed-loses-double, immunity vs status/drain in preview and resolver, danger zone with guaranteed cure / center / wild thaw / recharge and a no-mutation check, drain vs overkill at 1 HP and at partial HP). The minimal reproduction script reports all four cases fixed. `node --check` on model.js and battle.js; `sh build.sh` rebuilt `index.html`. Not verified in a browser.

@@ -116,7 +116,7 @@ test('forecast: drain heals the attacker in the preview and in the resolver', T 
   const { g } = T; arena(T); fixedRoll(T, .5);
   const att = place(T, 3, 30, 1, 1, 1), def = place(T, 95, 30, 2, 2, 1); att.hp = 20; // Venusaur's Giga Drain on Onix
   const m = move(att, 'Giga Drain'); const fc = g.forecast(att, def, m, att);
-  const first = fc.strikes[0]; assert(first.drain > 0, 'preview shows drain'); assert.strictEqual(first.drain, Math.floor(fc.a.dmg * .5));
+  const first = fc.strikes[0]; assert(first.drain > 0, 'preview shows drain'); assert.strictEqual(first.drain, Math.floor(Math.min(fc.a.dmg, def.hp) * .5));
   const ev = g.resolveCombat(att, def, m, att); assert.strictEqual(ev[0].drain, first.drain); assert.strictEqual(att.hp, fc.hpA); assert.strictEqual(def.hp, fc.hpD);
 });
 
@@ -200,6 +200,52 @@ test('resuming a start-of-turn suspend save does not apply upkeep a second time'
   assert.strictEqual(pika2.hp, after.pika, 'poison did not tick again'); assert.strictEqual(char2.hp, after.char, 'center did not heal again'); assert.strictEqual(char2.status, null);
   assert.strictEqual(squirt2.acted, true, 'reload does not refund the recharge turn'); assert.strictEqual(squirt2.recharge, 0); assert.strictEqual(B.turn, after.turn); assert.strictEqual(B.phase, 0);
   assert.strictEqual(char2.maxHp, char.maxHp, 'party HP edge survives the resume');
+});
+
+// Stage 1 review follow-ups: live status mid-exchange, immunity, guaranteed cures in the danger zone, drain vs overkill.
+test('a defender frozen by the first hit neither counters nor doubles; a paralyzed attacker loses its double', T => {
+  const { g } = T; arena(T); fixedRoll(T, 0); // every roll succeeds: hits land, status procs
+  const jynx = place(T, 124, 30, 0, 2, 2), cat = place(T, 10, 30, 1, 3, 2); jynx.spe = cat.spe = 30; jynx.hp = jynx.maxHp = cat.hp = cat.maxHp = 1000; cat.moves = [T.G('MOVES').Tackle];
+  const fc = g.forecast(jynx, cat, move(jynx, 'Ice Beam'), jynx); assert(fc.c, 'the preview still lists the counter (freeze is a 10% chance)');
+  const ev = g.resolveCombat(jynx, cat, move(jynx, 'Ice Beam'), jynx);
+  assert.strictEqual(cat.status, 'frz'); assert(!ev.some(e => e.counter), 'no counter from a frozen defender: ' + kinds(ev)); assert.strictEqual(jynx.hp, jynx.maxHp);
+  // Rapidash doubles Slowpoke, but a paralyzing counter (Lick) cancels the second strike
+  arena(T); fixedRoll(T, 0); const fast = place(T, 78, 20, 1, 1, 1), slow = place(T, 79, 20, 2, 2, 1); fast.hp = fast.maxHp = slow.hp = slow.maxHp = 1000; slow.moves = [T.G('MOVES').Lick];
+  const fc2 = g.forecast(fast, slow, move(fast, 'Ember'), fast); assert.strictEqual(fc2.strikes.map(s => s.side).join(' '), 'a c a');
+  const ev2 = g.resolveCombat(fast, slow, move(fast, 'Ember'), fast);
+  assert.strictEqual(fast.status, 'par'); assert.strictEqual(kinds(ev2), 'hit hit*', 'the double is gone once paralyzed');
+});
+
+test('type immunity blocks damage, status and drain alike', T => {
+  const { g } = T; arena(T); fixedRoll(T, 0);
+  const pika = place(T, 25, 30, 0, 2, 2), dig = place(T, 50, 30, 1, 3, 2); pika.hp = pika.maxHp = dig.hp = dig.maxHp = 1000;
+  const ev = g.resolveCombat(pika, dig, move(pika, 'Thunderbolt'), pika);
+  assert.strictEqual(ev[0].dmg, 0); assert.strictEqual(ev[0].status, null); assert.strictEqual(dig.status, null, 'Ground is immune to Electric, so no paralysis');
+  // and a Normal move cannot drain from a Ghost
+  arena(T); fixedRoll(T, 0); const kiss = place(T, 36, 30, 0, 2, 2), gast = place(T, 92, 30, 1, 3, 2); kiss.hp = 10; kiss.moves = [Object.assign({}, T.G('MOVES').Tackle, { eff: { drain: .5 } })]; gast.hp = gast.maxHp = 500;
+  const fc = g.forecast(kiss, gast, kiss.moves[0], kiss); assert.strictEqual(fc.strikes[0].drain, 0, 'preview: nothing to drain');
+  const ev3 = g.resolveCombat(kiss, gast, kiss.moves[0], kiss); assert.strictEqual(ev3[0].dmg, 0, 'Normal cannot hit Ghost'); assert.strictEqual(ev3[0].drain, 0); assert.strictEqual(ev3[0].attHpAfter, 10, 'no healing on an immune target');
+});
+
+test('danger zone previews guaranteed upkeep cures without touching the unit', T => {
+  const { g, C } = T; arena(T, Array(15).fill('.'.repeat(15)));
+  const e = place(T, 25, 10, 1, 2, 2); e.status = 'par'; e.statusTurns = 2; // cured at its next upkeep (3 turns)
+  const snap = JSON.stringify(g.serializeUnit(e));
+  assert(g.dangerZone(0).has(C.key(8, 2)), 'full move after the guaranteed cure'); assert.strictEqual(JSON.stringify(g.serializeUnit(e)), snap, 'no mutation');
+  e.statusTurns = 0; assert(!g.dangerZone(0).has(C.key(8, 2)), 'still paralyzed next phase: reduced reach');
+  arena(T, ['C..............'].concat(Array(14).fill('.'.repeat(15)))); const c = place(T, 25, 10, 1, 0, 0); c.status = 'par'; c.statusTurns = 0;
+  assert(g.dangerZone(0).has(C.key(7, 0)), 'a Poké Center cures whatever the timer says');
+  const w = place(T, 16, 10, 2, 10, 10); w.status = 'frz'; w.statusTurns = 1; const z = g.dangerZones(0); assert(z.wild.size > 0, 'a wild unit sure to thaw is a wild threat'); assert(!z.trainer.has(C.key(10, 9)), 'zones stay separate');
+  w.recharge = 1; assert.strictEqual(g.dangerZones(0).wild.size, 0, 'recharge still wins');
+});
+
+test('drain heals from HP actually taken, not overkill, in preview and resolver', T => {
+  const { g } = T; arena(T); fixedRoll(T, .5);
+  const ven = place(T, 3, 30, 0, 2, 2), onix = place(T, 95, 30, 1, 3, 2); ven.hp = 10; onix.hp = 1;
+  const m = move(ven, 'Giga Drain'); const fc = g.forecast(ven, onix, m, ven); assert(fc.a.dmg > 2, 'a big hit'); assert.strictEqual(fc.strikes[0].drain, 1); assert.strictEqual(fc.hpA, 11);
+  const ev = g.resolveCombat(ven, onix, m, ven); assert.strictEqual(ev[0].drain, 1); assert.strictEqual(ev[0].attHpAfter, 11); assert.strictEqual(ven.hp, 11); assert.strictEqual(onix.hp, 0);
+  arena(T); fixedRoll(T, .5); const v2 = place(T, 3, 30, 0, 2, 2), o2 = place(T, 95, 30, 1, 3, 2); v2.hp = 10; o2.hp = 7;
+  const fc2 = g.forecast(v2, o2, m, v2); assert.strictEqual(fc2.strikes[0].drain, Math.floor(7 * .5)); const ev2 = g.resolveCombat(v2, o2, m, v2); assert.strictEqual(ev2[0].drain, 3); assert.strictEqual(v2.hp, 13);
 });
 
 // ---------------------------------------------------------------- runner

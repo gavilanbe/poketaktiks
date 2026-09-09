@@ -582,7 +582,8 @@ function drawForecast() {
   const el = effLabel(a.eff); textC(el || 'normal damage', cx, r.y + 60, a.eff > 1 ? UI.gold : a.eff < 1 ? '#a0d0ff' : UI.muted);
   const sum = exchangeSummary(fc); textC(sum.text, cx, r.y + 69, sum.col);
   // chance-based and lasting effects of both moves (never counted in the numbers above)
-  const ea = moveEffects(move), ec = c ? moveEffects(c.move) : []; const fxText = (ea.length ? '▸ ' + ea.join(' · ') : '') + (ea.length && ec.length ? '   ' : '') + (ec.length ? '◂ ' + ec.join(' · ') : '');
+  const ea = a.eff === 0 ? [] : moveEffects(move), ec = c && c.eff !== 0 ? moveEffects(c.move) : []; // immunity blocks secondary effects
+  const fxText = (ea.length ? '▸ ' + ea.join(' · ') : '') + (ea.length && ec.length ? '   ' : '') + (ec.length ? '◂ ' + ec.join(' · ') : '');
   textC(fxText || 'no side effects', r.x + r.w / 2, r.y + 80, fxText ? (ea.some(t => t === 'must recharge') ? RECHARGE_COL : UI.ink) : UI.muted);
   // move selector (bottom)
   rrect(r.x + 3, r.y + r.h - 14, r.w - 6, 11, UI.panelDark, 1); typeBadge(move.type, r.x + 5, r.y + r.h - 13, 24); text(move.name + '  ' + move.pow + 'pw  rng ' + move.rng[0] + (move.rng[1] > move.rng[0] ? '-' + move.rng[1] : ''), r.x + 32, r.y + r.h - 12, UI.ink); if (moves.length > 1) textR('C ▸ switch', r.x + r.w - 5, r.y + r.h - 12, UI.gold);

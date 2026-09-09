@@ -1266,7 +1266,7 @@ function terrAt(x, y) { return inMap(x, y) ? B.map.tiles[y][x] : TERRAIN['^']; }
 function unitAt(x, y) { for (const u of B.units) if (u.hp > 0 && u.x === x && u.y === y) return u; return null; }
 function alive(team) { return B.units.filter(u => u.hp > 0 && u.team === team); }
 function dist(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
-function effMov(u) { let m = u.mov; if (u.status === 'par') m = Math.max(1, m - 2); return m; }
+function effMov(u, status = u.status) { let m = u.mov; if (status === 'par') m = Math.max(1, m - 2); return m; }
 // Dijkstra movement: returns Map key→{x,y,cost,prev}. Passing through friends allowed; ending on anyone not allowed.
 function reachable(u, fromX = u.x, fromY = u.y, mov = effMov(u)) {
   const out = new Map(); const open = [{ x: fromX, y: fromY, cost: 0, prev: null }]; out.set(key(fromX, fromY), open[0]);
@@ -1289,14 +1289,23 @@ function pathTo(reach, x, y) { let n = reach.get(key(x, y)); if (!n) return null
 function ring(x, y, min, max) { const out = []; for (let dy = -max; dy <= max; dy++) for (let dx = -max; dx <= max; dx++) { const d = Math.abs(dx) + Math.abs(dy); if (d >= min && d <= max && inMap(x + dx, y + dy)) out.push({ x: x + dx, y: y + dy }); } return out; }
 function targetsFrom(u, x, y) { const out = []; for (const v of B.units) { if (v.hp <= 0 || !hostile(u.team, v.team)) continue; const d = Math.abs(v.x - x) + Math.abs(v.y - y); if (u.moves.some(m => d >= m.rng[0] && d <= m.rng[1])) out.push(v); } return out; }
 function attackCells(u, reach) { const set = new Set(), out = []; for (const n of reach.values()) { if (!canStand(u, n.x, n.y)) continue; for (const c of ring(n.x, n.y, u.rngMin, u.rngMax)) { const k = key(c.x, c.y); if (!set.has(k) && !reach.has(k)) { set.add(k); out.push(c); } } } return out; }
+// The status a unit will have after the guaranteed parts of its next upkeep (center cure, paralysis
+// and freeze timers), with no dice and no mutation. Mirrors the cure rules in upkeep().
+function statusAfterUpkeep(u) {
+  if (!u.status || terrAt(u.x, u.y).heal) return null;
+  if (u.status === 'par' && u.statusTurns + 1 >= 3) return null;
+  if (u.status === 'frz' && u.statusTurns + 1 >= 2) return null;
+  return u.status;
+}
 // Cells every hostile unit could hit on its next phase, split by who threatens them: trainer teams
 // (enemy or rival trainer) and wild Pokémon. A unit that must recharge skips its next phase, so it
-// threatens nothing; frozen and paralyzed units may recover, so they stay in.
+// threatens nothing; a unit whose upkeep is sure to cure it moves at full speed; frozen units that
+// may thaw stay in.
 function dangerZones(team) {
   const zones = { trainer: new Set(), wild: new Set() };
   for (const e of B.units) {
     if (e.hp <= 0 || !hostile(e.team, team) || e.recharge) continue;
-    const set = e.team === 2 ? zones.wild : zones.trainer; const r = reachable(e);
+    const set = e.team === 2 ? zones.wild : zones.trainer; const r = reachable(e, e.x, e.y, effMov(e, statusAfterUpkeep(e)));
     for (const n of r.values()) { if (unitAt(n.x, n.y) && unitAt(n.x, n.y) !== e) continue; for (const c of ring(n.x, n.y, e.rngMin, e.rngMax)) set.add(key(c.x, c.y)); }
   }
   return zones;
@@ -1324,6 +1333,8 @@ function doubles(att, def) { return att.status !== 'par' && att.spe >= def.spe +
 function needsRecharge(move) { return !!(move.eff && move.eff.recharge); }
 function counterBlock(def) { return def.status === 'frz' ? 'frozen' : def.recharge ? 'recharging' : null; }
 function bestMove(att, def, d, terr, asCounter = false) { let best = null, bd = -1; for (const m of usableMoves(att, d)) { if (asCounter && needsRecharge(m)) continue; const v = calcDmg(att, def, m, terr) * calcHit(att, def, m, terr) / 100; if (v > bd) { bd = v; best = m; } } return best; }
+// Healing a drain move gives back: a share of the HP actually taken, never of overkill. 0 when nothing was taken.
+function drainFor(move, lost) { return move.eff && move.eff.drain && lost > 0 ? Math.max(1, Math.floor(lost * move.eff.drain)) : 0; }
 // Short labels for a move's chance-based or lasting effects, for forecasts and help.
 function moveEffects(move) { const e = move.eff, out = []; if (!e) return out; if (e.status) out.push(e.chance + '% ' + STATUS[e.status].name); if (e.drain) out.push('drains ' + Math.round(e.drain * 100) + '%'); if (e.crit) out.push('high crit'); if (e.recharge) out.push('must recharge'); return out; }
 // Forecast the whole exchange with the attacker standing at `from`. Deterministic and side-effect
@@ -1347,25 +1358,30 @@ function forecast(att, def, move, from) {
     const isA = s === a; const strikerHp = isA ? hpA : hpD, targetHp = isA ? hpD : hpA; const nominal = strikerHp > 0 && targetHp > 0;
     const e = { side: isA ? 'a' : 'c', unit: s.unit, move: s.move, dmg: s.dmg, hit: s.hit, crit: s.crit, eff: s.eff, drain: 0, nominal, cond: null };
     if (nominal) {
-      const dr = s.move.eff && s.move.eff.drain && s.dmg > 0 ? Math.max(1, Math.floor(s.dmg * s.move.eff.drain)) : 0; e.drain = dr;
+      const dr = drainFor(s.move, Math.min(s.dmg, targetHp)); e.drain = dr;
       if (isA) { hpD = Math.max(0, hpD - s.dmg); hpA = Math.min(att.maxHp, hpA + dr); } else { hpA = Math.max(0, hpA - s.dmg); hpD = Math.min(def.maxHp, hpD + dr); }
     } else e.cond = 'only if ' + (strikerHp <= 0 ? s.unit : isA ? def : att).name + ' survives';
     strikes.push(e);
   }
   return { a, c, d, strikes, hpA, hpD, koA: hpA <= 0, koD: hpD <= 0, noCounter: c ? null : (block || 'range'), recharge: needsRecharge(move) };
 }
-// Resolve a full exchange by rolling the forecast's strikes in order. Mutates units; returns an event list for the animation layer.
+// Resolve a full exchange by rolling the forecast's strikes in order. Mutates units; returns an event list
+// for the animation layer. Each strike re-checks the live state: a unit frozen by an earlier hit cannot
+// answer or double, a unit paralyzed mid-exchange loses its double, and hit/crit use the current status.
 function resolveCombat(att, def, move, from) {
-  const fc = forecast(att, def, move, from); const ev = [];
+  const fc = forecast(att, def, move, from); const ev = []; const struck = new Set();
   for (const s of fc.strikes) {
     const A = s.unit, Dn = s.side === 'a' ? def : att, isCounter = s.side === 'c'; if (A.hp <= 0 || Dn.hp <= 0) continue;
-    const hit = rnd() * 100 < s.hit;
+    if (A.status === 'frz') continue; // frozen mid-exchange: no counter, no double
+    if (struck.has(A) && !doubles(A, Dn)) continue; // paralyzed mid-exchange: no double
+    struck.add(A); const dT = terrAt(Dn.x, Dn.y);
+    const hit = rnd() * 100 < calcHit(A, Dn, s.move, dT);
     if (!hit) { ev.push({ type: 'miss', att: A, def: Dn, move: s.move, counter: isCounter }); continue; }
-    const crit = rnd() * 100 < s.crit; const dmg = calcDmg(A, Dn, s.move, terrAt(Dn.x, Dn.y), crit);
-    Dn.hp = Math.max(0, Dn.hp - dmg); let status = null;
-    const ef = s.move.eff;
-    if (ef && ef.status && !Dn.status && Dn.hp > 0 && rnd() * 100 < ef.chance) { const st = ef.status; if (!(st === 'brn' && Dn.types.includes('Fire')) && !(st === 'psn' && (Dn.types.includes('Poison') || Dn.types.includes('Steel'))) && !(st === 'par' && Dn.types.includes('Electric')) && !(st === 'frz' && Dn.types.includes('Ice'))) { Dn.status = st; Dn.statusTurns = 0; status = st; } }
-    let drain = 0; if (ef && ef.drain && dmg > 0) { drain = Math.max(1, Math.floor(dmg * ef.drain)); A.hp = Math.min(A.maxHp, A.hp + drain); }
+    const crit = rnd() * 100 < calcCrit(A, Dn, s.move); const dmg = calcDmg(A, Dn, s.move, dT, crit);
+    const lost = Math.min(dmg, Dn.hp); Dn.hp -= lost; let status = null;
+    const ef = s.move.eff; // secondary effects need a damaging hit: immunity blocks them
+    if (ef && ef.status && dmg > 0 && !Dn.status && Dn.hp > 0 && rnd() * 100 < ef.chance) { const st = ef.status; if (!(st === 'brn' && Dn.types.includes('Fire')) && !(st === 'psn' && (Dn.types.includes('Poison') || Dn.types.includes('Steel'))) && !(st === 'par' && Dn.types.includes('Electric')) && !(st === 'frz' && Dn.types.includes('Ice'))) { Dn.status = st; Dn.statusTurns = 0; status = st; } }
+    const drain = drainFor(s.move, lost); if (drain) A.hp = Math.min(A.maxHp, A.hp + drain);
     ev.push({ type: 'hit', att: A, def: Dn, move: s.move, dmg, crit, eff: s.eff, hpAfter: Dn.hp, status, drain, attHpAfter: A.hp, counter: isCounter });
     if (Dn.hp <= 0) ev.push({ type: 'ko', unit: Dn, by: A });
     if (Dn.status === 'frz' && dmg > 0 && s.move.type === 'Fire') { Dn.status = null; ev.push({ type: 'thaw', unit: Dn }); }
@@ -2056,7 +2072,8 @@ function drawForecast() {
   const el = effLabel(a.eff); textC(el || 'normal damage', cx, r.y + 60, a.eff > 1 ? UI.gold : a.eff < 1 ? '#a0d0ff' : UI.muted);
   const sum = exchangeSummary(fc); textC(sum.text, cx, r.y + 69, sum.col);
   // chance-based and lasting effects of both moves (never counted in the numbers above)
-  const ea = moveEffects(move), ec = c ? moveEffects(c.move) : []; const fxText = (ea.length ? '▸ ' + ea.join(' · ') : '') + (ea.length && ec.length ? '   ' : '') + (ec.length ? '◂ ' + ec.join(' · ') : '');
+  const ea = a.eff === 0 ? [] : moveEffects(move), ec = c && c.eff !== 0 ? moveEffects(c.move) : []; // immunity blocks secondary effects
+  const fxText = (ea.length ? '▸ ' + ea.join(' · ') : '') + (ea.length && ec.length ? '   ' : '') + (ec.length ? '◂ ' + ec.join(' · ') : '');
   textC(fxText || 'no side effects', r.x + r.w / 2, r.y + 80, fxText ? (ea.some(t => t === 'must recharge') ? RECHARGE_COL : UI.ink) : UI.muted);
   // move selector (bottom)
   rrect(r.x + 3, r.y + r.h - 14, r.w - 6, 11, UI.panelDark, 1); typeBadge(move.type, r.x + 5, r.y + r.h - 13, 24); text(move.name + '  ' + move.pow + 'pw  rng ' + move.rng[0] + (move.rng[1] > move.rng[0] ? '-' + move.rng[1] : ''), r.x + 32, r.y + r.h - 12, UI.ink); if (moves.length > 1) textR('C ▸ switch', r.x + r.w - 5, r.y + r.h - 12, UI.gold);
