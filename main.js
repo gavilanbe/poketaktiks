@@ -148,7 +148,7 @@ requestAnimationFrame(frame);
 // Model-only action for one AI decision: skill, or attack then dart. Shared by autoTurn and simBattle.
 function aiAct(u, d, log) {
   u.x = d.x; u.y = d.y;
-  if (d.skill) { useSkill(u, d.skill, d.target); if (log) log.push('T' + B.turn + ' ' + u.name + '(' + u.team + ') ' + d.skill.name + '→' + d.target.name); return; }
+  if (d.skill) { const ev = useSkill(u, d.skill, d.target); if (log && ev) log.push('T' + B.turn + ' ' + u.name + '(' + u.team + ') ' + d.skill.name + '→' + d.target.name); return; }
   if (d.target) { const ev = resolveCombat(u, d.target, d.move, u); if (log) for (const e of ev) if (e.type === 'hit' || e.type === 'ko') log.push('T' + B.turn + ' ' + (e.type === 'ko' ? 'KO ' + e.unit.name + ' by ' + e.by.name : e.att.name + '(' + e.att.team + ')L' + e.att.level + ' ' + e.move.name + '→' + e.def.name + 'L' + e.def.level + ' ' + e.dmg + (e.crit ? '!' : '') + ' hp' + e.hpAfter + '/' + e.def.maxHp)); const c = aiDart(u); if (c) { u.x = c.x; u.y = c.y; if (log) log.push('T' + B.turn + ' ' + u.name + ' darts'); } }
 }
 function autoTurn() { if (!B || B.phase !== 0 || BT.mode !== 'idle') return false; for (const u of alive(0)) { if (u.acted) continue; const d = aiDecide(u); if (d) aiAct(u, d); u.acted = true; if (checkObjective()) { endBattle(); return true; } } endTurn(); return true; }

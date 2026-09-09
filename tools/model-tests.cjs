@@ -703,7 +703,7 @@ test('player flow: the skill sits in the action menu with its reason when unusab
   arena(T, Array(9).fill('.'.repeat(9))); const BT = G('BT'); const cle = place(T, 35, 20, 0, 4, 4), hurt = place(T, 4, 20, 0, 5, 4), foe = place(T, 19, 20, 1, 4, 6); T.B().phase = 0;
   BT.sel = cle; g.openActionMenu(cle); let it = BT.menu.items.find(i => i.id === 'skill'); assert(it && it.label === 'Mend' && it.off, 'Mend listed but off: ' + JSON.stringify(it)); assert(/no target/.test(it.sub));
   g.menuChoose('skill'); assert.strictEqual(BT.mode, 'menu', 'choosing an unusable skill does nothing');
-  hurt.hp = 10; g.openActionMenu(cle); it = BT.menu.items.find(i => i.id === 'skill'); assert(it && !it.off && /1 target/.test(it.sub) && /every 3 turns/.test(it.sub), it.sub);
+  hurt.hp = 10; g.openActionMenu(cle); it = BT.menu.items.find(i => i.id === 'skill'); assert(it && !it.off && /1 target/.test(it.sub) && /every other turn/.test(it.sub) && !/every 3/.test(it.sub), it.sub);
   g.menuChoose('skill'); assert.strictEqual(BT.mode, 'skillTarget'); same(BT.targets, [hurt]); same([BT.cx, BT.cy], [5, 4], 'cursor on the target');
   const boxes = textHook(T); g.battleDraw(); const strs = boxes().map(b => b.text); assert(strs.some(s => s === 'MEND'), 'skill card title'); assert(strs.some(s => /\+\d+ HP/.test(s)), 'the card shows the exact heal: ' + strs.join(' | ')); assert(strs.some(s => /uses the action/.test(s)));
   g.cancel(); assert.strictEqual(BT.mode, 'menu', 'back to the menu'); assert.strictEqual(hurt.hp, 10, 'nothing applied'); assert.strictEqual(cle.cd, 0);
@@ -715,7 +715,7 @@ test('player flow: the skill sits in the action menu with its reason when unusab
   assert.strictEqual(geo.brace, 1); assert.strictEqual(geo.acted, true); assert.strictEqual(BT.mode, 'idle');
   // the unit sheet and card mention the role and the state; the HUD stays inside every size in skillTarget mode
   for (const [w, h] of SIZES) { G('VIEW.w = ' + w + '; VIEW.h = ' + h); const HUD = G('HUD'); BT.sel = cle; cle.acted = false; cle.cd = 0; hurt.hp = 10; g.openActionMenu(cle); g.menuChoose('skill'); assert.strictEqual(BT.mode, 'skillTarget'); g.battleDraw(); for (const p of HUD.panels) assert(inside(p, w, h), w + 'x' + h + ': skill card inside'); for (const b of HUD.hits) assert(inside(b, w, h)); g.cancel(); g.cancel(); g.cancel(); BT.mode = 'idle'; }
-  G('VIEW.w = 480; VIEW.h = 270'); BT.info = geo; BT.mode = 'unitinfo'; const bx = textHook(T); g.battleDraw(); const sheet = bx().map(b => b.text); assert(sheet.some(s => s.startsWith('DEFENDER')), 'role on the sheet'); assert(sheet.some(s => /Brace:.*BRACED/.test(s)), 'skill line with the state: ' + sheet.filter(s => /Brace/.test(s)).join(' | ')); BT.mode = 'idle';
+  G('VIEW.w = 480; VIEW.h = 270'); BT.info = geo; BT.mode = 'unitinfo'; const bx = textHook(T); g.battleDraw(); const sheet = bx().map(b => b.text); assert(sheet.some(s => s.startsWith('DEFENDER')), 'role on the sheet'); assert(sheet.some(s => /BRACED.*Brace:/.test(s)), 'skill line with the state: ' + sheet.filter(s => /Brace/.test(s)).join(' | ')); BT.mode = 'idle';
   BT.cx = geo.x; BT.cy = geo.y; const bx2 = textHook(T); g.battleDraw(); assert(bx2().some(b => b.text === 'DEF'), 'role badge on the unit card');
   // dart: after a player attack the scout gets a 2-tile move, no undo, and ends spent; X stays put and ends the turn too
   fixedRoll(T, .5); const pid = place(T, 16, 20, 0, 6, 6), cat = place(T, 10, 5, 1, 7, 6); cat.hp = cat.maxHp = 500; pid.hp = pid.maxHp = 500;
@@ -745,6 +745,61 @@ test('help and menu labels for the roles use real glyphs, the sheet fits at phon
   for (const [w, h] of [[180, 390], [195, 422], [480, 270]]) { G('VIEW.w = ' + w + '; VIEW.h = ' + h); g.startBattle(C.CHAPTERS[2].map, [g.partyUnit(74, 10), g.partyUnit(35, 10)], { pokeball: 1 }, { chapter: 2, seed: 7, defer: true }); const BT = G('BT'); for (const u of T.B().units.slice(0, 6)) { BT.info = u; BT.mode = 'unitinfo'; const boxes = textHook(T); g.battleDraw(); const bad = boxes().filter(b => b.x < -1 || b.x + b.w > w + 1 || b.y < -1 || b.y + b.h > h + 1); assert(!bad.length, w + 'x' + h + ' sheet of ' + u.name + ': ' + JSON.stringify(bad.slice(0, 2))); } }
   G('VIEW.w = 480; VIEW.h = 270');
   const r = require('child_process').spawnSync(process.execPath, [require('path').join(__dirname, 'sim.cjs'), '1', '1-1'], { encoding: 'utf8', env: Object.assign({}, process.env, { SIM_TURNS: '12' }) }); assert.strictEqual(r.status, 0, r.stderr); assert(/^ch1: [wl-]\d+ p\d+e\d+/.test(r.stdout), r.stdout);
+});
+
+
+// Stage 4 review follow-up: no XP from safe bracing, one legality gate at the mutation boundary, clean fresh imports,
+// cooldown wording that matches the timing, and narrow forecast rows that never lose the odds or the condition.
+test('review: Brace earns no XP, useSkill refuses illegal calls without mutating, fresh encounters clear role state, cooldown wording, narrow forecast rows', T => {
+  const { g, G, C } = T;
+  // 1. ten idle braces with upkeeps in between never level the unit; Mend and Root still pay
+  arena(T); const geo = place(T, 74, 10, 0, 1, 1); place(T, 19, 10, 1, 6, 1); T.B().phase = 0;
+  for (let i = 0; i < 10; i++) { geo.acted = false; const ev = g.useSkill(geo, geo.skill, geo); assert(ev && ev.some(e => e.type === 'brace'), 'brace ' + i); assert(!ev.some(e => e.type === 'xp'), 'no XP event'); g.upkeep(0); }
+  same([geo.level, geo.xp], [10, 0], 'no free levels from bracing'); assert.strictEqual(G('SKILLS').brace.xp, 0); assert.strictEqual(G('SKILLS').mend.xp, 12); assert.strictEqual(G('SKILLS').root.xp, 12);
+  assert(G('HELP_PAGES').some(p => /Brace can be used every turn and earns nothing/.test(p.join(' '))), 'help says Brace earns nothing');
+  // 2. the legality gate: dead, spent, frozen, recharging, cooling-down users, a skill that is not the unit's, wrong-team / out-of-range / rooted / flying targets
+  arena(T, Array(9).fill('.'.repeat(9))); const bul = place(T, 1, 20, 0, 4, 4), rat = place(T, 19, 20, 1, 6, 4), farRat = place(T, 19, 20, 1, 8, 4), bird = place(T, 16, 20, 1, 4, 6), pal = place(T, 4, 20, 0, 5, 4), cle = place(T, 35, 20, 0, 3, 4); pal.hp = 10;
+  const snap = () => JSON.stringify(T.B().units.map(u => g.serializeUnit(u))); const SK = G('SKILLS');
+  const refuse = (u, sk, t, why, from) => { const before = snap(); assert.strictEqual(g.skillCheck(u, sk, t, from), why, 'check: ' + why); assert.strictEqual(g.useSkill(u, sk, t, from), null, 'useSkill refuses: ' + why); assert.strictEqual(snap(), before, 'nothing mutated for: ' + why); };
+  assert.strictEqual(g.skillCheck(bul, bul.skill, rat), null, 'the legal case');
+  bul.hp = 0; refuse(bul, bul.skill, rat, 'fainted'); bul.hp = bul.maxHp; bul.acted = true; refuse(bul, bul.skill, rat, 'acted'); bul.acted = false;
+  bul.status = 'frz'; refuse(bul, bul.skill, rat, 'frozen'); bul.status = null; bul.recharge = 1; refuse(bul, bul.skill, rat, 'recharging'); bul.recharge = 0; bul.cd = 1; refuse(bul, bul.skill, rat, 'cooldown 1'); bul.cd = 0;
+  refuse(bul, SK.mend, pal, 'none', undefined); refuse(bul, SK.brace, bul, 'none'); refuse(bul, SK.dart, rat, 'none');
+  refuse(bul, bul.skill, farRat, 'bad target'); refuse(bul, bul.skill, pal, 'bad target'); refuse(bul, bul.skill, bird, 'bad target'); rat.root = 2; refuse(bul, bul.skill, rat, 'no target'); rat.root = 0; // the only foe in range is already rooted
+  refuse(cle, cle.skill, cle, 'no target'); refuse(cle, cle.skill, rat, 'no target'); refuse(cle, cle.skill, pal, 'no target', undefined); // Charmander is two tiles from Clefairy: nothing legal from here
+  assert.strictEqual(g.skillCheck(cle, cle.skill, pal, { x: 5, y: 5 }), null, 'a preview from a hypothetical adjacent tile is legal'); assert.notStrictEqual(g.skillCheck(cle, cle.skill, pal, { x: 5, y: 7 }), null, 'and from a far one is not');
+  assert.strictEqual(g.skillBlock(cle), 'no target'); cle.acted = true; assert.strictEqual(g.skillBlock(cle), 'acted'); assert.strictEqual(g.skillReady(cle), false); cle.acted = false;
+  // the UI and AI paths go through the same gate: confirmSkill on a frozen user does nothing, the AI never proposes a skill for a frozen or spent unit
+  const BT = G('BT'); BT.sel = bul; BT.targets = [rat]; BT.tIdx = 0; BT.mode = 'skillTarget'; bul.status = 'frz'; const b0 = snap(); g.confirmSkill(); assert.strictEqual(snap(), b0); assert.strictEqual(BT.mode, 'skillTarget'); bul.status = null;
+  bul.acted = true; assert(!(g.aiDecide(bul) || {}).skill, 'AI: no skill for a spent unit'); bul.acted = false; bul.status = 'frz'; assert(!(g.aiDecide(bul) || {}).skill, 'AI: no skill when frozen'); bul.status = null;
+  same(g.skillQueue(bul, SK.mend, pal), [], 'an illegal AI queue is empty'); assert.strictEqual(bul.cd, 0);
+  const ok = g.useSkill(bul, bul.skill, rat); assert(ok && rat.root === 2 && bul.cd === 2, 'the legal call still works');
+  // 3. a fresh encounter drops root/brace/cd from an imported party member; a suspend save keeps them
+  g.startBattle(C.CHAPTERS[0].map, [Object.assign(g.partyUnit(1, 5), { root: 2, brace: 1, cd: 2 })], {}, { chapter: 0, seed: 7, defer: true }); const fresh = g.alive(0)[0]; same([fresh.root, fresh.brace, fresh.cd], [0, 0, 0], 'fresh import clears role state');
+  g.launchVersus({ seed: 5, level: 20, wild: false, teams: [[25], [74]], order: [0, 1], size: 1, cur: 0 }); for (const u of T.B().units) same([u.root, u.brace, u.cd], [0, 0, 0], 'versus import clean');
+  const rec = { num: 1, level: 5, xp: 0, hp: 20, team: 0, x: 1, y: 3, root: 2, brace: 1, cd: 2, id: 9 }; const ru = g.restoreUnit(rec); same([ru.root, ru.brace, ru.cd], [2, 1, 2], 'restoreUnit itself keeps them (suspend path)');
+  // 4. wording: menu, card and sheet all say every other turn / ready in n turns; nothing says "every 3"
+  arena(T, Array(9).fill('.'.repeat(9))); G('VIEW.w = 480; VIEW.h = 270'); const c2 = place(T, 35, 20, 0, 4, 4), h2 = place(T, 4, 20, 0, 5, 4); h2.hp = 10; T.B().phase = 0;
+  BT.sel = c2; g.openActionMenu(c2); const it = BT.menu.items.find(i => i.id === 'skill'); assert(/every other turn/.test(it.sub) && !/every 3/.test(it.sub), it.sub);
+  g.menuChoose('skill'); let boxes = textHook(T); g.battleDraw(); let strs = boxes().map(b => b.text); assert(strs.some(s => /every other turn/.test(s)) && !strs.some(s => /next in 3|every 3/.test(s)), 'card wording: ' + strs.filter(s => /turn/.test(s)).join(' | ')); assert(strs.some(s => /\+12 XP/.test(s)), 'card shows the XP');
+  g.cancel(); g.cancel(); BT.mode = 'idle'; c2.cd = 2; BT.info = c2; BT.mode = 'unitinfo'; boxes = textHook(T); g.battleDraw(); strs = boxes().map(b => b.text); assert(strs.some(s => /ready in 2 turns/.test(s)), 'sheet: ' + strs.filter(s => /ready/.test(s)).join(' | ')); BT.mode = 'idle';
+  // 5. narrow forecast rows: long move name, a conditional counter and a conditional follow-up keep damage, hit%, crit% and the condition; the crit KO tag survives
+  for (const [w, h] of [[180, 390], [195, 422], [207, 448], [480, 270]]) {
+    const T2 = loadGame(); const g2 = T2.g, G2 = T2.G; G2('VIEW.w = ' + w + '; VIEW.h = ' + h); arena(T2); G2('rnd = () => .5'); const BT2 = G2('BT');
+    const a = place(T2, 6, 30, 0, 1, 1), d = place(T2, 10, 3, 1, 2, 1); const mv = a.moves.find(m => m.name === 'Flamethrower'); BT2.sel = a; BT2.targets = [d]; BT2.tIdx = 0; BT2.moveIdx = a.moves.indexOf(mv); BT2.mode = 'target';
+    const rows = () => { const bx = textHook(T2); g2.drawHUD(); const all = bx(); const fr = g2.forecastRect(); for (const b of all) assert(b.x >= fr.x - 1 && b.x + b.w <= fr.x + fr.w + 1 || b.y < fr.y || b.y > fr.y + fr.h + 12, w + 'x' + h + ': forecast text inside its card: ' + b.text); return { rows: all.filter(b => /^[▸◂] /.test(b.text)).map(b => b.text), ko: all.filter(b => b.text === 'KO').map(b => b.x), fr }; };
+    let R = rows(); const tag = w + 'x' + h + ': '; assert.strictEqual(R.rows.length, 3, tag + 'three strike rows');
+    assert(/^▸ FLAMET\w* 555 KO  100% · crit 4%/.test(R.rows[0]), tag + 'first row: ' + R.rows[0]);
+    assert(/^◂ TACKLE 2  \d+% · c(rit )?4% · if (Caterpie )?alive$/.test(R.rows[1]), tag + 'conditional counter keeps hit, crit and the condition: ' + R.rows[1]);
+    assert(/^▸ FLAMET\w* 555  100% · c(rit )?4% · if (Caterpie )?alive$/.test(R.rows[2]), tag + 'conditional follow-up too: ' + R.rows[2]);
+    assert(R.ko.length >= 1, tag + 'KO tag drawn'); assert(g2.textWidth(R.rows[0]) <= R.fr.w - 12 && g2.textWidth(R.rows[1]) <= R.fr.w - 12 && g2.textWidth(R.rows[2]) <= R.fr.w - 12, tag + 'rows fit the card');
+    // a critical that would KO where the normal hit does not: the crit part reads "crit 4% KO" with its own tag
+    const fc = g2.forecast(a, d, mv, a); d.hp = fc.a.dmg + 1; R = rows(); assert(/^▸ FLAMET\w* 555  100% · c(rit )?4% KO/.test(R.rows[0]), tag + 'crit KO warning: ' + R.rows[0]); assert(R.ko.length >= 2, tag + 'crit KO tag drawn (' + R.ko.length + ')');
+    const HUD = G2('HUD'); const fr = g2.forecastRect(); assert(inside(fr, w, h)); for (const b of HUD.hits) assert(inside(b, w, h) && !overlaps(fr, b), tag + 'forecast clear of ' + b.label); assert(g2.forecastHit(fr.x + 5, fr.y + 5) && g2.moveSwitchHit(fr.x + 5, fr.y + fr.h - 6), tag + 'hit areas intact');
+    BT2.mode = 'help'; for (let p = 0; p < G2('HELP_PAGES').length; p++) { BT2.helpPage = p; g2.battleDraw(); const hr = g2.helpRect(); assert(inside(hr, w, h) && hr.lines.every(l => g2.textWidth(l) <= hr.w - 16), tag + 'help page ' + p + ' fits'); }
+  }
+  assert.strictEqual(g.fitForecastLine({ side: 'a', name: 'HYPER BEAM', dmg: 12, ko: false, hit: 90, crit: 4, critKo: true, braced: true, eff: '×1.5', drain: 3, cond: 'only if Wigglytuff survives' }, 100).text.length > 0, true);
+  const tiny = g.fitForecastLine({ side: 'c', name: 'THUNDERBOLT', dmg: 12, ko: false, hit: 85, crit: 24, critKo: false, braced: false, eff: '', drain: 0, cond: 'only if Wigglytuff survives' }, 150); assert(/85%/.test(tiny.text) && /c(rit )?24%/.test(tiny.text) && /if (Wigglytuff )?alive/.test(tiny.text) && g.textWidth(tiny.text) <= 150, 'the fitter keeps odds and condition at 150 px: ' + tiny.text);
 });
 
 // ---------------------------------------------------------------- runner

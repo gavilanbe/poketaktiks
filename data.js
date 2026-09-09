@@ -151,13 +151,14 @@ const ROLES = {
   support: { name: 'Support', abbr: 'SUP', col: '#60d0a0', skill: 'mend', followUp: false, desc: 'Mend an adjacent ally: 30% HP and cures status and root. Every other turn.' },
   striker: { name: 'Striker', abbr: 'STK', col: '#e05050', skill: null, followUp: true, desc: 'Plain attacker. Strikes twice when 10+ SPE faster.' },
 };
-// Active skills take the unit's action (like Attack) and go on cooldown for `cd` of the unit's own turns.
+// Active skills take the unit's action (like Attack) and go on cooldown for `cd` of the unit's own upkeeps:
+// cd 2 means use on turn N, unavailable on N+1, ready again on N+2 (every other turn).
 // Passive ones are always on. Nothing here rolls dice.
 const SKILLS = {
   dart: { id: 'dart', name: 'Dart', passive: true, blurb: 'Dart: moves up to 2 tiles after attacking' },
-  brace: { id: 'brace', name: 'Brace', target: 'self', rng: [0, 0], cd: 0, blurb: 'Brace: 40% less damage until its next turn', menu: 'Take 40% less damage until your next turn' },
-  root: { id: 'root', name: 'Root', target: 'foe', rng: [1, 2], cd: 2, blurb: 'Root: a foe within 2 cannot move next turn', menu: 'A foe within 2 tiles cannot move on its next turn' },
-  mend: { id: 'mend', name: 'Mend', target: 'ally', rng: [1, 1], cd: 2, blurb: 'Mend: adjacent ally +30% HP, cures status', menu: 'Heal an adjacent ally 30% and cure it' },
+  brace: { id: 'brace', name: 'Brace', target: 'self', rng: [0, 0], cd: 0, xp: 0, blurb: 'Brace: 40% less damage until its next turn', menu: 'Take 40% less damage until your next turn' },
+  root: { id: 'root', name: 'Root', target: 'foe', rng: [1, 2], cd: 2, xp: 12, blurb: 'Root: a foe within 2 cannot move next turn', menu: 'A foe within 2 tiles cannot move on its next turn' },
+  mend: { id: 'mend', name: 'Mend', target: 'ally', rng: [1, 1], cd: 2, xp: 12, blurb: 'Mend: adjacent ally +30% HP, cures status', menu: 'Heal an adjacent ally 30% and cure it' },
   reach: { id: 'reach', name: 'Reach', passive: true, blurb: 'Reach: ranged moves hit one tile further' },
   tide: { id: 'tide', name: 'Tide', passive: true, blurb: 'Tide: DEF 20% and AVO 20 on water' },
 };
@@ -165,7 +166,8 @@ const TIDE = { def: 20, eva: 20 };
 const BRACE_MULT = .6;   // damage taken while braced
 const MEND_RATIO = .3;   // share of max HP Mend restores
 const DART_MOV = 2;      // tiles a scout may move after attacking
-const SKILL_XP = 12;     // experience for using an active skill (human teams, like combat)
+// Skill XP (human teams): Root and Mend carry `xp` because they need a real target; Brace has none, so a
+// unit cannot level up by bracing in safety turn after turn.
 // First form of every evolution line, then role by line.
 const LINE_ROOT = {}; for (const d of DEX_LIST) if (!LINE_ROOT[d.num]) LINE_ROOT[d.num] = d.num; for (const d of DEX_LIST) for (const e of d.evos) LINE_ROOT[e[0]] = LINE_ROOT[d.num];
 const ROLE_OF = {}; for (const r in ROLE_LINES) for (const n of ROLE_LINES[r]) ROLE_OF[n] = r;

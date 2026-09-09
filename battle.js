@@ -65,7 +65,7 @@ function startBattle(mapDef, party, bag, opts = {}) {
   // player party on deploy tiles: the campaign party keeps its HP edge, Versus trainers are built identically
   // id: 0 drops the id a serialized party member carried from an earlier battle so restoreUnit assigns a fresh
   // one: enemies were just numbered 1..N, and a duplicate id would make the duel scene overlay both sides.
-  const fresh = { acted: false, status: null, recharge: 0, id: 0 };
+  const fresh = { acted: false, status: null, recharge: 0, cd: 0, brace: 0, root: 0, id: 0 }; // battle-temporary state never crosses encounters (suspend keeps it)
   party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus ? 1 : BOND_HP })); u.hp = u.maxHp; u.leader = i === 0; B.units.push(u); });
   if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fx.facing = -1; B.units.push(u); });
   BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.log = []; BT.showDanger = false; BT.hpShow.clear();
@@ -248,7 +248,7 @@ function openActionMenu(u) {
   if (wildAdj.length && hasBall) items.push({ id: 'catch', label: 'Catch', icon: 'ball', sub: 'Throw a ball' });
   if (B.map.objective.type === 'seize' && B.map.seize && u.x === B.map.seize.x && u.y === B.map.seize.y) items.unshift({ id: 'seize', label: 'Seize', icon: 'flag', sub: 'Win the map!' });
   // the role skill: always listed so the player learns it exists; greyed with the reason when it cannot be used now
-  if (u.skill && !u.skill.passive) { const why = skillBlock(u); const n = why ? 0 : skillTargetsAt(u).length; items.push({ id: 'skill', label: u.skill.name, icon: 'skill', off: !!why, sub: why ? u.skill.menu + ' (' + why + ')' : u.skill.menu + (u.skill.target === 'self' ? '' : ' · ' + n + (n > 1 ? ' targets' : ' target')) + (u.skill.cd ? ' · every ' + (u.skill.cd + 1) + ' turns' : '') }); }
+  if (u.skill && !u.skill.passive) { const why = skillBlock(u); const n = why ? 0 : skillTargetsAt(u).length; items.push({ id: 'skill', label: u.skill.name, icon: 'skill', off: !!why, sub: why ? u.skill.menu + ' (' + why + ')' : u.skill.menu + (u.skill.target === 'self' ? '' : ' · ' + n + (n > 1 ? ' targets' : ' target')) + (u.skill.cd ? ' · ' + cooldownText(u.skill) : '') }); }
   if (Object.keys(B.bag).some(k => ITEMS[k].kind !== 'ball' && B.bag[k] > 0)) items.push({ id: 'item', label: 'Bag', icon: 'bag', sub: 'Use an item' });
   items.push({ id: 'wait', label: 'Wait', icon: 'wait', sub: 'End this unit\'s turn' });
   BT.menu = { items, i: 0 }; BT.mode = 'menu'; BT.cx = u.x; BT.cy = u.y;
@@ -283,11 +283,13 @@ function startDart(u) {
 }
 // The player's skill: apply it, play the events, spend the unit.
 function confirmSkill() {
-  const u = BT.sel, t = BT.targets[BT.tIdx]; if (!u || !t || !skillReady(u)) { Audio.sfx('error'); return; } Audio.sfx('ok');
-  const ev = useSkill(u, u.skill, t); BT.queue = ev.map(e => ({ kind: 'event', ev: e })); BT.mode = 'anim';
+  const u = BT.sel, t = BT.targets[BT.tIdx]; if (!u || !t || skillCheck(u, u.skill, t) !== null) { Audio.sfx('error'); return; } Audio.sfx('ok');
+  const ev = useSkill(u, u.skill, t); if (!ev) { Audio.sfx('error'); return; } BT.queue = ev.map(e => ({ kind: 'event', ev: e })); BT.mode = 'anim';
   playQueue(() => { finishUnit(u); });
 }
-function skillQueue(u, sk, t) { return useSkill(u, sk, t).map(e => ({ kind: 'event', ev: e })); }
+function skillQueue(u, sk, t) { return (useSkill(u, sk, t) || []).map(e => ({ kind: 'event', ev: e })); }
+// Cooldown wording that matches the timing: cd 2 = use now, ready again two turns on = every other turn.
+function cooldownText(sk) { return sk.cd === 2 ? 'every other turn' : 'again in ' + sk.cd + ' turns'; }
 // The one place an exchange is resolved for display: snapshot both HP values, roll the combat once, and
 // hand the same event list to whichever presentation is active (duel scene or strikes on the board).
 // The resolver also levels up, evolves and inflicts statuses before any of it is shown, so the scene works from
@@ -767,6 +769,24 @@ function forecastLines(fc, att, def) {
   }
   return out;
 }
+// Fit one forecast line into `avail` pixels without losing what matters. The damage, the hit odds, the crit odds (with
+// its KO tag when a critical would KO) and the "only if X survives" condition are essential and are never dropped;
+// the optional parts (braced, effectiveness, drain) go first, then the move name shortens, the condition compacts
+// to "if X alive" and "if alive", and "crit" to "c". Returns the text, the head (for the KO tag) and the x offset
+// of the crit KO tag, if any. Pure.
+function fitForecastLine(l, avail) {
+  const arrow = l.side === 'a' ? '▸ ' : '◂ ', dmg = ' ' + l.dmg + (l.ko ? ' KO' : '');
+  let name = l.name, critWord = 'crit ', cond = l.cond; const opt = [l.braced ? 'braced' : null, l.eff || null, l.drain ? '+' + l.drain : null].filter(Boolean);
+  const build = () => { const head = arrow + name + dmg; const crit = critWord + l.crit + '%' + (l.critKo ? ' KO' : ''); const parts = [l.hit + '%', crit].concat(opt); if (cond) parts.push(cond); const text = head + '  ' + parts.join(' · '); const pre = head + '  ' + l.hit + '% · ' + critWord + l.crit + '% '; return { text, head, critKoAt: l.critKo ? textWidth(pre) + 1 : null }; };
+  let f = build(); const fits = () => textWidth(f.text) <= avail;
+  while (!fits() && opt.length) { opt.pop(); f = build(); }
+  if (!fits() && cond) { const who = cond.replace(/^only if (.*) survives$/, '$1'); cond = 'if ' + who + ' alive'; f = build(); }
+  while (!fits() && name.length > 6) { name = name.slice(0, -1); f = build(); }
+  if (!fits() && cond) { cond = 'if alive'; f = build(); }
+  if (!fits()) { critWord = 'c'; f = build(); }
+  while (!fits() && name.length > 3) { name = name.slice(0, -1); f = build(); }
+  return f;
+}
 function drawForecast() {
   const cf = currentForecast(); if (!cf) return; const { fc, move, moves, target } = cf; const r = forecastRect(); const u = BT.sel; const a = fc.a, c = fc.c;
   hudPanel(r.x, r.y, r.w, r.h, { title: 'FORECAST · NORMAL HITS' }); const half = Math.floor(r.w / 2); // HP after assumes hits land and none is critical
@@ -784,14 +804,10 @@ function drawForecast() {
   // the ordered exchange, one line per strike; optional parts are dropped from the right until the line fits
   const lines = forecastLines(fc, u, target); const ly = r.y + 58;
   lines.slice(0, 3).forEach((l, i) => {
-    const y = ly + i * 9; const col = !l.nominal ? UI.muted : l.side === 'a' ? '#8ab4ff' : '#ff9a9a';
-    // the crit odds are always shown; when a critical would KO where the normal hit would not, the crit part carries a KO tag
-    const head = (l.side === 'a' ? '▸ ' : '◂ ') + l.name + ' ' + l.dmg + (l.ko ? ' KO' : ''); const critPart = 'crit ' + l.crit + '%' + (l.critKo ? ' KO' : '');
-    const parts = [l.hit + '%', critPart, l.braced ? 'braced' : null, l.eff || null, l.drain ? '+' + l.drain : null, l.cond ? l.cond : null].filter(Boolean);
-    let s = head + '  ' + parts.join(' · '); const avail = r.w - 12; while (textWidth(s) > avail && parts.length > 1) { parts.splice(parts.length - (l.cond ? 2 : 1), 1); s = head + '  ' + parts.join(' · '); } while (textWidth(s) > avail && s.length > head.length) s = s.slice(0, -1);
-    text(s, r.x + 6, y, col); const tag = (kx, colr) => { rect(kx - 1, y - 1, textWidth('KO') + 2, 9, colr); text('KO', kx, y, '#ffffff'); };
-    if (l.ko) tag(r.x + 6 + textWidth(head) - textWidth('KO'), l.side === 'a' ? '#2a6a3a' : '#8a2c2c');
-    if (l.critKo && parts.includes(critPart)) { const pre = head + '  ' + parts.slice(0, parts.indexOf(critPart)).join(' · ') + (parts.indexOf(critPart) ? ' · ' : '') + 'crit ' + l.crit + '% '; if (s.length >= pre.length + 2) tag(r.x + 6 + textWidth(pre) + 1, l.side === 'a' ? '#2a6a3a' : '#8a2c2c'); }
+    const y = ly + i * 9; const col = !l.nominal ? UI.muted : l.side === 'a' ? '#8ab4ff' : '#ff9a9a'; const f = fitForecastLine(l, r.w - 12);
+    text(f.text, r.x + 6, y, col); const tag = (kx, colr) => { rect(kx - 1, y - 1, textWidth('KO') + 2, 9, colr); text('KO', kx, y, '#ffffff'); };
+    if (l.ko) tag(r.x + 6 + textWidth(f.head) - textWidth('KO'), l.side === 'a' ? '#2a6a3a' : '#8a2c2c');
+    if (f.critKoAt != null) tag(r.x + 6 + f.critKoAt, l.side === 'a' ? '#2a6a3a' : '#8a2c2c');
   });
   // summary of the exchange, then the moves' side effects (never counted in the numbers above)
   const sum = exchangeSummary(fc); const ea = a.eff === 0 ? [] : moveEffects(move), ec = c && c.eff !== 0 ? moveEffects(c.move) : [];
@@ -812,7 +828,7 @@ function drawSkillCard() {
   ctx.save(); ctx.beginPath(); ctx.rect(r.x + 6, r.y + 8, 34, 28); ctx.clip(); portraitBg(r.x + 6, r.y + 8, 34, 28, t.team); drawMon(t.num, r.x + 23, r.y + 35, { flip: t.team !== HT() }); ctx.restore(); teamGlyph(r.x + 8, r.y + 10, t.team, teamColorL(t.team));
   let name = (t === u ? 'itself' : t.name) + '  Lv' + t.level; while (textWidth(name) > r.w - 52 && name.length > 4) name = name.slice(0, -1); text(name, r.x + 46, r.y + 8, UI.ink);
   const lines = wrap(skillPreview(u, sk, t), r.w - 52); lines.slice(0, 2).forEach((l, i) => text(l, r.x + 46, r.y + 18 + i * 9, i === 0 ? UI.green : UI.ink));
-  const cost = 'uses the action' + (sk.cd ? ' · next in ' + (sk.cd + 1) + ' turns' : ''); text(cost, r.x + 46, r.y + 37, UI.muted);
+  const cost = 'uses the action' + (sk.xp ? ' · +' + sk.xp + ' XP' : '') + (sk.cd ? ' · ' + cooldownText(sk) : ''); text(cost, r.x + 46, r.y + 37, UI.muted);
   textC((VIEW.touch ? 'tap target: confirm' : 'OK: confirm') + '  ·  X: back', r.x + r.w / 2, r.y + 54, UI.muted, { outline: UI.shadow });
 }
 function drawCatchCard() {
@@ -866,14 +882,16 @@ function drawUnitSheet(u) {
   const weak = TYPES.filter(t => effRaw(t, u.types) >= 2).slice(0, 4), res = TYPES.filter(t => effRaw(t, u.types) < 1).slice(0, 4);
   const wy = narrow ? y + 150 : y + 88; text('Weak:', x + 6, wy, UI.muted); weak.forEach((t, i) => typeBadge(t, x + 36 + i * 25, wy - 1, 24)); text('Resist:', x + 6, wy + 11, UI.muted); res.forEach((t, i) => typeBadge(t, x + 36 + i * 25, wy + 10, 24));
   // what the role does right now: the skill, its state (cooldown, braced, rooted) or the plain-striker note
-  let sk = u.skill ? u.skill.blurb : 'Striker: plain attacker, strikes twice when 10+ SPE faster'; if (u.skill && !u.skill.passive && u.cd > 0) sk += ' · ready in ' + u.cd; if (u.brace) sk += ' · BRACED'; if (u.root) sk += ' · ROOTED';
+  // the state (cooldown, braced, rooted) leads so it survives the truncation on narrow sheets
+  const st = []; if (u.skill && !u.skill.passive && u.cd > 0) st.push('ready in ' + u.cd + (u.cd > 1 ? ' turns' : ' turn')); if (u.brace) st.push('BRACED'); if (u.root) st.push('ROOTED');
+  let sk = (st.length ? st.join(' · ') + ' · ' : '') + (u.skill ? u.skill.blurb : 'Striker: plain attacker, strikes twice when 10+ SPE faster');
   while (textWidth(sk) > w - 12 && sk.length > 8) sk = sk.slice(0, -1); text(sk, x + 6, y + h - 10, R.col);
   textC('◂ ▸ browse  ·  X close', W / 2, y + h + 4, UI.muted, { outline: UI.shadow });
 }
 const HELP_PAGES = [
   ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back. Mouse: hover + click; right click or an empty tile opens the menu. Touch: tap to move the cursor, tap again to confirm.', 'Q/E: next unit · C: unit info / switch move · F: fast · +/-: zoom · M: mute · H: help. Drag or wheel to pan.', 'Attack scene: any key speeds it up, X skips. The menu switches between full, quick and map-only battles.'],
   ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch, use its Skill, the Bag or Wait. Blue = move, red = attack. Greyed units have acted.', 'Defenders counter if you are in their move range and still standing. Only Scouts and Strikers strike twice, when 10+ SPE faster. The forecast lists the strikes in order; a greyed one only happens if an earlier strike misses.', 'Crits: 4% (24% for high-crit moves), ×1.5 damage. The forecast HP is for normal hits; a strike whose crit would KO says so. Terrain gives DEF% and AVO. Poké Centers heal 30%/turn and cure. Danger: red = foe reach, yellow = wild reach. Hyper Beam: no counter after it, next turn recharging.'],
-  ['ROLES', 'Types say whom you beat; the role (badge on the unit card) says how to use it. One role per evolution line.', 'SCT Scout: Dart, moves 2 tiles after attacking. DEF Defender: Brace, 40% less damage until its next turn. AMP Amphibious: DEF 20% and AVO 20 on water. CTL Controller: Root a foe within 2, it cannot move on its next turn (fliers immune). RNG Ranged: ranged moves reach 1 tile further. SUP Support: Mend an adjacent ally 30% HP and cure it. STK Striker: plain attacker.', 'Brace, Root and Mend use the action, like Attack, and earn a little XP. Root and Mend work every other turn (a cooldown counts on the unit sheet). A Poké Center or Full Heal also frees a rooted unit.'],
+  ['ROLES', 'Types say whom you beat; the role (badge on the unit card) says how to use it. One role per evolution line.', 'SCT Scout: Dart, moves 2 tiles after attacking. DEF Defender: Brace, 40% less damage until its next turn. AMP Amphibious: DEF 20% and AVO 20 on water. CTL Controller: Root a foe within 2, it cannot move on its next turn (fliers immune). RNG Ranged: ranged moves reach 1 tile further. SUP Support: Mend an adjacent ally 30% HP and cure it. STK Striker: plain attacker.', 'Brace, Root and Mend use the action, like Attack. Root and Mend earn a little XP and work every other turn (the unit sheet counts the turns); Brace can be used every turn and earns nothing. A Poké Center or Full Heal also frees a rooted unit.'],
   ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67. STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV, Frozen skips turns and crits are guaranteed on it.', 'Wild Pokémon (dashed ring) can be caught when weak: stand next to them, choose Catch and throw a ball. Trainer Pokémon (spiked ring) cannot be stolen. Level ups can evolve!'],
 ];
 function helpRect() { const W = VIEW.w, H = VIEW.h; const w = Math.min(280, W - 12); const lines = helpLines(BT.helpPage, w - 16); const h = Math.min(H - 12, 34 + lines.length * 10); return { x: W / 2 - w / 2, y: Math.max(6, H / 2 - h / 2), w, h, lines }; }

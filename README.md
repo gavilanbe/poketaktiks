@@ -51,8 +51,11 @@ load lazily; if one is missing the scene draws the mini icon at 2× instead.
   Support (Clefairy, Jigglypuff, Chansey): **Mend** an adjacent ally for 30%
   of its HP and cure it (every other turn). Everyone else is a Striker: a
   plain attacker that follows up. Brace, Root and Mend sit in the action menu
-  next to Attack, use the action, earn a little XP, and show their exact
-  effect on a card before you confirm; the AI uses them under the same rules.
+  next to Attack, use the action, and show their exact effect on a card before
+  you confirm; Root and Mend earn a little XP and work every other turn, Brace
+  earns none and can be used every turn. The AI uses them under the same
+  legality rules (no frozen, spent or recharging users, no out-of-range or
+  wrong-team targets).
   A Poké Center, Full Heal or Mend frees a rooted unit.
 - **Moves come from types.** Every Pokémon carries a small loadout: the best
   unlocked move of each of its types, the best adjacent-capable move of that

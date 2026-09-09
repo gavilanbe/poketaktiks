@@ -211,9 +211,24 @@ function skillTargetsAt(u, sk = u.skill, from = u) {
   }
   return out;
 }
-function skillReady(u) { return !!(u.skill && !u.skill.passive && u.cd <= 0 && !u.recharge); }
+// The one legality rule for active skills, shared by the menu, the AI and the mutation boundary. Pure: no dice,
+// no mutation. Returns why `u` cannot use `sk` on `t` from tile `from` (its own tile by default), or null when it can.
+// `t` may be omitted to ask only about the user; `strict` also refuses a user that has already acted this phase
+// (the AI asks before acting; previews from a hypothetical tile pass `from`).
+function skillCheck(u, sk = u.skill, t, from = u, strict = true) {
+  if (!u || u.hp <= 0) return 'fainted';
+  if (!sk || sk.passive || sk !== u.skill) return 'none';
+  if (strict && u.acted) return 'acted';
+  if (u.status === 'frz') return 'frozen';
+  if (u.recharge) return 'recharging';
+  if (u.cd > 0) return 'cooldown ' + u.cd;
+  const legal = skillTargetsAt(u, sk, from); if (!legal.length) return 'no target';
+  if (t !== undefined && !legal.includes(t)) return 'bad target';
+  return null;
+}
+function skillReady(u, from = u) { return skillCheck(u, u.skill, undefined, from) === null; }
 // Why a skill cannot be used right now (for the menu hint), or null.
-function skillBlock(u) { if (!u.skill || u.skill.passive) return 'none'; if (u.cd > 0) return 'cooldown ' + u.cd; if (!skillTargetsAt(u).length) return 'no target'; return null; }
+function skillBlock(u) { return skillCheck(u, u.skill); }
 // What Mend would restore: 30% of the target's max HP, capped by what is missing.
 function mendAmount(t) { return Math.min(t.maxHp - t.hp, Math.max(1, Math.floor(t.maxHp * MEND_RATIO))); }
 // Preview text of a skill on a target (also what the card shows). Pure.
@@ -223,15 +238,17 @@ function skillPreview(u, sk, t) {
   if (sk.id === 'root') return 'cannot move on its next turn';
   return '';
 }
-// Apply an active skill. Mutates; returns events for the animation layer. The action is spent by the caller.
-// Deterministic: no dice anywhere in here.
-function useSkill(u, sk, t) {
+// Apply an active skill. This is the only place a skill mutates anything, and it refuses anything skillCheck
+// refuses: an illegal call returns null and changes nothing (no cooldown, no XP, no effect). Legal calls return the
+// events for the animation layer; the action is spent by the caller. Deterministic: no dice anywhere in here.
+function useSkill(u, sk, t, from = u) {
+  if (skillCheck(u, sk, t, from) !== null) return null;
   const ev = [{ type: 'skill', unit: u, skill: sk, target: t }];
   if (sk.id === 'brace') { u.brace = 1; ev.push({ type: 'brace', unit: u }); }
   else if (sk.id === 'mend') { const h = mendAmount(t); if (h > 0) { t.hp += h; ev.push({ type: 'heal', unit: t, amount: h }); } if (t.status || t.root) { t.status = null; t.root = 0; ev.push({ type: 'cure', unit: t }); } }
   else if (sk.id === 'root') { t.root = 2; if (t.team === 1 && t.ai !== 'aggro') t.provoked = true; ev.push({ type: 'root', unit: t, by: u }); }
   u.cd = sk.cd;
-  if (isHuman(u.team)) awardXp(u, SKILL_XP, ev);
+  if (sk.xp && isHuman(u.team)) awardXp(u, sk.xp, ev);
   return ev;
 }
 // Dart (scout): after an attack the unit may still move up to DART_MOV tiles (less if paralyzed, none if rooted or recharging).
@@ -280,7 +297,7 @@ function aiDecide(u, cautious = false) {
   const reach = reachable(u); const targets = aiTargetsOf(u); if (!targets.length) return null;
   const provoked = u.ai === 'aggro' || u.provoked || targets.some(t => dist(t, u) <= (u.ai === 'guard' ? Math.max(u.rngMax, 1) : 2));
   let best = null, bestScore = -1e9;
-  const sk = skillReady(u) ? u.skill : null; const threat = sk ? dangerZone(u.team) : null;
+  const why = skillCheck(u); const sk = why === null || why === 'no target' ? u.skill : null; const threat = sk ? dangerZone(u.team) : null; // targets are checked per tile below
   for (const n of reach.values()) {
     if (!canStand(u, n.x, n.y)) continue;
     if (u.ai !== 'aggro' && !u.provoked && !(n.x === u.x && n.y === u.y) && u.ai === 'guard') continue; // guards never move
