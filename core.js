@@ -43,7 +43,7 @@ function btnH() { return narrowView() || VIEW.touch ? 18 : 14; }
 function rowH() { return narrowView() || VIEW.touch ? 16 : 13; }
 
 // ---------------------------------------------------------------- RNG
-function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function mulberry32(a) { const next = function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; next.state = () => a | 0; return next; }
 let rnd = mulberry32((Math.random() * 1e9) | 0);       // gameplay RNG (reseeded per battle)
 const vrnd = mulberry32(12345);                          // visual-only RNG
 function seedRng(s) { rnd = mulberry32(s | 0); }

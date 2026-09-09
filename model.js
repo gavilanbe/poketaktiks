@@ -44,14 +44,14 @@ function attackCells(u, reach) { const set = new Set(), out = []; for (const n o
 // The status a unit will have after the guaranteed parts of its next upkeep (center cure, paralysis
 // and freeze timers), with no dice and no mutation. Mirrors the cure rules in upkeep().
 function statusAfterUpkeep(u) {
-  if (!u.status || terrAt(u.x, u.y).heal) return null;
+  if (!u.status || terrAt(u.x, u.y).heal && territoryHeals(u)) return null;
   if (u.status === 'par' && u.statusTurns + 1 >= 3) return null;
   if (u.status === 'frz' && u.statusTurns + 1 >= 2) return null;
   return u.status;
 }
 // Root counts down one at each of the rooted unit's upkeeps (it is applied at 2, so the unit spends exactly one
 // phase held); a Poké Center clears it outright. Mirrors upkeep(), no mutation.
-function rootAfterUpkeep(u) { if (!u.root || terrAt(u.x, u.y).heal) return 0; return Math.max(0, u.root - 1); }
+function rootAfterUpkeep(u) { if (!u.root || terrAt(u.x, u.y).heal && territoryHeals(u)) return 0; return Math.max(0, u.root - 1); }
 // Cells every hostile unit could hit on its next phase, split by who threatens them: trainer teams
 // (enemy or rival trainer) and wild Pokémon. A unit that must recharge skips its next phase, so it
 // threatens nothing; a unit whose upkeep is sure to cure it moves at full speed; frozen units that
@@ -156,6 +156,7 @@ function resolveCombat(att, def, move, from) {
   return ev;
 }
 function awardXp(u, amount, ev) {
+  if (B && B.territory) return; // equal fixed-level territory teams
   if (u.level >= 50) return; u.xp += amount; ev.push({ type: 'xp', unit: u, amount });
   while (u.xp >= xpToNext() && u.level < 50) { u.xp -= xpToNext(); const gains = levelUp(u); ev.push({ type: 'levelup', unit: u, gains, level: u.level }); const evo = evolutionFor(u); if (evo) { const from = u.dex; ev.push({ type: 'evolve', unit: u, from, to: evo }); evolve(u, evo); } }
 }
@@ -171,7 +172,7 @@ function upkeep(team) {
     if (u.brace) u.brace = 0;
     if (u.root > 0) { u.root--; if (!u.root) ev.push({ type: 'unroot', unit: u }); }
     const t = terrAt(u.x, u.y);
-    if (t.heal) {
+    if (t.heal && territoryHeals(u)) {
       if (u.hp < u.maxHp) { const h = Math.max(1, Math.floor(u.maxHp * t.heal)); u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: h }); }
       if (u.status || u.root) { ev.push({ type: 'cure', unit: u }); u.status = null; u.root = 0; }
     }
@@ -262,6 +263,7 @@ function aiDart(u) {
   return best && (best.x !== u.x || best.y !== u.y) ? { x: best.x, y: best.y } : null;
 }
 function checkObjective() {
+  if (B.territory) return territoryObjective();
   const o = B.map.objective; if (B.result) return B.result;
   if (B.versus) { const a = alive(0).length, b = alive(1).length; if (!a && !b) return B.result = 'draw'; if (!a) return B.result = 'p2'; if (!b) return B.result = 'p1'; if (B.map.turnLimit && B.turn > B.map.turnLimit) return B.result = a > b ? 'p1' : b > a ? 'p2' : 'draw'; return null; }
   if (!alive(0).length) return B.result = 'lose';
@@ -294,6 +296,7 @@ function aiSkillScore(u, sk, n, t, threat, aT) {
 }
 // Decide an action: {x,y,target,move} to attack, {x,y,skill,target} to use a skill, {x,y} to move, or null to wait.
 function aiDecide(u, cautious = false) {
+  if (B.territory) return territoryDecide(u);
   const reach = reachable(u); const targets = aiTargetsOf(u); if (!targets.length) return null;
   const provoked = u.ai === 'aggro' || u.provoked || targets.some(t => dist(t, u) <= (u.ai === 'guard' ? Math.max(u.rngMax, 1) : 2));
   let best = null, bestScore = -1e9;

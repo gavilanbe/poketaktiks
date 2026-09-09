@@ -72,9 +72,11 @@ function titleDraw() {
   if (save) items.push(['CONTINUE', save.beaten ? 'Campaign complete · replay' : 'Chapter ' + (Math.min(save.chapter, CHAPTERS.length - 1) + 1) + ' · ' + CHAPTERS[Math.min(save.chapter, CHAPTERS.length - 1)].title, 'flag', () => continueCampaign()]);
   items.push(['NEW GAME', 'Campaign · eight chapters', 'map', () => { if (save && !confirm('Start a new game? Your campaign save will be replaced.')) return; startNewGame(); }]);
   items.push(['SKIRMISH', 'Random maps · catch wild Pokémon', 'dice', () => startSkirmishSetup()]);
+  items.push(['TERRITORY', 'Centers · income · reserves', 'flag', () => startTerritorySetup()]);
   items.push(['VERSUS', 'Two trainers · one device', 'vs', () => startVersusSetup()]);
   if (portrait) by = ly + 31 + 27 + 44; const total = items.length * (bh + gap); if (by + total > H - 26) by = Math.max(ly + 96, H - 26 - total);
-  items.forEach((it, i) => { menuCard(bx, by, bw, bh, it[0], it[1], it[2], SC.i === i, () => { Audio.sfx('ok'); it[3](); }); by += bh + gap; });
+  const cols = !portrait && W >= 420 && items.length > 4 ? 2 : 1; const firstY = by;
+  items.forEach((it, i) => { const xx = cols === 2 ? W / 2 - bw - 4 + (i % 2) * (bw + 8) : bx; const yy = cols === 2 ? firstY + Math.floor(i / 2) * (bh + gap) : by; menuCard(xx, yy, bw, bh, it[0], it[1], it[2], SC.i === i, () => { Audio.sfx('ok'); it[3](); }); by += bh + gap; });
   SC.menuLen = items.length;
   text(Audio.muted ? '♪ off  (M)' : '♪ on  (M)', 6, H - 12, UI.muted); if (!narrowView()) textR('Sprites: Pokémon Showdown · PokeAPI', W - 6, H - 12, UI.muted);
   if (Math.floor(SC.t * 2) % 2) textC(VIEW.touch ? 'tap a card' : 'arrows + Z  ·  or click', W / 2, H - (narrowView() ? 24 : 12), UI.muted, { outline: UI.shadow });

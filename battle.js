@@ -33,7 +33,7 @@ function teamName(t) { return B && B.versus ? (t === 0 ? 'PLAYER 1' : t === 1 ? 
 function phaseLabel(t) { return teamName(t) + ' PHASE'; }
 // Screen bands the HUD keeps for itself (in board pixels): the turn card on top and, on narrow portrait screens,
 // the context/forecast area and the button bar at the bottom. A board that fits is centred between them.
-function hudReserve() { const z = BT.zoom; if (narrowView() && portraitView()) return { top: 30 / z, bottom: (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget' ? 170 : 118) / z }; return { top: 30 / z, bottom: 40 / z }; }
+function hudReserve() { const z = BT.zoom; if (B && B.territory) return { top: 52 / z, bottom: (narrowView() && portraitView() ? (['target', 'skillTarget'].includes(BT.mode) ? 170 : 118) : 40) / z }; if (narrowView() && portraitView()) return { top: 30 / z, bottom: (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget' ? 170 : 118) / z }; return { top: 30 / z, bottom: 40 / z }; }
 // Range of camera positions: a board that fits sits centred (between the HUD bands vertically); a bigger board can
 // be panned edge to edge, and far enough past its top and bottom rows for them to clear the HUD bands.
 function camRange() {
@@ -65,10 +65,11 @@ function startBattle(mapDef, party, bag, opts = {}) {
   // player party on deploy tiles: the campaign party keeps its HP edge, Versus trainers are built identically
   // id: 0 drops the id a serialized party member carried from an earlier battle so restoreUnit assigns a fresh
   // one: enemies were just numbered 1..N, and a duplicate id would make the duel scene overlay both sides.
+  if (opts.territory) territoryInit();
   const fresh = { acted: false, status: null, recharge: 0, cd: 0, brace: 0, root: 0, id: 0 }; // battle-temporary state never crosses encounters (suspend keeps it)
   party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus ? 1 : BOND_HP })); u.hp = u.maxHp; u.leader = i === 0; B.units.push(u); });
   if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fx.facing = -1; B.units.push(u); });
-  BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.log = []; BT.showDanger = false; BT.hpShow.clear();
+  BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.autoEnd = 0; BT.dart = false; BT.log = []; BT.showDanger = false; BT.hpShow.clear();
   for (const u of B.units) requestBigSprite(u.num); // warm the duel scene's sprites; nothing waits on them
   const first = alive(0)[0]; BT.cx = first ? first.x : 0; BT.cy = first ? first.y : 0; BT.zoom = 1; if (narrowView() && canZoom()) setZoom(.5); centerCam(BT.cx, BT.cy, true); // phones open zoomed out: six 32 px tiles across is too little context
   BT.hoverAnchor = null; BT.lastMode = BT.mode; FX.parts = []; FX.texts = []; FX.sprites = [];
@@ -79,12 +80,14 @@ function startBattle(mapDef, party, bag, opts = {}) {
 // which was written after upkeep already ran, so heals, ticks and recharges must not apply again.
 function beginPhase(team, first, resumed = false) {
   B.phase = team;
+  if (B.territory && team === 0 && !first && !resumed) B.turn++;
   const ev = resumed ? [] : upkeep(team);
-  if (team === 0 && !first) { B.turn++; if (checkObjective()) { endBattle(); return; } }
+  if (B.territory && !resumed) { territoryUpkeep(team); if (checkObjective()) { endBattle(); return; } if (!isHuman(team)) for (const u of territoryAiDeploy(team)) ev.push({ type: 'spawn', unit: u }); }
+  if (team === 0 && !first && !B.territory) { B.turn++; if (checkObjective()) { endBattle(); return; } }
   if (team === 0 && !B.versus && !resumed) { saveSuspend(); }
   if (B.versus && B.bags && isHuman(team)) B.bag = B.bags[team];
   const teamsPresent = [0, 1, 2, 3].filter(t => alive(t).length);
-  if (!teamsPresent.includes(team) && team !== 0) { nextPhase(); return; }
+  if (!teamsPresent.includes(team) && team !== 0 && !(B.territory && team === 1)) { nextPhase(); return; }
   // reinforcements at the start of the enemy phase
   if (team === 1) for (const u of spawnReinforcements()) ev.push({ type: 'spawn', unit: u });
   const label = phaseLabel(team);
@@ -98,7 +101,7 @@ function beginPhase(team, first, resumed = false) {
 function spawnReinforcements() { const out = []; for (const r of B.map.reinforce) if (r.turn === B.turn && !r.done) { r.done = true; for (const d of r.units) { if (unitAt(d.x, d.y)) continue; const u = makeUnit(d.mon, d.level, d.team == null ? 1 : d.team, { x: d.x, y: d.y, ai: d.ai || 'aggro', boss: d.boss }); B.units.push(u); out.push(u); requestBigSprite(u.num); } } return out; }
 function nextPhase() {
   if (checkObjective()) { endBattle(); return; }
-  let t = B.phase; for (let i = 0; i < 4; i++) { t = (t + 1) % 4; if (t === 0 || alive(t).length) break; }
+  let t = B.phase; for (let i = 0; i < 4; i++) { t = (t + 1) % 4; if (t === 0 || alive(t).length || (B.territory && t === 1)) break; }
   beginPhase(t, false);
 }
 function endBattle() { BT.mode = 'end'; BT.endTimer = 0; Audio.stopMusic(); const won = B.result === 'win' || B.result === 'p1' || B.result === 'p2'; Audio.sfx(won ? 'win' : 'lose'); if (won) Audio.playMusic('win'); }
@@ -141,6 +144,7 @@ function setupEvent(q) {
     case 'skill': q.dur = BT.fast ? .4 : .8; Audio.sfx('select'); if (!unitVisible(e.unit) || !unitVisible(e.target)) centerCamBetween(e.unit, e.target); spawnParts(ux(e.unit), uy(e.unit) + 8, 10, [ROLES[e.unit.role].col, '#ffffff'], { speed: 40, life: .5, grav: -30 }); break;
     case 'brace': Audio.sfx('shake'); floatText(ux(e.unit), uy(e.unit) - 8, 'BRACED!', BRACE_COL, { outline: '#000' }); e.unit.fx.sy = .8; e.unit.fx.sx = 1.2; break;
     case 'root': Audio.sfx('grass'); shake(1); floatText(ux(e.unit), uy(e.unit) - 8, 'ROOTED!', ROOT_COL, { outline: '#000' }); spawnParts(ux(e.unit), uy(e.unit) + 12, 12, ['#2a6b38', '#c8f0a0'], { speed: 30, grav: 40, life: .6 }); break;
+    case 'property': q.dur = BT.fast ? .4 : .8; floatText(ux(e.unit), uy(e.unit) - 10, e.done ? 'CAPTURED!' : e.progress + '/20', UI.gold, { outline: '#000' }); Audio.sfx('select'); break;
     case 'unroot': q.dur = BT.fast ? .2 : .4; floatText(ux(e.unit), uy(e.unit) - 8, 'Free!', ROOT_COL, { outline: '#000' }); break;
   }
 }
@@ -247,6 +251,7 @@ function openActionMenu(u) {
   const wildAdj = B.units.filter(v => v.hp > 0 && v.team === 2 && dist(v, u) === 1); const hasBall = Object.keys(B.bag).some(k => ITEMS[k].kind === 'ball' && B.bag[k] > 0);
   if (wildAdj.length && hasBall) items.push({ id: 'catch', label: 'Catch', icon: 'ball', sub: 'Throw a ball' });
   if (B.map.objective.type === 'seize' && B.map.seize && u.x === B.map.seize.x && u.y === B.map.seize.y) items.unshift({ id: 'seize', label: 'Seize', icon: 'flag', sub: 'Win the map!' });
+  if (B.territory && !territoryCaptureBlock(u)) { const p = territoryProperty(u.x, u.y); items.unshift({ id: 'property', label: 'Capture', icon: 'flag', sub: p.name + ': ' + (p.captor === u.id ? p.progress : 0) + '/20 + ' + territoryCaptureGain(u) + ' · leaving resets progress' }); }
   // the role skill: always listed so the player learns it exists; greyed with the reason when it cannot be used now
   if (u.skill && !u.skill.passive) { const why = skillBlock(u); const n = why ? 0 : skillTargetsAt(u).length; items.push({ id: 'skill', label: u.skill.name, icon: 'skill', off: !!why, sub: why ? u.skill.menu + ' (' + why + ')' : u.skill.menu + (u.skill.target === 'self' ? '' : ' · ' + n + (n > 1 ? ' targets' : ' target')) + (u.skill.cd ? ' · ' + cooldownText(u.skill) : '') }); }
   if (Object.keys(B.bag).some(k => ITEMS[k].kind !== 'ball' && B.bag[k] > 0)) items.push({ id: 'item', label: 'Bag', icon: 'bag', sub: 'Use an item' });
@@ -255,6 +260,7 @@ function openActionMenu(u) {
 }
 function menuChoose(id) {
   const u = BT.sel;
+  if (id === 'property') { const e = territoryCapture(u); if (!e) { Audio.sfx('error'); return; } BT.queue = [{ kind: 'event', ev: e }]; playQueue(() => finishUnit(u)); return; }
   if (id === 'skill') { if (skillBlock(u)) { Audio.sfx('error'); return; } Audio.sfx('ok'); BT.targets = skillTargetsAt(u); BT.tIdx = 0; BT.mode = 'skillTarget'; setTargetCursor(); return; }
   Audio.sfx('ok');
   if (id === 'wait') finishUnit(u);
@@ -329,7 +335,7 @@ function finishUnit(u) {
   u.acted = true; u.moved = true; BT.sel = null; BT.reach = null; BT.atk = null; BT.undo = null; BT.menu = null; BT.dart = false; BT.hpShow.clear();
   for (const v of B.units) { v.fx.dx = v.fx.dy = 0; v.fx.sx = v.fx.sy = 1; v.fx.alpha = 1; v.fx.flash = 0; v.fx.showNum = null; }
   if (checkObjective()) { endBattle(); return; }
-  if (alive(HT()).every(v => v.acted)) { BT.mode = 'idle'; BT.autoEnd = .6; return; }
+  if (!B.territory && alive(HT()).every(v => v.acted)) { BT.mode = 'idle'; BT.autoEnd = .6; return; }
   BT.mode = 'idle'; const f = alive(HT()).find(v => !v.acted); if (f && !VIEW.touch) { /* keep the cursor where it is; the player picks the next unit */ }
 }
 function cancel() {
@@ -346,6 +352,7 @@ const BATTLE_PREF_LABEL = { full: 'Full duel', quick: 'Quick duel', map: 'Map on
 function openEndMenu(keepIndex = 0) {
   BT.mode = 'endmenu';
   BT.menu = { items: [{ id: 'endturn', label: 'End Turn', icon: 'end', sub: B.versus ? 'Pass to the other trainer' : 'Pass to the enemy' }, { id: 'danger', label: (BT.showDanger ? 'Hide' : 'Show') + ' Danger', icon: 'skull', sub: 'Enemy attack range' }, { id: 'scene', label: 'Battle: ' + BATTLE_PREF_LABEL[PREF.battle], icon: 'vs', sub: 'Attack scene: full, quick or on the map' }, { id: 'help', label: 'Help', icon: 'help', sub: 'Controls & rules' }, { id: 'mute', label: Audio.muted ? 'Unmute' : 'Mute', icon: 'note', sub: 'Sound on/off' }, { id: 'retreat', label: B.versus ? 'Forfeit' : 'Retreat', icon: 'run', sub: B.versus ? 'Concede the arena' : 'Give up this map' }, { id: 'close', label: 'Close', icon: 'x', sub: '' }], i: keepIndex };
+  if (B.territory) BT.menu.items.splice(1, 0, { id: 'reserves', label: 'Reserves', icon: 'ball', sub: B.territory.points[HT()] + ' CP · choose an owned center' });
 }
 function endTurn() { BT.mode = 'anim'; BT.sel = null; BT.autoEnd = 0; for (const u of alive(HT())) u.acted = true; nextPhase(); }
 
@@ -361,7 +368,8 @@ function runEnemyPhase(team) {
     if (!d) { step(); return; }
     BT.queue = [];
     if (d.x !== u.x || d.y !== u.y) { const reach = reachable(u); const p = pathTo(reach, d.x, d.y); if (p) BT.queue.push({ kind: 'fn', fn: () => { centerCam(u.x, u.y); } }, { kind: 'wait', t2: .25 }, { kind: 'move', unit: u, path: p }); }
-    if (d.skill) { BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...skillQueue(u, d.skill, d.target)); } }); }
+    if (d.capture) { BT.queue.push({ kind: 'fn', fn: () => { const e = territoryCapture(u); if (e) BT.queue.unshift({ kind: 'event', ev: e }); } }); }
+    else if (d.skill) { BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...skillQueue(u, d.skill, d.target)); } }); }
     else if (d.target) {
       BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...combatQueue(u, d.target, d.move, { x: d.x, y: d.y })); } });
       // a scout darts once the exchange has played out (the queue item runs after the duel, so the outcome is known)
@@ -405,6 +413,8 @@ function keyInput(k) {
 }
 function activateMenu() {
   const m = BT.menu; const it = m.items[m.i]; if (!it) return;
+  if (territoryMenuAction(it)) return;
+  if (it.off) { Audio.sfx('error'); return; }
   if (BT.mode === 'menu') menuChoose(it.id);
   else if (BT.mode === 'item') { BT.item = it.id; BT.mode = 'itemTarget'; Audio.sfx('ok'); }
   else if (BT.mode === 'ballPick') { BT.ball = it.id; confirmCatch(); }
@@ -415,6 +425,7 @@ function useItemOn(u) { const it = BT.item; B.bag[it]--; if (B.bag[it] <= 0) del
 function tileAction(x, y) {
   const m = BT.mode; const u = unitAt(x, y);
   if (m === 'idle') {
+    if (B.territory && !u) { const p = territoryProperty(x, y); if (p && p.owner === HT()) { openTerritoryReserves(p); return; } }
     if (u && u.team === HT() && !u.acted) { selectUnit(u); return; }
     if (u) { BT.info = u; BT.mode = 'unitinfo'; Audio.sfx('ok'); return; }
     cancel(); return; // empty tile → end-turn menu
@@ -477,7 +488,7 @@ function battleUpdate(dt) {
   if (BT.mode === 'anim') updateAnim(dt);
   if (BT.mode === 'end') { BT.endTimer += dt; if (BT.endTimer > 3.5 || BT.endTimer >= 99) { BT.endTimer = 0; onBattleEnd(B.result); } }
   if (BT.autoEnd > 0 && BT.mode === 'idle') { BT.autoEnd -= dt; if (BT.autoEnd <= 0) endTurn(); }
-  if (BT.mode === 'idle' && isHuman(B.phase) && !alive(B.phase).some(u => !u.acted) && !BT.autoEnd && !B.result) BT.autoEnd = .4;
+  if (!B.territory && BT.mode === 'idle' && isHuman(B.phase) && !alive(B.phase).some(u => !u.acted) && !BT.autoEnd && !B.result) BT.autoEnd = .4;
   updateFX(dt); Audio.tick();
 }
 
@@ -517,6 +528,7 @@ function drawBoardLayer() {
     rangeOverlay(BT.atk, (x, y) => BT.reach.has(key(x, y)) || BT.atk.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6));
   }
   if (BT.mode === 'unitinfo' && BT.info && BT.info.team !== HT()) { const r = reachable(BT.info); const cells = [...r.values()].filter(n => canStand(BT.info, n.x, n.y)); rangeOverlay(cells, (x, y) => r.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6)); const ac = attackCells(BT.info, r); rangeOverlay(ac, (x, y) => r.has(key(x, y)) || ac.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e07030', '#ffc0a0', Math.floor(BT.time * 6)); }
+  if (B.territory) drawTerritoryProperties();
   // target highlights: red for foes, green for allies and self (skills), the chosen one white
   if (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget') for (const t of BT.targets) { const X = tileX(t.x), Y = tileY(t.y); const k = Math.floor(BT.time * 8) % 2; const friendly = !hostile(t.team, HT()); outline(X + 1 + k, Y + 1 + k, TILE - 2 - 2 * k, TILE - 2 - 2 * k, t === BT.targets[BT.tIdx] ? '#ffffff' : friendly ? '#60e070' : '#ff6060'); }
   if (BT.mode === 'skillTarget' && BT.sel && BT.sel.skill && BT.sel.skill.rng[1] > 0) { const rc = ring(BT.sel.x, BT.sel.y, BT.sel.skill.rng[0], BT.sel.skill.rng[1]); rangeOverlay(rc, (x, y) => rc.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, BT.sel.skill.target === 'foe' ? '#e03030' : '#30a050', BT.sel.skill.target === 'foe' ? '#ffa0a0' : '#a0ffb0', Math.floor(BT.time * 6)); }
@@ -624,6 +636,7 @@ function boardRect() { const z = BT.zoom; return { x: toScreenX(tileX(0) - FX.sh
 function hudLayout() {
   const W = VIEW.w, H = VIEW.h, bh = btnH(), stack = narrowView() && portraitView(); const br = boardRect();
   const L = { W, H, stack, bh, top: { x: 4, y: 4, w: stack ? W - 8 : Math.min(W - 8, B.versus ? 128 : 118), h: 24 } };
+  if (B.territory) { L.top.h = 46; if (!stack) L.top.w = Math.min(202, W - 72); }
   if (stack) {
     L.bar = { x: 4, y: H - 2 * bh - 8, w: W - 8, rows: 2 }; L.ctxY = L.bar.y - 52; L.ctxH = 48;
     L.ctx = { x: 4, y: L.ctxY, w: W - 8, h: L.ctxH, unit: true, terrain: true, combined: true };
@@ -667,6 +680,7 @@ function drawHUD() {
 }
 // TURN n · objective · READY x/y, with the two teams' head counts.
 function drawTurnCard(r) {
+  if (B.territory) { drawTerritoryTurn(r); return; }
   const mine = alive(HT()), ready = mine.filter(u => !u.acted).length; const turn = 'TURN ' + B.turn + (B.map.turnLimit && B.map.objective.type !== 'survive' ? '/' + B.map.turnLimit : B.map.objective.type === 'survive' ? '/' + B.map.objective.turns : '');
   hudPanel(r.x, r.y, r.w, r.h, { border: B.versus ? teamColor(HT()) : UI.border });
   let x = r.x + 6; if (B.versus) { rrect(x, r.y + 4, 15, 8, teamColor(HT()), 1); textC('P' + (HT() + 1), x + 7, r.y + 4, '#ffffff'); x += 18; }
@@ -684,7 +698,9 @@ function drawButtons(L) {
   if (acting) items.push({ label: m === 'move' && BT.dart ? 'STAY' : 'BACK', col: '#5a4a30', run: () => cancel() });
   if (enemyAnim) items.push({ label: BT.fast ? 'FAST ●' : 'FAST ○', run: () => { BT.fast = !BT.fast; } });
   if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
+  if (idle && B.territory) items.push({ label: 'RESERVE', run: () => openTerritoryReserves() });
   if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; Audio.sfx('menu'); } }, { label: Audio.muted ? '♪ ○' : '♪ ●', half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
+  if (B.territory && L.stack && idle) { const mute = items.findIndex(it => it.label.startsWith('♪')); if (mute >= 0) items.splice(mute, 1); }
   if (!items.length) return;
   if (L.stack) { // two rows across the bottom: row 1 = the two main actions, row 2 = the rest
     const b = L.bar; const row1 = items.slice(0, 2), row2 = items.slice(2); const lay = (row, y) => { if (!row.length) return; const gap = 4, w = Math.floor((b.w - gap * (row.length - 1)) / row.length); row.forEach((it, i) => button(b.x + i * (w + gap), y, w, bh, it.label, it.run, { col: it.col })); };
@@ -718,16 +734,18 @@ function unitCardBody(u, x, y, w) {
 }
 // Terrain card contents: tile swatch, name, DEF/AVO and the move cost (or heal/burn). `tall` stacks the numbers under the swatch.
 function terrainCardBody(t, ref, x, y, w, tall) {
-  const mv = inMap(BT.cx, BT.cy) ? B.map.variants[BT.cy][BT.cx] : 0; const sw = tall ? 16 : 20;
+  const mv = inMap(BT.cx, BT.cy) ? B.map.variants[BT.cy][BT.cx] : 0; const sw = tall ? 12 : 20;
   rect(x + 4, y + 3, sw, sw, UI.shadow); ctx.drawImage(tileImg(t.ch, mv, 0), 0, 0, 32, 32, x + 5, y + 4, sw - 2, sw - 2); outline(x + 4, y + 3, sw, sw, UI.border2);
-  const extra = t.heal ? ['HEALS 30%', UI.green] : t.burn ? ['BURNS', UI.red] : [moveCost(t, ref) >= 99 ? 'NO ENTRY' : 'MOVE ' + moveCost(t, ref), UI.muted];
-  if (tall) { let name = t.name; while (textWidth(name) > w - 26 && name.length > 3) name = name.slice(0, -1); text(name, x + 24, y + 4, UI.gold); text('DEF ' + terrainDef(t, ref) + '%', x + 24, y + 13, UI.ink); text('AVO ' + terrainEva(t, ref), x + 4, y + 22, UI.ink); text(extra[0], x + 4, y + 31, extra[1]); }
-  else { text(t.name, x + 27, y + 4, UI.gold); text('DEF ' + terrainDef(t, ref) + '%', x + 27, y + 13, UI.ink); text('AVO ' + terrainEva(t, ref), x + 62, y + 13, UI.ink); text(extra[0], x + 27, y + 22, extra[1]); }
+  const property = B.territory && territoryProperty(BT.cx, BT.cy);
+  const healText = property && property.owner !== (ref.team == null ? HT() : ref.team) ? ['NO HEAL', UI.muted] : ['HEALS 30%', UI.green];
+  const extra = t.heal ? healText : t.burn ? ['BURNS', UI.red] : [moveCost(t, ref) >= 99 ? 'NO ENTRY' : 'MOVE ' + moveCost(t, ref), UI.muted];
+  if (tall) { let name = t.name; while (textWidth(name) > w - 22 && name.length > 3) name = name.slice(0, -1); text(name, x + 20, y + 4, UI.gold); text('DEF ' + terrainDef(t, ref) + '%', x + 16, y + 13, UI.ink); text('AVO ' + terrainEva(t, ref), x + 4, y + 22, UI.ink); text(extra[0], x + 4, y + 31, extra[1]); }
+  else { text(t.name, x + 27, y + 4, UI.gold); text('DEF' + terrainDef(t, ref) + '% AVO' + terrainEva(t, ref), x + 27, y + 13, UI.ink); text(extra[0], x + 27, y + 22, extra[1]); }
 }
 function menuRect() { const m = BT.menu, rh = rowH(); const w = m.items.some(it => it.icon) ? 122 : 108, h = m.items.length * rh + 8; const tx = toScreenX(tileX(BT.cx) - FX.shakeX), ty = toScreenY(tileY(BT.cy) - FX.shakeY), ts = TILE * BT.zoom; let x = tx + ts + 6, y = ty - 4; if (BT.mode === 'endmenu') { x = VIEW.w / 2 - w / 2; y = VIEW.h / 2 - h / 2; } if (x + w > VIEW.w - 4) x = tx - w - 6; if (x < 4) x = 4; y = clamp(y, 30, VIEW.h - h - 4); return { x, y, w, h }; }
 function menuHit(px2, py) { const r = menuRect(); if (px2 < r.x || px2 >= r.x + r.w || py < r.y || py >= r.y + r.h) return -1; return clamp(Math.floor((py - r.y - 4) / rowH()), 0, BT.menu.items.length - 1); }
 function drawMenu() {
-  const m = BT.menu, r = menuRect(), rh = rowH(), ty = (rh - 7) >> 1; hudPanel(r.x, r.y, r.w, r.h, { title: BT.mode === 'item' ? 'BAG' : BT.mode === 'ballPick' ? 'BALLS' : BT.mode === 'endmenu' ? 'MENU' : null });
+  const m = BT.menu, r = menuRect(), rh = rowH(), ty = (rh - 7) >> 1; hudPanel(r.x, r.y, r.w, r.h, { title: m.title || (BT.mode === 'item' ? 'BAG' : BT.mode === 'ballPick' ? 'BALLS' : BT.mode === 'endmenu' ? 'MENU' : null) });
   m.items.forEach((it, i) => { const y = r.y + 4 + i * rh; const hot = i === m.i; const ink = it.off ? UI.muted : hot ? UI.hi : UI.ink; if (hot) { rrect(r.x + 3, y, r.w - 6, rh - 1, UI.menuSel, 1); hline(r.x + 4, y, r.w - 8, shade(UI.menuSel, .3)); pointerHand(r.x + 5, y + ty, BT.time * 1000); } if (it.icon) { iconAt(it.icon, r.x + 15, y + ty - 1, it.off ? '#8a8e9a' : hot ? '#ffffff' : '#d8dce8'); text(it.label, r.x + 28, y + ty, ink); } else text(it.label, r.x + 16, y + ty, ink); });
   const it = m.items[m.i]; if (it && it.sub) { const lines = wrap(it.sub, Math.min(VIEW.w - 14, 200)); const sw = Math.max(...lines.map(l => textWidth(l))) + 10, sh = lines.length * 9 + 5; const sx = clamp(r.x, 2, VIEW.w - sw - 2); const below = r.y + r.h + 3 + sh <= VIEW.h - 2; const sy = below ? r.y + r.h + 3 : r.y - sh - 3; hudPanel(sx, sy, sw, sh, { fill: UI.panelDark }); lines.forEach((l, i) => text(l, sx + 5, sy + 3 + i * 9, UI.muted)); }
 }
@@ -837,7 +855,7 @@ function drawSkillCard() {
 function skillCardRect() {
   const u = BT.sel, sk = u && u.skill, t = BT.targets[BT.tIdx]; const r = forecastRect();
   const effect = sk && t ? wrap(skillPreview(u, sk, t), r.w - 52).slice(0, 2) : [];
-  const cost = sk ? wrap('uses the action' + (sk.xp ? ' · +' + sk.xp + ' XP' : '') + (sk.cd ? ' · ' + cooldownText(sk) : ''), r.w - 12) : [];
+  const cost = sk ? wrap('uses the action' + (sk.xp && !B.territory ? ' · +' + sk.xp + ' XP' : '') + (sk.cd ? ' · ' + cooldownText(sk) : ''), r.w - 12) : [];
   return { x: r.x, y: r.y, w: r.w, h: 40 + cost.length * 9 + 4, effect, cost };
 }
 function drawCatchCard() {
@@ -876,7 +894,7 @@ function sheetRect() { const W = VIEW.w, H = VIEW.h; const narrow = W < 250; con
 function drawUnitSheet(u) {
   const W = VIEW.w; const r = sheetRect(), { x, y, w, h, narrow } = r; hudPanel(x, y, w, h, { title: B.versus ? (u.team === 2 ? 'WILD POKÉMON' : teamName(u.team)) : u.team === 0 ? 'YOUR POKÉMON' : u.team === 2 ? 'WILD POKÉMON' : u.team === 3 ? 'ALLY' : 'ENEMY' });
   portraitBg(x + 6, y + 8, 48, 40, u.team); drawMon(u.num, x + 30, y + 44, { flip: u.team !== 0, sy: 1 + Math.sin(BT.time * 4) * .03 }); teamGlyph(x + 9, y + 11, u.team, teamColorL(u.team));
-  text(u.name, x + 60, y + 8, UI.ink); textR('Lv' + u.level + (isHuman(u.team) && !narrow ? '  ' + u.xp + '/100xp' : ''), x + w - 6, y + 8, UI.gold); if (u.boss) text('BOSS', x + 60 + textWidth(u.name) + 6, y + 8, UI.red);
+  text(u.name, x + 60, y + 8, UI.ink); textR('Lv' + u.level + (isHuman(u.team) && !B.territory && !narrow ? '  ' + u.xp + '/100xp' : ''), x + w - 6, y + 8, UI.gold); if (u.boss) text('BOSS', x + 60 + textWidth(u.name) + 6, y + 8, UI.red);
   u.types.forEach((t, i) => typeBadge(t, x + 60 + i * 26, y + 18, 24)); if (u.status) statusBadge(u.status, x + w - 22, y + 18);
   hpBar(x + 60, y + 30, w - 66, u.hp, u.maxHp); text('HP ' + u.hp + '/' + u.maxHp, x + 60, y + 37, UI.ink);
   const stats = [['ATK', u.atk], ['DEF', u.def], ['SPA', u.spa], ['SPD', u.spd], ['SPE', u.spe], ['MOV', effMov(u)]]; const cw = narrow ? Math.floor((w - 12) / 3) : 44; stats.forEach((s, i) => { const sx = x + 6 + (i % 3) * cw, sy = y + 54 + Math.floor(i / 3) * 10; text(s[0], sx, sy, UI.muted); textR(String(s[1]), sx + cw - 6, sy, UI.ink); });
@@ -902,6 +920,8 @@ const HELP_PAGES = [
   ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch, use its Skill, the Bag or Wait. Blue = move, red = attack. Greyed units have acted.', 'Defenders counter if you are in their move range and still standing. Only Scouts and Strikers strike twice, when 10+ SPE faster. The forecast lists the strikes in order; a greyed one only happens if an earlier strike misses.', 'Crits: 4% (24% for high-crit moves), ×1.5 damage. The forecast HP is for normal hits; a strike whose crit would KO says so. Terrain gives DEF% and AVO. Poké Centers heal 30%/turn and cure. Danger: red = foe reach, yellow = wild reach. Hyper Beam: no counter after it, next turn recharging.'],
   ['ROLES', 'Types say whom you beat; the role (badge on the unit card) says how to use it. One role per evolution line.', 'SCT Scout: Dart, moves 2 tiles after attacking. DEF Defender: Brace, 40% less damage until its next turn. AMP Amphibious: DEF 20% and AVO 20 on water. CTL Controller: Root a foe within 2, it cannot move on its next turn (fliers immune). RNG Ranged: ranged moves reach 1 tile further. SUP Support: Mend an adjacent ally 30% HP and cure it. STK Striker: plain attacker.', 'Brace, Root and Mend use the action, like Attack. Root and Mend earn a little XP and work every other turn (the unit sheet counts the turns); Brace can be used every turn and earns nothing. A Poké Center or Full Heal also frees a rooted unit.'],
   ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67. STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV, Frozen skips turns and crits are guaranteed on it.', 'Wild Pokémon (dashed ring) can be caught when weak: stand next to them, choose Catch and throw a ball. Trainer Pokémon (spiked ring) cannot be stolen. Level ups can evolve!'],
+  ['TERRITORY', 'Take the enemy HQ, or own 2 of the 3 contested centers at the start of 3 of your turns. Losing the majority resets your hold counter. After 40 turns, more contested centers wins; a tie is a draw.', 'Any ready Pokemon on another center can Capture. Reach 20 points: a full-HP unit adds 10 per action, damaged units add less. Leaving or fainting resets progress; damage slows the next capture. Root does not stop capture.', 'Only owned centers heal and cure your team. Each owned center earns 2 command points at the start of your turn (bank limit 30).'],
+  ['RESERVES', 'Tap RESERVE or an empty owned center to deploy a teammate. Choose the center and Pokemon. Costs are shown before spending. The arrival has already acted. Maximum 5 on the map, from your finite team of 6.', 'Fainted teammates recover after 2 of your turn starts. Pay their cost to send them out again. Occupied centers cannot deploy. With reserves left, an empty battlefield does not lose the match.', 'Both teams stay at Lv12 with equal stats and no XP in this mode. End your turn manually, after moving and deploying. Campaign progress is separate.'],
 ];
 function helpRect() { const W = VIEW.w, H = VIEW.h; const w = Math.min(280, W - 12); const lines = helpLines(BT.helpPage, w - 16); const h = Math.min(H - 12, 34 + lines.length * 10); return { x: W / 2 - w / 2, y: Math.max(6, H / 2 - h / 2), w, h, lines }; }
 function helpLines(page, width) { const p = HELP_PAGES[page]; const out = []; p.slice(1).forEach((para, i) => { if (i) out.push(''); out.push(...wrap(para, width)); }); return out; }
@@ -920,6 +940,7 @@ function drawHandoff() {
   if (h.t > .4 && Math.floor(BT.time * 2) % 2) textC(VIEW.touch ? 'pass the device  ·  tap to start' : 'pass the controls  ·  OK to start', W / 2, y + 100, UI.gold, { outline: UI.shadow }); ctx.globalAlpha = 1;
 }
 function drawEndScreen() {
+  if (B.territory) { const w = Math.min(VIEW.w - 16, 240), x = (VIEW.w - w) / 2, y = VIEW.h / 2 - 45; hudPanel(x, y, w, 90); bigC(B.result === 'win' ? 'VICTORY!' : B.result === 'draw' ? 'DRAW' : B.result === 'retreat' ? 'RETREAT' : 'DEFEAT', VIEW.w / 2, y + 10, UI.gold); wrap(B.territory.reason || 'Battle ended', w - 12).forEach((l, i) => textC(l, VIEW.w / 2, y + 32 + i * 10, UI.ink)); if (BT.endTimer > 1.2) textC(VIEW.touch ? 'tap to continue' : 'press OK', VIEW.w / 2, y + 72, UI.muted); return; }
   const W = VIEW.w, H = VIEW.h; const k = Math.min(1, BT.endTimer / .6); const vs = B.versus; const vt = B.result === 'p1' ? 0 : B.result === 'p2' ? 1 : -1; const win = vs ? vt >= 0 : B.result === 'win';
   ctx.globalAlpha = .6 * k; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
   const w = Math.min(200, W - 12), x = W / 2 - w / 2; const y = H / 2 - 30 + (1 - easeOut(k)) * -30; panel(x, y, w, 60, { fill: vs ? (vt === 0 ? '#17264a' : vt === 1 ? '#3a1a22' : '#2a2a3a') : win ? '#1c3a2a' : '#3a1c1c', border: vs && vt >= 0 ? teamColor(vt) : UI.border });
