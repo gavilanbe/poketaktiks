@@ -1,177 +1,152 @@
-# POKÉTAKTIKS — pixel tactics with Gen I Pokémon
+# POKÉTAKTIKS
 
-**Play:** https://gavilanbe.github.io/poketaktiks/
+A Pokémon tactics game inspired by Advance Wars: grid movement, complementary
+unit roles, terrain, type matchups, and short lateral attack scenes. Includes
+an eight-chapter campaign, random skirmishes, local two-player Versus, and
+**Territory**, a battle over centers, income and a finite team of reserves.
 
-A Fire Emblem / Advance Wars style tactics game played with the Pokémon Showdown
-party icons ("the little ones"). Grid board, move ranges, the yellow path arrow,
-counters, doubles, terrain bonuses, type matchups, catching wild Pokémon, level
-ups and evolutions, an 8-chapter campaign and endless random skirmishes.
+[Published build](https://gavilanbe.github.io/poketaktiks/) — a published build
+may differ from a local checkout until that checkout is pushed and deployed.
 
-Everything is HTML + JS vanilla with no dependencies: `./build.sh` concatenates
-the source files into a single `index.html`. Open it in Chrome (it works from
-`file://`). The external assets are `assets/pokemonicons-sheet.png`, the
-Showdown mini-icon sheet drawn straight from the sheet by dex number for the
-board, and `assets/battle/<num>.png`, the 96×96 Black/White front sprites
-used by the attack scene (see `assets/battle/ATTRIBUTION.md`). Big sprites
-load lazily; if one is missing the scene draws the mini icon at 2× instead.
+## Run locally
 
-## How it plays
+No dependencies or package manager are needed. Build and serve this directory:
 
-- **Player phase → enemy phase → wild phase.** Pick a Pokémon, walk the yellow
-  arrow through the blue tiles, then Attack / Catch / Bag / Wait. Red tiles are
-  where you can hit after moving. Empty tile or right click opens the menu
-  (End Turn, Danger zone, Help, Retreat).
-- **Combat is Pokémon maths, FE structure.** Real base stats from Showdown at
-  the unit's level, the standard damage formula, STAB (+25%), a softened type
-  chart (super effective ×1.5, ×2.25 for a double weakness, resisted ×0.67,
-  immunities stay at 0). The defender counters if the attacker stands in one
-  of its move ranges and is still standing. Only Scouts and Strikers follow
-  up: 10+ SPE over the foe = a second strike. Crits are a flat 4% (24% for
-  high-crit moves, certain on a frozen target), ×1.5; speed no longer feeds
-  them. The forecast walks the exchange in order (strike, counter, follow-up)
-  and its HP-after numbers assume normal hits: every line shows the hit and
-  crit odds, and a strike whose critical would KO where the normal hit would
-  not carries a KO tag on the crit. A counter or follow-up that only happens
-  if an earlier hit misses is greyed and named ("KO first · counters on
-  miss"), and chance effects (status %, drain, recharge) are listed separately.
-  The forecast is deterministic apart from HIT and CRIT and never rolls dice.
-- **Roles.** Type says whom a Pokémon beats; its role (one per evolution
-  line, a badge on the unit card and sheet) says how to use it on the board.
-  Scout (Pidgey, Spearow, Zubat, Rattata, Meowth, Doduo, Diglett, Scyther,
-  Aerodactyl, Ponyta): **Dart**, after attacking it may still move 2 tiles.
-  Defender (Geodude, Onix, Sandshrew, Shellder, Rhyhorn, Cubone, Koffing,
-  Snorlax, Lickitung, Grimer, Omanyte, Kabuto): **Brace**, spend the action to
-  take 40% less damage until its next turn. Amphibious (Squirtle, Psyduck,
-  Poliwag, Seel, Krabby, Goldeen, Horsea, Staryu, Tentacool, Slowpoke,
-  Magikarp, Lapras): **Tide**, DEF 20% and AVO 20 on water. Controller
-  (Bulbasaur, Oddish, Bellsprout, Paras, Tangela, Exeggcute, Venonat, Ekans,
-  Drowzee, Jynx): **Root** a foe within 2 tiles so it cannot move on its next
-  turn (fliers immune, every other turn). Ranged (Abra, Gastly, Voltorb,
-  Magnemite, Porygon, Mr. Mime): **Reach**, ranged moves hit one tile further.
-  Support (Clefairy, Jigglypuff, Chansey): **Mend** an adjacent ally for 30%
-  of its HP and cure it (every other turn). Everyone else is a Striker: a
-  plain attacker that follows up. Brace, Root and Mend sit in the action menu
-  next to Attack, use the action, and show their exact effect on a card before
-  you confirm; Root and Mend earn a little XP and work every other turn, Brace
-  earns none and can be used every turn. The AI uses them under the same
-  legality rules (no frozen, spent or recharging users, no out-of-range or
-  wrong-team targets).
-  A Poké Center, Full Heal or Mend frees a rooted unit.
-- **Moves come from types.** Every Pokémon carries a small loadout: the best
-  unlocked move of each of its types, the best adjacent-capable move of that
-  type when the strongest one only fires at range (Fire Blast keeps
-  Flamethrower), and a melee Normal fallback. Signature moves lead the list
-  once their level is reached. Ranged types (Fire, Water, Electric, Psychic,
-  Grass, Rock…) reach 1–2 tiles, brawlers hit adjacent only. Hyper Beam (Normal
-  types, Lv40) must recharge: no counter after firing, and the next turn is
-  spent recharging. Statuses: Poison ticks, Burn halves ATK, Paralysis cuts
-  MOV, Frozen skips turns and eats guaranteed crits.
-- **Danger zone.** Red tiles are where trainer Pokémon can hit next phase,
-  yellow tiles where wild Pokémon can. A Pokémon that must recharge threatens
-  nothing.
-- **Terrain.** Forest 20% DEF, mountain 30%, tall grass 20 AVO, Poké Centers
-  heal 30% a turn and cure statuses, lava burns anything that is not Fire or
-  flying. Flyers ignore terrain, Water types swim, Rock/Ground/Fighting climb,
-  Bug/Grass walk through woods for free.
-- **Catching.** Wild Pokémon (yellow, dashed ring) fight everyone. Weaken one, stand
-  next to it, choose Catch, pick a ball. Chance grows as HP drops, ×1.3 with a
-  status, ×1.5 Great Ball, ×2 Ultra Ball. Caught Pokémon join the party at the
-  end of the map. Trainer Pokémon (red) cannot be stolen.
-- **Your side has an edge (campaign only).** Your campaign party, including
-  catches, carries 20% more HP; in Versus both trainers use plain stats. The
-  legendary birds and Mewtwo run on scaled-down base stats so a boss hits hard
-  without one-shotting the board. Balance was tuned with `tools/cdp.cjs sim`,
-  which lets the enemy AI play the player side through every chapter.
-- **Growth.** XP on every hit and KO, 100 per level, stats recomputed from base
-  stats. Level thresholds trigger evolutions on the board with a flashing
-  silhouette, and between chapters everybody trains up to the next chapter's
-  level so nobody is left behind. No permadeath: fainted Pokémon come back.
-- **Objectives.** Rout, defeat the boss, seize the Gym, survive N turns.
-  Reinforcements arrive on scripted turns. A par turn count earns a star.
-- **Versus.** Two trainers on one device. Snake-draft four Pokémon each from
-  a roster of 28, pick an arena seed, level and whether wild Pokémon roam the
-  middle, then take turns: a hand-off screen asks you to pass the controls
-  before each player phase. Arenas are mirror-symmetric with a Poké Center per
-  side; wild Pokémon you catch join your team on the spot. Last team standing
-  wins (30-turn limit, more survivors wins a timeout). Rematch, redraft or back
-  to the title from the results.
-- **Campaign:** Pallet Meadow → Viridian Forest → Mt. Moon → Nugget Bridge →
-  Rocket Hideout → Power Plant (Zapdos) → Cinnabar Volcano (Moltres, survive)
-  → Cerulean Cave (Mewtwo). **Skirmish:** value-noise random maps with a road,
-  a Poké Center, a Rival boss and wild catches, using your campaign party or a
-  loaner team.
-- **Saves.** Campaign progress saves after each chapter; a suspend save is
-  written at the start of every player phase so you can close the tab and
-  pick the battle up from the title screen.
+```sh
+sh build.sh
+python3 -m http.server 8765 --bind 127.0.0.1
+```
 
-## Controls
+Open `http://127.0.0.1:8765/`. The build concatenates the source modules into
+`index.html`. All required sprite assets are bundled locally. Direct `file://`
+loading uses relative asset paths, but its runtime behavior was not verified
+in this pass because the supported browser blocked file URLs.
 
-Arrows/WASD move the cursor, Z/Enter/Space confirm, X/Esc cancel (cancelling
-after a move undoes it), Q/E cycle units, C shows unit info (and switches the
-move in the forecast), F toggles fast enemy phases, +/− zoom the board out and
-in when the map does not fit (the ZOOM button does the same), H help, M mute.
-Mouse: hover and click, right click to cancel, drag or wheel to pan. Touch:
-tap to move the cursor, tap again to confirm, tap-and-drag to pan.
+## Territory: Three Bridges
 
-**Reading the board.** Every unit stands on a team-coloured plate whose shape
-also tells the side apart: a plain ring for your own team, a spiked ring for
-enemy trainers, a dashed ring for wild Pokémon, a barred ring for allies; the
-same glyph sits on the HP plate under its feet. Units that can still act keep
-their colour and a glint on the rim; units that have acted go grey. Marks sit
-in the tile's corners, off the sprite: crown (leader) or skull (boss) top-left,
-a CHG tag while recharging, the status tag top-right. The turn card shows the
-turn, the objective and READY x/y; the forecast lists the strikes in order
-with the HP after the exchange in large type, a KO mark on the strike that
-drops someone, and "only if … survives" on strikes that depend on a miss.
+Choose **TERRITORY** from the title. A short guide appears on first use;
+**H / HELP** always opens the full rules.
 
-**Phones.** Portrait phones render at about 200 logical pixels (the pixel
-font is 10-12 CSS px), the board opens zoomed out, the context card and the
-buttons sit under the board, and the forecast spans the width.
+- Each side has six teammates: Pidgey, Geodude, Squirtle, Bulbasaur, Abra and
+  Clefairy. The first three start on the map. Both sides stay at level 12,
+  with equal stats and no XP. At most five teammates can be active.
+- Any ready Pokémon standing on another center can **Capture**. A full-HP
+  unit adds 10 of the required 20 points per action; damaged units add less.
+  The same unit must remain there. Leaving or fainting resets its progress;
+  damage reduces its next contribution. Root prevents movement, not capture.
+- Each owned center earns **2 command points** at the start of its owner's
+  turn, up to a bank of 30. Capturing changes future income; it gives no
+  immediate payment. Only friendly owned centers heal 30% HP and cure status.
+- Use **RESERVE**, or select an empty owned center, to deploy a teammate.
+  Costs are shown before spending. An occupied center cannot deploy. Arrivals
+  have already acted. Fainted teammates recover after two of their own turn
+  starts and must be paid for again. There are no duplicate teammates.
+- Win by capturing the enemy HQ, or owning at least two of the three contested
+  centers at the start of three of your turns. Losing that majority resets
+  the hold counter. After 40 turns, the side with more contested centers wins;
+  equal ownership is a draw. An empty field is not a defeat while a team can
+  recover and deploy through its centers.
+- **End your turn manually**, after moving, using abilities and deploying.
+  The AI uses the same capture, deployment, recovery and ability rules.
 
-**Attack scene.** Confirming an attack wipes from the map into a side-on
-battlefield: your Pokémon on the left (Player 1 in Versus), the other on the
-right, each on its own terrain with a panel showing name, level, team, types,
-status and HP, plus that tile's DEF and AVO. The attack name appears, the
-strike plays (lunge for contact moves; fire, water, electric, grass, psychic
-or a beam/projectile for ranged ones), HP drops on impact, the counter answers
-with a COUNTER tag, doubles strike again, and a KO faints on the spot. The
-scene is a replay of the one combat roll: skipping never changes the result.
-Any key or tap speeds it up, a second press (or X / right click) skips to the
-result, and the menu (right click / empty tile) cycles **Battle: Full duel /
-Quick duel / Map only**, remembered between sessions. Reduced-motion
-preference removes the wipe, lunges and shake. XP, level ups, evolutions and
-captures still play on the map afterwards.
+## Combat and roles
 
-## Juice
+Select a Pokémon, move through the blue tiles, then choose an action. Movement
+can be cancelled before committing the action. Red tiles show attack reach.
+The forecast lists the attack, eligible counter and any follow-up in order.
+Its HP projection assumes normal hits; hit/critical odds and critical-KO risks
+are shown separately. Conditional strikes are marked. Immunities block damage
+and secondary effects; drain heals only HP actually taken and missing.
 
-Screen shake and hit-stop scaled by crits, white hit flash, squash and stretch
-on select and on landing, hop-along path movement with dust, type-coloured
-particle bursts and projectiles, popping damage numbers and onomatopoeia
-(BONK!, FWOOSH!, BZZT!), "Super effective!" callouts, level-up fanfares with
-stat arrows, evolution flash sequence, Poké Ball throw with shakes and GOTCHA,
-sliding phase banners with the team parading underneath, speech-bubble quips
-when you pick a unit, confetti on victory. Chiptune SFX and a small step
-sequencer for music, all synthesised with WebAudio (nothing to download).
-Reduced-motion preference tones the particles and shake down.
+Type matchups use softened effectiveness (×1.5, ×2.25 for a double weakness,
+×0.67 resisted), STAB gives +25%, and critical hits deal ×1.5. Critical chance
+is 4%, 24% for high-crit moves, and 100% against a frozen target. Only Scouts
+and Strikers follow up, with a lead of at least 10 speed. Hyper Beam prevents
+counters after firing and consumes the unit's next turn recharging.
 
-## Files
+| Role | Example | Tactical benefit |
+| --- | --- | --- |
+| Scout | Pidgey | Dart up to two tiles after attacking; no second action. |
+| Defender | Geodude | Brace: spend an action for 40% less damage until its next turn. |
+| Amphibious | Squirtle | Swim; 20% defense and 20 avoidance on water. |
+| Controller | Bulbasaur | Root a foe within two tiles for its next movement phase; fliers are immune. |
+| Ranged | Abra | One extra tile of reach on moves that are already ranged. |
+| Support | Clefairy | Mend an adjacent ally for up to 30% max HP and cure it. |
+| Striker | Charmander | A direct attacker with speed-based follow-ups. |
 
-`core.js` canvas scaling, input, RNG, drawing, sprite atlas, audio ·
-`font.js` pixel fonts · `dex.js` Gen I data (generated by `tools/dex.py`) ·
-`data.js` types, moves, items, terrain, unit factory · `art.js` procedural
-tiles, cursor, arrow, particles · `model.js` pathfinding, combat, AI ·
-`battle.js` the board scene · `duel.js` the side-on attack scene (script,
-layout, drawing) · `campaign.js` chapters and the skirmish
-generator · `scenes.js` title, starter, prep, story, results, versus draft · `main.js` flow,
-saves, loop. Deep links: `?ch=N`, `?skirmish=SEED`, `?versus=SEED[&auto]`.
+Roles stay with evolution lines. Root and Mend work every other turn; Brace
+works every turn and earns no XP. Root/Mend earn XP outside Territory. Active
+abilities consume the action and have a confirmable preview.
 
-`node tools/model-tests.cjs` runs the deterministic model tests (combat
-forecast vs resolver, moves, upkeep, recharge, saves and resume, duel script
-vs resolver and skip equivalence, board queue integration) with Node
-built-ins only. `tools/shot.sh "ch=3&silent&nosave"` takes a headless screenshot;
-`node tools/cdp.cjs smoke|mech|flow|enemy|skirmish|mobile|balance|art|ui` drives the
-game over the DevTools protocol and writes screenshots to `artifacts/`.
+Burn halves physical attack and ticks damage; poison ticks damage; paralysis
+cuts movement and has a 25% chance to spend the action at phase start. A frozen
+unit spends its phase unless it thaws. These rules apply equally to players
+and AI, after center cures. Selection/cancellation/resume cannot reroll the
+phase check, and curing a unit does not refund an already spent action.
 
-Sprites: Pokémon Showdown (mini icons) and the PokeAPI sprite repository
-(Black/White battle sprites, `assets/battle/ATTRIBUTION.md`). Pokémon ©
-Nintendo / Game Freak / Creatures.
+## Other modes and presentation
+
+Campaign and skirmish retain catches, leveling and evolution. Trainer Pokémon
+cannot be caught; weakened wild Pokémon can be caught from an adjacent tile.
+The campaign party has an explicit 20% HP bonus. Local Versus uses equal stats,
+a shared-device draft, and a hand-off screen between players. Territory does
+not change campaign progression.
+
+An attack opens a lateral battle scene with larger Pokémon, terrain, ordered
+HP changes, counters and KOs. Any key/tap speeds it up; X skips. The empty-tile
+menu (also opened with Escape) offers **Full duel / Quick duel / Map only**. All modes replay
+the same combat result; skipping cannot change it. Reduced-motion settings
+reduce movement and effects. A missing large sprite falls back to its mini icon.
+
+Team shapes and glyphs distinguish own, enemy, wild and allied units; spent
+units turn grey. The HUD shows ready actions, objectives, terrain and status.
+On phones the board opens zoomed out; drag to pan and use ZOOM for a closer view.
+
+## Controls and saves
+
+- Arrows/WASD: cursor. Z/Enter/Space: confirm. X/Escape: cancel/menu.
+- Q/E: cycle units. C: unit information or switch the forecast move.
+- F: fast playback. `+` / `-`: zoom. H: help. M: mute.
+- Mouse: point and click; right-click to cancel/open the menu; drag/wheel to pan.
+- Touch: tap to select/confirm, drag to pan; use the on-screen buttons.
+
+Campaign progression saves between chapters. A **shared suspend slot** is
+written at the start of each player turn in campaign, skirmish and Territory;
+starting another battle replaces that slot. Resume returns to the saved turn
+start, preserving unit state and the random sequence without repeating upkeep,
+income or recovery. Presentation settings persist separately.
+
+## Development and verification
+
+```sh
+node tools/model-tests.cjs
+node tools/territory-tests.cjs
+node tools/integration-tests.cjs
+SIM_TURNS=60 node tools/sim.cjs 3,7,19 1-8
+```
+
+The tests use Node built-ins and the actual game modules. They cover combat,
+scene/skip parity, roles, saves, status-action rules, economy, capture, deployment,
+AI legality, UI bounds and the battle-to-results flow. Fixed-seed simulations
+are smoke checks, not proof of final balance. The campaign simulation proxy
+cannot issue Seize or use items, so a Seize chapter can remain unfinished.
+Mt. Moon remains difficult for that proxy and still needs human balance
+playtesting.
+
+Browser checks used a local HTTP server at desktop and phone sizes. The
+implementation record and validation limits are in `docs/implementation-plan.md`.
+The older CDP/screenshot helper scripts remain in `tools/`; they were not used
+for browser verification in this implementation.
+
+Deep links: `?ch=N`, `?ch=N&prep`, `?skirmish=SEED`, `?versus=SEED`,
+`?territory=SEED` (setup), `?territory=SEED&auto` (battle).
+`&silent` mutes; `&nosave` protects campaign/suspend persistence during tests;
+`&noguide` bypasses the territory guide. Presentation preferences are independent.
+
+Source modules: `core.js` (canvas/input/audio/RNG), `font.js`, `dex.js`, `data.js`,
+`art.js`, `model.js`, `battle.js`, `duel.js`, `campaign.js`, `territory.js`,
+`scenes.js`, and `main.js`. `build.sh` regenerates the tracked `index.html`.
+
+Sprites: Pokémon Showdown mini icons and PokeAPI Black/White battle sprites.
+See `assets/battle/ATTRIBUTION.md` for source provenance. Pokémon © Nintendo /
+Game Freak / Creatures.

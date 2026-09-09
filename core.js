@@ -9,8 +9,8 @@ const cv = document.getElementById('c');
 const ctx = cv.getContext('2d', { alpha: false });
 const REDUCED = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 // Persisted presentation preferences. battle: 'full' (lateral duel scene), 'quick' (same scene, faster) or 'map' (strikes on the board).
-const PREF = { battle: 'full' };
-const PREF_VALUES = { battle: ['full', 'quick', 'map'] };
+const PREF = { battle: 'full', territoryGuide: 'show' };
+const PREF_VALUES = { battle: ['full', 'quick', 'map'], territoryGuide: ['show', 'hide'] };
 try { for (const k in PREF) { const v = localStorage.getItem('pk_' + k); if (PREF_VALUES[k].includes(v)) PREF[k] = v; } } catch (_) { }
 function setPref(k, v) { if (!PREF_VALUES[k].includes(v)) return; PREF[k] = v; try { localStorage.setItem('pk_' + k, v); } catch (_) { } }
 function cyclePref(k) { const vs = PREF_VALUES[k]; setPref(k, vs[(vs.indexOf(PREF[k]) + 1) % vs.length]); return PREF[k]; }

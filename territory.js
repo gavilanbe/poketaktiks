@@ -81,7 +81,7 @@ function territoryObjective() {
   const finish = (winner, reason) => { S.reason = reason; return B.result = winner < 0 ? 'draw' : winner === 0 ? 'win' : 'lose'; };
   for (const p of S.properties) if (p.hq >= 0 && p.owner !== p.hq) return finish(p.owner, p.name + ' captured');
   for (const team of [0, 1]) {
-    if (S.hold[team] >= TERRITORY.hold) return finish(team, 'Held two centers for three turns');
+    if (S.hold[team] >= TERRITORY.hold) return finish(team, (team === 0 ? 'You' : 'Enemy') + ' held two centers for three turns');
     if (!alive(team).length && !territoryCenters(team).length) return finish(1 - team, 'No units or deployment centers');
   }
   if (B.turn > TERRITORY.turns) { const a = territoryControl(0), b = territoryControl(1); return finish(a === b ? -1 : a > b ? 0 : 1, 'Turn limit: contested centers ' + a + '-' + b); }
@@ -143,6 +143,7 @@ function territoryDecide(u) {
 }
 function launchTerritory(seed = 7, defer = false) {
   BACKDROP = makeBackdrop(TERRITORY_MAP); startBattle(TERRITORY_MAP, [], {}, { territory: true, seed, defer: true });
+  BT.territoryGuide = !defer && PREF.territoryGuide === 'show' && !PARAMS.has('noguide');
   goScene('battle'); if (!defer) beginPhase(0, true);
 }
 function startTerritorySetup(seed = 7) { goScene('territory', { seed, bd: makeBackdrop(TERRITORY_MAP) }); }
@@ -152,6 +153,18 @@ function territorySceneInput(ev) {
     else if (ev.key === 'ok' && SC.hits[SC.i]) SC.hits[SC.i].run();
     else if (ev.key === 'back') goScene('title');
   } else if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
+}
+function closeTerritoryGuide() { BT.territoryGuide = false; setPref('territoryGuide', 'hide'); BT.mode = 'idle'; }
+function territoryGuideRect() {
+  const w = Math.min(VIEW.w - 16, 280), lines = [];
+  ['1. Move onto a gold center. Choose Capture twice at full HP.', '2. Use RESERVE at an empty blue center. Arrivals act next turn.', '3. Take the enemy HQ, or hold two centers for three of your turn starts.'].forEach((s, i) => { if (i) lines.push(''); lines.push(...wrap(s, w - 16)); });
+  const h = 48 + lines.length * 10; return { x: (VIEW.w - w) / 2, y: (VIEW.h - h) / 2, w, h, lines };
+}
+function drawTerritoryGuide() {
+  const r = territoryGuideRect(); ctx.globalAlpha = .65; rect(0, 0, VIEW.w, VIEW.h, '#050915'); ctx.globalAlpha = 1;
+  hudPanel(r.x, r.y, r.w, r.h, { title: 'WIN WITH YOUR TEAM' });
+  r.lines.forEach((s, i) => text(s, r.x + 8, r.y + 10 + i * 10, UI.ink));
+  button(r.x + 8, r.y + r.h - 28, r.w - 16, 20, 'GOT IT · H FOR RULES', closeTerritoryGuide);
 }
 function territorySetupDraw() {
   const W = VIEW.w, H = VIEW.h, S = SC.data, portrait = H > W; rect(0, 0, W, H, '#0d1526'); SC.hits = [];
@@ -163,7 +176,7 @@ function territorySetupDraw() {
   if (portrait) textC('3 start · 6 teammates · 5 on map', W / 2, y + ph + 8, UI.green);
   TERRITORY_ROSTER.forEach(([n, cost], i) => {
     const xx = portrait ? W / 2 - cw + (i % 2) * cw : W * .54, yy = top + (portrait ? Math.floor(i / 2) * 16 : i * 14);
-    ctx.drawImage(monIcon(n, false), xx, yy - 4, 24, 18); text(DEX[n].name, xx + 25, yy, UI.ink); text(i < 3 ? 'START' : cost + ' CP', xx + 25, yy + 8, UI.muted);
+    ctx.drawImage(monIcon(n, false), xx, yy - 4, 24, 18); text(DEX[n].name, xx + 25, yy, UI.ink); text(i < 3 ? 'START' : cost + ' CP', xx + (portrait ? 25 : 100), yy + (portrait ? 8 : 0), UI.muted);
   });
   const info = ['Capture the enemy HQ, or hold', '2 of 3 centers for 3 own turns.', 'Centers earn 2 CP each turn.'];
   const iy = portrait ? top + 54 : H - 61; info.forEach((s, i) => textC(s, W / 2, iy + i * 10, UI.muted));
@@ -226,7 +239,6 @@ function simTerritory(seed = 7, maxTurns = TERRITORY.turns + 1) {
       territoryAiDeploy(team);
       for (const u of alive(team).slice().sort((a, b) => b.level - a.level)) {
         if (u.acted || u.status === 'frz') continue;
-        if (u.status === 'par' && rnd() < .25) { u.acted = true; continue; }
         const d = territoryDecide(u);
         if (d) {
           const r = reachable(u); if (!r.has(key(d.x, d.y)) || !canStand(u, d.x, d.y)) throw new Error('Illegal territory AI move');

@@ -204,6 +204,25 @@ Fable reached its usage limit before changing stage 5 code. The supervisor discl
 
 Validation:43 prior model tests pass;9 new territory test groups cover symmetry, terrain, capture/interruption, actual beginPhase income, owned healing/danger prediction, reserve costs/caps/recovery, results, empty-field phases, movement cancellation, text/control bounds at180×390,195×422,422×195,512×288,640×360, and fixed-seed legal-action simulations. Seeds3/7/19 all finished on turn7 (win/lose/lose), each with captures and deployments by both sides. These are smoke tests, not a claim of final balance. Browser over HTTP at390×844: entered setup, deployed Bulbasaur for3CP (6→3, READY3/4, arrival spent), advanced to turn2 (CP3→5), moved Pidgey onto the neutral north center and captured10/20 (unit spent, neutral center correctly reports NO HEAL).
 
-Stage 6 remains: consistent nosave persistence, human/AI status-action parity, onboarding, final documentation and integrated browser/model verification.
+Stage 6 follow-up at this checkpoint: consistent nosave persistence, human/AI status-action parity, onboarding, final documentation and integrated browser/model verification (completed below).
 
 Further browser QA on the same phone session: next-turn income advanced CP5→7. The same Pidgey continued North from10/20 to ownership; CENTERS became1/3, projected income+2→+4, currentCP stayed7, and the terrain card switched from NO HEAL to HEALS30%. Compact terrain text spacing was corrected for two-digit defense values.
+
+### Stage 6: integration and polish (2026-09-09)
+
+Implemented in the supervising session following the disclosed Fable usage limit. All six implementation stages are complete; no push or deployment was performed.
+
+- `nosave` now protects campaign writes and suspend removals as well as suspend writes. Normal saves continue to work; presentation preferences remain separate.
+- Frozen and paralyzed units use the same phase-start action check for humans and AI, after center cures. Paralysis rolls once for that phase; selection, cancellation and resume cannot reroll it, and the enemy runner no longer rolls a second time. Cures do not refund a spent action. Legacy frozen suspend units are normalized to spent. The existing per-strike combat status checks remain separate from the phase-start check.
+- Territory has a dismissible first-use guide with three concrete steps. It consumes no action, remembers dismissal, and points to the full help. Help paginates wrapped paragraphs so every line remains reachable on short screens.
+- The short landscape title uses a compact logo and two menu columns. Browser review found overlapping Territory roster labels at 844×390; landscape names and costs now use separate columns. Results explicitly identify whose territory hold won.
+- Rewrote README around the actual modes, rules, controls, local build, saves, bundled assets and test commands, including validation limits.
+
+Validation:
+
+- 43 model tests, 9 territory groups and 6 integration groups pass (58 total). Integration covers persistence boundaries, human/AI status parity, no extra enemy paralysis roll, first-use guide behavior, every help line being reachable, all six title entries fitting, and a match through the real enemy animation queue to results and rematch. The territory layout check now also rejects overlapping setup text. Territory checks were rerun after the landscape/result wording fix.
+- HTTP browser QA at 390×844: first-use guide, dismissal, phase/income progression, enemy captures, hold counter 1/3→2/3, defeat after the third enemy hold, and Rematch returning to turn 1, CP 6, three ready units and neutral contested centers. The player intentionally passed turns for this end-screen smoke check. Earlier manual phone QA covered reserve deployment and two-action capture. At 844×390: title, Territory setup, fixed roster labels, board controls and readable rules/help. At 1280×720: Territory setup and battlefield. Earlier stages also verified lateral combat and Root on desktop and phone.
+- Built `index.html` (413,583 bytes), parsed all 12 source modules plus the generated script, checked all 151 bundled battle PNGs are 96×96, and passed `git diff --check`.
+- Campaign comparison used identical parties, chapters 1–8, seeds 3/7/19 and a 60-turn cap: baseline `1df3ba9` produced 13 wins / 8 losses / 3 unfinished; final mechanics produced 12 wins / 10 losses / 2 unfinished. Both final unfinished runs are the Seize chapter, whose explicit objective action the simulation proxy cannot issue. Mt. Moon lost all three proxy runs and remains a priority for human balance playtesting. These outcomes are regression smoke evidence, not final balance approval.
+
+Remaining validation limits: direct `file://` runtime was blocked by the supported browser and was not retried through another access route; local HTTP was verified. Broader human balance testing and a full human campaign playthrough remain outside the completed implementation checks. The local branch is `codex/advance-wars-battles`; publishing requires a later push/deployment.

@@ -92,9 +92,10 @@ test('territory setup, HUD, reserve menu and results text/controls fit phone and
       if (scene === 'setup') { g.startTerritorySetup(); g.territorySetupDraw(); }
       if (scene === 'hud') { G("BT.mode='idle';BT.cx=1;BT.cy=5;B.units[0].x=1;B.units[0].y=5;"); g.drawHUD(); }
       if (scene === 'reserves') { g.openTerritoryReserves(T.B().territory.properties[0]); g.drawHUD(); }
-      if (scene === 'results') { g.goScene('territoryResults', { result: 'win', reason: 'Held two centers for three turns', turn: 14, centers: [2, 1], deployments: [5, 4], seed: 7 }); g.territoryResultsDraw(); }
+      if (scene === 'results') { g.goScene('territoryResults', { result: 'lose', reason: 'Enemy held two centers for three turns', turn: 14, centers: [2, 1], deployments: [5, 4], seed: 7 }); g.territoryResultsDraw(); }
       const bad = boxes().filter(b => b.x < -1 || b.x + b.w > w + 1 || b.y < -1 || b.y + 7 > h + 1);
       assert.equal(bad.length, 0, w + 'x' + h + ' ' + scene + ': ' + json(bad));
+      if (scene === 'setup') for (const [i, a] of boxes().entries()) for (const b of boxes().slice(i + 1)) assert(!(a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + 7 && b.y < a.y + 7), 'setup text overlaps: ' + json([a, b]));
       const controls = G(scene === 'setup' || scene === 'results' ? 'SC.hits' : 'HUD.hits');
       for (const b of controls) assert(b.x >= 0 && b.y >= 0 && b.x + b.w <= w && b.y + b.h <= h, scene + ': control outside view');
     }

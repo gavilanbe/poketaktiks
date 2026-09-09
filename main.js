@@ -7,9 +7,9 @@ const PARAMS = new URLSearchParams(location.search);
 // Saves written before the HP edge became an explicit per-unit field: every campaign party member carries it.
 function migrateParty(list) { if (list) for (const p of list) if (p.hpBonus == null) p.hpBonus = BOND_HP; return list; }
 function loadSave() { try { const s = JSON.parse(localStorage.getItem('pk_save')); if (s) migrateParty(s.party); return s; } catch (e) { return null; } }
-function writeSave() { try { localStorage.setItem('pk_save', JSON.stringify(SAVE)); } catch (e) { } }
+function writeSave() { if (PARAMS.has('nosave')) return; try { localStorage.setItem('pk_save', JSON.stringify(SAVE)); } catch (e) { } }
 function loadSuspend() { try { return JSON.parse(localStorage.getItem('pk_suspend')); } catch (e) { return null; } }
-function clearSuspend() { try { localStorage.removeItem('pk_suspend'); } catch (e) { } }
+function clearSuspend() { if (PARAMS.has('nosave')) return; try { localStorage.removeItem('pk_suspend'); } catch (e) { } }
 // A serialized party member at full HP, evolved for its level. Campaign parties carry the HP edge; Versus passes 1.
 function partyUnit(num, level, hpBonus = BOND_HP) { const u = makeUnit(num, level, 0, { hpBonus }); let evo; while ((evo = evolutionFor(u))) evolve(u, evo); u.hp = u.maxHp; return serializeUnit(u); }
 
@@ -76,7 +76,7 @@ function resumeSuspend() {
   seedRng(s.rng != null ? s.rng : s.seed ^ (s.turn * 7919)); const map = parseMap(mapDef); map.def = mapDef; UID = 1;
   B = { territory: s.territory || null, map, units: [], turn: s.turn, phase: 0, bag: s.bag, result: null, seized: false, captured: s.captured || [], kills: s.kills || 0, chapter: s.chapter, log: [], seed: s.seed, skirmish: !!s.skirmish };
   map.items.forEach((it, i) => { it.taken = !!s.items[i]; }); map.reinforce.forEach((r, i) => { r.done = !!s.reinforce[i]; });
-  for (const d of s.units) { if (d.hp <= 0 && !d.leader) continue; if (d.hpBonus == null && d.team === 0 && !B.territory) d.hpBonus = BOND_HP; const u = restoreUnit(d); u.pid = d.pid; u.leader = d.leader; u.provoked = d.provoked; if (d.hp <= 0) continue; B.units.push(u); }
+  for (const d of s.units) { if (d.hp <= 0 && !d.leader) continue; if (d.hpBonus == null && d.team === 0 && !B.territory) d.hpBonus = BOND_HP; const u = restoreUnit(d); u.pid = d.pid; u.leader = d.leader; u.provoked = d.provoked; if (u.team === 0 && u.status === 'frz') u.acted = true; if (d.hp <= 0) continue; B.units.push(u); }
   // older suspend saves could hold the same id on a party member and an enemy: renumber the duplicates (UID is already past every saved id)
   const seen = new Set(); for (const u of B.units) { if (seen.has(u.id)) u.id = UID++; seen.add(u.id); }
   BACKDROP = makeBackdrop(mapDef); BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.hpShow.clear(); BT.cx = s.cx; BT.cy = s.cy; BT.zoom = 1; if (narrowView() && canZoom()) setZoom(.5); centerCam(BT.cx, BT.cy, true); BT.hoverAnchor = null; FX.parts = []; FX.texts = [];

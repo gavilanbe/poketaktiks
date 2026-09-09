@@ -63,9 +63,9 @@ function titleDraw() {
   TITLE_MONS.forEach((n, i) => { const x = ((SC.t * 22 + i * 46) % (W + 60)) - 30, y = H * .8 + Math.round(Math.sin(SC.t * 8 + i) * 2); ellipse(x, y + 1, 10, 3, '#00000060'); drawMon(n, x, y, {}); });
   // top and bottom vignette bands so the UI sits on something calm
   ctx.globalAlpha = .45; rect(0, 0, W, 8, '#05070f'); rect(0, H - 22, W, 22, '#05070f'); ctx.globalAlpha = 1;
-  const portrait = H > W; const ly = (portrait ? Math.round(H * .17) : 22) + Math.round(Math.sin(SC.t * 2) * 1.5);
-  drawLogo(W / 2, ly, SC.t);
-  SC.hits = []; const bw = Math.min(196, W - 40), bh = 22, gap = 4; const bx = W / 2 - bw / 2; let by = ly + 31 + 27 + 30;
+  const portrait = H > W, compact = !portrait && H < 260; const ly = (compact ? 4 : portrait ? Math.round(H * .17) : 22) + Math.round(Math.sin(SC.t * 2) * 1.5);
+  if (compact) { ctx.save(); ctx.translate(W / 2, ly); ctx.scale(.65, .65); drawLogo(0, 0, SC.t); ctx.restore(); } else drawLogo(W / 2, ly, SC.t);
+  SC.hits = []; const bw = Math.min(196, compact && W >= 320 ? (W - 24) / 2 : W - 40), bh = 22, gap = 4; const bx = W / 2 - bw / 2; let by = ly + 31 + 27 + 30;
   const save = loadSave(), susp = !!loadSuspend();
   const items = [];
   if (susp) items.push(['RESUME BATTLE', 'Pick up the suspended fight', 'play', () => resumeSuspend()]);
@@ -75,7 +75,7 @@ function titleDraw() {
   items.push(['TERRITORY', 'Centers · income · reserves', 'flag', () => startTerritorySetup()]);
   items.push(['VERSUS', 'Two trainers · one device', 'vs', () => startVersusSetup()]);
   if (portrait) by = ly + 31 + 27 + 44; const total = items.length * (bh + gap); if (by + total > H - 26) by = Math.max(ly + 96, H - 26 - total);
-  const cols = !portrait && W >= 420 && items.length > 4 ? 2 : 1; const firstY = by;
+  const cols = !portrait && W >= 320 && (compact || items.length > 4) ? 2 : 1; if (compact) by = 75; const firstY = by;
   items.forEach((it, i) => { const xx = cols === 2 ? W / 2 - bw - 4 + (i % 2) * (bw + 8) : bx; const yy = cols === 2 ? firstY + Math.floor(i / 2) * (bh + gap) : by; menuCard(xx, yy, bw, bh, it[0], it[1], it[2], SC.i === i, () => { Audio.sfx('ok'); it[3](); }); by += bh + gap; });
   SC.menuLen = items.length;
   text(Audio.muted ? '♪ off  (M)' : '♪ on  (M)', 6, H - 12, UI.muted); if (!narrowView()) textR('Sprites: Pokémon Showdown · PokeAPI', W - 6, H - 12, UI.muted);

@@ -181,6 +181,7 @@ function upkeep(team) {
     if (u.status === 'brn') { const d = Math.max(1, Math.floor(u.maxHp / 16)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'brn' }); }
     if (u.status === 'frz') { u.statusTurns++; if (u.statusTurns >= 2 || rnd() < .4) { u.status = null; ev.push({ type: 'cure', unit: u, kind: 'frz' }); } }
     if (u.status === 'par') { u.statusTurns++; if (u.statusTurns >= 3) { u.status = null; ev.push({ type: 'cure', unit: u, kind: 'par' }); } }
+    if (!u.acted && (u.status === 'frz' || (u.status === 'par' && rnd() < .25))) { u.acted = u.moved = true; ev.push({ type: 'blocked', unit: u, kind: u.status }); }
   }
   return ev;
 }
@@ -295,7 +296,9 @@ function aiSkillScore(u, sk, n, t, threat, aT) {
   return null;
 }
 // Decide an action: {x,y,target,move} to attack, {x,y,skill,target} to use a skill, {x,y} to move, or null to wait.
+function canTakeAction(u) { return !!(u && u.hp > 0 && !u.acted && !u.recharge && u.status !== 'frz'); }
 function aiDecide(u, cautious = false) {
+  if (!canTakeAction(u)) return null;
   if (B.territory) return territoryDecide(u);
   const reach = reachable(u); const targets = aiTargetsOf(u); if (!targets.length) return null;
   const provoked = u.ai === 'aggro' || u.provoked || targets.some(t => dist(t, u) <= (u.ai === 'guard' ? Math.max(u.rngMax, 1) : 2));

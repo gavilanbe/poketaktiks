@@ -96,7 +96,7 @@ function beginPhase(team, first, resumed = false) {
   Audio.playMusic(isHuman(team) ? (B.units.some(u => u.boss && u.hp > 0 && u.provoked) ? 'boss' : B.map.music) : 'enemy');
   if (B.versus && isHuman(team)) { BT.mode = 'handoff'; BT.handoff = { team, t: 0 }; }
   BT.queue = ev.map(e => ({ kind: 'event', ev: e }));
-  BT.afterBanner = () => { playQueue(() => { if (isHuman(team)) { const f = alive(team).find(u => !u.acted); if (f) { BT.cx = f.x; BT.cy = f.y; keepCursorVisible(); } BT.mode = 'idle'; } else runEnemyPhase(team); }); };
+  BT.afterBanner = () => { playQueue(() => { if (isHuman(team)) { const f = alive(team).find(u => !u.acted); if (f) { BT.cx = f.x; BT.cy = f.y; keepCursorVisible(); } BT.mode = B.territory && BT.territoryGuide ? 'territoryGuide' : 'idle'; } else runEnemyPhase(team); }); };
 }
 function spawnReinforcements() { const out = []; for (const r of B.map.reinforce) if (r.turn === B.turn && !r.done) { r.done = true; for (const d of r.units) { if (unitAt(d.x, d.y)) continue; const u = makeUnit(d.mon, d.level, d.team == null ? 1 : d.team, { x: d.x, y: d.y, ai: d.ai || 'aggro', boss: d.boss }); B.units.push(u); out.push(u); requestBigSprite(u.num); } } return out; }
 function nextPhase() {
@@ -144,6 +144,7 @@ function setupEvent(q) {
     case 'skill': q.dur = BT.fast ? .4 : .8; Audio.sfx('select'); if (!unitVisible(e.unit) || !unitVisible(e.target)) centerCamBetween(e.unit, e.target); spawnParts(ux(e.unit), uy(e.unit) + 8, 10, [ROLES[e.unit.role].col, '#ffffff'], { speed: 40, life: .5, grav: -30 }); break;
     case 'brace': Audio.sfx('shake'); floatText(ux(e.unit), uy(e.unit) - 8, 'BRACED!', BRACE_COL, { outline: '#000' }); e.unit.fx.sy = .8; e.unit.fx.sx = 1.2; break;
     case 'root': Audio.sfx('grass'); shake(1); floatText(ux(e.unit), uy(e.unit) - 8, 'ROOTED!', ROOT_COL, { outline: '#000' }); spawnParts(ux(e.unit), uy(e.unit) + 12, 12, ['#2a6b38', '#c8f0a0'], { speed: 30, grav: 40, life: .6 }); break;
+    case 'blocked': q.dur = BT.fast ? .4 : .7; if (!unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); floatText(ux(e.unit), uy(e.unit) - 8, e.kind === 'frz' ? 'Frozen solid!' : 'Fully paralyzed!', STATUS[e.kind].col, { outline: '#000' }); break;
     case 'property': q.dur = BT.fast ? .4 : .8; floatText(ux(e.unit), uy(e.unit) - 10, e.done ? 'CAPTURED!' : e.progress + '/20', UI.gold, { outline: '#000' }); Audio.sfx('select'); break;
     case 'unroot': q.dur = BT.fast ? .2 : .4; floatText(ux(e.unit), uy(e.unit) - 8, 'Free!', ROOT_COL, { outline: '#000' }); break;
   }
@@ -222,6 +223,7 @@ BT.hpShow = new Map();
 
 // ---------------------------------------------------------------- player actions
 function selectUnit(u) {
+  if (!canTakeAction(u)) { Audio.sfx('error'); return false; }
   BT.sel = u; BT.reach = reachable(u); BT.atk = attackCells(u, BT.reach); BT.path = [{ x: u.x, y: u.y }]; BT.mode = 'move'; Audio.sfx('select');
   u.fx.sy = .75; u.fx.sx = 1.25; BT.quip = { text: quipFor(u.num), t: 0, unit: u };
 }
@@ -363,7 +365,7 @@ function runEnemyPhase(team) {
     if (checkObjective()) { endBattle(); return; }
     const u = order.shift(); if (!u) { nextPhase(); return; }
     if (u.hp <= 0) { step(); return; }
-    if (u.status === 'frz' || (u.status === 'par' && rnd() < .25)) { BT.queue = [{ kind: 'fn', fn: () => { centerCam(u.x, u.y); floatText(u.x * TILE + TILE / 2, u.y * TILE - 4, u.status === 'frz' ? 'Frozen solid!' : 'Fully paralyzed!', STATUS[u.status].col, { outline: '#000' }); } }, { kind: 'wait', t2: .7 }]; playQueue(step); return; }
+    if (!canTakeAction(u)) { step(); return; }
     const d = aiDecide(u);
     if (!d) { step(); return; }
     BT.queue = [];
@@ -385,13 +387,14 @@ function runEnemyPhase(team) {
 function battleInput(ev) {
   if (ev.type === 'key' && ev.key === 'mute') { Audio.toggle(); return; }
   if (ev.type === 'key' && ev.key === 'fast') { BT.fast = !BT.fast; const d = duelActive(); floatText(d ? VIEW.w / 2 : bvW() / 2 + CAM.x, d ? 40 : CAM.y + 40 / BT.zoom, BT.fast ? 'FAST MODE' : 'NORMAL SPEED', UI.gold); return; }
+  if (BT.mode === 'territoryGuide') { if (ev.type === 'key' && (ev.key === 'ok' || ev.key === 'back')) closeTerritoryGuide(); else if (ev.type === 'up') hudHit(ev.x, ev.y); return; }
   if (duelActive()) { duelInput(BT.anim, ev); return; }
   if (ev.type === 'key' && (ev.key === 'zoomin' || ev.key === 'zoomout')) { if (setZoom(ev.key === 'zoomin' ? 1 : .5)) Audio.sfx('menu'); return; }
   if (BT.mode === 'banner') { if (ev.type === 'down' || (ev.type === 'key' && ev.key === 'ok')) BT.banner.t = Math.max(BT.banner.t, 1.1); return; }
   if (BT.mode === 'handoff') { if (BT.handoff.t > .4 && (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok'))) { BT.mode = 'banner'; BT.banner.t = 0; Audio.sfx('phase'); } return; }
   if (BT.mode === 'anim') { if (ev.type === 'down' || ev.type === 'key') { BT.fastTap = .4; } return; }
   if (BT.mode === 'end') { if (BT.endTimer > 1.2 && (ev.type === 'down' || (ev.type === 'key' && ev.key === 'ok'))) { BT.endTimer = 99; } return; }
-  if (BT.mode === 'help') { if (ev.type === 'down' || (ev.type === 'key')) { if (ev.type === 'key' && (ev.key === 'right' || ev.key === 'ok') || ev.type === 'down') { BT.helpPage++; if (BT.helpPage >= HELP_PAGES.length) { BT.helpPage = 0; BT.mode = 'idle'; } } else if (ev.key === 'left') BT.helpPage = Math.max(0, BT.helpPage - 1); else if (ev.key === 'back' || ev.key === 'help') { BT.mode = 'idle'; BT.helpPage = 0; } } return; }
+  if (BT.mode === 'help') { if (ev.type === 'down' || (ev.type === 'key')) { if (ev.type === 'key' && (ev.key === 'right' || ev.key === 'ok') || ev.type === 'down') { const r = helpRect(); if (r.next != null) BT.helpOffset = r.next; else { BT.helpOffset = 0; BT.helpPage++; if (BT.helpPage >= HELP_PAGES.length) { BT.helpPage = 0; BT.mode = 'idle'; } } } else if (ev.key === 'left') { if (BT.helpOffset) BT.helpOffset = Math.max(0, BT.helpOffset - helpRect().limit); else BT.helpPage = Math.max(0, BT.helpPage - 1); } else if (ev.key === 'back' || ev.key === 'help') { BT.mode = 'idle'; BT.helpPage = 0; BT.helpOffset = 0; } } return; }
   if (BT.mode === 'unitinfo') { if (ev.type === 'down' || ev.type === 'key') { if (ev.type === 'key' && (ev.key === 'left' || ev.key === 'right' || ev.key === 'prev' || ev.key === 'next')) { const list = B.units.filter(u => u.hp > 0); let i = list.indexOf(BT.info); i = (i + (ev.key === 'left' || ev.key === 'prev' ? -1 : 1) + list.length) % list.length; BT.info = list[i]; BT.cx = BT.info.x; BT.cy = BT.info.y; keepCursorVisible(); Audio.sfx('cursor'); } else { BT.mode = 'idle'; Audio.sfx('cancel'); } } return; }
   if (ev.type === 'key') { keyInput(ev.key); return; }
   if (ev.type === 'wheel') { CAM.tx += ev.dx / BT.zoom; CAM.ty += ev.dy / BT.zoom; clampCam(); return; }
@@ -403,7 +406,7 @@ function keyInput(k) {
   if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { if (k === 'up') menuNav(-1); else if (k === 'down') menuNav(1); else if (k === 'ok') activateMenu(); else if (k === 'back') cancel(); return; }
   if (m === 'target' || m === 'catchTarget' || m === 'skillTarget') { if (k === 'left' || k === 'up' || k === 'prev') { BT.tIdx = (BT.tIdx - 1 + BT.targets.length) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'right' || k === 'down' || k === 'next') { BT.tIdx = (BT.tIdx + 1) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'info') { BT.moveIdx++; Audio.sfx('menu'); } else if (k === 'ok') { if (m === 'target') confirmAttack(); else if (m === 'skillTarget') confirmSkill(); else pickBall(); } else if (k === 'back') cancel(); return; }
   if (m === 'itemTarget') { if (k === 'ok') useItemOn(BT.sel); else if (k === 'back') cancel(); return; }
-  if (k === 'help') { BT.mode = 'help'; BT.helpPage = 0; return; }
+  if (k === 'help') { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; return; }
   const dx = k === 'left' ? -1 : k === 'right' ? 1 : 0, dy = k === 'up' ? -1 : k === 'down' ? 1 : 0;
   if (dx || dy) { const nx = clamp(BT.cx + dx, 0, B.map.w - 1), ny = clamp(BT.cy + dy, 0, B.map.h - 1); if (nx !== BT.cx || ny !== BT.cy) { BT.cx = nx; BT.cy = ny; keepCursorVisible(); Audio.sfx('cursor'); if (m === 'move') extendPath(nx, ny); } return; }
   if (k === 'ok') { tileAction(BT.cx, BT.cy); return; }
@@ -418,7 +421,7 @@ function activateMenu() {
   if (BT.mode === 'menu') menuChoose(it.id);
   else if (BT.mode === 'item') { BT.item = it.id; BT.mode = 'itemTarget'; Audio.sfx('ok'); }
   else if (BT.mode === 'ballPick') { BT.ball = it.id; confirmCatch(); }
-  else if (BT.mode === 'endmenu') { Audio.sfx('ok'); if (it.id === 'endturn') endTurn(); else if (it.id === 'danger') { BT.showDanger = !BT.showDanger; BT.mode = 'idle'; } else if (it.id === 'scene') { cyclePref('battle'); openEndMenu(m.i); } else if (it.id === 'help') { BT.mode = 'help'; BT.helpPage = 0; } else if (it.id === 'mute') { Audio.toggle(); BT.mode = 'idle'; } else if (it.id === 'retreat') { B.result = B.versus ? (HT() === 0 ? 'p2' : 'p1') : 'retreat'; endBattle(); } else BT.mode = 'idle'; }
+  else if (BT.mode === 'endmenu') { Audio.sfx('ok'); if (it.id === 'endturn') endTurn(); else if (it.id === 'danger') { BT.showDanger = !BT.showDanger; BT.mode = 'idle'; } else if (it.id === 'scene') { cyclePref('battle'); openEndMenu(m.i); } else if (it.id === 'help') { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; } else if (it.id === 'mute') { Audio.toggle(); BT.mode = 'idle'; } else if (it.id === 'retreat') { B.result = B.versus ? (HT() === 0 ? 'p2' : 'p1') : 'retreat'; endBattle(); } else BT.mode = 'idle'; }
 }
 function pickBall() { const balls = Object.keys(B.bag).filter(k => ITEMS[k].kind === 'ball' && B.bag[k] > 0); if (!balls.length) { Audio.sfx('error'); return; } const t = BT.targets[BT.tIdx]; BT.menu = { items: balls.map(k => ({ id: k, label: ITEMS[k].name + ' ×' + B.bag[k], sub: Math.round(clamp((.22 + .68 * (1 - t.hp / t.maxHp)) * ITEMS[k].rate * (t.status ? 1.3 : 1) * (t.boss ? .5 : 1), .05, .97) * 100) + '% chance' })), i: 0 }; BT.mode = 'ballPick'; Audio.sfx('ok'); }
 function useItemOn(u) { const it = BT.item; B.bag[it]--; if (B.bag[it] <= 0) delete B.bag[it]; Audio.sfx('item'); const ev = useItem(u, it); BT.queue = ev.map(e => ({ kind: 'event', ev: e })); playQueue(() => finishUnit(u)); }
@@ -671,6 +674,7 @@ function drawHUD() {
   if (BT.mode === 'itemTarget') { const w = Math.min(160, W - 12); hudPanel(W / 2 - w / 2, H / 2 - 16, w, 32); textC('Use ' + ITEMS[BT.item].name + ' on ' + BT.sel.name + '?', W / 2, H / 2 - 10, UI.ink); textC('OK: confirm · X: cancel', W / 2, H / 2 + 1, UI.muted); }
   if (BT.mode === 'unitinfo' && BT.info) drawUnitSheet(BT.info);
   if (BT.mode === 'help') drawHelp();
+  if (BT.mode === 'territoryGuide') drawTerritoryGuide();
   if (BT.mode === 'handoff') drawHandoff();
   if (BT.mode === 'banner') drawBanner();
   if (BT.mode === 'anim' && BT.anim && BT.anim.kind === 'event') drawEventCard(BT.anim);
@@ -699,7 +703,7 @@ function drawButtons(L) {
   if (enemyAnim) items.push({ label: BT.fast ? 'FAST ●' : 'FAST ○', run: () => { BT.fast = !BT.fast; } });
   if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
   if (idle && B.territory) items.push({ label: 'RESERVE', run: () => openTerritoryReserves() });
-  if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; Audio.sfx('menu'); } }, { label: Audio.muted ? '♪ ○' : '♪ ●', half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
+  if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; Audio.sfx('menu'); } }, { label: Audio.muted ? '♪ ○' : '♪ ●', half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
   if (B.territory && L.stack && idle) { const mute = items.findIndex(it => it.label.startsWith('♪')); if (mute >= 0) items.splice(mute, 1); }
   if (!items.length) return;
   if (L.stack) { // two rows across the bottom: row 1 = the two main actions, row 2 = the rest
@@ -918,15 +922,15 @@ function drawUnitSheet(u) {
 const HELP_PAGES = [
   ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back. Mouse: hover + click; right click or an empty tile opens the menu. Touch: tap to move the cursor, tap again to confirm.', 'Q/E: next unit · C: unit info / switch move · F: fast · +/-: zoom · M: mute · H: help. Drag or wheel to pan.', 'Attack scene: any key speeds it up, X skips. The menu switches between full, quick and map-only battles.'],
   ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch, use its Skill, the Bag or Wait. Blue = move, red = attack. Greyed units have acted.', 'Defenders counter if you are in their move range and still standing. Only Scouts and Strikers strike twice, when 10+ SPE faster. The forecast lists the strikes in order; a greyed one only happens if an earlier strike misses.', 'Crits: 4% (24% for high-crit moves), ×1.5 damage. The forecast HP is for normal hits; a strike whose crit would KO says so. Terrain gives DEF% and AVO. Poké Centers heal 30%/turn and cure. Danger: red = foe reach, yellow = wild reach. Hyper Beam: no counter after it, next turn recharging.'],
-  ['ROLES', 'Types say whom you beat; the role (badge on the unit card) says how to use it. One role per evolution line.', 'SCT Scout: Dart, moves 2 tiles after attacking. DEF Defender: Brace, 40% less damage until its next turn. AMP Amphibious: DEF 20% and AVO 20 on water. CTL Controller: Root a foe within 2, it cannot move on its next turn (fliers immune). RNG Ranged: ranged moves reach 1 tile further. SUP Support: Mend an adjacent ally 30% HP and cure it. STK Striker: plain attacker.', 'Brace, Root and Mend use the action, like Attack. Root and Mend earn a little XP and work every other turn (the unit sheet counts the turns); Brace can be used every turn and earns nothing. A Poké Center or Full Heal also frees a rooted unit.'],
-  ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67. STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV, Frozen skips turns and crits are guaranteed on it.', 'Wild Pokémon (dashed ring) can be caught when weak: stand next to them, choose Catch and throw a ball. Trainer Pokémon (spiked ring) cannot be stolen. Level ups can evolve!'],
+  ['ROLES', 'Types say whom you beat; the role (badge on the unit card) says how to use it. One role per evolution line.', 'SCT Scout: Dart, moves 2 tiles after attacking. DEF Defender: Brace, 40% less damage until its next turn. AMP Amphibious: DEF 20% and AVO 20 on water. CTL Controller: Root a foe within 2, it cannot move on its next turn (fliers immune). RNG Ranged: ranged moves reach 1 tile further. SUP Support: Mend an adjacent ally 30% HP and cure it. STK Striker: plain attacker.', 'Brace, Root and Mend use the action, like Attack. Root and Mend earn XP outside Territory and work every other turn (the unit sheet counts the turns); Brace can be used every turn and earns nothing. A Poké Center or Full Heal also frees a rooted unit.'],
+  ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67. STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV and has a 25% chance to spend the action at phase start. Frozen skips a phase unless it thaws; crits on it are guaranteed. Cures never refund spent actions.', 'Wild Pokémon (dashed ring) can be caught when weak: stand next to them, choose Catch and throw a ball. Trainer Pokémon (spiked ring) cannot be stolen. Level ups can evolve!'],
   ['TERRITORY', 'Take the enemy HQ, or own 2 of the 3 contested centers at the start of 3 of your turns. Losing the majority resets your hold counter. After 40 turns, more contested centers wins; a tie is a draw.', 'Any ready Pokemon on another center can Capture. Reach 20 points: a full-HP unit adds 10 per action, damaged units add less. Leaving or fainting resets progress; damage slows the next capture. Root does not stop capture.', 'Only owned centers heal and cure your team. Each owned center earns 2 command points at the start of your turn (bank limit 30).'],
   ['RESERVES', 'Tap RESERVE or an empty owned center to deploy a teammate. Choose the center and Pokemon. Costs are shown before spending. The arrival has already acted. Maximum 5 on the map, from your finite team of 6.', 'Fainted teammates recover after 2 of your turn starts. Pay their cost to send them out again. Occupied centers cannot deploy. With reserves left, an empty battlefield does not lose the match.', 'Both teams stay at Lv12 with equal stats and no XP in this mode. End your turn manually, after moving and deploying. Campaign progress is separate.'],
 ];
-function helpRect() { const W = VIEW.w, H = VIEW.h; const w = Math.min(280, W - 12); const lines = helpLines(BT.helpPage, w - 16); const h = Math.min(H - 12, 34 + lines.length * 10); return { x: W / 2 - w / 2, y: Math.max(6, H / 2 - h / 2), w, h, lines }; }
+function helpRect() { const W = VIEW.w, H = VIEW.h, w = Math.min(280, W - 12); const all = helpLines(BT.helpPage, w - 16), limit = Math.max(1, Math.floor((H - 48) / 10)), start = Math.min(BT.helpOffset || 0, Math.max(0, all.length - 1)); const lines = all.slice(start, start + limit), h = 34 + lines.length * 10; return { x: W / 2 - w / 2, y: Math.max(6, H / 2 - h / 2), w, h, lines, limit, next: start + limit < all.length ? start + limit : null }; }
 function helpLines(page, width) { const p = HELP_PAGES[page]; const out = []; p.slice(1).forEach((para, i) => { if (i) out.push(''); out.push(...wrap(para, width)); }); return out; }
 function drawHelp() {
-  const W = VIEW.w; const r = helpRect(); hudPanel(r.x, r.y, r.w, r.h, { title: 'HELP ' + (BT.helpPage + 1) + '/' + HELP_PAGES.length });
+  const W = VIEW.w; const r = helpRect(); hudPanel(r.x, r.y, r.w, r.h, { title: 'HELP ' + (BT.helpPage + 1) + '/' + HELP_PAGES.length + (BT.helpOffset ? ' · continued' : '') });
   text(HELP_PAGES[BT.helpPage][0], r.x + 8, r.y + 8, UI.gold); r.lines.forEach((l, i) => { if (r.y + 20 + i * 10 < r.y + r.h - 14) text(l, r.x + 8, r.y + 20 + i * 10, UI.ink); });
   textC((VIEW.touch ? 'tap' : 'click / OK') + ': next page  ·  X: close', W / 2, r.y + r.h - 11, UI.muted);
 }
