@@ -15,18 +15,32 @@ try { for (const k in PREF) { const v = localStorage.getItem('pk_' + k); if (PRE
 function setPref(k, v) { if (!PREF_VALUES[k].includes(v)) return; PREF[k] = v; try { localStorage.setItem('pk_' + k, v); } catch (_) { } }
 function cyclePref(k) { const vs = PREF_VALUES[k]; setPref(k, vs[(vs.indexOf(PREF[k]) + 1) % vs.length]); return PREF[k]; }
 
+// Integer device-pixel scale for a canvas of pw×ph device pixels shown at cw CSS pixels wide.
+// Landscape aims for ~560 logical pixels of width. Portrait on a phone (≤ 520 CSS px wide) aims for
+// ~200, which puts the 5×7 font at 10-12 CSS px and a 18 px button at 36+ CSS px; tablets in portrait
+// keep ~320. Never below 1, and never so coarse that fewer than 176 logical pixels remain.
+function pickScale(pw, ph, cw) {
+  const portrait = ph > pw; const target = portrait ? (cw <= 520 ? 200 : 320) : 560;
+  let s = Math.max(1, Math.round(pw / target));
+  while (s > 1 && pw / s < 176) s--;
+  return s;
+}
 function resize() {
   const cw = innerWidth, ch = innerHeight, dpr = Math.min(devicePixelRatio || 1, 3);
   const pw = Math.round(cw * dpr), ph = Math.round(ch * dpr);
-  // Pick the integer scale that leaves ~440 logical pixels of width (never below 1).
-  let s = Math.max(1, Math.round(pw / (ph > pw ? 400 : 560)));
-  if (pw / s < 300) s = Math.max(1, Math.floor(pw / 300));
+  const s = pickScale(pw, ph, cw);
   VIEW.scale = s; VIEW.dpr = dpr;
   VIEW.w = Math.floor(pw / s); VIEW.h = Math.floor(ph / s);
   cv.width = pw; cv.height = ph; cv.style.width = cw + 'px'; cv.style.height = ch + 'px';
   ctx.setTransform(s, 0, 0, s, 0, 0); ctx.imageSmoothingEnabled = false;
 }
 addEventListener('resize', resize); resize();
+// Layout helpers shared by every scene. narrow: a phone-sized logical view (portrait phones land at
+// 176-260 px); touch targets grow there and whenever a touch has been seen.
+function narrowView() { return VIEW.w < 300; }
+function portraitView() { return VIEW.h > VIEW.w; }
+function btnH() { return narrowView() || VIEW.touch ? 18 : 14; }
+function rowH() { return narrowView() || VIEW.touch ? 16 : 13; }
 
 // ---------------------------------------------------------------- RNG
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }

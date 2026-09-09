@@ -25,7 +25,7 @@ async function main() {
     const tap = async (x, y) => { if (mobile) { await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await sleep(40); await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); } else { await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }); await sleep(30); await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }); await sleep(40); await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }); } await sleep(150); };
     const move = async (x, y) => { await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }); await sleep(60); };
     const scale = async () => await ev('__pk.VIEW.scale / __pk.VIEW.dpr');
-    const tileCenter = async (tx, ty) => { const s = await scale(); const p = JSON.parse(await ev(`JSON.stringify([${tx}*32+16-__pk.CAM.x, ${ty}*32+16-__pk.CAM.y])`)); return [p[0] * s, p[1] * s]; };
+    const tileCenter = async (tx, ty) => { const s = await scale(); const p = JSON.parse(await ev(`JSON.stringify([(${tx}*32+16-__pk.CAM.x)*__pk.BT.zoom, (${ty}*32+16-__pk.CAM.y)*__pk.BT.zoom])`)); return [p[0] * s, p[1] * s]; };
     const tapTile = async (tx, ty) => { const [x, y] = await tileCenter(tx, ty); await tap(x, y); };
     const hoverTile = async (tx, ty) => { const [x, y] = await tileCenter(tx, ty); await move(x, y); };
     const waitMode = async (m, max = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < max) { const cur = await ev('__pk.BT.mode'); if (cur === m) return true; await sleep(100); } out.push('TIMEOUT waiting mode ' + m + ' (now ' + await ev('__pk.BT.mode') + ')'); return false; };

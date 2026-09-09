@@ -47,7 +47,7 @@ load lazily; if one is missing the scene draws the mini icon at 2× instead.
   heal 30% a turn and cure statuses, lava burns anything that is not Fire or
   flying. Flyers ignore terrain, Water types swim, Rock/Ground/Fighting climb,
   Bug/Grass walk through woods for free.
-- **Catching.** Wild Pokémon (yellow ring) fight everyone. Weaken one, stand
+- **Catching.** Wild Pokémon (yellow, dashed ring) fight everyone. Weaken one, stand
   next to it, choose Catch, pick a ball. Chance grows as HP drops, ×1.3 with a
   status, ×1.5 Great Ball, ×2 Ultra Ball. Caught Pokémon join the party at the
   end of the map. Trainer Pokémon (red) cannot be stolen.
@@ -82,9 +82,25 @@ load lazily; if one is missing the scene draws the mini icon at 2× instead.
 
 Arrows/WASD move the cursor, Z/Enter/Space confirm, X/Esc cancel (cancelling
 after a move undoes it), Q/E cycle units, C shows unit info (and switches the
-move in the forecast), F toggles fast enemy phases, H help, M mute. Mouse:
-hover and click, right click to cancel, drag or wheel to pan. Touch: tap to
-move the cursor, tap again to confirm, tap-and-drag to pan.
+move in the forecast), F toggles fast enemy phases, +/− zoom the board out and
+in when the map does not fit (the ZOOM button does the same), H help, M mute.
+Mouse: hover and click, right click to cancel, drag or wheel to pan. Touch:
+tap to move the cursor, tap again to confirm, tap-and-drag to pan.
+
+**Reading the board.** Every unit stands on a team-coloured plate whose shape
+also tells the side apart: a plain ring for your own team, a spiked ring for
+enemy trainers, a dashed ring for wild Pokémon, a barred ring for allies; the
+same glyph sits on the HP plate under its feet. Units that can still act keep
+their colour and a glint on the rim; units that have acted go grey. Marks sit
+in the tile's corners, off the sprite: crown (leader) or skull (boss) top-left,
+a CHG tag while recharging, the status tag top-right. The turn card shows the
+turn, the objective and READY x/y; the forecast lists the strikes in order
+with the HP after the exchange in large type, a KO mark on the strike that
+drops someone, and "only if … survives" on strikes that depend on a miss.
+
+**Phones.** Portrait phones render at about 200 logical pixels (the pixel
+font is 10-12 CSS px), the board opens zoomed out, the context card and the
+buttons sit under the board, and the forecast spans the width.
 
 **Attack scene.** Confirming an attack wipes from the map into a side-on
 battlefield: your Pokémon on the left (Player 1 in Versus), the other on the

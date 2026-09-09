@@ -73,29 +73,31 @@ const ST = {
 function drawTile(ch, variant, frame, g) {
   const p = painter(g), r = mulberry32(ch.charCodeAt(0) * 977 + variant * 131 + 7); const rr = (a, b) => a + Math.floor(r() * (b - a + 1));
   const G = PAL.grass;
-  // Grass: flat base, soft darker patches, light tufts on a jittered grid, occasional darker tufts.
+  // Grass: flat base, one soft darker patch, a few light tufts on a jittered grid, a rare darker tuft.
+  // Kept sparse and low-contrast so a field of it reads as one calm surface under the Pokémon.
   const grassBase = (tone = 0) => {
     p.R(0, 0, 32, 32, G.m);
-    for (let i = 0; i < 2; i++) { const x = rr(-3, 26), y = rr(-2, 27), w = rr(5, 9), h = rr(2, 4); p.E(x + w / 2, y + h / 2, w / 2, h / 2, G.dm); }
-    for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) { if (r() < .55) continue; const x = i * 8 + rr(0, 3), y = j * 8 + rr(0, 3); p.S(x, y, ST.tuftL, { L: G.l }); if (r() < .3) p.P(x + 1, y + 1, G.ll); }
-    for (let i = 0; i < 3; i++) p.S(rr(0, 28), rr(0, 29), ST.tuftD, { D: G.dd });
-    if (tone === 0 && variant === 3 && r() < .6) p.S(rr(2, 26), rr(4, 26), ST.stone, { L: PAL.rock.ll, M: PAL.rock.l, D: PAL.rock.d });
+    { const x = rr(-3, 26), y = rr(-2, 27), w = rr(6, 10), h = rr(3, 4); p.E(x + w / 2, y + h / 2, w / 2, h / 2, G.dm); }
+    for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) { if (r() < .74) continue; const x = i * 8 + rr(0, 3), y = j * 8 + rr(0, 3); p.S(x, y, ST.tuftL, { L: G.l }); }
+    if (r() < .5) p.S(rr(0, 28), rr(0, 29), ST.tuftD, { D: G.dd });
+    if (tone === 0 && variant === 3 && r() < .4) p.S(rr(2, 26), rr(4, 26), ST.stone, { L: PAL.rock.ll, M: PAL.rock.l, D: PAL.rock.d });
   };
   const caveBase = () => {
     const C = PAL.cave; p.R(0, 0, 32, 32, C.m);
-    for (let i = 0; i < 2; i++) { const x = rr(-3, 26), y = rr(-2, 27), w = rr(5, 9), h = rr(2, 4); p.E(x + w / 2, y + h / 2, w / 2, h / 2, C.dm); }
-    for (let i = 0; i < 4; i++) { const x = rr(1, 28), y = rr(1, 28); p.R(x, y, 2, 1, C.ll); p.R(x, y + 1, 2, 1, C.l); p.P(x + 2, y + 1, C.dd); }
-    for (let i = 0; i < 3; i++) { const x = rr(0, 26), y = rr(0, 30); p.H(x, y, rr(3, 6), C.dd); }
-    for (let i = 0; i < 4; i++) p.P(rr(0, 31), rr(0, 31), C.l);
+    { const x = rr(-3, 26), y = rr(-2, 27), w = rr(6, 10), h = rr(3, 4); p.E(x + w / 2, y + h / 2, w / 2, h / 2, C.dm); }
+    for (let i = 0; i < 2; i++) { const x = rr(1, 28), y = rr(1, 28); p.R(x, y, 2, 1, C.l); p.P(x + 2, y + 1, C.dd); }
+    if (r() < .6) { const x = rr(0, 26), y = rr(0, 30); p.H(x, y, rr(3, 5), C.dd); }
   };
+  // Tiled floor: a 2×2 checker of near-identical tones with a thin grout that sits close to the tile
+  // colour, so the grid is a texture rather than a lattice competing with the range overlays and units.
   const floorBase = () => {
-    const F = PAL.floor; p.R(0, 0, 32, 32, F.grout);
+    const F = PAL.floor; const grout = mix(F.m, F.grout, .45); p.R(0, 0, 32, 32, grout);
     for (let y = 0; y < 32; y += 16) for (let x = 0; x < 32; x += 16) {
-      const alt = ((x + y) / 16) % 2; const base = alt ? F.m : F.l;
-      p.R(x + 1, y + 1, 14, 14, base); p.H(x + 1, y + 1, 14, alt ? F.l : F.ll); p.V(x + 1, y + 1, 14, alt ? F.l : F.ll); p.H(x + 1, y + 14, 14, F.d); p.V(x + 14, y + 1, 14, F.d);
-      if (r() < .18) { p.P(x + rr(3, 12), y + rr(3, 12), F.d); }
+      const alt = ((x + y) / 16) % 2; const base = alt ? F.m : mix(F.m, F.l, .4);
+      p.R(x + 1, y + 1, 15, 15, base); p.H(x + 1, y + 1, 15, mix(base, F.ll, .35)); p.V(x + 1, y + 1, 15, mix(base, F.ll, .2));
+      if (r() < .12) { p.P(x + rr(3, 12), y + rr(3, 12), F.d); }
     }
-    if (variant === 2) { p.R(4, 4, 8, 8, F.plate); p.H(4, 4, 8, F.l); p.V(4, 4, 8, F.l); for (let j = 0; j < 3; j++) p.H(6, 6 + j * 2, 4, F.grout); }
+    if (variant === 2) { p.R(4, 4, 8, 8, mix(F.plate, F.m, .4)); p.H(4, 4, 8, F.l); p.V(4, 4, 8, F.l); for (let j = 0; j < 3; j++) p.H(6, 6 + j * 2, 4, grout); }
   };
   const waterBase = (f, W) => {
     p.R(0, 0, 32, 32, W.m); const w = mulberry32(variant * 5 + 1);
@@ -138,11 +140,12 @@ function drawTile(ch, variant, frame, g) {
 
   switch (ch) {
     case '.': grassBase(); break;
-    case ',': grassBase(); for (let i = 0; i < 4; i++) { const x = rr(1, 27), y = rr(1, 25); const c = vpick(['#ffffff', '#ffb8d8', '#fff08a', '#ff9a9a', '#c8b0ff']); p.S(x, y, ST.flower, { P: c, Y: '#ffd24a', S: G.dd }); p.P(x - 1, y + 3, G.dd); } break;
-    case 't': { const T = PAL.tall; p.R(0, 0, 32, 32, T.m); for (let i = 0; i < 3; i++) { const x = rr(-4, 26), y = rr(-2, 26); p.E(x + 6, y + 3, 6, 3, T.d); }
+    case ',': grassBase(); for (let i = 0; i < 2 + (variant & 1); i++) { const x = rr(1, 27), y = rr(1, 25); const c = vpick(['#ffffff', '#ffb8d8', '#fff08a', '#ff9a9a', '#c8b0ff']); p.S(x, y, ST.flower, { P: c, Y: '#ffd24a', S: G.dd }); p.P(x - 1, y + 3, G.dd); } break;
+    case 't': { const T = PAL.tall; p.R(0, 0, 32, 32, T.m); for (let i = 0; i < 2; i++) { const x = rr(-4, 26), y = rr(-2, 26); p.E(x + 6, y + 3, 6, 3, T.d); }
       for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) { const x = i * 8 + (j & 1) * 4 + rr(-1, 1), y = j * 8 + rr(0, 1);
-        // a tuft: three blades, dark roots, lighter tips (kept low-contrast so big fields stay calm)
-        p.S(x, y, ['..H..', 'L.L.L', '.LDL.', '.D.D.'], { H: T.ll, L: T.l, D: T.dd }); } break; }
+        // a tuft: three blades, dark roots, a slightly lighter tip. Dense enough to read as tall grass
+        // (an evasion tile), light on contrast so a big field stays calm behind the units.
+        p.S(x, y, ['..H..', 'L.L.L', '.LDL.', '.D.D.'], { H: T.l, L: mix(T.m, T.l, .55), D: mix(T.m, T.dd, .7) }); } break; }
     case 'T': grassBase(1); if (variant === 0) { tree(15, 12, 10); bush(27, 26, 4); } else if (variant === 1) { tree(10, 11, 9); tree(23, 18, 8); } else if (variant === 2) { tree(17, 13, 11); } else { tree(20, 11, 9); bush(7, 24, 5); bush(28, 27, 3); } break;
     case 'M': grassBase(1); { const R = PAL.rock, S = PAL.snow; const w = 30 - (variant & 1) * 2, h = 26 - (variant >> 1) * 2, x0 = 1 + (variant & 1), y0 = 4 + (variant >> 1) * 2; p.E(16, 30, 15, 3, G.dd);
       for (let j = 0; j < h; j++) { const ww = Math.round(w * (j + 1) / h); const xs = x0 + Math.round((w - ww) / 2); p.H(xs - 1, y0 + j, ww + 2, R.out); const lit = Math.max(1, Math.round(ww * .42)), dk = Math.max(1, Math.round(ww * .3)); p.H(xs, y0 + j, ww, R.m); p.H(xs, y0 + j, lit, R.l); p.H(xs + ww - dk, y0 + j, dk, R.d); if (j > h - 4) p.H(xs, y0 + j, ww, R.d); }
@@ -157,8 +160,8 @@ function drawTile(ch, variant, frame, g) {
     case '=': { waterBase(frame, PAL.water); const K = PAL.plank; p.R(0, 4, 32, 24, K.m); for (let x = 0; x < 32; x += 5) { p.V(x, 4, 24, K.d); p.V(x + 1, 4, 24, K.l); } p.H(0, 4, 32, K.ll); p.H(0, 27, 32, K.d); p.H(0, 28, 32, PAL.outW); p.H(0, 3, 32, PAL.outW);
       // railings: rail bar + posts
       p.H(0, 1, 32, K.l); p.H(0, 2, 32, K.d); p.H(0, 29, 32, K.l); p.H(0, 30, 32, K.d); for (let x = 3; x < 32; x += 8) { p.R(x, 0, 2, 5, K.ll); p.V(x + 1, 0, 5, K.d); p.R(x, 27, 2, 5, K.ll); p.V(x + 1, 27, 5, K.d); } break; }
-    case '#': { const R = PAL.road; p.R(0, 0, 32, 32, R.m); for (let i = 0; i < 3; i++) { const x = rr(-4, 26), y = rr(-2, 26); p.E(x + 6, y + 3, rr(4, 7), rr(2, 3), R.l); } for (let i = 0; i < 6; i++) { const x = rr(0, 29), y = rr(0, 30); p.H(x, y, rr(2, 3), R.d); p.P(x + 1, y + 1, R.ll); } for (let i = 0; i < 3; i++) { const x = rr(1, 28), y = rr(1, 28); p.R(x, y, 2, 1, R.ll); p.P(x, y + 1, R.d); } break; }
-    case 's': { const S = PAL.sand; p.R(0, 0, 32, 32, S.m); for (let i = 0; i < 3; i++) { const x = rr(-4, 26), y = rr(-2, 26); p.E(x + 6, y + 3, rr(5, 8), 2, S.l); } for (let i = 0; i < 4; i++) { const x = rr(0, 22), y = rr(2, 30); for (let k = 0; k < rr(4, 8); k++) p.P(x + k, y + (k > 2 ? 1 : 0), S.d); } for (let i = 0; i < 3; i++) p.P(rr(0, 31), rr(0, 31), S.ll); break; }
+    case '#': { const R = PAL.road; p.R(0, 0, 32, 32, R.m); for (let i = 0; i < 2; i++) { const x = rr(-4, 26), y = rr(-2, 26); p.E(x + 6, y + 3, rr(4, 7), rr(2, 3), R.l); } for (let i = 0; i < 3; i++) { const x = rr(0, 29), y = rr(0, 30); p.H(x, y, rr(2, 3), mix(R.m, R.d, .7)); p.P(x + 1, y + 1, R.ll); } if (variant & 1) { const x = rr(1, 28), y = rr(1, 28); p.R(x, y, 2, 1, R.ll); p.P(x, y + 1, R.d); } break; }
+    case 's': { const S = PAL.sand; p.R(0, 0, 32, 32, S.m); for (let i = 0; i < 2; i++) { const x = rr(-4, 26), y = rr(-2, 26); p.E(x + 6, y + 3, rr(5, 8), 2, S.l); } for (let i = 0; i < 2; i++) { const x = rr(0, 22), y = rr(2, 30); for (let k = 0; k < rr(4, 8); k++) p.P(x + k, y + (k > 2 ? 1 : 0), mix(S.m, S.d, .7)); } if (variant & 1) p.P(rr(0, 31), rr(0, 31), S.ll); break; }
     case 'C': grassBase(1); building({ roof: '#e04848', roofD: '#a82c2c', roofL: '#ff6a60', wall: '#f6f1e6', wallD: '#c8bfae', wallTop: 13, wallH: 14, ridge: 5 });
       p.S(14, 0, ST.pokeEmblem, { O: PAL.out, R: '#ff5a5a', W: '#ffffff' });
       p.R(11, 15, 10, 5, '#ffffff'); p.R(10, 14, 12, 7, PAL.out); p.R(11, 15, 10, 5, '#fff4d0'); p.R(13, 16, 2, 3, '#e04848'); p.P(15, 16, '#e04848'); p.P(15, 17, '#e04848'); p.R(17, 16, 3, 1, '#e04848'); p.P(17, 17, '#e04848'); p.P(17, 18, '#e04848');
@@ -174,18 +177,18 @@ function drawTile(ch, variant, frame, g) {
     case 'r': caveBase(); boulder(3, 4, 12, 9); boulder(17, 9, 9, 7); boulder(8, 17, 10, 8); boulder(20, 20, 8, 6); p.P(6, 27, PAL.rock.l); p.P(27, 5, PAL.rock.l); p.R(24, 28, 3, 1, PAL.rock.d); break;
     case 'W': { const C = PAL.cwall; p.R(0, 0, 32, 32, C.top);
       // dense rock mass seen from above: small bumps lit from the top-left, hairline cracks
-      for (let i = 0; i < 7; i++) { const x = rr(0, 27), y = rr(0, 27), w = rr(3, 5), h = rr(2, 4); p.E(x + w / 2, y + h / 2, w / 2, h / 2, C.topL); p.P(x + 1, y, C.face); p.P(x + w - 1, y + h, C.out); }
-      for (let i = 0; i < 3; i++) { const x = rr(0, 26), y = rr(0, 30); p.H(x, y, rr(2, 5), C.out); p.P(x + rr(2, 5), y + 1, C.out); } break; }
+      for (let i = 0; i < 5; i++) { const x = rr(0, 27), y = rr(0, 27), w = rr(3, 5), h = rr(2, 4); p.E(x + w / 2, y + h / 2, w / 2, h / 2, C.topL); p.P(x + 1, y, C.face); p.P(x + w - 1, y + h, C.out); }
+      for (let i = 0; i < 2; i++) { const x = rr(0, 26), y = rr(0, 30); p.H(x, y, rr(2, 5), C.out); p.P(x + rr(2, 5), y + 1, C.out); } break; }
     case 'f': floorBase(); break;
-    case 'b': { const B = PAL.bwall; p.R(0, 0, 32, 32, B.top); for (let y = 0; y < 32; y += 8) for (let x = ((y / 8) & 1) * 8 - 8; x < 32; x += 16) { p.R(x + 1, y + 1, 14, 6, B.topL); p.H(x + 1, y + 1, 14, shade(B.topL, .12)); } break; }
+    case 'b': { const B = PAL.bwall; p.R(0, 0, 32, 32, B.top); for (let y = 0; y < 32; y += 8) for (let x = ((y / 8) & 1) * 8 - 8; x < 32; x += 16) { p.R(x + 1, y + 1, 14, 6, mix(B.top, B.topL, .7)); p.H(x + 1, y + 1, 14, B.topL); } break; }
     case 'L': { const L = PAL.lava; p.R(0, 0, 32, 32, L.m); const w = mulberry32(variant * 9 + 3);
       for (let i = 0; i < 4; i++) { const x = Math.floor(w() * 28), y = Math.floor(w() * 28); p.E(x + 4, y + 3, 5 + Math.floor(w() * 3), 3, L.d); p.E(x + 4, y + 3, 3, 2, L.dd); }
       for (let i = 0; i < 5; i++) { const bx = Math.floor(w() * 30), by = Math.floor(w() * 30); const x = (bx + frame * 2 + i * 3) % 30; p.H(x, by, 3 + Math.floor(w() * 4), 2, L.l); p.H(x + 1, by, 3, 1, L.ll); }
       for (let i = 0; i < 3; i++) { const x = Math.floor(w() * 30), y = Math.floor(w() * 30); if ((i + frame) % 2) { p.P(x, y, L.w); p.P(x + 1, y, L.ll); } } break; }
     case 'p': floorBase(); { const M = PAL.metal; p.R(9, 1, 14, 30, PAL.out); p.R(10, 2, 12, 28, M.m); p.R(10, 2, 3, 28, M.l); p.V(10, 2, 28, M.ll); p.R(19, 2, 3, 28, M.d); p.V(21, 2, 28, shade(M.d, -.3)); p.R(7, 0, 18, 4, PAL.out); p.R(8, 0, 16, 3, M.l); p.H(8, 0, 16, M.ll); p.R(7, 27, 18, 5, PAL.out); p.R(8, 28, 16, 3, M.m); p.H(8, 28, 16, M.l); p.E(16, 31, 11, 2, '#00000060'); } break;
     case 'x': floorBase(); crate(3, 14, 13); crate(17, 16, 12); crate(9, 3, 12); break;
-    case 'i': { const I = PAL.ice; p.R(0, 0, 32, 32, I.m); for (let i = 0; i < 3; i++) { const x = rr(-2, 24), y = rr(-2, 24); p.E(x + 6, y + 3, rr(5, 8), rr(2, 3), I.l); } for (let i = 0; i < 3; i++) { const x = rr(2, 22), y = rr(2, 22), len = rr(4, 9); for (let k = 0; k < len; k++) p.P(x + k, y + Math.floor(k / 2), I.d); p.P(x + len, y + Math.floor(len / 2) + 1, I.d); } for (let i = 0; i < 3; i++) { const x = rr(0, 26), y = rr(0, 30); p.H(x, y, rr(3, 6), I.ll); } break; }
-    case 'S': { const S = PAL.snow; p.R(0, 0, 32, 32, S.m); for (let i = 0; i < 3; i++) { const x = rr(-2, 24), y = rr(-2, 24); p.E(x + 6, y + 3, rr(5, 8), rr(2, 3), S.l); } for (let i = 0; i < 4; i++) { const x = rr(0, 28), y = rr(0, 30); p.H(x, y, rr(2, 4), S.d); } for (let i = 0; i < 3; i++) p.P(rr(0, 31), rr(0, 31), '#ffffff'); break; }
+    case 'i': { const I = PAL.ice; p.R(0, 0, 32, 32, I.m); for (let i = 0; i < 2; i++) { const x = rr(-2, 24), y = rr(-2, 24); p.E(x + 6, y + 3, rr(5, 8), rr(2, 3), I.l); } for (let i = 0; i < 2; i++) { const x = rr(2, 22), y = rr(2, 22), len = rr(4, 9); for (let k = 0; k < len; k++) p.P(x + k, y + Math.floor(k / 2), I.d); p.P(x + len, y + Math.floor(len / 2) + 1, I.d); } for (let i = 0; i < 2; i++) { const x = rr(0, 26), y = rr(0, 30); p.H(x, y, rr(3, 6), I.ll); } break; }
+    case 'S': { const S = PAL.snow; p.R(0, 0, 32, 32, S.m); for (let i = 0; i < 2; i++) { const x = rr(-2, 24), y = rr(-2, 24); p.E(x + 6, y + 3, rr(5, 8), rr(2, 3), S.l); } for (let i = 0; i < 2; i++) { const x = rr(0, 28), y = rr(0, 30); p.H(x, y, rr(2, 4), S.d); } if (variant & 1) p.P(rr(0, 31), rr(0, 31), '#ffffff'); break; }
     default: p.R(0, 0, 32, 32, '#ff00ff');
   }
 }
@@ -486,10 +489,16 @@ function drawSprite(s, ox, oy) {
   }
   ctx.globalAlpha = 1;
 }
-function drawFX(ox, oy) {
+// Particles and effect sprites in world space (offset by ox, oy). Floating texts are drawn separately by
+// drawFXTexts so the board can draw them unscaled when it is zoomed out.
+function drawFX(ox, oy, texts = true) {
   for (const p of FX.parts) { const k = 1 - p.t / p.life; const s = Math.max(1, Math.round(p.size * (k < .4 ? k / .4 : 1))); ctx.fillStyle = p.col; if (p.shape === 'ring') { const r = Math.round(p.size * (1 - k) * 3) + 2; ctx.globalAlpha = k; outline(p.x + ox - r, p.y + oy - r, 2 * r, 2 * r, p.col); ctx.globalAlpha = 1; } else ctx.fillRect(Math.round(p.x + ox - s / 2), Math.round(p.y + oy - s / 2), s, s); }
   for (const s of FX.sprites) if (s.t >= 0) drawSprite(s, ox, oy);
-  for (const f of FX.texts) { if (f.delay > 0) continue; const k = f.t / f.life; ctx.globalAlpha = k > .7 ? 1 - (k - .7) / .3 : 1; const pop = f.pop && f.t < .15 ? 1 + (1 - f.t / .15) * .5 : 1; const y = f.y + oy - (pop - 1) * 6; if (f.big) bigC(f.s, f.x + ox, y, f.col, { outline: f.outline }); else textC(f.s, f.x + ox, y, f.col, { outline: f.outline }); ctx.globalAlpha = 1; }
+  if (texts) drawFXTexts(ox, oy);
+}
+// Floating texts: world position (x + ox, y + oy) times `sc` gives the screen position; the text itself keeps its pixel size.
+function drawFXTexts(ox, oy, sc = 1) {
+  for (const f of FX.texts) { if (f.delay > 0) continue; const k = f.t / f.life; ctx.globalAlpha = k > .7 ? 1 - (k - .7) / .3 : 1; const pop = f.pop && f.t < .15 ? 1 + (1 - f.t / .15) * .5 : 1; const x = (f.x + ox) * sc, y = (f.y + oy) * sc - (pop - 1) * 6; if (f.big) bigC(f.s, x, y, f.col, { outline: f.outline }); else textC(f.s, x, y, f.col, { outline: f.outline }); ctx.globalAlpha = 1; }
 }
 function shake(n) { FX.shake = Math.max(FX.shake, n); }
 function flashScreen(col = '#ffffff', a = 1) { FX.flash = a; FX.flashCol = col; }
@@ -558,12 +567,28 @@ function pointerHand(x, y, t) { const b = Math.round(Math.sin(t / 120)); x += b;
 function drawCrown(x, y) { stampAt(x, y, ST.crownGold, { O: '#5a3a00', Y: UI.gold }); px(x + 2, y + 2, '#ff5a5a'); px(x + 1, y + 1, '#fff0a0'); }
 function drawSkull(x, y) { stampAt(x, y, ST.skull, { O: '#3a1020', W: '#f0e8f0' }); px(x + 1, y + 2, '#ff5a5a'); px(x + 3, y + 2, '#ff5a5a'); }
 // Unit base: a translucent team plate with a glossy rim, and a soft ground shadow that shrinks while the unit is airborne.
-function drawStand(cx, by, team, a = 1, air = 0) {
-  const sh = Math.max(.4, 1 - air / 18);
-  ctx.globalAlpha = .22 * a; ellipse(cx, by, 11, 3, teamColor(team));
+// The rim's shape also tells the side apart from the colour: the controlling team's units stand on a plain
+// ring, enemy trainers on a ring with four spikes, wild Pokémon on a dashed ring, allies on a ring with a bar.
+// `lit` brightens the rim (a unit that can still act); `dim` greys it (a unit that has acted).
+function drawStand(cx, by, team, a = 1, air = 0, o = {}) {
+  const sh = Math.max(.4, 1 - air / 18); const col = o.dim ? '#7a7f8c' : teamColor(team), colD = o.dim ? '#3a3e48' : teamColorD(team), colL = o.dim ? '#b8bcc8' : teamColorL(team);
+  ctx.globalAlpha = (o.dim ? .1 : .22) * a; ellipse(cx, by, 11, 3, col);
   ctx.globalAlpha = .3 * a * sh; ellipse(cx, by, Math.round(8 * sh), Math.max(1, Math.round(2.5 * sh)), '#000000');
-  ctx.globalAlpha = a; ellipseRing(cx, by + 1, 13, 5, 1, '#0b1020'); ellipseRing(cx, by, 13, 5, 1, teamColorD(team)); ellipseRing(cx, by, 12, 4, 1, teamColor(team));
-  ctx.globalAlpha = .9 * a; hline(cx - 5, by - 4, 8, teamColorL(team)); px(cx - 8, by - 3, teamColorL(team)); px(cx - 10, by - 2, teamColorL(team)); px(cx + 4, by - 4, '#ffffff'); ctx.globalAlpha = 1;
+  ctx.globalAlpha = a; ellipseRing(cx, by + 1, 13, 5, 1, '#0b1020'); ellipseRing(cx, by, 13, 5, 1, colD); ellipseRing(cx, by, 12, 4, 1, col);
+  const shape = teamShape(team);
+  if (shape === 'spiked') { for (const [dx, dy, w, h] of [[-15, -1, 3, 3], [12, -1, 3, 3], [-1, -7, 3, 3], [-1, 4, 3, 3]]) { rect(cx + dx, by + dy, w, h, colD); px(cx + dx + 1, by + dy + 1, col); } }
+  else if (shape === 'dashed') { ctx.globalAlpha = .85 * a; for (const [dx, dy] of [[-9, -3], [-4, -4], [1, -4], [6, -3], [-9, 2], [-4, 3], [1, 3], [6, 2]]) rect(cx + dx, by + dy, 2, 1, '#0b1020'); ctx.globalAlpha = a; }
+  else if (shape === 'barred') { rect(cx - 6, by + 4, 12, 1, colL); rect(cx - 6, by + 5, 12, 1, colD); }
+  ctx.globalAlpha = .9 * a; hline(cx - 5, by - 4, 8, colL); px(cx - 8, by - 3, colL); px(cx - 10, by - 2, colL); px(cx + 4, by - 4, '#ffffff');
+  if (o.lit) { ctx.globalAlpha = o.lit * a; ellipseRing(cx, by, 12, 4, 1, '#ffffff'); }
+  ctx.globalAlpha = 1;
+}
+// Side of a team relative to whoever holds the controls: 'ring' (own), 'spiked' (hostile trainer), 'dashed' (wild), 'barred' (ally).
+function teamShape(team) { const me = typeof HT === 'function' && B ? HT() : 0; if (team === me) return 'ring'; if (team === 2) return 'dashed'; if (!hostile(team, me)) return 'barred'; return 'spiked'; }
+// 5×5 team glyph used on HP plates and cards: ● own, ▲ hostile trainer, ◇ wild, + ally.
+function teamGlyph(x, y, team, col) {
+  const s = teamShape(team); const rows = s === 'ring' ? ['.OOO.', 'OOOOO', 'OOOOO', 'OOOOO', '.OOO.'] : s === 'spiked' ? ['..O..', '..O..', '.OOO.', '.OOO.', 'OOOOO'] : s === 'dashed' ? ['..O..', '.O.O.', 'O...O', '.O.O.', '..O..'] : ['..O..', '..O..', 'OOOOO', '..O..', '..O..'];
+  stampAt(x, y, rows, { O: col });
 }
 // Portrait window background used by cards: team colour, diagonal light band, inner frame.
 function portraitBg(x, y, w, h, team) {

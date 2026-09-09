@@ -139,15 +139,22 @@ function duelLaunchFx(b, a, d) {
 }
 
 // ---------------------------------------------------------------- layout & drawing
-// Two panels (side by side, or stacked when the screen is too narrow for both), each with its terrain
-// strip below; the field starts under them, the ground line sits low with the sprites standing on it.
+// Two panels, each with its terrain strip below. Wide screens put both at the top, side by side, with the field
+// under them and the ground line low. Narrow portrait screens (too narrow for two panels) put the right-hand
+// side's panel at the top and the left-hand side's panel at the bottom, so the field sits between them and the
+// sprites stand in the middle of the screen instead of above a long empty ground band.
 function duelLayout(q) {
-  const W = VIEW.w, H = VIEW.h, PH = 34, TH = 11; const pw = Math.min(150, Math.floor((W - 18) / 2)); const stacked = pw < 136; const PW = stacked ? Math.min(230, W - 12) : pw;
-  const L = { W, H, stacked, PW, PH, TH, panels: {}, pos: {} }; const left = q.sides.left, right = q.sides.right;
-  L.panels[left.id] = { x: 6, y: 6, w: PW, h: PH, side: -1 }; L.panels[right.id] = { x: W - 6 - PW, y: stacked ? 6 + PH + TH + 5 : 6, w: PW, h: PH, side: 1 };
-  L.top = stacked ? 6 + 2 * (PH + TH + 5) : 6 + PH + TH + 5;
-  L.gy = Math.min(Math.max(L.top + 112, Math.round(H * .8)), L.top + 300, H - 24);
-  const half = Math.round(W / 2), spread = clamp(Math.round(W * .23), 56, 110);
+  const W = VIEW.w, H = VIEW.h, PH = 36, TH = 11; const pw = Math.min(150, Math.floor((W - 18) / 2)); const stacked = pw < 136; const PW = stacked ? Math.min(230, W - 12) : pw;
+  const L = { W, H, stacked, PW, PH, TH, panels: {}, pos: {} }; const left = q.sides.left, right = q.sides.right; const block = PH + TH + 2;
+  if (stacked) {
+    L.panels[right.id] = { x: W - 6 - PW, y: 6, w: PW, h: PH, side: 1 }; L.top = 6 + block + 6;
+    const by = H - 6 - block; L.panels[left.id] = { x: 6, y: by, w: PW, h: PH, side: -1 }; L.bottom = by - 4;
+    L.gy = clamp(Math.round(L.top + (L.bottom - L.top) * .68), L.top + 108, L.bottom - 14); L.hintY = L.bottom - 11;
+  } else {
+    L.panels[left.id] = { x: 6, y: 6, w: PW, h: PH, side: -1 }; L.panels[right.id] = { x: W - 6 - PW, y: 6, w: PW, h: PH, side: 1 };
+    L.top = 6 + block + 5; L.bottom = H - 16; L.gy = Math.min(Math.max(L.top + 112, Math.round(H * .8)), L.top + 300, H - 24); L.hintY = H - 10;
+  }
+  const half = Math.round(W / 2), spread = Math.min(clamp(Math.round(W * .23), 56, 110), Math.floor(W / 2) - 50);
   L.pos[left.id] = { x: half - spread, y: L.gy, dir: 1 }; L.pos[right.id] = { x: half + spread, y: L.gy, dir: -1 };
   L.bannerY = L.top + 12; return L;
 }
@@ -210,8 +217,10 @@ function duelPanel(q, u, L) {
   panel(P.x, P.y, P.w, P.h, { border: col });
   const x = P.x + 6, y = P.y + 4; let name = v.name; while (textWidth(name) > P.w - 48 && name.length > 3) name = name.slice(0, -1);
   text(name, x, y, UI.ink); textR('Lv' + v.level, P.x + P.w - 6, y, UI.gold);
-  const ratio = clamp(hp / v.maxHp, 0, 1); bar(x, y + 10, P.w - 52, 6, ratio, hpColor(ratio)); textR(hp + '/' + v.maxHp, P.x + P.w - 6, y + 9, hp <= 0 ? UI.red : UI.ink);
-  miniBadge(duelTeamTag(u), col, x, y + 19); v.types.forEach((tp, i) => typeBadge(tp, x + 18 + i * 26, y + 18, 24)); if (v.status) statusBadge(v.status, P.x + P.w - 21, y + 19);
+  // HP: the current value in the big face, the maximum small, the bar across the rest of the panel
+  const ratio = clamp(hp / v.maxHp, 0, 1); const hs = String(Math.max(0, hp)), hw = textWidth(hs, BIG) + textWidth('/' + v.maxHp) + 3;
+  bar(x, y + 11, P.w - 14 - hw, 6, ratio, hpColor(ratio)); bigText(hs, P.x + P.w - 6 - hw, y + 9, hp <= 0 ? UI.red : UI.ink, { outline: '#000' }); textR('/' + v.maxHp, P.x + P.w - 6, y + 11, UI.muted);
+  miniBadge(duelTeamTag(u), col, x, y + 21); v.types.forEach((tp, i) => typeBadge(tp, x + 18 + i * 26, y + 20, 24)); if (v.status) statusBadge(v.status, P.x + P.w - 21, y + 21);
   const sy = P.y + P.h + 2; rrect(P.x + 1, sy + 1, P.w, L.TH, UI.shadow, 1); rrect(P.x, sy, P.w, L.TH, UI.panelDark, 1);
   ctx.drawImage(tileImg(t.ch, 0, 0), 0, 0, 32, 32, P.x + 3, sy + 2, 7, 7);
   text(t.name.toUpperCase() + '  DEF ' + terrainDef(t, u) + '%  AVO ' + terrainEva(t, u), P.x + 13, sy + 2, UI.muted);
@@ -223,16 +232,17 @@ function drawDuel(q) {
   duelGround(q, L);
   const order = [q.sides.right, q.sides.left]; if (q.pose && q.pose.unit === q.sides.right) order.reverse();
   for (const u of order) duelDrawUnit(q, u, L, t);
-  drawFX(0, 0); ctx.restore();
+  drawFX(0, 0, false); ctx.restore();
   if (FX.flash > 0) { ctx.globalAlpha = FX.flash * .7; rect(0, 0, W, H, FX.flashCol); ctx.globalAlpha = 1; }
   for (const u of [q.sides.left, q.sides.right]) duelPanel(q, u, L);
+  drawFXTexts(FX.shakeX, FX.shakeY);
   const b = q.banner;
   if (b && t < b.until) {
     const k = Math.min(1, (t - b.t0) / .12), name = b.move.name.toUpperCase(), col = TYPE_COL[b.move.type] || UI.ink; const w = textWidth(name, BIG) + 40, x = Math.round(W / 2 - w / 2), y = Math.round(L.bannerY - (1 - easeOut(k)) * 6);
     rrect(x + 1, y + 1, w, 15, UI.shadow, 1); rrect(x, y, w, 15, '#101a30', 1); outline(x, y, w, 15, col); typeBadge(b.move.type, x + 4, y + 3, 24); bigText(name, x + 32, y + 3, col, { outline: '#000' });
     if (b.counter) { const cw = textWidth('COUNTER!') + 8; rrect(Math.round(W / 2 - cw / 2), y - 10, cw, 9, UI.red, 1); textC('COUNTER!', W / 2, y - 9, '#ffffff'); }
   }
-  textC(q.boost ? (VIEW.touch ? 'tap again: skip' : 'X / any key: skip') : (VIEW.touch ? 'tap: faster  ·  tap twice: skip' : 'any key: faster  ·  X: skip'), W / 2, H - 10, UI.muted, { outline: UI.shadow });
+  textC(q.boost ? (VIEW.touch ? 'tap again: skip' : 'X / any key: skip') : (VIEW.touch ? 'tap: faster  ·  tap twice: skip' : 'any key: faster  ·  X: skip'), W / 2, L.hintY, UI.muted, { outline: UI.shadow });
 }
 // The whole frame: a curtain wipe from the board into the scene, the scene, and the wipe back.
 function drawDuelFrame(q) {

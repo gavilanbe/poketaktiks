@@ -11,18 +11,49 @@ const BT = {  // battle scene UI state
   sel: null, reach: null, atk: null, path: [], menu: null, targets: [], tIdx: 0, item: null, hover: null,
   time: 0, anim: null, queue: [], danger: false, showDanger: false, msg: null, banner: null, endTimer: 0, fast: false, skipAnim: false,
   dragStart: null, dragged: false, pinch: 0, lastTap: 0, undo: null, log: [], helpPage: 0, info: null,
+  zoom: 1,           // board magnification: 1 (32 px tiles) or .5 (16 px tiles, for maps that do not fit)
+  hoverAnchor: null, // pointer position when the last overlay closed: hover ignores the pointer until it moves away
+  lastMode: 'idle',
 };
+// Board space: world pixels minus the camera (shake included). The board layer is drawn under ctx.scale(BT.zoom),
+// so tileX/tileY are board coordinates; screen = board × BT.zoom. bvW/bvH are the view size in board pixels.
 function tileX(x) { return Math.round(x * TILE - CAM.x + FX.shakeX); }
 function tileY(y) { return Math.round(y * TILE - CAM.y + FX.shakeY); }
+function bvW() { return VIEW.w / BT.zoom; }
+function bvH() { return VIEW.h / BT.zoom; }
 function boardH() { return VIEW.h; }
+function toScreenX(bx) { return Math.round(bx * BT.zoom); }
+function toScreenY(by) { return Math.round(by * BT.zoom); }
+// Screen point → world tile (the inverse of tileX/tileY, ignoring shake).
+function screenToTile(sx, sy) { return { x: Math.floor((sx / BT.zoom + CAM.x) / TILE), y: Math.floor((sy / BT.zoom + CAM.y) / TILE) }; }
 // Which team the person holding the controls plays right now (0 in campaign; 0 or 1 in Versus).
 function isHuman(t) { return B && B.humans ? B.humans.includes(t) : t === 0; }
 function HT() { return B && B.humans && B.humans.includes(B.phase) ? B.phase : (B && B.humans ? B.humans[0] : 0); }
 function teamName(t) { return B && B.versus ? (t === 0 ? 'PLAYER 1' : t === 1 ? 'PLAYER 2' : t === 2 ? 'WILD' : 'ALLY') : (t === 0 ? 'PLAYER' : t === 1 ? 'ENEMY' : t === 2 ? 'WILD' : 'ALLY'); }
 function phaseLabel(t) { return teamName(t) + ' PHASE'; }
-function centerCam(x, y, snap) { CAM.tx = clamp(x * TILE + TILE / 2 - VIEW.w / 2, Math.min(0, (B.map.w * TILE - VIEW.w) / 2), Math.max(0, B.map.w * TILE - VIEW.w)); CAM.ty = clamp(y * TILE + TILE / 2 - VIEW.h / 2, Math.min(0, (B.map.h * TILE - VIEW.h) / 2), Math.max(0, B.map.h * TILE - VIEW.h)); if (snap) { CAM.x = CAM.tx; CAM.y = CAM.ty; } }
-function keepCursorVisible() { const m = TILE * 1.5; const sx = BT.cx * TILE - CAM.tx, sy = BT.cy * TILE - CAM.ty; if (sx < m) CAM.tx -= m - sx; if (sx > VIEW.w - m - TILE) CAM.tx += sx - (VIEW.w - m - TILE); if (sy < m + 20) CAM.ty -= m + 20 - sy; if (sy > VIEW.h - m - TILE - 30) CAM.ty += sy - (VIEW.h - m - TILE - 30); clampCam(); }
-function clampCam() { const mw = B.map.w * TILE, mh = B.map.h * TILE; CAM.tx = mw <= VIEW.w ? (mw - VIEW.w) / 2 : clamp(CAM.tx, 0, mw - VIEW.w); CAM.ty = mh <= VIEW.h ? (mh - VIEW.h) / 2 : clamp(CAM.ty, 0, mh - VIEW.h); }
+// Screen bands the HUD keeps for itself (in board pixels): the turn card on top and, on narrow portrait screens,
+// the context/forecast area and the button bar at the bottom. A board that fits is centred between them.
+function hudReserve() { const z = BT.zoom; if (narrowView() && portraitView()) return { top: 30 / z, bottom: (BT.mode === 'target' || BT.mode === 'catchTarget' ? 170 : 118) / z }; return { top: 30 / z, bottom: 40 / z }; }
+// Range of camera positions: a board that fits sits centred (between the HUD bands vertically); a bigger board can
+// be panned edge to edge, and far enough past its top and bottom rows for them to clear the HUD bands.
+function camRange() {
+  const mw = B.map.w * TILE, mh = B.map.h * TILE, W = bvW(), H = bvH(), R = hudReserve(); const free = Math.max(TILE * 2, H - R.top - R.bottom);
+  const xr = mw <= W ? [(mw - W) / 2, (mw - W) / 2] : [0, mw - W];
+  const cy = -(R.top + (free - mh) / 2); const yr = mh <= free ? [cy, cy] : [-R.top, mh - H + R.bottom];
+  return { x: xr, y: yr };
+}
+function centerCam(x, y, snap) { const r = camRange(); CAM.tx = clamp(x * TILE + TILE / 2 - bvW() / 2, r.x[0], r.x[1]); CAM.ty = clamp(y * TILE + TILE / 2 - bvH() / 2, r.y[0], r.y[1]); if (snap) { CAM.x = CAM.tx; CAM.y = CAM.ty; } }
+// Keep the cursor's tile inside the view with a margin, clear of the HUD bands.
+function keepCursorVisible() { const m = TILE, R = hudReserve(); const sx = BT.cx * TILE - CAM.tx, sy = BT.cy * TILE - CAM.ty; if (sx < m) CAM.tx -= m - sx; if (sx > bvW() - m - TILE) CAM.tx += sx - (bvW() - m - TILE); if (sy < m + R.top) CAM.ty -= m + R.top - sy; if (sy > bvH() - m - TILE - R.bottom) CAM.ty += sy - (bvH() - m - TILE - R.bottom); clampCam(); }
+function clampCam() { const r = camRange(); CAM.tx = clamp(CAM.tx, r.x[0], r.x[1]); CAM.ty = clamp(CAM.ty, r.y[0], r.y[1]); }
+// Is a unit's tile fully inside the view, clear of the HUD bands?
+function unitVisible(u) { const R = hudReserve(); const sx = u.x * TILE - CAM.tx, sy = u.y * TILE - CAM.ty; return sx >= 0 && sx + TILE <= bvW() && sy >= R.top && sy + TILE <= bvH() - R.bottom; }
+// Zoom: .5 shows twice the map. Available whenever the board does not fit at 1; zoomToFit picks the level that shows the whole map if one does.
+function boardFits(z) { const R = { top: 30 / z, bottom: (narrowView() && portraitView() ? 118 : 40) / z }; return B.map.w * TILE <= VIEW.w / z && B.map.h * TILE <= VIEW.h / z - R.top - R.bottom; }
+function canZoom() { return B && !boardFits(1); }
+function setZoom(z) { if (z === BT.zoom || (z < 1 && !canZoom())) return false; const cx = CAM.tx + bvW() / 2, cy = CAM.ty + bvH() / 2; BT.zoom = z; CAM.tx = cx - bvW() / 2; CAM.ty = cy - bvH() / 2; clampCam(); CAM.x = CAM.tx; CAM.y = CAM.ty; return true; }
+function zoomToFit() { return setZoom(boardFits(1) || !boardFits(.5) ? 1 : .5); }
+function toggleZoom() { return setZoom(BT.zoom === 1 ? .5 : 1); }
 
 // ---------------------------------------------------------------- battle setup
 function startBattle(mapDef, party, bag, opts = {}) {
@@ -39,8 +70,8 @@ function startBattle(mapDef, party, bag, opts = {}) {
   if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fx.facing = -1; B.units.push(u); });
   BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.log = []; BT.showDanger = false; BT.hpShow.clear();
   for (const u of B.units) requestBigSprite(u.num); // warm the duel scene's sprites; nothing waits on them
-  const first = alive(0)[0]; BT.cx = first ? first.x : 0; BT.cy = first ? first.y : 0; centerCam(BT.cx, BT.cy, true);
-  FX.parts = []; FX.texts = []; FX.sprites = [];
+  const first = alive(0)[0]; BT.cx = first ? first.x : 0; BT.cy = first ? first.y : 0; BT.zoom = 1; if (narrowView() && canZoom()) setZoom(.5); centerCam(BT.cx, BT.cy, true); // phones open zoomed out: six 32 px tiles across is too little context
+  BT.hoverAnchor = null; BT.lastMode = BT.mode; FX.parts = []; FX.texts = []; FX.sprites = [];
   Audio.playMusic(map.music);
   if (!opts.defer) beginPhase(0, true);
 }
@@ -81,13 +112,14 @@ function nextAnim() {
   BT.anim = q; q.t = 0;
   if (q.kind === 'event') { setupEvent(q); }
   if (q.kind === 'duel') { startDuel(q); }
-  if (q.kind === 'move') { q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.i = 0; q.dur = (BT.fast ? .05 : .11); if (q.path.length > 1) { const l = q.path[q.path.length - 1]; if (Math.abs(l.x * TILE - CAM.tx - VIEW.w / 2) > VIEW.w * .6 || Math.abs(l.y * TILE - CAM.ty - VIEW.h / 2) > VIEW.h * .6) centerCam(q.path[0].x, q.path[0].y); } }
+  if (q.kind === 'move') { q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.i = 0; q.dur = (BT.fast ? .05 : .11); if (q.path.length > 1) { const l = q.path[q.path.length - 1]; if (!unitVisible(q.unit) || !unitVisible(l)) centerCam((q.path[0].x + l.x) / 2, (q.path[0].y + l.y) / 2); } }
   if (q.kind === 'strike') { q.dur = BT.fast ? .35 : .62; centerCamBetween(q.att, q.def); }
   if (q.kind === 'msg') { q.dur = BT.fast ? .5 : 1.1; }
   if (q.kind === 'wait') { q.dur = BT.fast ? q.t2 * .3 : q.t2; }
   if (q.kind === 'fn') { q.fn(); nextAnim(); }
 }
-function centerCamBetween(a, b) { const x = (a.x + b.x) / 2, y = (a.y + b.y) / 2; if (Math.abs(x * TILE - CAM.tx - VIEW.w / 2) > VIEW.w * .35 || Math.abs(y * TILE - CAM.ty - VIEW.h / 2) > VIEW.h * .35) centerCam(x, y); }
+// Bring both units of an exchange into view; the camera only moves when one of them is outside the safe area.
+function centerCamBetween(a, b) { if (unitVisible(a) && unitVisible(b)) return; centerCam((a.x + b.x) / 2, (a.y + b.y) / 2); }
 function setupEvent(q) {
   const e = q.ev; q.dur = BT.fast ? .35 : .7;
   const ux = u => u.x * TILE + TILE / 2, uy = u => u.y * TILE + 4;
@@ -99,8 +131,8 @@ function setupEvent(q) {
     case 'heal': Audio.sfx('heal'); floatText(ux(e.unit), uy(e.unit), '+' + e.amount, UI.green, { outline: '#0a3a10' }); spawnParts(ux(e.unit), uy(e.unit) + 10, 10, ['#5ee06a', '#ffffff'], { speed: 30, grav: -60, life: .8 }); break;
     case 'cure': floatText(ux(e.unit), uy(e.unit) - 8, e.kind === 'frz' ? 'Thawed!' : e.kind === 'par' ? 'Recovered!' : 'Cured!', '#98d8f8'); break;
     case 'thaw': floatText(ux(e.unit), uy(e.unit) - 8, 'Thawed!', '#98d8f8'); break;
-    case 'recharge': q.dur = BT.fast ? .3 : .6; if (e.done && (e.unit.x * TILE < CAM.x || e.unit.x * TILE > CAM.x + VIEW.w)) centerCam(e.unit.x, e.unit.y); floatText(ux(e.unit), uy(e.unit) - 8, e.done ? 'Recharging...' : 'Must recharge!', RECHARGE_COL, { outline: '#000' }); break;
-    case 'dot': Audio.sfx(e.kind === 'brn' ? 'burn' : 'poison'); shake(1); floatText(ux(e.unit), uy(e.unit), '-' + e.amount, e.kind === 'psn' ? '#d080ff' : '#ff9040'); spawnParts(ux(e.unit), uy(e.unit) + 8, 8, e.kind === 'psn' ? ['#b050d0', '#7030a0'] : ['#ff8030', '#ffd040'], { speed: 30, grav: -50, life: .7 }); if (e.unit.x * TILE < CAM.x || e.unit.x * TILE > CAM.x + VIEW.w) centerCam(e.unit.x, e.unit.y); break;
+    case 'recharge': q.dur = BT.fast ? .3 : .6; if (e.done && !unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); floatText(ux(e.unit), uy(e.unit) - 8, e.done ? 'Recharging...' : 'Must recharge!', RECHARGE_COL, { outline: '#000' }); break;
+    case 'dot': Audio.sfx(e.kind === 'brn' ? 'burn' : 'poison'); shake(1); floatText(ux(e.unit), uy(e.unit), '-' + e.amount, e.kind === 'psn' ? '#d080ff' : '#ff9040'); spawnParts(ux(e.unit), uy(e.unit) + 8, 8, e.kind === 'psn' ? ['#b050d0', '#7030a0'] : ['#ff8030', '#ffd040'], { speed: 30, grav: -50, life: .7 }); if (!unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); break;
     case 'spawn': q.dur = BT.fast ? .3 : .6; centerCam(e.unit.x, e.unit.y); Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 8, 12, ['#ffffff', '#ff4b4b'], { speed: 50, life: .5, grav: 0 }); floatText(ux(e.unit), uy(e.unit) - 10, 'Reinforcements!', UI.red); break;
     case 'capture': q.dur = BT.fast ? 1.6 : 2.6 + e.shakes * .5; Audio.sfx('catch'); break;
     case 'miss': q.dur = BT.fast ? .3 : .55; break;
@@ -310,16 +342,17 @@ function runEnemyPhase(team) {
 // ---------------------------------------------------------------- input handling
 function battleInput(ev) {
   if (ev.type === 'key' && ev.key === 'mute') { Audio.toggle(); return; }
-  if (ev.type === 'key' && ev.key === 'fast') { BT.fast = !BT.fast; const d = duelActive(); floatText(VIEW.w / 2 + (d ? 0 : CAM.x), (d ? 0 : CAM.y) + 40, BT.fast ? 'FAST MODE' : 'NORMAL SPEED', UI.gold); return; }
+  if (ev.type === 'key' && ev.key === 'fast') { BT.fast = !BT.fast; const d = duelActive(); floatText(d ? VIEW.w / 2 : bvW() / 2 + CAM.x, d ? 40 : CAM.y + 40 / BT.zoom, BT.fast ? 'FAST MODE' : 'NORMAL SPEED', UI.gold); return; }
   if (duelActive()) { duelInput(BT.anim, ev); return; }
+  if (ev.type === 'key' && (ev.key === 'zoomin' || ev.key === 'zoomout')) { if (setZoom(ev.key === 'zoomin' ? 1 : .5)) Audio.sfx('menu'); return; }
   if (BT.mode === 'banner') { if (ev.type === 'down' || (ev.type === 'key' && ev.key === 'ok')) BT.banner.t = Math.max(BT.banner.t, 1.1); return; }
   if (BT.mode === 'handoff') { if (BT.handoff.t > .4 && (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok'))) { BT.mode = 'banner'; BT.banner.t = 0; Audio.sfx('phase'); } return; }
   if (BT.mode === 'anim') { if (ev.type === 'down' || ev.type === 'key') { BT.fastTap = .4; } return; }
   if (BT.mode === 'end') { if (BT.endTimer > 1.2 && (ev.type === 'down' || (ev.type === 'key' && ev.key === 'ok'))) { BT.endTimer = 99; } return; }
-  if (BT.mode === 'help') { if (ev.type === 'down' || (ev.type === 'key')) { if (ev.type === 'key' && (ev.key === 'right' || ev.key === 'ok') || ev.type === 'down') { BT.helpPage++; if (BT.helpPage > 2) { BT.helpPage = 0; BT.mode = 'idle'; } } else if (ev.key === 'left') BT.helpPage = Math.max(0, BT.helpPage - 1); else if (ev.key === 'back') { BT.mode = 'idle'; BT.helpPage = 0; } } return; }
+  if (BT.mode === 'help') { if (ev.type === 'down' || (ev.type === 'key')) { if (ev.type === 'key' && (ev.key === 'right' || ev.key === 'ok') || ev.type === 'down') { BT.helpPage++; if (BT.helpPage >= HELP_PAGES.length) { BT.helpPage = 0; BT.mode = 'idle'; } } else if (ev.key === 'left') BT.helpPage = Math.max(0, BT.helpPage - 1); else if (ev.key === 'back' || ev.key === 'help') { BT.mode = 'idle'; BT.helpPage = 0; } } return; }
   if (BT.mode === 'unitinfo') { if (ev.type === 'down' || ev.type === 'key') { if (ev.type === 'key' && (ev.key === 'left' || ev.key === 'right' || ev.key === 'prev' || ev.key === 'next')) { const list = B.units.filter(u => u.hp > 0); let i = list.indexOf(BT.info); i = (i + (ev.key === 'left' || ev.key === 'prev' ? -1 : 1) + list.length) % list.length; BT.info = list[i]; BT.cx = BT.info.x; BT.cy = BT.info.y; keepCursorVisible(); Audio.sfx('cursor'); } else { BT.mode = 'idle'; Audio.sfx('cancel'); } } return; }
   if (ev.type === 'key') { keyInput(ev.key); return; }
-  if (ev.type === 'wheel') { CAM.tx += ev.dx; CAM.ty += ev.dy; clampCam(); return; }
+  if (ev.type === 'wheel') { CAM.tx += ev.dx / BT.zoom; CAM.ty += ev.dy / BT.zoom; clampCam(); return; }
   pointerInput(ev);
 }
 function menuNav(dir) { const m = BT.menu; if (!m) return; m.i = (m.i + dir + m.items.length) % m.items.length; Audio.sfx('menu'); }
@@ -364,25 +397,30 @@ function tileAction(x, y) {
   }
 }
 function confirmMoveThenAttack() { const u = BT.sel; BT.undo = { unit: u, x: u.x, y: u.y }; Audio.sfx('ok'); BT.queue = [{ kind: 'move', unit: u, path: BT.path.slice() }]; playQueue(() => { u.moved = true; pickupAt(u); openActionMenu(u); const t = BT.pendingTarget; BT.pendingTarget = null; const tg = targetsFrom(u, u.x, u.y); if (t && tg.includes(t)) { BT.targets = tg; BT.tIdx = tg.indexOf(t); BT.moveIdx = 0; BT.mode = 'target'; setTargetCursor(); } }); }
+// A pointer that has not moved since an overlay closed under it must not drive the cursor: the hover anchor is
+// set on every mode change and released once the pointer travels a few pixels.
+function hoverLocked(ev) { const a = BT.hoverAnchor; if (!a) return false; if (Math.abs(ev.x - a.x) + Math.abs(ev.y - a.y) <= 4) return true; BT.hoverAnchor = null; return false; }
 function pointerInput(ev) {
   const m = BT.mode;
   if (ev.type === 'down') { BT.dragStart = { x: ev.x, y: ev.y, cx: CAM.tx, cy: CAM.ty }; BT.dragged = false; if (ev.btn === 2) { cancel(); BT.dragStart = null; return; } }
   if (ev.type === 'move') {
-    if (BT.dragStart && INPUT.down) { const dx = ev.x - BT.dragStart.x, dy = ev.y - BT.dragStart.y; if (BT.dragged || Math.abs(dx) + Math.abs(dy) > 6) { BT.dragged = true; CAM.tx = BT.dragStart.cx - dx; CAM.ty = BT.dragStart.cy - dy; clampCam(); CAM.x = CAM.tx; CAM.y = CAM.ty; } return; }
-    if (ev.touch) return;
-    const tx = Math.floor((ev.x + CAM.x) / TILE), ty = Math.floor((ev.y + CAM.y) / TILE);
+    if (BT.dragStart && INPUT.down) { const dx = ev.x - BT.dragStart.x, dy = ev.y - BT.dragStart.y; if (BT.dragged || Math.abs(dx) + Math.abs(dy) > 6) { BT.dragged = true; CAM.tx = BT.dragStart.cx - dx / BT.zoom; CAM.ty = BT.dragStart.cy - dy / BT.zoom; clampCam(); CAM.x = CAM.tx; CAM.y = CAM.ty; } return; }
+    if (ev.touch || hoverLocked(ev)) return;
+    const { x: tx, y: ty } = screenToTile(ev.x, ev.y);
     if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { const h = menuHit(ev.x, ev.y); if (h >= 0 && h !== BT.menu.i) { BT.menu.i = h; Audio.sfx('menu'); } return; }
     if (m === 'target' || m === 'catchTarget') { const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0 && ti !== BT.tIdx) { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } return; }
+    if (hudCovers(ev.x, ev.y)) return; // pointer over a HUD panel: the board underneath is not being pointed at
     if (inMap(tx, ty) && (tx !== BT.cx || ty !== BT.cy) && (m === 'idle' || m === 'move')) { BT.cx = tx; BT.cy = ty; if (m === 'move') extendPath(tx, ty); }
     return;
   }
   if (ev.type === 'up') {
     if (BT.dragged) { BT.dragged = false; BT.dragStart = null; return; } BT.dragStart = null;
-    const tx = Math.floor((ev.x + CAM.x) / TILE), ty = Math.floor((ev.y + CAM.y) / TILE);
+    const { x: tx, y: ty } = screenToTile(ev.x, ev.y);
     if (hudHit(ev.x, ev.y)) return;
     if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { const h = menuHit(ev.x, ev.y); if (h >= 0) { BT.menu.i = h; activateMenu(); } else cancel(); return; }
     if (m === 'target' || m === 'catchTarget') { const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0) { if (ti === BT.tIdx) { if (m === 'target') confirmAttack(); else pickBall(); } else { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } } else if (forecastHit(ev.x, ev.y)) { if (m === 'target') confirmAttack(); else pickBall(); } else if (moveSwitchHit(ev.x, ev.y)) { BT.moveIdx++; Audio.sfx('menu'); } else cancel(); return; }
     if (m === 'itemTarget') { useItemOn(BT.sel); return; }
+    if (hudCovers(ev.x, ev.y)) return; // a tap on a card is not a tap on the tile under it
     if (!inMap(tx, ty)) { if (m === 'move') cancel(); return; }
     if (ev.touch && (tx !== BT.cx || ty !== BT.cy) && m === 'move') { BT.cx = tx; BT.cy = ty; extendPath(tx, ty); keepCursorVisible(); Audio.sfx('cursor'); const u = unitAt(tx, ty); if (!u || u === BT.sel) return; }
     if (ev.touch && m === 'idle' && (tx !== BT.cx || ty !== BT.cy)) { BT.cx = tx; BT.cy = ty; keepCursorVisible(); const u = unitAt(tx, ty); if (!u) { Audio.sfx('cursor'); return; } }
@@ -393,6 +431,7 @@ function pointerInput(ev) {
 // ---------------------------------------------------------------- update
 function battleUpdate(dt) {
   BT.time += dt;
+  if (BT.mode !== BT.lastMode) { BT.lastMode = BT.mode; BT.hoverAnchor = { x: INPUT.x, y: INPUT.y }; }
   if (FX.hitstop > 0) { FX.hitstop -= dt; dt *= .15; }
   if (BT.fastTap > 0) { BT.fastTap -= dt; dt *= 2.2; }
   const cs = BT.mode === 'anim' || BT.mode === 'banner' ? 10 : 14; CAM.x += (CAM.tx - CAM.x) * Math.min(1, dt * cs); CAM.y += (CAM.ty - CAM.y) * Math.min(1, dt * cs); if (Math.abs(CAM.tx - CAM.x) < .5) CAM.x = CAM.tx; if (Math.abs(CAM.ty - CAM.y) < .5) CAM.y = CAM.ty;
@@ -413,10 +452,17 @@ function battleDraw() {
   const d = duelActive(); if (d) { drawDuelFrame(d); return; }
   drawBoard(); drawHUD();
 }
+// The board layer is drawn in board space under ctx.scale(BT.zoom); floating texts and the screen flash are
+// drawn afterwards at screen scale so they stay legible when zoomed out.
 function drawBoard() {
+  ctx.save(); ctx.scale(BT.zoom, BT.zoom); drawBoardLayer(); ctx.restore();
+  drawFXTexts(-CAM.x + FX.shakeX, -CAM.y + FX.shakeY, BT.zoom);
+  if (FX.flash > 0) { ctx.globalAlpha = FX.flash * .7; rect(0, 0, VIEW.w, VIEW.h, FX.flashCol); ctx.globalAlpha = 1; }
+}
+function drawBoardLayer() {
   const m = B.map; const f = Math.floor(BT.time * 3) % WATER_FRAMES;
   drawVoid();
-  const x0 = Math.max(0, Math.floor(CAM.x / TILE)), y0 = Math.max(0, Math.floor(CAM.y / TILE)), x1 = Math.min(m.w - 1, Math.ceil((CAM.x + VIEW.w) / TILE)), y1 = Math.min(m.h - 1, Math.ceil((CAM.y + VIEW.h) / TILE));
+  const x0 = Math.max(0, Math.floor(CAM.x / TILE)), y0 = Math.max(0, Math.floor(CAM.y / TILE)), x1 = Math.min(m.w - 1, Math.ceil((CAM.x + bvW()) / TILE)), y1 = Math.min(m.h - 1, Math.ceil((CAM.y + bvH()) / TILE));
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
     drawTerrain(ctx, m, x, y, tileX(x), tileY(y), f, BT.time);
   }
@@ -449,8 +495,7 @@ function drawBoard() {
   // cursor
   if (['idle', 'move', 'target', 'catchTarget', 'unitinfo'].includes(BT.mode)) { const hostileCur = unitAt(BT.cx, BT.cy) && hostile(unitAt(BT.cx, BT.cy).team, HT()); drawCursor(tileX(BT.cx), tileY(BT.cy), BT.time * 1000, '#ffffff', (BT.mode === 'target' || hostileCur) ? '#ff5a5a' : '#ffd24a'); }
   if (BT.anim && BT.anim.ball) { const b = BT.anim.ball; drawBall(Math.round(b.x - CAM.x), Math.round(b.y - CAM.y), ITEMS[BT.anim.ev.ball].col, 5); }
-  drawFX(-CAM.x + FX.shakeX, -CAM.y + FX.shakeY);
-  if (FX.flash > 0) { ctx.globalAlpha = FX.flash * .7; rect(0, 0, VIEW.w, VIEW.h, FX.flashCol); ctx.globalAlpha = 1; }
+  drawFX(-CAM.x + FX.shakeX, -CAM.y + FX.shakeY, false);
 }
 // The land outside the board: the map's own border terrain, dimmed, so the world seems to continue past the frame.
 const VOID = { key: null, canvas: null };
@@ -465,7 +510,7 @@ function voidPattern() {
   VOID.key = key; VOID.canvas = c; return c;
 }
 function drawVoid() {
-  const W = VIEW.w, H = VIEW.h; rect(0, 0, W, H, '#101219');
+  const W = bvW(), H = bvH(); rect(0, 0, W, H, '#101219');
   const pat = voidPattern(); const pw = pat.width; const ox = ((tileX(0) % pw) + pw) % pw - pw, oy = ((tileY(0) % pw) + pw) % pw - pw;
   for (let y = oy; y < H; y += pw) for (let x = ox; x < W; x += pw) ctx.drawImage(pat, x, y);
   const mx = tileX(0), my = tileY(0), mw = B.map.w * TILE, mh = B.map.h * TILE;
@@ -476,23 +521,32 @@ function drawVoid() {
   outline(mx - 2, my - 2, mw + 4, mh + 4, '#2a1a10'); outline(mx - 1, my - 1, mw + 2, mh + 2, '#0b1020');
   for (const [cx, cy] of [[mx - 5, my - 5], [mx + mw + 2, my - 5], [mx - 5, my + mh + 2], [mx + mw + 2, my + mh + 2]]) { rect(cx, cy, 3, 3, '#d2a266'); px(cx + 1, cy + 1, '#5c4224'); }
 }
-function drawUnit(u) {
-  const f = u.fx; const X = tileX(u.x) + f.dx, Y = tileY(u.y) + f.dy; const cx = X + TILE / 2, by = Y + TILE - 3;
-  const ready = u.team === HT() && !u.acted && BT.mode !== 'anim';
+// How a unit presents on the board. `grey` follows the model alone (a unit that has acted this phase is greyed
+// whatever the mode, and one that has not is never greyed, even while another animation plays); `ready` is the
+// controlling team's unit that can still act; `busy` is a unit taking part in the current animation.
+function unitLook(u) {
+  const mine = u.team === HT() && isHuman(B.phase) && !B.result;
+  const q = BT.anim; const busy = !!q && BT.mode === 'anim' && (q.unit === u || q.att === u || q.def === u || (q.ev && q.ev.unit === u));
+  const grey = mine && u.acted && !busy;
+  const ready = mine && !u.acted && BT.mode !== 'anim' && BT.mode !== 'banner' && BT.mode !== 'end';
   const sel = BT.sel === u && (BT.mode === 'move' || BT.mode === 'target' || BT.mode === 'menu');
   const hovered = BT.cx === u.x && BT.cy === u.y && (BT.mode === 'idle' || BT.mode === 'unitinfo');
+  return { grey, ready, sel, hovered, busy };
+}
+function drawUnit(u) {
+  const f = u.fx; const X = tileX(u.x) + f.dx, Y = tileY(u.y) + f.dy; const cx = X + TILE / 2, by = Y + TILE - 3;
+  const { ready, grey, sel, hovered } = unitLook(u);
   // idle life: ready units breathe with a slow hop; the hovered one perks up; the selected one bounces
   let hop = 0, bsx = 1, bsy = 1;
   if (sel) { const p = Math.abs(Math.sin(BT.time * 9)); hop = p * 3; bsy = 1 + p * .08; bsx = 1 - p * .05; }
   else if (hovered && !REDUCED) { const p = Math.abs(Math.sin(BT.time * 7 + u.id)); hop = p * 2; bsy = 1 + p * .06; bsx = 1 - p * .04; }
   else if (ready && !REDUCED) { const p = Math.abs(Math.sin(BT.time * 3 + u.id * 1.7)); hop = p * 1.5; bsy = 1 + p * .05; bsx = 1 - p * .03; }
-  else if (!REDUCED) { const p = .5 + .5 * Math.sin(BT.time * 2.2 + u.id * 2.1); bsy = 1 - p * .035; bsx = 1 + p * .02; }
+  else if (!REDUCED && !grey) { const p = .5 + .5 * Math.sin(BT.time * 2.2 + u.id * 2.1); bsy = 1 - p * .035; bsx = 1 + p * .02; }
   const bob = -Math.round(hop); const air = (f.air || 0) + hop; const gy = by + 1 + (f.air || 0); // ground baseline
-  // ground shadow + team ring (+ boss halo, + selection pulse)
+  // ground shadow + team plate (+ boss halo, + selection pulse). A ready unit's rim glints; an acted unit's plate goes grey with it.
   if (u.boss) { ctx.globalAlpha = f.alpha * .9; const k = Math.floor(BT.time * 4) % 2; ellipseRing(cx, gy, 15 + k, 6, 2, '#ffd24a'); ctx.globalAlpha = 1; }
-  drawStand(cx, gy, u.team, f.alpha, air);
+  drawStand(cx, gy, u.team, f.alpha, air, { dim: grey, lit: ready && !REDUCED ? .35 + .35 * Math.sin(BT.time * 4 + u.id) : 0 });
   if (sel && !REDUCED) { const k = (BT.time * 1.4) % 1; ctx.globalAlpha = (1 - k) * .8 * f.alpha; ellipseRing(cx, gy, Math.round(12 + k * 8), Math.round(4 + k * 3), 1, teamColorL(u.team)); ctx.globalAlpha = 1; }
-  const grey = u.team === HT() && u.acted && BT.mode !== 'anim';
   const num = f.showNum || u.num; const flip = u.team === 1 || u.team === 2 ? f.facing !== 1 : f.facing === -1;
   let tint = null; if (f.flash) tint = '#ffffff';
   const sx = f.sx * bsx, sy = f.sy * bsy;
@@ -501,60 +555,108 @@ function drawUnit(u) {
     else drawMon(num, cx, by + bob, { flip, sx, sy, tint, alpha: f.alpha });
     if (f.flash === 1 && !grey) { ctx.globalAlpha = f.alpha; drawMon(num, cx, by + bob, { flip, sx, sy, tint: '#ffffff' }); ctx.globalAlpha = 1; }
   }
-  // segmented hp bar + status + leader / boss marks
+  // HP plate below the feet with the team glyph on its left; marks sit in the tile's top corners, off the sprite:
+  // top-left: crown (leader) or skull (boss), with a CHG tag under it while recharging; top-right: status.
   const show = BT.hpShow.get(u.id); let hp = u.hp; if (show) hp = Math.round(lerp(show.from, show.to, Math.min(1, show.t)));
   if (f.alpha > 0 && hp > 0) {
-    ctx.globalAlpha = f.alpha; const bw = 20, bx = cx - bw / 2, byy = gy + 4;
-    rrect(bx - 2, byy - 1, bw + 4, 7, UI.shadow, 1); rrect(bx - 1, byy, bw + 2, 5, teamColorD(u.team), 1); rect(bx, byy + 1, bw, 3, '#1c1c24');
+    ctx.globalAlpha = f.alpha; const bw = 20, bx = cx - bw / 2 + 3, byy = gy + 4; const pc = grey ? '#3a3e48' : teamColorD(u.team);
+    rrect(bx - 9, byy - 1, bw + 11, 7, UI.shadow, 1); rrect(bx - 8, byy, bw + 9, 5, pc, 1); rect(bx, byy + 1, bw, 3, '#1c1c24');
+    teamGlyph(bx - 7, byy, u.team, grey ? '#9a9eaa' : teamColorL(u.team));
     const ratio = clamp(hp / u.maxHp, 0, 1); const w = Math.round(bw * ratio);
     if (w) { const hc = hpColor(ratio); rect(bx, byy + 1, w, 3, hc); hline(bx, byy + 1, w, shade(hc, .45)); ctx.globalAlpha = .35 * f.alpha; for (let i = 4; i < w; i += 4) vline(bx + i, byy + 1, 3, '#000000'); ctx.globalAlpha = f.alpha; }
     if (show && show.t < 1 && show.from > show.to) { const w0 = Math.round(bw * clamp(show.from / u.maxHp, 0, 1)); if (w0 > w) { ctx.globalAlpha = f.alpha * (Math.floor(BT.time * 16) % 2 ? .9 : .4); rect(bx + w, byy + 1, w0 - w, 3, '#ffffff'); ctx.globalAlpha = f.alpha; } }
-    if (u.status) statusBadge(u.status, cx + 6, Y - 2);
-    if (u.recharge) miniBadge('CHG', RECHARGE_COL, cx + 6, u.status ? Y - 11 : Y - 2);
-    if (u.leader) { const k = Math.round(Math.sin(BT.time * 5) * 1); drawCrown(cx - 16, Y + 2 + k); }
-    if (u.boss) { const k = Math.round(Math.sin(BT.time * 4) * 1); drawSkull(cx + 10, Y - 4 + k); }
+    const k = Math.round(Math.sin(BT.time * 5) * 1); let tl = Y - 3;
+    if (u.leader) { drawCrown(X - 1, tl + k); tl += 6; } else if (u.boss) { drawSkull(X - 1, tl + k); tl += 8; }
+    if (u.recharge) miniBadge('CHG', RECHARGE_COL, X - 1, tl);
+    if (u.status) statusBadge(u.status, X + TILE - 15, Y - 3);
     ctx.globalAlpha = 1;
   }
 }
 
 // ---------------------------------------------------------------- HUD
-const HUD = { hits: [] };
+const HUD = { hits: [], panels: [] };
 function hudHit(x, y) { for (const h of HUD.hits) if (x >= h.x && y >= h.y && x < h.x + h.w && y < h.y + h.h) { h.run(); return true; } return false; }
-function button(x, y, w, h, label, run, opt = {}) { const hot = INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h && !VIEW.touch; rrect(x + 1, y + 1, w, h, UI.shadow, 1); rrect(x, y, w, h, opt.col || (hot ? '#5a7ac0' : UI.panel2), 1); outline(x, y, w, h, UI.border); hline(x + 1, y + 1, w - 2, shade(opt.col || UI.panel2, .25)); textC(label, x + w / 2, y + (h - 7) / 2, opt.ink || UI.ink); HUD.hits.push({ x, y, w, h, run }); }
+// Is the point over a HUD panel or button drawn this frame (so the board under it is not being pointed at)?
+function hudCovers(x, y) { for (const r of HUD.hits.concat(HUD.panels)) if (x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h) return true; return false; }
+function hudPanel(x, y, w, h, opt) { panel(x, y, w, h, opt); HUD.panels.push({ x, y, w, h }); }
+function button(x, y, w, h, label, run, opt = {}) { const hot = INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h && !VIEW.touch; rrect(x + 1, y + 1, w, h, UI.shadow, 1); rrect(x, y, w, h, opt.col || (hot ? '#5a7ac0' : UI.panel2), 1); outline(x, y, w, h, UI.border); hline(x + 1, y + 1, w - 2, shade(opt.col || UI.panel2, .25)); textC(label, x + w / 2, y + (h - 7) / 2, opt.ink || UI.ink); HUD.hits.push({ x, y, w, h, run, label }); }
+// Screen rectangle of the board (the map itself, not the void around it).
+function boardRect() { const z = BT.zoom; return { x: toScreenX(tileX(0) - FX.shakeX), y: toScreenY(tileY(0) - FX.shakeY), w: Math.round(B.map.w * TILE * z), h: Math.round(B.map.h * TILE * z) }; }
+// Where the HUD goes. Portrait phones stack everything under the board: context cards, then a two-row button bar.
+// Wider screens keep the turn card top-left, the buttons top-right and the context cards at the bottom, on the
+// side away from the cursor, hugging the board's lower edge when the board leaves room.
+function hudLayout() {
+  const W = VIEW.w, H = VIEW.h, bh = btnH(), stack = narrowView() && portraitView(); const br = boardRect();
+  const L = { W, H, stack, bh, top: { x: 4, y: 4, w: stack ? W - 8 : Math.min(W - 8, B.versus ? 128 : 118), h: 24 } };
+  if (stack) {
+    L.bar = { x: 4, y: H - 2 * bh - 8, w: W - 8, rows: 2 }; L.ctxY = L.bar.y - 52; L.ctxH = 48;
+    L.ctx = { x: 4, y: L.ctxY, w: W - 8, h: L.ctxH, unit: true, terrain: true, combined: true };
+  } else {
+    const cursorLeft = toScreenX(tileX(BT.cx) - FX.shakeX) + TILE * BT.zoom / 2 < W / 2; const ch = 42;
+    const y = Math.min(H - ch - 4, Math.max(L.top.y + L.top.h + 4, br.y + br.h + 6)); // under the board when it fits, else at the bottom
+    const uw = 136, tw = 96; const x = cursorLeft ? W - 4 - uw - 4 - tw : 4;
+    L.ctx = { x, y, w: uw + 4 + tw, h: ch, unitX: x, terrX: x + uw + 4, unitW: uw, terrW: tw, combined: false };
+    L.buttons = { x: W - 4 - 58, y: 4, w: 58 };
+  }
+  return L;
+}
 function drawHUD() {
-  HUD.hits = []; const W = VIEW.w, H = VIEW.h;
+  HUD.hits = []; HUD.panels = []; const W = VIEW.w, H = VIEW.h; const L = hudLayout();
   if (BT.mode === 'end') { drawEndScreen(); return; }
-  // turn / objective card (top-left)
-  if (BT.mode !== 'banner' || true) {
-    const tw = B.versus ? 128 : 118; panel(4, 4, tw, 24, { border: B.versus ? teamColor(HT()) : UI.border }); if (B.versus) { rrect(9, 8, 15, 8, teamColor(HT()), 1); textC('P' + (HT() + 1), 16, 8, '#ffffff'); } text('TURN ' + B.turn + (B.map.turnLimit && B.map.objective.type !== 'survive' ? '/' + B.map.turnLimit : B.map.objective.type === 'survive' ? '/' + B.map.objective.turns : ''), B.versus ? 27 : 10, 8, UI.gold); text(objectiveText(), 10, 17, UI.muted);
-    const pc = alive(0).length, ec = alive(1).length; const dot = (x, y, c) => { circle(x, y, 3, UI.shadow); circle(x, y, 2, c); };
-    dot(tw - 14, 11, teamColor(0)); textR(String(pc), tw - 18, 8, UI.ink); dot(tw - 14, 20, teamColor(1)); textR(String(ec), tw - 18, 17, UI.ink);
-  }
-  // terrain + hovered unit cards (bottom)
+  const boardModes = ['idle', 'move', 'target', 'catchTarget', 'unitinfo', 'menu'];
+  // turn / objective / ready-count card (top-left)
+  drawTurnCard(L.top);
+  // context cards: the hovered unit and its terrain, side by side or as one strip on portrait phones
   const hov = unitAt(BT.cx, BT.cy); const t = terrAt(BT.cx, BT.cy);
-  if (['idle', 'move', 'target', 'catchTarget', 'unitinfo', 'menu'].includes(BT.mode)) {
-    const onRight = BT.cx * TILE - CAM.x < W / 2; const tx = onRight ? W - 78 : 4;
-    const onRightW = 96; panel(tx - (onRight ? onRightW - 74 : 0), H - 34, onRightW, 30); const tx2 = tx - (onRight ? onRightW - 74 : 0); const mv = inMap(BT.cx, BT.cy) ? B.map.variants[BT.cy][BT.cx] : 0; rect(tx2 + 4, H - 31, 20, 20, UI.shadow); ctx.drawImage(tileImg(t.ch, mv, 0), 0, 0, 32, 32, tx2 + 5, H - 30, 18, 18); outline(tx2 + 4, H - 31, 20, 20, UI.border2); text(t.name, tx2 + 27, H - 30, UI.gold); const ref = hov || BT.sel || { fly: false, swim: false }; text('DEF ' + terrainDef(t, ref) + '%', tx2 + 27, H - 21, UI.ink); text('AVO ' + terrainEva(t, ref), tx2 + 62, H - 21, UI.ink); if (t.heal) text('HEALS 30%', tx2 + 27, H - 12, UI.green); else if (t.burn) text('BURNS', tx2 + 27, H - 12, UI.red); else { const mc = moveCost(t, ref); text(mc >= 99 ? 'NO ENTRY' : 'MOVE COST ' + mc, tx2 + 27, H - 12, UI.muted); }
-    const showUnit = hov && !(BT.mode === 'menu'); if (showUnit) drawUnitCard(hov, onRight ? 4 : W - 140, H - 46);
+  if (boardModes.includes(BT.mode) && BT.mode !== 'target' && BT.mode !== 'catchTarget') {
+    const ref = hov || BT.sel || { fly: false, swim: false }; const showUnit = hov && BT.mode !== 'menu';
+    if (L.stack) { const c = L.ctx; hudPanel(c.x, c.y, c.w, c.h); if (showUnit) { unitCardBody(hov, c.x, c.y, c.w - 62); vline(c.x + c.w - 60, c.y + 4, c.h - 8, UI.border2); terrainCardBody(t, ref, c.x + c.w - 56, c.y, 54, true); } else terrainCardBody(t, ref, c.x, c.y, c.w, false); }
+    else { const c = L.ctx; hudPanel(c.terrX, c.y + 12, c.terrW, 30); terrainCardBody(t, ref, c.terrX, c.y + 12, c.terrW, false); if (showUnit) { hudPanel(c.unitX, c.y, c.unitW, c.h); unitCardBody(hov, c.unitX, c.y, c.unitW); } }
   }
-  if (BT.mode === 'move' && BT.sel) { const c = BT.sel; textC(c.name + '  MOV ' + effMov(c) + (BT.path.length > 1 ? '  →' + (BT.path.length - 1) : ''), W / 2, 6, UI.ink, { outline: UI.shadow }); }
-  if (BT.quip && BT.quip.unit.hp > 0) { const u = BT.quip.unit; const x = tileX(u.x) + TILE / 2 + 16, y = tileY(u.y) - 12 - Math.min(6, BT.quip.t * 30); const tw = textWidth(BT.quip.text) + 8; rrect(x - 2, y - 2, tw, 11, UI.shadow, 1); rrect(x - 3, y - 3, tw, 11, '#ffffff', 1); text(BT.quip.text, x + 1, y - 1, '#202030'); px(x, y + 8, '#ffffff'); px(x - 1, y + 9, '#ffffff'); }
+  if (BT.mode === 'move' && BT.sel) { const c = BT.sel; textC(c.name + '  MOV ' + effMov(c) + (BT.path.length > 1 ? '  →' + (BT.path.length - 1) : ''), W / 2, L.top.y + L.top.h + 4, UI.ink, { outline: UI.shadow }); }
+  if (BT.quip && BT.quip.unit.hp > 0) { const u = BT.quip.unit; const x = toScreenX(tileX(u.x) + TILE / 2) + 16, y = toScreenY(tileY(u.y)) - 12 - Math.min(6, BT.quip.t * 30); const tw = textWidth(BT.quip.text) + 8; rrect(x - 2, y - 2, tw, 11, UI.shadow, 1); rrect(x - 3, y - 3, tw, 11, '#ffffff', 1); text(BT.quip.text, x + 1, y - 1, '#202030'); px(x, y + 8, '#ffffff'); px(x - 1, y + 9, '#ffffff'); }
   if (BT.mode === 'menu' || BT.mode === 'item' || BT.mode === 'endmenu' || BT.mode === 'ballPick') drawMenu();
   if (BT.mode === 'target') drawForecast();
   if (BT.mode === 'catchTarget') drawCatchCard();
-  if (BT.mode === 'itemTarget') { panel(W / 2 - 70, H / 2 - 16, 140, 32); textC('Use ' + ITEMS[BT.item].name + ' on ' + BT.sel.name + '?', W / 2, H / 2 - 10, UI.ink); textC('OK to confirm · X to cancel', W / 2, H / 2 + 1, UI.muted); }
+  if (BT.mode === 'itemTarget') { const w = Math.min(160, W - 12); hudPanel(W / 2 - w / 2, H / 2 - 16, w, 32); textC('Use ' + ITEMS[BT.item].name + ' on ' + BT.sel.name + '?', W / 2, H / 2 - 10, UI.ink); textC('OK: confirm · X: cancel', W / 2, H / 2 + 1, UI.muted); }
   if (BT.mode === 'unitinfo' && BT.info) drawUnitSheet(BT.info);
   if (BT.mode === 'help') drawHelp();
   if (BT.mode === 'handoff') drawHandoff();
   if (BT.mode === 'banner') drawBanner();
   if (BT.mode === 'anim' && BT.anim && BT.anim.kind === 'event') drawEventCard(BT.anim);
   if (BT.mode === 'anim' && BT.anim && BT.anim.kind === 'strike') drawDuelCard(BT.anim);
-  if (BT.mode === 'anim' && BT.anim && BT.anim.kind === 'msg') { panel(W / 2 - 80, 30, 160, 20); textC(BT.anim.text, W / 2, 36, UI.ink); }
-  // bottom-right buttons (touch-friendly)
-  if (BT.mode === 'idle') { button(W - 62, 4, 58, 14, 'END TURN', () => { Audio.sfx('ok'); endTurn(); }, { col: '#7a3030' }); button(W - 62, 20, 58, 14, BT.showDanger ? 'DANGER ●' : 'DANGER ○', () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); }); button(W - 62, 36, 28, 14, 'HELP', () => { BT.mode = 'help'; BT.helpPage = 0; Audio.sfx('menu'); }); button(W - 32, 36, 28, 14, Audio.muted ? '♪ ○' : '♪ ●', () => { Audio.toggle(); Audio.sfx('menu'); }); }
-  if (BT.showDanger && (BT.mode === 'idle' || BT.mode === 'move')) drawDangerLegend(W - 62, 52);
-  if (BT.mode === 'anim' && !isHuman(B.phase)) { textC(phaseLabel(B.phase) + (BT.fast ? ' · FAST' : ''), W / 2, 6, UI.red, { outline: UI.shadow }); button(W - 46, 4, 42, 14, BT.fast ? 'FAST ●' : 'FAST ○', () => { BT.fast = !BT.fast; }); }
-  if (BT.mode === 'move' || BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'menu') { button(W - 46, 4, 42, 14, 'BACK', () => cancel(), { col: '#5a4a30' }); }
+  if (BT.mode === 'anim' && BT.anim && BT.anim.kind === 'msg') { const w = Math.min(160, W - 12); hudPanel(W / 2 - w / 2, 30, w, 20); textC(BT.anim.text, W / 2, 36, UI.ink); }
+  drawButtons(L);
+}
+// TURN n · objective · READY x/y, with the two teams' head counts.
+function drawTurnCard(r) {
+  const mine = alive(HT()), ready = mine.filter(u => !u.acted).length; const turn = 'TURN ' + B.turn + (B.map.turnLimit && B.map.objective.type !== 'survive' ? '/' + B.map.turnLimit : B.map.objective.type === 'survive' ? '/' + B.map.objective.turns : '');
+  hudPanel(r.x, r.y, r.w, r.h, { border: B.versus ? teamColor(HT()) : UI.border });
+  let x = r.x + 6; if (B.versus) { rrect(x, r.y + 4, 15, 8, teamColor(HT()), 1); textC('P' + (HT() + 1), x + 7, r.y + 4, '#ffffff'); x += 18; }
+  text(turn, x, r.y + 4, UI.gold); text(objectiveText(), r.x + 6, r.y + 13, UI.muted);
+  const readyCol = ready ? UI.green : UI.muted; const rs = 'READY ' + ready + '/' + mine.length; textR(rs, r.x + r.w - 6, r.y + 4, readyCol);
+  const pc = alive(0).length, ec = alive(1).length; const dot = (dx, dy, team) => { circle(dx, dy, 3, UI.shadow); circle(dx, dy, 2, teamColor(team)); };
+  dot(r.x + r.w - 10, r.y + 16, 1); textR(String(ec), r.x + r.w - 15, r.y + 13, UI.ink); dot(r.x + r.w - 28, r.y + 16, 0); textR(String(pc), r.x + r.w - 33, r.y + 13, UI.ink);
+}
+function drawButtons(L) {
+  const W = VIEW.w, bh = L.bh, m = BT.mode;
+  const idle = m === 'idle', acting = m === 'move' || m === 'target' || m === 'catchTarget' || m === 'menu', enemyAnim = m === 'anim' && !isHuman(B.phase);
+  if (enemyAnim) textC(phaseLabel(B.phase) + (BT.fast ? ' · FAST' : ''), W / 2, L.top.y + L.top.h + 4, UI.red, { outline: UI.shadow });
+  const items = [];
+  if (idle) items.push({ label: 'END TURN', col: '#7a3030', run: () => { Audio.sfx('ok'); endTurn(); } }, { label: BT.showDanger ? 'DANGER ●' : 'DANGER ○', run: () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); } });
+  if (acting) items.push({ label: 'BACK', col: '#5a4a30', run: () => cancel() });
+  if (enemyAnim) items.push({ label: BT.fast ? 'FAST ●' : 'FAST ○', run: () => { BT.fast = !BT.fast; } });
+  if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM −' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
+  if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; Audio.sfx('menu'); } }, { label: Audio.muted ? '♪ ○' : '♪ ●', half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
+  if (!items.length) return;
+  if (L.stack) { // two rows across the bottom: row 1 = the two main actions, row 2 = the rest
+    const b = L.bar; const row1 = items.slice(0, 2), row2 = items.slice(2); const lay = (row, y) => { if (!row.length) return; const gap = 4, w = Math.floor((b.w - gap * (row.length - 1)) / row.length); row.forEach((it, i) => button(b.x + i * (w + gap), y, w, bh, it.label, it.run, { col: it.col })); };
+    lay(row1, b.y); lay(row2, b.y + bh + 4);
+  } else {
+    const bx = L.buttons.x, bw = L.buttons.w; let y = 4; for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.half && items[i + 1] && items[i + 1].half) { button(bx, y, bw / 2 - 1, bh, it.label, it.run, { col: it.col }); button(bx + bw / 2 + 1, y, bw / 2 - 1, bh, items[i + 1].label, items[i + 1].run, { col: items[i + 1].col }); i++; } else button(bx, y, bw, bh, it.label, it.run, { col: it.col }); y += bh + 2; }
+    if (BT.showDanger && (idle || m === 'move')) drawDangerLegend(bx, y + 2);
+  }
+  if (L.stack && BT.showDanger && (idle || m === 'move')) drawDangerLegend(4, L.top.y + L.top.h + 2);
 }
 // Danger overlay colours [fill, edge] per threat kind, and the recharge marker colour.
 const DANGER = { trainer: ['#b03030', '#ff8080'], wild: ['#b08a20', '#ffd24a'] };
@@ -564,24 +666,41 @@ function drawDangerLegend(x, y) {
   panel(x, y, w, 13, { fill: UI.panelDark, flat: true }); rect(x + 4, y + 4, 5, 5, DANGER.trainer[1]); text('foe', x + 11, y + 3, UI.ink);
   if (wild) { rect(x + 30, y + 4, 5, 5, DANGER.wild[1]); text('wild', x + 37, y + 3, UI.ink); }
 }
-function drawUnitCard(u, x, y) {
-  const w = 136; panel(x, y, w, 42);
+// Unit card contents (portrait, name, level, HP, types, status/boss/recharge) inside a panel drawn by the caller.
+function unitCardBody(u, x, y, w) {
   ctx.save(); ctx.beginPath(); ctx.rect(x + 3, y + 3, 40, 36); ctx.clip(); portraitBg(x + 3, y + 3, 40, 36, u.team); drawMon(u.num, x + 23, y + 36, { flip: u.team !== 0 }); ctx.restore();
+  teamGlyph(x + 5, y + 5, u.team, teamColorL(u.team));
   text(u.name, x + 46, y + 5, UI.ink); textR('Lv' + u.level, x + w - 5, y + 5, UI.gold);
   hpBar(x + 46, y + 15, w - 52, u.hp, u.maxHp); text(u.hp + '/' + u.maxHp, x + 46, y + 22, UI.ink);
   u.types.forEach((t, i) => typeBadge(t, x + 46 + i * 26, y + 31, 24)); if (u.status) statusBadge(u.status, x + w - 20, y + 22);
   if (u.boss) text('BOSS', x + w - 28, y + 31, UI.red); else if (u.recharge) miniBadge('CHG', RECHARGE_COL, x + w - 20, y + 31);
+  else if (u.team === HT() && isHuman(B.phase)) textR(u.acted ? 'DONE' : 'READY', x + w - 5, y + 31, u.acted ? UI.muted : UI.green);
 }
-function menuRect() { const m = BT.menu; const w = m.items.some(it => it.icon) ? 122 : 108, h = m.items.length * 13 + 8; let x = tileX(BT.cx) + TILE + 6, y = tileY(BT.cy) - 4; if (BT.mode === 'endmenu') { x = VIEW.w / 2 - w / 2; y = VIEW.h / 2 - h / 2; } if (x + w > VIEW.w - 4) x = tileX(BT.cx) - w - 6; if (x < 4) x = 4; y = clamp(y, 30, VIEW.h - h - 4); return { x, y, w, h }; }
-function menuHit(px2, py) { const r = menuRect(); if (px2 < r.x || px2 >= r.x + r.w || py < r.y || py >= r.y + r.h) return -1; return clamp(Math.floor((py - r.y - 4) / 13), 0, BT.menu.items.length - 1); }
+// Terrain card contents: tile swatch, name, DEF/AVO and the move cost (or heal/burn). `tall` stacks the numbers under the swatch.
+function terrainCardBody(t, ref, x, y, w, tall) {
+  const mv = inMap(BT.cx, BT.cy) ? B.map.variants[BT.cy][BT.cx] : 0; const sw = tall ? 16 : 20;
+  rect(x + 4, y + 3, sw, sw, UI.shadow); ctx.drawImage(tileImg(t.ch, mv, 0), 0, 0, 32, 32, x + 5, y + 4, sw - 2, sw - 2); outline(x + 4, y + 3, sw, sw, UI.border2);
+  const extra = t.heal ? ['HEALS 30%', UI.green] : t.burn ? ['BURNS', UI.red] : [moveCost(t, ref) >= 99 ? 'NO ENTRY' : 'MOVE ' + moveCost(t, ref), UI.muted];
+  if (tall) { let name = t.name; while (textWidth(name) > w - 26 && name.length > 3) name = name.slice(0, -1); text(name, x + 24, y + 4, UI.gold); text('DEF ' + terrainDef(t, ref) + '%', x + 24, y + 13, UI.ink); text('AVO ' + terrainEva(t, ref), x + 4, y + 22, UI.ink); text(extra[0], x + 4, y + 31, extra[1]); }
+  else { text(t.name, x + 27, y + 4, UI.gold); text('DEF ' + terrainDef(t, ref) + '%', x + 27, y + 13, UI.ink); text('AVO ' + terrainEva(t, ref), x + 62, y + 13, UI.ink); text(extra[0], x + 27, y + 22, extra[1]); }
+}
+function menuRect() { const m = BT.menu, rh = rowH(); const w = m.items.some(it => it.icon) ? 122 : 108, h = m.items.length * rh + 8; const tx = toScreenX(tileX(BT.cx) - FX.shakeX), ty = toScreenY(tileY(BT.cy) - FX.shakeY), ts = TILE * BT.zoom; let x = tx + ts + 6, y = ty - 4; if (BT.mode === 'endmenu') { x = VIEW.w / 2 - w / 2; y = VIEW.h / 2 - h / 2; } if (x + w > VIEW.w - 4) x = tx - w - 6; if (x < 4) x = 4; y = clamp(y, 30, VIEW.h - h - 4); return { x, y, w, h }; }
+function menuHit(px2, py) { const r = menuRect(); if (px2 < r.x || px2 >= r.x + r.w || py < r.y || py >= r.y + r.h) return -1; return clamp(Math.floor((py - r.y - 4) / rowH()), 0, BT.menu.items.length - 1); }
 function drawMenu() {
-  const m = BT.menu, r = menuRect(); panel(r.x, r.y, r.w, r.h, { title: BT.mode === 'item' ? 'BAG' : BT.mode === 'ballPick' ? 'BALLS' : BT.mode === 'endmenu' ? 'MENU' : null });
-  m.items.forEach((it, i) => { const y = r.y + 4 + i * 13; const hot = i === m.i; if (hot) { rrect(r.x + 3, y - 1, r.w - 6, 12, UI.menuSel, 1); hline(r.x + 4, y - 1, r.w - 8, shade(UI.menuSel, .3)); pointerHand(r.x + 5, y + 1, BT.time * 1000); } if (it.icon) { iconAt(it.icon, r.x + 15, y + 1, hot ? '#ffffff' : '#d8dce8'); text(it.label, r.x + 28, y + 2, hot ? UI.hi : UI.ink); } else text(it.label, r.x + 16, y + 2, hot ? UI.hi : UI.ink); });
-  const it = m.items[m.i]; if (it && it.sub) { const sw = textWidth(it.sub) + 10; const sx = clamp(r.x, 2, VIEW.w - sw - 2); panel(sx, r.y + r.h + 3, sw, 13, { fill: UI.panelDark }); text(it.sub, sx + 5, r.y + r.h + 6, UI.muted); }
+  const m = BT.menu, r = menuRect(), rh = rowH(), ty = (rh - 7) >> 1; hudPanel(r.x, r.y, r.w, r.h, { title: BT.mode === 'item' ? 'BAG' : BT.mode === 'ballPick' ? 'BALLS' : BT.mode === 'endmenu' ? 'MENU' : null });
+  m.items.forEach((it, i) => { const y = r.y + 4 + i * rh; const hot = i === m.i; if (hot) { rrect(r.x + 3, y, r.w - 6, rh - 1, UI.menuSel, 1); hline(r.x + 4, y, r.w - 8, shade(UI.menuSel, .3)); pointerHand(r.x + 5, y + ty, BT.time * 1000); } if (it.icon) { iconAt(it.icon, r.x + 15, y + ty - 1, hot ? '#ffffff' : '#d8dce8'); text(it.label, r.x + 28, y + ty, hot ? UI.hi : UI.ink); } else text(it.label, r.x + 16, y + ty, hot ? UI.hi : UI.ink); });
+  const it = m.items[m.i]; if (it && it.sub) { const lines = wrap(it.sub, Math.min(VIEW.w - 14, 200)); const sw = Math.max(...lines.map(l => textWidth(l))) + 10, sh = lines.length * 9 + 5; const sx = clamp(r.x, 2, VIEW.w - sw - 2); const below = r.y + r.h + 3 + sh <= VIEW.h - 2; const sy = below ? r.y + r.h + 3 : r.y - sh - 3; hudPanel(sx, sy, sw, sh, { fill: UI.panelDark }); lines.forEach((l, i) => text(l, sx + 5, sy + 3 + i * 9, UI.muted)); }
 }
-function forecastRect() { const w = 204, h = 104; const left = BT.cx * TILE - CAM.x > VIEW.w / 2; return { x: left ? 6 : VIEW.w - w - 6, y: 32, w, h }; }
-function forecastHit(x, y) { const r = forecastRect(); return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h - 14; }
-function moveSwitchHit(x, y) { const r = forecastRect(); return x >= r.x && y >= r.y + r.h - 14 && x < r.x + r.w && y < r.y + r.h + 4; }
+// The forecast sits on the side away from the cursor on wide screens and spans the bottom on portrait phones.
+function forecastRect() {
+  const W = VIEW.w, H = VIEW.h, L = hudLayout();
+  if (L.stack) { const h = 118; return { x: 4, y: L.bar.y - h - 4, w: W - 8, h, stack: true }; }
+  const w = Math.min(220, W - 12), h = 112; const left = toScreenX(tileX(BT.cx) - FX.shakeX) + TILE * BT.zoom / 2 > W / 2; const bb = 4 + (canZoom() ? 2 : 1) * (btnH() + 2); // under the BACK / ZOOM buttons on the right
+  return { x: left ? 6 : W - w - 6, y: Math.min(left ? 32 : bb + 4, Math.max(4, H - h - 24)), w, h, stack: false };
+}
+function forecastHit(x, y) { const r = forecastRect(); return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h - 16; }
+// The move selector strip along the bottom of the forecast (and the hint line under it) switches moves.
+function moveSwitchHit(x, y) { const r = forecastRect(); return x >= r.x && y >= r.y + r.h - 16 && x < r.x + r.w && y < r.y + r.h + 12; }
 // HP bar that previews the damage: the part about to be lost is hatched in red.
 function hpBarPredict(x, y, w, cur, after, max) {
   rect(x, y, w, 6, UI.hpBack); const fw = Math.round(clamp(cur / max, 0, 1) * (w - 2)), aw = Math.round(clamp(after / max, 0, 1) * (w - 2));
@@ -597,35 +716,55 @@ function exchangeSummary(fc) {
   let t = 'counters' + (fc.c.eff > 1 ? ' hard' : ''); if (fc.koA) t += ' · KOs you!'; else if (hits('a') > 1) t += ' · you hit ×2'; else if (hits('c') > 1) t += ' ×2';
   return { text: t, col: fc.koA ? UI.red : fc.c.eff > 1 ? '#ffa0a0' : UI.muted };
 }
+// One text line per strike of the ordered exchange, for the forecast: who strikes, with what, the damage and the
+// odds, whether it would KO, and the condition when it only happens if an earlier strike misses. Pure.
+function forecastLines(fc, att, def) {
+  let hpA = att.hp, hpD = def.hp; const out = [];
+  for (const s of fc.strikes) {
+    const mine = s.side === 'a'; let ko = false;
+    if (s.nominal) { if (mine) { hpD = Math.max(0, hpD - s.dmg); hpA += s.drain; ko = hpD <= 0; } else { hpA = Math.max(0, hpA - s.dmg); hpD += s.drain; ko = hpA <= 0; } }
+    const eff = s.eff === 0 ? 'no effect' : s.eff >= 2 ? '×2.25' : s.eff > 1 ? '×1.5' : s.eff < 1 ? '×' + s.eff : '';
+    out.push({ side: s.side, nominal: s.nominal, ko, name: s.move.name.toUpperCase(), dmg: s.dmg, hit: s.hit, crit: s.crit, eff, cond: s.cond, drain: s.drain, counter: !mine });
+  }
+  return out;
+}
 function drawForecast() {
   const cf = currentForecast(); if (!cf) return; const { fc, move, moves, target } = cf; const r = forecastRect(); const u = BT.sel; const a = fc.a, c = fc.c;
-  panel(r.x, r.y, r.w, r.h, { title: 'BATTLE FORECAST' });
-  const hpAfterU = fc.hpA, hpAfterT = fc.hpD; const hits = side => fc.strikes.filter(s => s.side === side && s.nominal).length; const aHits = hits('a'), cHits = hits('c');
-  const side = (x, unit, flip, after, right) => {
-    ctx.save(); ctx.beginPath(); ctx.rect(x, r.y + 7, 48, 34); ctx.clip(); portraitBg(x, r.y + 7, 48, 34, unit.team); drawMon(unit.num, x + 24, r.y + 40, { flip }); ctx.restore();
-    if (right) textR(unit.name, x + 48, r.y + 43, UI.ink); else text(unit.name, x, r.y + 43, UI.ink);
-    hpBarPredict(x, r.y + 52, 48, unit.hp, after, unit.maxHp); const s = unit.hp + ' → ' + after; if (right) textR(s, x + 48, r.y + 60, after <= 0 ? UI.red : after < unit.hp ? UI.gold : UI.ink); else text(s, x, r.y + 60, after <= 0 ? UI.red : after < unit.hp ? UI.gold : UI.ink);
-    if (after <= 0) { const lx = right ? x + 48 - 16 : x; rrect(lx, r.y + 68, 16, 8, UI.red, 1); textC('KO', lx + 8, r.y + 68, '#ffffff'); }
+  hudPanel(r.x, r.y, r.w, r.h, { title: 'BATTLE FORECAST' }); const half = Math.floor(r.w / 2);
+  // both sides: portrait with the team glyph, name and level; then the HP bar with the loss hatched, and the HP after in the big face
+  const side = (x, unit, after, right) => {
+    const px0 = right ? x + half - 6 - 34 : x + 6; ctx.save(); ctx.beginPath(); ctx.rect(px0, r.y + 7, 34, 28); ctx.clip(); portraitBg(px0, r.y + 7, 34, 28, unit.team); drawMon(unit.num, px0 + 17, r.y + 34, { flip: right }); ctx.restore(); teamGlyph(px0 + 2, r.y + 9, unit.team, teamColorL(unit.team));
+    let name = unit.name; while (textWidth(name) > half - 52 && name.length > 3) name = name.slice(0, -1);
+    if (right) { textR(name, px0 - 4, r.y + 8, UI.ink); textR('Lv' + unit.level, px0 - 4, r.y + 17, UI.gold); } else { text(name, px0 + 38, r.y + 8, UI.ink); text('Lv' + unit.level, px0 + 38, r.y + 17, UI.gold); }
+    hpBarPredict(x + 6, r.y + 38, half - 12, unit.hp, after, unit.maxHp);
+    const col = after <= 0 ? UI.red : after < unit.hp ? UI.gold : UI.ink; const big = after <= 0 ? 'KO' : String(after); const bw = textWidth(big, BIG);
+    if (right) { bigText(big, x + half - 6 - bw, r.y + 46, col, { outline: '#000' }); textR(unit.hp + ' →', x + half - 9 - bw, r.y + 48, UI.muted); } else { text(unit.hp + ' →', x + 6, r.y + 48, UI.muted); bigText(big, x + 9 + textWidth(unit.hp + ' →'), r.y + 46, col, { outline: '#000' }); }
   };
-  side(r.x + 6, u, false, hpAfterU, false); side(r.x + r.w - 54, target, true, hpAfterT, true);
-  // centre column: move, then the three numbers side by side
-  const cx = r.x + r.w / 2; typeBadge(move.type, cx - 12, r.y + 7, 24); textC(move.name, cx, r.y + 18, TYPE_COL[move.type] || UI.ink, { shadow: '#000' });
-  // damage that only lands if an earlier strike misses is shown in brackets
-  const rows = [['DMG', a.dmg + (aHits > 1 ? '×2' : ''), c ? (cHits ? c.dmg + (cHits > 1 ? '×2' : '') : '(' + c.dmg + ')') : '—'], ['HIT', a.hit + '%', c ? c.hit + '%' : '—'], ['CRT', a.crit + '%', c ? c.crit + '%' : '—']];
-  rows.forEach((row, i) => { const y = r.y + 29 + i * 10; rrect(cx - 40, y - 1, 80, 9, i % 2 ? '#1a2848' : '#16223e', 0); textC(row[0], cx, y, UI.muted); textR(row[1], cx - 14, y, i === 0 && a.eff > 1 ? UI.gold : UI.ink); text(row[2], cx + 14, y, c && !cHits ? UI.muted : i === 0 && c && c.eff > 1 ? '#ffa0a0' : UI.ink); });
-  text('▸', cx - 40, r.y + 29, '#8ab4ff'); textR('◂', cx + 40, r.y + 29, c ? '#ff9a9a' : '#3a4a70');
-  const el = effLabel(a.eff); textC(el || 'normal damage', cx, r.y + 60, a.eff > 1 ? UI.gold : a.eff < 1 ? '#a0d0ff' : UI.muted);
-  const sum = exchangeSummary(fc); textC(sum.text, cx, r.y + 69, sum.col);
-  // chance-based and lasting effects of both moves (never counted in the numbers above)
-  const ea = a.eff === 0 ? [] : moveEffects(move), ec = c && c.eff !== 0 ? moveEffects(c.move) : []; // immunity blocks secondary effects
-  const fxText = (ea.length ? '▸ ' + ea.join(' · ') : '') + (ea.length && ec.length ? '   ' : '') + (ec.length ? '◂ ' + ec.join(' · ') : '');
-  textC(fxText || 'no side effects', r.x + r.w / 2, r.y + 80, fxText ? (ea.some(t => t === 'must recharge') ? RECHARGE_COL : UI.ink) : UI.muted);
-  // move selector (bottom)
-  rrect(r.x + 3, r.y + r.h - 14, r.w - 6, 11, UI.panelDark, 1); typeBadge(move.type, r.x + 5, r.y + r.h - 13, 24); text(move.name + '  ' + move.pow + 'pw  rng ' + move.rng[0] + (move.rng[1] > move.rng[0] ? '-' + move.rng[1] : ''), r.x + 32, r.y + r.h - 12, UI.ink); if (moves.length > 1) textR('C ▸ switch', r.x + r.w - 5, r.y + r.h - 12, UI.gold);
-  textC('OK: attack  ·  X: back' + (moves.length > 1 ? '  ·  C: move' : ''), r.x + r.w / 2, r.y + r.h + 4, UI.muted, { outline: UI.shadow });
+  side(r.x, u, fc.hpA, false); side(r.x + half, target, fc.hpD, true);
+  vline(r.x + half, r.y + 8, 48, UI.border2);
+  // the ordered exchange, one line per strike; optional parts are dropped from the right until the line fits
+  const lines = forecastLines(fc, u, target); const ly = r.y + 58;
+  lines.slice(0, 3).forEach((l, i) => {
+    const y = ly + i * 9; const col = !l.nominal ? UI.muted : l.side === 'a' ? '#8ab4ff' : '#ff9a9a';
+    const head = (l.side === 'a' ? '▸ ' : '◂ ') + l.name + ' ' + l.dmg + (l.ko ? ' KO' : ''); const parts = [l.hit + '%', l.crit >= 20 ? 'crit ' + l.crit + '%' : null, l.eff || null, l.drain ? '+' + l.drain : null, l.cond ? l.cond : null].filter(Boolean);
+    let s = head + '  ' + parts.join(' · '); const avail = r.w - 12; while (textWidth(s) > avail && parts.length > 1) { parts.splice(parts.length - (l.cond ? 2 : 1), 1); s = head + '  ' + parts.join(' · '); } while (textWidth(s) > avail && s.length > head.length) s = s.slice(0, -1);
+    text(s, r.x + 6, y, col); if (l.ko) { const kx = r.x + 6 + textWidth(head) - textWidth('KO'); rect(kx - 1, y - 1, textWidth('KO') + 2, 9, l.side === 'a' ? '#2a6a3a' : '#8a2c2c'); text('KO', kx, y, '#ffffff'); }
+  });
+  // summary of the exchange, then the moves' side effects (never counted in the numbers above)
+  const sum = exchangeSummary(fc); const ea = a.eff === 0 ? [] : moveEffects(move), ec = c && c.eff !== 0 ? moveEffects(c.move) : [];
+  const fxText = (ea.length ? '▸ ' + ea.join(' · ') : '') + (ea.length && ec.length ? '  ' : '') + (ec.length ? '◂ ' + ec.join(' · ') : '');
+  let foot = sum.text + (fxText ? '  ·  ' + fxText : ''); while (textWidth(foot) > r.w - 12 && foot.length > 8) foot = foot.slice(0, -1);
+  text(foot, r.x + 6, r.y + r.h - 27, fxText && ea.some(t => t === 'must recharge') ? RECHARGE_COL : sum.col);
+  // move selector: a strip along the bottom, tappable; arrows and the C key switch moves
+  const sy = r.y + r.h - 16; rrect(r.x + 3, sy, r.w - 6, 13, UI.panelDark, 1); outline(r.x + 3, sy, r.w - 6, 13, moves.length > 1 ? UI.gold : UI.border2);
+  let mx = r.x + 6; if (moves.length > 1) { text('◂', mx, sy + 3, UI.gold); mx += 8; } typeBadge(move.type, mx, sy + 2, 24); mx += 27;
+  const idx = (moves.indexOf(move) + 1) + '/' + moves.length; const tail = moves.length > 1 ? idx + ' ▸' : ''; const tw = textWidth(tail);
+  let ms = move.name + '  ' + move.pow + 'pw · rng ' + move.rng[0] + (move.rng[1] > move.rng[0] ? '-' + move.rng[1] : ''); while (textWidth(ms) > r.x + r.w - 8 - tw - mx && ms.length > 6) ms = ms.slice(0, -1);
+  text(ms, mx, sy + 3, UI.ink); if (tail) textR(tail, r.x + r.w - 6, sy + 3, UI.gold);
+  textC((VIEW.touch ? 'tap target: attack' : 'OK: attack') + '  ·  X: back' + (moves.length > 1 ? (VIEW.touch ? '  ·  tap bar: move' : '  ·  C: move') : ''), r.x + r.w / 2, r.y + r.h + 4, UI.muted, { outline: UI.shadow });
 }
 function drawCatchCard() {
-  const t = BT.targets[BT.tIdx]; if (!t) return; const r = forecastRect(); panel(r.x, r.y, r.w, 50, { title: 'CATCH' });
+  const t = BT.targets[BT.tIdx]; if (!t) return; const r = forecastRect(); hudPanel(r.x, r.y, r.w, 50, { title: 'CATCH' });
   drawMon(t.num, r.x + 24, r.y + 36, { flip: true }); text(t.name + '  Lv' + t.level, r.x + 48, r.y + 8, UI.ink); hpBar(r.x + 48, r.y + 18, r.w - 56, t.hp, t.maxHp); text(t.hp + '/' + t.maxHp + ' HP', r.x + 48, r.y + 26, UI.ink);
   const p = clamp(.22 + .68 * (1 - t.hp / t.maxHp), .05, .97); text('Base chance ' + Math.round(p * 100) + '%', r.x + 48, r.y + 36, p > .6 ? UI.green : p > .35 ? UI.gold : UI.red);
   textC('OK: pick a ball  ·  X: back', r.x + r.w / 2, r.y + 54, UI.muted, { outline: UI.shadow });
@@ -641,9 +780,9 @@ function drawDuelCard(q) {
 function drawEventCard(q) {
   const e = q.ev, W = VIEW.w, H = VIEW.h;
   if (e.type === 'xp') { const u = e.unit; const w = 120, x = W / 2 - w / 2, y = H - 40; panel(x, y, w, 24); const k = Math.min(1, q.t / q.dur); const shown = Math.min(100, q.from + e.amount * k); text(u.name, x + 6, y + 4, UI.ink); textR('+' + e.amount + ' EXP', x + w - 6, y + 4, UI.gold); bar(x + 6, y + 14, w - 12, 6, (shown % 100) / 100, '#6ad0ff'); }
-  if (e.type === 'levelup') { const u = e.unit; const w = 176, h = 70, x = W / 2 - w / 2; const uy = tileY(u.y); const y = uy < H / 2 ? Math.min(H - h - 8, uy + TILE + 10) : Math.max(28, uy - h - 12); const k = Math.min(1, q.t / .25); const yy = y + (1 - easeOut(k)) * -20; panel(x, yy, w, h, { title: 'LEVEL UP!' }); drawMon(u.fx.showNum || u.num, x + 26, yy + 40, {}); bigText('LV ' + e.level, x + 50, yy + 8, UI.gold, { outline: '#402000' }); const g = e.gains; const stats = [['HP', g.maxHp], ['ATK', g.atk], ['DEF', g.def], ['SPA', g.spa], ['SPD', g.spd], ['SPE', g.spe]]; stats.forEach((s, i) => { const sx = x + 50 + (i % 3) * 40, sy = yy + 24 + Math.floor(i / 3) * 12; const showAt = .3 + i * .12; if (q.t > showAt) { text(s[0], sx, sy, UI.muted); text((s[1] >= 0 ? '+' : '') + s[1], sx + 20, sy, s[1] > 0 ? UI.green : UI.ink); } }); if (q.t > 1.1) { const nm = u.moves.map(m => m.name); text('Moves: ' + nm.join(', ').slice(0, 34), x + 6, yy + 52, UI.ink); } }
-  if (e.type === 'evolve') { const k = q.t / q.dur; const w = 160, x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(k < .5 ? 'What? ' + e.from.name + ' is evolving!' : e.from.name + ' evolved into ' + e.to.name + '!', W / 2, y + 6, k < .5 ? UI.ink : UI.gold); if (k > .15 && k < .8 && Math.floor(q.t * 14) % 2) { ctx.globalAlpha = .25; rect(0, 0, W, H, '#ffffff'); ctx.globalAlpha = 1; } }
-  if (e.type === 'capture' && q.t > q.dur - .8 && e.ok) { const w = 150, x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(e.unit.name + ' was caught!', W / 2, y + 6, UI.gold); }
+  if (e.type === 'levelup') { const u = e.unit; const w = Math.min(176, W - 12), h = 70, x = W / 2 - w / 2; const uy = toScreenY(tileY(u.y)), ts = TILE * BT.zoom; const y = uy < H / 2 ? Math.min(H - h - 8, uy + ts + 10) : Math.max(28, uy - h - 12); const k = Math.min(1, q.t / .25); const yy = y + (1 - easeOut(k)) * -20; panel(x, yy, w, h, { title: 'LEVEL UP!' }); drawMon(u.fx.showNum || u.num, x + 26, yy + 40, {}); bigText('LV ' + e.level, x + 50, yy + 8, UI.gold, { outline: '#402000' }); const g = e.gains; const stats = [['HP', g.maxHp], ['ATK', g.atk], ['DEF', g.def], ['SPA', g.spa], ['SPD', g.spd], ['SPE', g.spe]]; const cw = Math.floor((w - 56) / 3); stats.forEach((s, i) => { const sx = x + 50 + (i % 3) * cw, sy = yy + 24 + Math.floor(i / 3) * 12; const showAt = .3 + i * .12; if (q.t > showAt) { text(s[0], sx, sy, UI.muted); text((s[1] >= 0 ? '+' : '') + s[1], sx + 20, sy, s[1] > 0 ? UI.green : UI.ink); } }); if (q.t > 1.1) { const nm = u.moves.map(m => m.name); let s = 'Moves: ' + nm.join(', '); while (textWidth(s) > w - 12 && s.length > 8) s = s.slice(0, -1); text(s, x + 6, yy + 52, UI.ink); } }
+  if (e.type === 'evolve') { const k = q.t / q.dur; const msg = k < .5 ? 'What? ' + e.from.name + ' is evolving!' : e.from.name + ' evolved into ' + e.to.name + '!'; const w = Math.min(W - 12, Math.max(160, textWidth(msg) + 16)), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(msg, W / 2, y + 6, k < .5 ? UI.ink : UI.gold); if (k > .15 && k < .8 && Math.floor(q.t * 14) % 2) { ctx.globalAlpha = .25; rect(0, 0, W, H, '#ffffff'); ctx.globalAlpha = 1; } }
+  if (e.type === 'capture' && q.t > q.dur - .8 && e.ok) { const w = Math.min(150, W - 12), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(e.unit.name + ' was caught!', W / 2, y + 6, UI.gold); }
 }
 function drawBanner() {
   const b = BT.banner, W = VIEW.w, H = VIEW.h; const t = b.t; const dur = BT.fast ? .9 : 1.5;
@@ -654,35 +793,42 @@ function drawBanner() {
   // little party of icons running across
   const list = alive(b.team).slice(0, 6); list.forEach((u, i) => { const ux = x - 60 + i * 24 + (b.team === 0 ? 1 : -1) * (1 - k) * 50; ctx.globalAlpha = k; drawMon(u.num, ux, H / 2 + 44 + Math.round(Math.sin(t * 12 + i) * 2), { flip: b.team !== 0 }); ctx.globalAlpha = 1; });
 }
+// The unit sheet: two columns on wide screens (stats + evolution | traits + moves), one taller column on narrow ones.
+function sheetRect() { const W = VIEW.w, H = VIEW.h; const narrow = W < 250; const w = narrow ? W - 12 : Math.min(260, W - 12), h = narrow ? 178 : 118; return { x: W / 2 - w / 2, y: Math.max(12, H / 2 - h / 2), w, h, narrow }; }
 function drawUnitSheet(u) {
-  const W = VIEW.w, H = VIEW.h; const w = Math.min(260, W - 12), h = 118; const x = W / 2 - w / 2, y = H / 2 - h / 2; panel(x, y, w, h, { title: B.versus ? (u.team === 2 ? 'WILD POKÉMON' : teamName(u.team)) : u.team === 0 ? 'YOUR POKÉMON' : u.team === 2 ? 'WILD POKÉMON' : u.team === 3 ? 'ALLY' : 'ENEMY' });
-  portraitBg(x + 6, y + 8, 48, 40, u.team); drawMon(u.num, x + 30, y + 44, { flip: u.team !== 0, sy: 1 + Math.sin(BT.time * 4) * .03 });
-  text(u.name, x + 60, y + 8, UI.ink); textR('Lv' + u.level + (isHuman(u.team) ? '  ' + u.xp + '/100xp' : ''), x + w - 6, y + 8, UI.gold); if (u.boss) text('BOSS', x + 60 + textWidth(u.name) + 6, y + 8, UI.red);
+  const W = VIEW.w; const r = sheetRect(), { x, y, w, h, narrow } = r; hudPanel(x, y, w, h, { title: B.versus ? (u.team === 2 ? 'WILD POKÉMON' : teamName(u.team)) : u.team === 0 ? 'YOUR POKÉMON' : u.team === 2 ? 'WILD POKÉMON' : u.team === 3 ? 'ALLY' : 'ENEMY' });
+  portraitBg(x + 6, y + 8, 48, 40, u.team); drawMon(u.num, x + 30, y + 44, { flip: u.team !== 0, sy: 1 + Math.sin(BT.time * 4) * .03 }); teamGlyph(x + 9, y + 11, u.team, teamColorL(u.team));
+  text(u.name, x + 60, y + 8, UI.ink); textR('Lv' + u.level + (isHuman(u.team) && !narrow ? '  ' + u.xp + '/100xp' : ''), x + w - 6, y + 8, UI.gold); if (u.boss) text('BOSS', x + 60 + textWidth(u.name) + 6, y + 8, UI.red);
   u.types.forEach((t, i) => typeBadge(t, x + 60 + i * 26, y + 18, 24)); if (u.status) statusBadge(u.status, x + w - 22, y + 18);
   hpBar(x + 60, y + 30, w - 66, u.hp, u.maxHp); text('HP ' + u.hp + '/' + u.maxHp, x + 60, y + 37, UI.ink);
-  const stats = [['ATK', u.atk], ['DEF', u.def], ['SPA', u.spa], ['SPD', u.spd], ['SPE', u.spe], ['MOV', effMov(u)]]; stats.forEach((s, i) => { const sx = x + 6 + (i % 3) * 44, sy = y + 54 + Math.floor(i / 3) * 10; text(s[0], sx, sy, UI.muted); textR(String(s[1]), sx + 38, sy, UI.ink); });
-  const traits = []; if (u.fly) traits.push('FLIES'); if (u.swim) traits.push('SWIMS'); if (u.climb) traits.push('CLIMBS'); if (u.forester) traits.push('WOODS'); text(traits.join(' · '), x + 140, y + 54, UI.green);
-  text('Moves', x + 140, y + 64, UI.muted); u.moves.slice(0, 4).forEach((m, i) => { typeBadge(m.type, x + 140, y + 73 + i * 10, 24); text(m.name + ' ' + m.pow + (m.rng[1] > 1 ? ' R' + m.rng[0] + '-' + m.rng[1] : ''), x + 169, y + 74 + i * 10, UI.ink); });
-  const ev = u.dex.evos.length && isHuman(u.team) ? 'Evolves at Lv' + Math.min(...u.dex.evos.map(e => e[1])) : ''; text(ev, x + 6, y + 76, '#98d8f8');
+  const stats = [['ATK', u.atk], ['DEF', u.def], ['SPA', u.spa], ['SPD', u.spd], ['SPE', u.spe], ['MOV', effMov(u)]]; const cw = narrow ? Math.floor((w - 12) / 3) : 44; stats.forEach((s, i) => { const sx = x + 6 + (i % 3) * cw, sy = y + 54 + Math.floor(i / 3) * 10; text(s[0], sx, sy, UI.muted); textR(String(s[1]), sx + cw - 6, sy, UI.ink); });
+  const traits = []; if (u.fly) traits.push('FLIES'); if (u.swim) traits.push('SWIMS'); if (u.climb) traits.push('CLIMBS'); if (u.forester) traits.push('WOODS');
+  const ev = u.dex.evos.length && isHuman(u.team) ? 'Evolves at Lv' + Math.min(...u.dex.evos.map(e => e[1])) : '';
+  const mx = narrow ? x + 6 : x + 140, my = narrow ? y + 88 : y + 54;
+  text(traits.join(' · '), mx, my, UI.green); if (narrow && ev) textR(ev, x + w - 6, my, '#98d8f8'); else if (ev) text(ev, x + 6, y + 76, '#98d8f8');
+  text('Moves', mx, my + 10, UI.muted); u.moves.slice(0, 4).forEach((m, i) => { typeBadge(m.type, mx, my + 19 + i * 10, 24); text(m.name + ' ' + m.pow + (m.rng[1] > 1 ? ' R' + m.rng[0] + '-' + m.rng[1] : ''), mx + 29, my + 20 + i * 10, UI.ink); });
   if (u.recharge && !u.boss) text('RECHARGING', x + 60 + textWidth(u.name) + 6, y + 8, RECHARGE_COL);
   // type matchup hints
   const weak = TYPES.filter(t => effRaw(t, u.types) >= 2).slice(0, 4), res = TYPES.filter(t => effRaw(t, u.types) < 1).slice(0, 4);
-  text('Weak:', x + 6, y + 88, UI.muted); weak.forEach((t, i) => typeBadge(t, x + 36 + i * 25, y + 87, 24)); text('Resist:', x + 6, y + 99, UI.muted); res.forEach((t, i) => typeBadge(t, x + 36 + i * 25, y + 98, 24));
+  const wy = narrow ? y + 150 : y + 88; text('Weak:', x + 6, wy, UI.muted); weak.forEach((t, i) => typeBadge(t, x + 36 + i * 25, wy - 1, 24)); text('Resist:', x + 6, wy + 11, UI.muted); res.forEach((t, i) => typeBadge(t, x + 36 + i * 25, wy + 10, 24));
   textC('◂ ▸ browse  ·  X close', W / 2, y + h + 4, UI.muted, { outline: UI.shadow });
 }
+const HELP_PAGES = [
+  ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back. Mouse: hover + click; right click or an empty tile opens the menu. Touch: tap to move the cursor, tap again to confirm.', 'Q/E: next unit · C: unit info / switch move · F: fast · +/−: zoom · M: mute · H: help. Drag or wheel to pan.', 'Attack scene: any key speeds it up, X skips. The menu switches between full, quick and map-only battles.'],
+  ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch, use the Bag or Wait. Blue = move, red = attack. Greyed units have acted.', 'Defenders counter if you are in their move range and still standing. Speed 8+ higher = you strike twice (×2). The forecast lists the strikes in order; a bracketed one only happens if an earlier strike misses.', 'Terrain gives DEF% and AVO. Poké Centers heal 30%/turn and cure. Danger: red = foe reach, yellow = wild reach. Hyper Beam: no counter after it, next turn recharging.'],
+  ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67. STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV, Frozen skips turns and crits are guaranteed on it.', 'Wild Pokémon (dashed ring) can be caught when weak: stand next to them, choose Catch and throw a ball. Trainer Pokémon (spiked ring) cannot be stolen. Level ups can evolve!'],
+];
+function helpRect() { const W = VIEW.w, H = VIEW.h; const w = Math.min(280, W - 12); const lines = helpLines(BT.helpPage, w - 16); const h = Math.min(H - 12, 34 + lines.length * 10); return { x: W / 2 - w / 2, y: Math.max(6, H / 2 - h / 2), w, h, lines }; }
+function helpLines(page, width) { const p = HELP_PAGES[page]; const out = []; p.slice(1).forEach((para, i) => { if (i) out.push(''); out.push(...wrap(para, width)); }); return out; }
 function drawHelp() {
-  const W = VIEW.w, H = VIEW.h; const w = Math.min(280, W - 12), h = 124; const x = W / 2 - w / 2, y = H / 2 - h / 2; panel(x, y, w, h, { title: 'HELP ' + (BT.helpPage + 1) + '/3' });
-  const pages = [
-    ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back', 'Mouse: hover + click. Right click or empty tile: menu', 'Touch: tap to move the cursor, tap again to confirm', 'Q/E: next unit · C: unit info / switch move · F: fast', 'Drag or wheel to pan · M: mute · H: this help', 'Attack scene: any key speeds it up, X skips. The menu', 'switches between full, quick and map-only battles.'],
-    ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch,', 'use the Bag or Wait. Blue = move, red = attack.', 'Defenders counter if you are in their move range and', 'still standing. Speed 8+ higher = you strike twice (×2).', 'Terrain gives DEF% and AVO. Poké Centers heal 30%/turn', 'and cure. Danger: red = foe reach, yellow = wild reach.', 'Hyper Beam: no counter after it, next turn recharging.'],
-    ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67.', 'STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV,', 'Frozen skips turns and crits are guaranteed on it.', 'Wild (yellow) Pokémon can be caught when weak: stand', 'next to them, choose Catch and throw a ball. Trainer', 'Pokémon (red) cannot be stolen. Level ups can evolve!'],
-  ];
-  const p = pages[BT.helpPage]; text(p[0], x + 8, y + 8, UI.gold); p.slice(1).forEach((l, i) => text(l, x + 8, y + 20 + i * 11, UI.ink)); textC('click / OK: next page', W / 2, y + h - 12, UI.muted);
+  const W = VIEW.w; const r = helpRect(); hudPanel(r.x, r.y, r.w, r.h, { title: 'HELP ' + (BT.helpPage + 1) + '/' + HELP_PAGES.length });
+  text(HELP_PAGES[BT.helpPage][0], r.x + 8, r.y + 8, UI.gold); r.lines.forEach((l, i) => { if (r.y + 20 + i * 10 < r.y + r.h - 14) text(l, r.x + 8, r.y + 20 + i * 10, UI.ink); });
+  textC((VIEW.touch ? 'tap' : 'click / OK') + ': next page  ·  X: close', W / 2, r.y + r.h - 11, UI.muted);
 }
 function drawHandoff() {
   const W = VIEW.w, H = VIEW.h, h = BT.handoff; const t = h.team; const k = Math.min(1, h.t / .3); ctx.globalAlpha = .78 * k; rect(0, 0, W, H, '#05070f'); ctx.globalAlpha = 1;
-  const col = teamColor(t); const y = H / 2 - 52 + (1 - easeOut(k)) * 20; ctx.globalAlpha = k;
-  panel(W / 2 - 112, y, 224, 96, { fill: t === 0 ? '#17264a' : '#3a1a22', border: col });
+  const col = teamColor(t); const y = H / 2 - 52 + (1 - easeOut(k)) * 20; ctx.globalAlpha = k; const w = Math.min(224, W - 12);
+  panel(W / 2 - w / 2, y, w, 96, { fill: t === 0 ? '#17264a' : '#3a1a22', border: col });
   ctx.save(); ctx.translate(W / 2, y + 12); ctx.scale(2, 2); bigC(teamName(t), 0, 0, teamColorL(t), { outline: '#000' }); ctx.restore();
   textC('Turn ' + B.turn + (B.map.turnLimit ? ' / ' + B.map.turnLimit : '') + '  ·  ' + alive(t).length + ' Pokémon ready', W / 2, y + 36, UI.ink);
   const list = alive(t).slice(0, 6); list.forEach((u, i) => drawMon(u.num, W / 2 - (list.length - 1) * 12 + i * 24, y + 78 + Math.round(Math.sin(BT.time * 8 + i) * 1), { flip: t === 1 }));
@@ -691,11 +837,11 @@ function drawHandoff() {
 function drawEndScreen() {
   const W = VIEW.w, H = VIEW.h; const k = Math.min(1, BT.endTimer / .6); const vs = B.versus; const vt = B.result === 'p1' ? 0 : B.result === 'p2' ? 1 : -1; const win = vs ? vt >= 0 : B.result === 'win';
   ctx.globalAlpha = .6 * k; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
-  const y = H / 2 - 30 + (1 - easeOut(k)) * -30; panel(W / 2 - 100, y, 200, 60, { fill: vs ? (vt === 0 ? '#17264a' : vt === 1 ? '#3a1a22' : '#2a2a3a') : win ? '#1c3a2a' : '#3a1c1c', border: vs && vt >= 0 ? teamColor(vt) : UI.border });
-  if (vs) { bigC(vt < 0 ? 'DRAW' : teamName(vt) + ' WINS!', W / 2, y + 10, vt < 0 ? UI.muted : teamColorL(vt), { outline: '#000' }); textC('Turns: ' + B.turn + '   KOs: ' + B.kills, W / 2, y + 32, UI.ink); textC(vt < 0 ? 'Everyone fainted at once.' : 'The arena falls silent.', W / 2, y + 44, UI.muted); if (BT.endTimer > 1.2) textC(VIEW.touch ? 'tap to continue' : 'press OK', W / 2, y + 66, UI.muted, { outline: UI.shadow }); if (win && k >= 1 && Math.random() < .25) spawnParts(vrnd() * W + CAM.x, CAM.y - 5, 1, [teamColor(vt), teamColorL(vt), '#ffd24a', '#ffffff'], { speed: 10, vy: 40, life: 2.5, grav: 20, size: 3 }); return; }
+  const w = Math.min(200, W - 12), x = W / 2 - w / 2; const y = H / 2 - 30 + (1 - easeOut(k)) * -30; panel(x, y, w, 60, { fill: vs ? (vt === 0 ? '#17264a' : vt === 1 ? '#3a1a22' : '#2a2a3a') : win ? '#1c3a2a' : '#3a1c1c', border: vs && vt >= 0 ? teamColor(vt) : UI.border });
+  if (vs) { bigC(vt < 0 ? 'DRAW' : teamName(vt) + ' WINS!', W / 2, y + 10, vt < 0 ? UI.muted : teamColorL(vt), { outline: '#000' }); textC('Turns: ' + B.turn + '   KOs: ' + B.kills, W / 2, y + 32, UI.ink); textC(vt < 0 ? 'Everyone fainted at once.' : 'The arena falls silent.', W / 2, y + 44, UI.muted); if (BT.endTimer > 1.2) textC(VIEW.touch ? 'tap to continue' : 'press OK', W / 2, y + 66, UI.muted, { outline: UI.shadow }); if (win && k >= 1 && Math.random() < .25) spawnParts(vrnd() * bvW() + CAM.x, CAM.y - 5, 1, [teamColor(vt), teamColorL(vt), '#ffd24a', '#ffffff'], { speed: 10, vy: 40, life: 2.5, grav: 20, size: 3 }); return; }
   bigC(win ? 'VICTORY!' : B.result === 'retreat' ? 'RETREAT' : 'DEFEAT...', W / 2, y + 10, win ? UI.gold : '#ff8080', { outline: '#000' });
-  if (win) { text('Turns: ' + B.turn + '   KOs: ' + B.kills + '   Caught: ' + B.captured.length, W / 2 - 90, y + 32, UI.ink); if (B.turn <= (B.map.par || 8)) textC('★ Speedy! Under par ' + (B.map.par || 8), W / 2, y + 44, UI.gold); else textC('Par: ' + (B.map.par || 8) + ' turns', W / 2, y + 44, UI.muted); }
-  else textC(B.result === 'retreat' ? 'Your team runs back to the Poké Center.' : 'Everyone fainted. Try a different plan!', W / 2, y + 36, UI.ink);
+  if (win) { textC('Turns ' + B.turn + '  ·  KOs ' + B.kills + '  ·  Caught ' + B.captured.length, W / 2, y + 32, UI.ink); if (B.turn <= (B.map.par || 8)) textC('★ Speedy! Under par ' + (B.map.par || 8), W / 2, y + 44, UI.gold); else textC('Par: ' + (B.map.par || 8) + ' turns', W / 2, y + 44, UI.muted); }
+  else wrap(B.result === 'retreat' ? 'Your team runs back to the Poké Center.' : 'Everyone fainted. Try a different plan!', w - 12).forEach((l, i) => textC(l, W / 2, y + 34 + i * 9, UI.ink));
   if (BT.endTimer > 1.2) textC(VIEW.touch ? 'tap to continue' : 'press OK', W / 2, y + 66, UI.muted, { outline: UI.shadow });
-  if (win && k >= 1 && Math.random() < .25) spawnParts(vrnd() * W + CAM.x, CAM.y - 5, 1, ['#ffd24a', '#5ee06a', '#3d7dff', '#ff5a5a', '#ffffff'], { speed: 10, vy: 40, life: 2.5, grav: 20, size: 3 });
+  if (win && k >= 1 && Math.random() < .25) spawnParts(vrnd() * bvW() + CAM.x, CAM.y - 5, 1, ['#ffd24a', '#5ee06a', '#3d7dff', '#ff5a5a', '#ffffff'], { speed: 10, vy: 40, life: 2.5, grav: 20, size: 3 });
 }

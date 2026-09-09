@@ -328,15 +328,117 @@ test('duel beats for a miss, an immune hit, drain and a lethal counter; sides pu
   assert.strictEqual(g.duelFamily(T.G('MOVES').Tackle), 'contact'); assert.strictEqual(g.duelFamily(T.G('MOVES')['Ice Shard']), 'contact'); assert.strictEqual(g.duelFamily(T.G('MOVES').Ember), 'fire'); assert.strictEqual(g.duelFamily(T.G('MOVES')['Hyper Beam']), 'neutral');
 });
 
-test('duel layout keeps panels, terrain strips and 96px sprites on screen on desktop and narrow portrait', T => {
+const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+test('duel layout keeps panels, terrain strips and 96px sprites on screen and apart, on desktop, tablets and phones', T => {
   const { g, G } = T; arena(T); const a = place(T, 25, 20, 0, 1, 1), d = place(T, 79, 20, 1, 2, 1); const q = { sides: g.duelSides(a, d) };
-  for (const [w, h] of [[480, 270], [390, 844], [300, 600], [320, 480], [1024, 600]]) {
-    G('VIEW.w = ' + w + '; VIEW.h = ' + h); const L = g.duelLayout(q); const pa = L.panels[a.id], pd = L.panels[d.id];
-    for (const p of [pa, pd]) { assert(p.x >= 0 && p.x + p.w <= w, w + 'x' + h + ': panel inside'); assert(p.w >= 120, 'panel wide enough for name, level and HP'); assert(p.y + p.h + 2 + L.TH <= L.top, 'terrain strip above the field'); }
-    if (!L.stacked) assert(pa.x + pa.w < pd.x, 'side-by-side panels do not overlap'); else assert(pa.y + pa.h + L.TH < pd.y, 'stacked panels do not overlap');
-    for (const id of [a.id, d.id]) { const p = L.pos[id]; assert(p.x - 48 >= 0 && p.x + 48 <= w, w + 'x' + h + ': sprite inside'); assert(p.y - 96 >= L.top, 'sprite below the panels'); assert(p.y <= h - 20, 'ground above the hint line'); }
-    assert(L.pos[a.id].x + 48 <= L.pos[d.id].x - 48 + 8, 'sprites do not overlap at rest');
+  for (const [w, h] of [[480, 270], [640, 360], [390, 844], [300, 600], [320, 480], [1024, 600], [195, 422], [180, 400], [207, 448], [256, 341]]) {
+    G('VIEW.w = ' + w + '; VIEW.h = ' + h); const L = g.duelLayout(q); const pa = L.panels[a.id], pd = L.panels[d.id]; const tag = w + 'x' + h + ': ';
+    const blocks = [pa, pd].map(p => ({ x: p.x, y: p.y, w: p.w, h: p.h + 2 + L.TH })); // panel plus its terrain strip
+    for (const p of blocks) { assert(p.x >= 0 && p.x + p.w <= w && p.y >= 0 && p.y + p.h <= h, tag + 'panel and strip inside'); assert(p.w >= 120, 'panel wide enough for name, level and HP'); }
+    assert(!overlaps(blocks[0], blocks[1]), tag + 'panels do not overlap');
+    const sprites = [a.id, d.id].map(id => ({ x: L.pos[id].x - 48, y: L.pos[id].y - 96, w: 96, h: 98 }));
+    for (const s of sprites) { assert(s.x >= 0 && s.x + s.w <= w, tag + 'sprite inside'); assert(s.y >= L.top, tag + 'sprite below the top panel'); assert(s.y + s.h <= L.bottom + 8, tag + 'sprite above the bottom panel / hint'); for (const p of blocks) assert(!overlaps(s, p), tag + 'sprite clear of the panels'); }
+    assert(L.pos[a.id].x + 48 <= L.pos[d.id].x - 48 + (w < 200 ? 18 : 8), tag + 'sprites do not overlap at rest (transparent margins allowed on the narrowest phones)');
+    assert(L.hintY >= 0 && L.hintY + 8 <= h, tag + 'hint inside'); for (const p of blocks) assert(L.hintY + 8 <= p.y || L.hintY >= p.y + p.h, tag + 'hint clear of the panels');
+    if (L.stacked) { assert(pd.y < L.pos[d.id].y - 96 && pa.y > L.pos[a.id].y, tag + 'portrait: foe panel above the field, own panel below it'); assert(L.gy >= h * .35 && L.gy <= h * .75, tag + 'portrait: the ground line sits in the middle band, not at the bottom (' + L.gy + ')'); }
   }
+});
+
+// Stage 3: scale rule, camera and zoom, pointer mapping, hover anchor, unit states, HUD layout and the forecast lines.
+const SIZES = [[480, 270], [640, 360], [195, 422], [180, 400], [207, 448], [213, 378], [341, 455], [1024, 600]];
+const inside = (r, w, h) => r.x >= 0 && r.y >= 0 && r.x + r.w <= w && r.y + r.h <= h;
+test('scale rule: portrait phones land at 176-260 logical pixels, landscape keeps ~480-640, never under 176', T => {
+  const { g } = T; const lw = (pw, ph, cw) => pw / g.pickScale(pw, ph, cw);
+  for (const [pw, ph, cw] of [[390, 844, 390], [360, 780, 360], [1170, 2532, 390], [750, 1334, 375], [1290, 2796, 430], [412, 915, 412]]) { const w = lw(pw, ph, cw); assert(w >= 176 && w <= 260, cw + 'css portrait phone → ' + w + ' logical px'); }
+  assert.strictEqual(g.pickScale(390, 844, 390), 2, 'the supervisor case: 390×844 at DPR 1 renders at ×2');
+  for (const [pw, ph, cw] of [[1280, 720, 1280], [960, 540, 960], [1920, 1080, 1920], [2560, 1440, 1280], [844, 390, 844]]) { const w = lw(pw, ph, cw); assert(w >= 400 && w <= 700, cw + 'css landscape → ' + w); }
+  for (const [pw, ph, cw] of [[320, 568, 320], [768, 1024, 768], [2048, 2732, 1024], [200, 300, 200]]) assert(lw(pw, ph, cw) >= 176, 'never narrower than 176: ' + cw);
+  assert(g.pickScale(768, 1024, 768) >= 2 && lw(768, 1024, 768) >= 300, 'tablet portrait keeps room');
+});
+
+test('camera: fits the board between the HUD bands, clamps big maps, keeps the cursor and both fighters in the safe area, zooms to fit', T => {
+  const { g, G, C } = T;
+  for (const [w, h] of SIZES) {
+    G('VIEW.w = ' + w + '; VIEW.h = ' + h); g.startBattle(C.CHAPTERS[5].map, [g.partyUnit(4, 20)], { pokeball: 1 }, { chapter: 5, seed: 7, defer: true }); const BT = G('BT'), CAM = G('CAM'); const tag = w + 'x' + h + ': ';
+    const B = T.B(), mw = B.map.w * 32, mh = B.map.h * 32; assert.strictEqual(B.map.w, 20);
+    const check = () => { const r = g.camRange(); assert(CAM.tx >= r.x[0] - 1e-9 && CAM.tx <= r.x[1] + 1e-9 && CAM.ty >= r.y[0] - 1e-9 && CAM.ty <= r.y[1] + 1e-9, tag + 'camera inside its range'); const R = g.hudReserve(); const bw = g.bvW(), bh = g.bvH();
+      if (mw <= bw) assert(Math.abs(CAM.tx - (mw - bw) / 2) < 1, tag + 'a board narrower than the view is centred'); else assert(CAM.tx >= 0 && CAM.tx <= mw - bw, tag + 'no void shown beside a wide board');
+      if (mh <= bh - R.top - R.bottom) { assert(-CAM.ty >= R.top - 1e-9, tag + 'board top clear of the turn card'); assert(-CAM.ty + mh <= bh - R.bottom + 1e-9, tag + 'board bottom clear of the bottom band'); } else assert(CAM.ty >= -R.top - 1e-9 && CAM.ty <= mh - bh + R.bottom + 1e-9, tag + 'a tall board pans at most to the HUD bands'); };
+    check(); const z0 = BT.zoom; if (w < 300) assert(z0 === .5 || g.boardFits(1), tag + 'phones start zoomed to fit'); else assert.strictEqual(z0, 1, tag + 'wide screens start at ×1');
+    // zoom out and back keeps the camera valid; zooming in is only offered when the board does not fit
+    if (g.canZoom()) { BT.zoom = 1; g.clampCam(); assert(g.setZoom(.5)); check(); assert(!g.setZoom(.5), 'already zoomed out'); assert(g.setZoom(1)); check(); } else assert(!g.setZoom(.5), tag + 'no zoom-out when the board fits');
+    BT.zoom = 1; g.clampCam(); CAM.x = CAM.tx; CAM.y = CAM.ty;
+    // the cursor at every corner of the board stays inside the view, clear of the HUD bands
+    for (const [cx, cy] of [[0, 0], [B.map.w - 1, 0], [0, B.map.h - 1], [B.map.w - 1, B.map.h - 1], [10, 5]]) { BT.cx = cx; BT.cy = cy; g.keepCursorVisible(); check(); const sx = cx * 32 - CAM.tx, sy = cy * 32 - CAM.ty; const R = g.hudReserve(); assert(sx >= 0 && sx + 32 <= g.bvW(), tag + 'cursor ' + cx + ',' + cy + ' inside horizontally'); assert(sy >= R.top - 1e-9 && sy + 32 <= g.bvH() - R.bottom + 1e-9, tag + 'cursor ' + cx + ',' + cy + ' clear of the HUD bands (' + sy + ')'); }
+    // both fighters of an exchange end up visible
+    const a = B.units.find(u => u.team === 0), d = B.units.find(u => u.team === 1); a.x = 1; a.y = 1; d.x = 3; d.y = 2; CAM.tx = 400; CAM.ty = 100; g.clampCam(); g.centerCamBetween(a, d); check(); assert(g.unitVisible(a) && g.unitVisible(d), tag + 'both fighters in view');
+    // a camera that already shows both does not move
+    const before = [CAM.tx, CAM.ty]; if (g.unitVisible(a) && g.unitVisible(d)) { g.centerCamBetween(a, d); assert.deepStrictEqual([CAM.tx, CAM.ty], before, tag + 'no camera jump when both are visible'); }
+  }
+  G('VIEW.w = 480; VIEW.h = 270');
+});
+
+test('pointer mapping round-trips at both zoom levels; a resting pointer never moves the cursor after an overlay closes', T => {
+  const { g, G } = T; G('VIEW.w = 480; VIEW.h = 270'); arena(T, Array(12).fill('.'.repeat(20))); const BT = G('BT'), CAM = G('CAM'), INPUT = G('INPUT');
+  const me = place(T, 25, 10, 0, 3, 3); place(T, 19, 5, 1, 9, 6);
+  for (const z of [1, .5]) { BT.zoom = z; CAM.tx = 37; CAM.ty = 21; CAM.x = CAM.tx; CAM.y = CAM.ty; for (const [x, y] of [[0, 0], [3, 3], [9, 6], [19, 11]]) { const sx = g.toScreenX(g.tileX(x)) + 2, sy = g.toScreenY(g.tileY(y)) + 2; const t = g.screenToTile(sx, sy); assert.deepStrictEqual([t.x, t.y], [x, y], 'zoom ' + z + ': tile ' + x + ',' + y + ' round trip'); } }
+  BT.zoom = 1; CAM.tx = CAM.ty = 0; CAM.x = CAM.y = 0; BT.mode = 'idle'; BT.cx = 0; BT.cy = 0; g.battleUpdate(1 / 60);
+  // the pointer rests over Pikachu while a menu closes: the cursor must not jump to it
+  const px = 3 * 32 + 16, py = 3 * 32 + 16; INPUT.x = px; INPUT.y = py; BT.mode = 'menu'; g.battleUpdate(1 / 60); BT.mode = 'idle'; g.battleUpdate(1 / 60);
+  g.battleInput({ type: 'move', x: px, y: py }); assert.deepStrictEqual([BT.cx, BT.cy], [0, 0], 'cursor stays put for a resting pointer');
+  g.battleInput({ type: 'move', x: px + 2, y: py + 1 }); assert.deepStrictEqual([BT.cx, BT.cy], [0, 0], 'a jitter of a couple of pixels is still resting');
+  g.battleInput({ type: 'move', x: px + 6, y: py }); assert.deepStrictEqual([BT.cx, BT.cy], [3, 3], 'a real movement drives the cursor again');
+  g.battleInput({ type: 'move', x: 9 * 32 + 5, y: 6 * 32 + 5 }); assert.deepStrictEqual([BT.cx, BT.cy], [9, 6], 'and keeps doing so');
+  // a wheel pans in screen pixels: the 640 px board scrolls at ×1, and at ×.5 it fits the 960 px view so the camera stays centred
+  CAM.tx = 0; g.battleInput({ type: 'wheel', dx: 10, dy: 0 }); assert.strictEqual(CAM.tx, 10, 'wheel pans at ×1');
+  BT.zoom = .5; g.clampCam(); const c0 = CAM.tx; g.battleInput({ type: 'wheel', dx: 10, dy: 0 }); assert.strictEqual(CAM.tx, c0, 'a board that fits does not scroll'); assert(c0 < 0, 'centred with void on both sides');
+  BT.zoom = 1; assert(me.hp > 0);
+});
+
+test('unit look: acted units grey whatever the mode, unacted never grey during animations, foes never grey, ready only on the controlling team', T => {
+  const { g, G } = T; arena(T); const BT = G('BT'); const B = T.B(); B.phase = 0;
+  const a = place(T, 25, 10, 0, 1, 1), b = place(T, 4, 10, 0, 2, 1), e = place(T, 19, 10, 1, 5, 5); a.acted = true; b.acted = false; e.acted = true;
+  BT.mode = 'idle'; assert.strictEqual(g.unitLook(a).grey, true); assert.strictEqual(g.unitLook(b).grey, false); assert.strictEqual(g.unitLook(b).ready, true); assert.strictEqual(g.unitLook(e).grey, false); assert.strictEqual(g.unitLook(e).ready, false);
+  BT.mode = 'anim'; BT.anim = { kind: 'move', unit: b, path: [] }; assert.strictEqual(g.unitLook(b).grey, false, 'the moving unit is not grey'); assert.strictEqual(g.unitLook(a).grey, true, 'an acted unit stays grey while another animates'); assert.strictEqual(g.unitLook(b).ready, false, 'nothing reads as ready mid-animation');
+  BT.anim = { kind: 'duel', att: a, def: e }; assert.strictEqual(g.unitLook(a).grey, false, 'a unit in the current exchange is drawn in colour even if flagged acted');
+  BT.mode = 'idle'; BT.anim = null; B.phase = 1; assert.strictEqual(g.unitLook(b).ready, false, 'not ready during the enemy phase'); assert.strictEqual(g.unitLook(b).grey, false); B.phase = 0;
+  assert.strictEqual(g.teamShape(0), 'ring'); assert.strictEqual(g.teamShape(1), 'spiked'); assert.strictEqual(g.teamShape(2), 'dashed'); assert.strictEqual(g.teamShape(3), 'barred');
+});
+
+test('HUD layout: buttons, cards, menus, forecast, sheet and help stay inside the view, apart, and touch-sized on phones', T => {
+  const { g, G, C } = T;
+  for (const [w, h] of SIZES) {
+    G('VIEW.w = ' + w + '; VIEW.h = ' + h); g.startBattle(C.CHAPTERS[0].map, [g.partyUnit(4, 5), g.partyUnit(25, 5)], { pokeball: 1, potion: 1 }, { chapter: 0, seed: 7, defer: true }); const BT = G('BT'), HUD = G('HUD'); const tag = w + 'x' + h + ': '; const narrow = w < 300;
+    const me = T.B().units.find(u => u.team === 0), foe = T.B().units.find(u => u.team !== 0); BT.cx = me.x; BT.cy = me.y;
+    const checkHits = mode => { g.battleDraw(); for (const r of HUD.hits) { assert(inside(r, w, h), tag + mode + ': button ' + r.label + ' inside'); if (narrow) assert(r.h >= 18, tag + mode + ': button ' + r.label + ' is ' + r.h + ' tall'); }
+      for (let i = 0; i < HUD.hits.length; i++) for (let j = i + 1; j < HUD.hits.length; j++) assert(!overlaps(HUD.hits[i], HUD.hits[j]), tag + mode + ': buttons ' + HUD.hits[i].label + ' / ' + HUD.hits[j].label + ' overlap');
+      for (const p of HUD.panels) assert(inside(p, w, h), tag + mode + ': panel inside'); for (const p of HUD.panels) for (const b of HUD.hits) assert(!overlaps(p, b), tag + mode + ': a panel covers button ' + b.label); return HUD.hits.map(b => b.label); };
+    BT.mode = 'idle'; const idle = checkHits('idle'); assert(idle.includes('END TURN') && idle.some(l => l.startsWith('DANGER')) && idle.includes('HELP'), tag + 'idle buttons present: ' + idle);
+    if (!g.boardFits(1)) assert(idle.some(l => l.startsWith('ZOOM')), tag + 'zoom offered when the board does not fit'); else assert(!idle.some(l => l.startsWith('ZOOM')), tag + 'no zoom button when the board fits');
+    // the turn card carries the ready count and does not collide with the buttons
+    const L = g.hudLayout(); assert(inside(L.top, w, h)); for (const b of HUD.hits) assert(!overlaps(L.top, b), tag + 'turn card clear of ' + b.label);
+    g.selectUnit(me); assert.strictEqual(BT.mode, 'move'); const mv = checkHits('move'); assert(mv.includes('BACK'), tag + 'BACK while moving');
+    g.openActionMenu(me); BT.mode = 'menu'; checkHits('menu'); const mr = g.menuRect(); assert(inside(mr, w, h), tag + 'action menu inside'); assert(mr.h >= BT.menu.items.length * (narrow ? 16 : 13), tag + 'menu rows tall enough');
+    // forecast: inside, clear of the buttons, with the move strip as its own hit area
+    foe.x = me.x + 1; foe.y = me.y; BT.targets = [foe]; BT.tIdx = 0; BT.moveIdx = 0; BT.mode = 'target'; checkHits('target'); const fr = g.forecastRect(); assert(inside(fr, w, h), tag + 'forecast inside'); for (const b of HUD.hits) assert(!overlaps(fr, b), tag + 'forecast clear of ' + b.label);
+    assert(g.forecastHit(fr.x + 5, fr.y + 5) && !g.moveSwitchHit(fr.x + 5, fr.y + 5) && g.moveSwitchHit(fr.x + 5, fr.y + fr.h - 6) && !g.forecastHit(fr.x + 5, fr.y + fr.h - 6), tag + 'forecast body and move strip are distinct hit areas');
+    if (narrow) assert(fr.w >= w - 10, tag + 'phone forecast spans the width'); else assert(fr.w >= 200, tag + 'desktop forecast is wide enough for two columns');
+    BT.mode = 'endmenu'; g.openEndMenu(); checkHits('endmenu'); assert(inside(g.menuRect(), w, h), tag + 'end menu inside');
+    BT.mode = 'unitinfo'; BT.info = foe; checkHits('unitinfo'); assert(inside(g.sheetRect(), w, h), tag + 'unit sheet inside');
+    BT.mode = 'help'; for (let p = 0; p < 3; p++) { BT.helpPage = p; checkHits('help'); const hr = g.helpRect(); assert(inside(hr, w, h), tag + 'help inside'); assert(hr.lines.every(l => g.textWidth(l) <= hr.w - 16), tag + 'help lines wrapped to the panel'); assert(20 + hr.lines.length * 10 <= hr.h - 12 + 10, tag + 'help page ' + p + ' fits its panel (' + hr.lines.length + ' lines)'); }
+    BT.mode = 'idle'; BT.helpPage = 0;
+  }
+  G('VIEW.w = 480; VIEW.h = 270');
+});
+
+test('forecast lines follow the ordered strikes: damage, odds, KO marks and the survive condition', T => {
+  const { g } = T; arena(T); fixedRoll(T, .5);
+  const att = place(T, 6, 30, 1, 1, 1), def = place(T, 10, 3, 2, 2, 1); const fc = g.forecast(att, def, move(att, 'Flamethrower'), att); const L = g.forecastLines(fc, att, def);
+  assert.strictEqual(L.length, 3, 'strike, counter, double'); assert.strictEqual(L[0].side, 'a'); assert.strictEqual(L[0].dmg, fc.a.dmg); assert.strictEqual(L[0].hit, fc.a.hit); assert.strictEqual(L[0].ko, true, 'the first strike is marked KO'); assert.strictEqual(L[0].cond, null);
+  assert.strictEqual(L[1].side, 'c'); assert.strictEqual(L[1].nominal, false); assert.strictEqual(L[1].cond, 'only if Caterpie survives'); assert.strictEqual(L[1].ko, false);
+  assert.strictEqual(L[2].side, 'a'); assert.strictEqual(L[2].nominal, false); assert.strictEqual(L[2].cond, 'only if Caterpie survives', 'the double is conditional too'); assert.strictEqual(L[2].ko, false);
+  arena(T); const p = place(T, 25, 20, 1, 1, 1), s = place(T, 79, 20, 0, 2, 1); const fc2 = g.forecast(p, s, move(p, 'Thunder Shock'), p); const L2 = g.forecastLines(fc2, p, s);
+  assert.strictEqual(L2.map(l => l.side).join(''), 'aca'); assert(L2.every(l => l.nominal && !l.ko), 'nobody drops'); assert.strictEqual(L2[1].counter, true); assert.strictEqual(L2[0].eff, '×1.5', 'Electric on Water is marked');
 });
 
 test('an attack runs through the board queue: duel, then XP on the board, then the unit is spent; map mode ends the same', T => {
