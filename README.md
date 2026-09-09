@@ -89,7 +89,7 @@ generator · `scenes.js` title, starter, prep, story, results · `main.js` flow,
 saves, loop.
 
 `tools/shot.sh "ch=3&silent&nosave"` takes a headless screenshot;
-`node tools/cdp.cjs smoke|mech|flow|enemy|skirmish|mobile|balance` drives the
+`node tools/cdp.cjs smoke|mech|flow|enemy|skirmish|mobile|balance|art` drives the
 game over the DevTools protocol and writes screenshots to `artifacts/`.
 
 Sprites: Pokémon Showdown. Pokémon © Nintendo / Game Freak / Creatures.

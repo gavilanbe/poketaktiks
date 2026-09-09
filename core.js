@@ -89,7 +89,9 @@ function panel(x, y, w, h, opt = {}) {
   rrect(x, y, w, h, border, 2);
   rrect(x + 1, y + 1, w - 2, h - 2, opt.border2 || UI.border2, 1);
   rrect(x + 2, y + 2, w - 4, h - 4, fill, 1);
-  if (!opt.flat) { hline(x + 3, y + 2, w - 6, shade(fill, .18)); vline(x + 2, y + 3, h - 6, shade(fill, .1)); hline(x + 3, y + h - 3, w - 6, shade(fill, -.3)); }
+  if (!opt.flat) { hline(x + 3, y + 2, w - 6, shade(fill, .18)); vline(x + 2, y + 3, h - 6, shade(fill, .1)); hline(x + 3, y + h - 3, w - 6, shade(fill, -.3)); vline(x + w - 3, y + 3, h - 6, shade(fill, -.2)); }
+  // corner rivets on the cream frame
+  for (const [cx, cy] of [[x + 1, y + 1], [x + w - 2, y + 1], [x + 1, y + h - 2], [x + w - 2, y + h - 2]]) px(cx, cy, opt.border2 || UI.border2);
   if (opt.title) { const tw = textWidth(opt.title) + 8; rrect(x + 6, y - 4, tw, 9, border, 1); rrect(x + 7, y - 3, tw - 2, 7, UI.panelDark, 0); text(opt.title, x + 10, y - 3, UI.gold); }
 }
 function bar(x, y, w, h, ratio, col, back = UI.hpBack) { rect(x, y, w, h, back); const f = Math.round(clamp(ratio, 0, 1) * (w - 2)); if (f > 0) { rect(x + 1, y + 1, f, h - 2, col); hline(x + 1, y + 1, f, shade(col, .35)); } outline(x, y, w, h, UI.shadow); }
@@ -114,7 +116,11 @@ function monIcon(num, flip = false, tint = null) {
     const sx = (num % 12) * 40, sy = Math.floor(num / 12) * 30;
     if (flip) { g.translate(40, 0); g.scale(-1, 1); }
     g.drawImage(SPR.sheet, sx, sy, 40, 30, 0, 0, 40, 30);
-    if (tint) { g.globalCompositeOperation = 'source-atop'; g.fillStyle = tint; g.fillRect(-40, 0, 80, 30); }
+    if (tint === 'grey') { // desaturated + slightly darkened copy for units that already acted (blend modes: works from file://)
+      g.globalCompositeOperation = 'saturation'; g.fillStyle = '#808080'; g.fillRect(-40, 0, 80, 30);
+      g.globalCompositeOperation = 'destination-in'; g.drawImage(SPR.sheet, sx, sy, 40, 30, 0, 0, 40, 30);
+      g.globalCompositeOperation = 'source-atop'; g.fillStyle = 'rgba(10,12,30,.35)'; g.fillRect(-40, 0, 80, 30); }
+    else if (tint) { g.globalCompositeOperation = 'source-atop'; g.fillStyle = tint; g.fillRect(-40, 0, 80, 30); }
   } else { g.fillStyle = tint || '#c0c0c0'; g.fillRect(12, 6, 16, 18); }
   SPR.cache[key] = c; return c;
 }

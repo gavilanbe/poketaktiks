@@ -1,5 +1,5 @@
 // Headless test harness: node tools/cdp.cjs <script> — drives index.html over the Chrome DevTools Protocol,
-// logs console errors and saves screenshots to artifacts/. Scripts: smoke, flow, enemy, mobile, skirmish, full.
+// logs console errors and saves screenshots to artifacts/. Scripts: smoke, flow, enemy, mobile, skirmish, full, art.
 const { spawn } = require('child_process');
 const http = require('http');
 const WebSocket = require('/Users/gavilanbe/gavilanbe/page/node_modules/ws');
@@ -113,6 +113,34 @@ async function main() {
 
     if (script === 'trace') { const ch = process.argv[3] || '4'; await nav('ch=' + ch + '&silent&nosave&seed=1'); await waitMode('idle', 6000); await ev('__pk.simBattle(30, true)'); out.push(await ev('__pk.B.simLog.join("\\n")')); }
     if (script === 'sim') { for (let ch = 1; ch <= 8; ch++) { const res = []; for (const seed of [1, 2, 3, 4, 5]) { await nav('ch=' + ch + '&silent&nosave&seed=' + seed); await waitMode('idle', 6000); const r = await send('Runtime.evaluate', { expression: 'JSON.stringify(__pk.simBattle(30, true))', returnByValue: true }); const v = r.result && r.result.result ? JSON.parse(r.result.result.value) : { result: '?' }; res.push((v.result || '-')[0] + v.turn + ' p' + v.p + 'e' + v.e); } out.push('ch' + ch + ': ' + res.join('  ')); } }
+    if (script === 'art') {
+      // art review: arrow with corners, danger zone, typed hit effects, KO, and clean chapter views
+      await nav('ch=1&silent&nosave&seed=3'); await waitMode('idle', 6000);
+      await tapTile(1, 3); await waitMode('move', 3000);
+      await ev('__pk.BT.path=[{x:1,y:3},{x:2,y:3},{x:3,y:3},{x:3,y:4},{x:4,y:4},{x:4,y:5},{x:5,y:5}]'); await sleep(150); await shot('art-arrow');
+      { const [ax, ay] = await tileCenter(3, 4); const r = await send('Page.captureScreenshot', { format: 'png', clip: { x: ax - 170, y: ay - 120, width: 340, height: 240, scale: 3 } }); fs.writeFileSync(path.join(ROOT, 'artifacts', 'art-arrow-zoom.png'), Buffer.from(r.result.data, 'base64')); }
+      { const r = await send('Page.captureScreenshot', { format: 'png', clip: { x: 160, y: 60, width: 420, height: 300, scale: 3 } }); fs.writeFileSync(path.join(ROOT, 'artifacts', 'art-tiles-zoom.png'), Buffer.from(r.result.data, 'base64')); }
+      await key('x', 'KeyX'); await waitMode('idle', 3000); await ev('__pk.BT.showDanger=true'); await sleep(150); await shot('art-danger'); await ev('__pk.BT.showDanger=false');
+      const strike = async (name, ux, uy, tx, ty, type, tag, ko) => {
+        await ev(`(function(){const u=__pk.B.units.find(u=>u.name==="${name}"); u.x=${ux}; u.y=${uy}; u.acted=false; u.moved=false; u.hp=u.maxHp; ${type ? `u.moves=[Object.assign({}, u.moves[0], {type:"${type}", name:"${type} Test", rng:[1,2], acc:100})];` : ''} const t=__pk.B.units.find(v=>v.x===${tx}&&v.y===${ty}); if(t){t.hp=${ko ? 1 : 't.maxHp'};} __pk.BT.cx=${ux}; __pk.BT.cy=${uy}; __pk.CAM.tx=__pk.CAM.x; })()`);
+        await tapTile(ux, uy); await waitMode('move', 3000); await tapTile(tx, ty); const ok = await waitMode('target', 3000); if (!ok) { out.push('no target for ' + tag); await key('x', 'KeyX'); await key('x', 'KeyX'); return; }
+        const [cx, cy] = await tileCenter(tx, ty); const zs = async n => { const r = await send('Page.captureScreenshot', { format: 'png', clip: { x: cx - 110, y: cy - 90, width: 220, height: 150, scale: 3 } }); fs.writeFileSync(path.join(ROOT, 'artifacts', n + '.png'), Buffer.from(r.result.data, 'base64')); };
+        await key('z', 'KeyZ'); await sleep(190); await zs(tag + '-1'); await sleep(110); await zs(tag + '-2'); await sleep(130); await zs(tag + '-3'); if (ko) { await sleep(500); await zs(tag + '-4'); }
+        await waitMode('idle', 15000);
+      };
+      await strike('Charmander', 7, 3, 8, 3, null, 'art-fire');
+      await strike('Squirtle', 11, 2, 12, 2, null, 'art-water');
+      await strike('Bulbasaur', 13, 5, 13, 4, null, 'art-grass');
+      await strike('Charmander', 7, 3, 8, 3, 'Electric', 'art-electric');
+      await strike('Squirtle', 11, 2, 12, 2, 'Psychic', 'art-psychic');
+      await strike('Bulbasaur', 13, 5, 13, 4, 'Rock', 'art-rock');
+      await strike('Charmander', 7, 3, 8, 3, 'Ice', 'art-ice');
+      await strike('Squirtle', 11, 2, 12, 2, 'Poison', 'art-poison');
+      await strike('Bulbasaur', 13, 5, 13, 4, 'Normal', 'art-normal', true);
+      out.push('mode after strikes: ' + await ev('__pk.BT.mode'));
+      for (const c of [2, 3, 4, 5, 6, 7, 8]) { await nav('ch=' + c + '&silent&nosave&seed=3'); await waitMode('idle', 9000); await sleep(200); await shot('art-ch' + c); const r = await send('Page.captureScreenshot', { format: 'png', clip: { x: 80, y: 60, width: 420, height: 300, scale: 3 } }); fs.writeFileSync(path.join(ROOT, 'artifacts', 'art-ch' + c + '-zoom.png'), Buffer.from(r.result.data, 'base64')); }
+      await nav('skirmish=7&silent&nosave'); await waitMode('idle', 9000); await sleep(200); await shot('art-skirmish');
+    }
     out.push('--- console ---'); out.push(...logs.slice(0, 40));
   } finally { chrome.kill(); }
   console.log(out.join('\n'));
