@@ -2552,12 +2552,21 @@ function drawForecast() {
 }
 // The skill card: what the chosen skill does to the highlighted target, with the exact numbers, and how to confirm or back out.
 function drawSkillCard() {
-  const u = BT.sel, sk = u && u.skill, t = BT.targets[BT.tIdx]; if (!sk || !t) return; const r = forecastRect(); hudPanel(r.x, r.y, r.w, 50, { title: sk.name.toUpperCase() });
+  const u = BT.sel, sk = u && u.skill, t = BT.targets[BT.tIdx]; if (!sk || !t) return; const r = skillCardRect(); hudPanel(r.x, r.y, r.w, r.h, { title: sk.name.toUpperCase() });
   ctx.save(); ctx.beginPath(); ctx.rect(r.x + 6, r.y + 8, 34, 28); ctx.clip(); portraitBg(r.x + 6, r.y + 8, 34, 28, t.team); drawMon(t.num, r.x + 23, r.y + 35, { flip: t.team !== HT() }); ctx.restore(); teamGlyph(r.x + 8, r.y + 10, t.team, teamColorL(t.team));
   let name = (t === u ? 'itself' : t.name) + '  Lv' + t.level; while (textWidth(name) > r.w - 52 && name.length > 4) name = name.slice(0, -1); text(name, r.x + 46, r.y + 8, UI.ink);
-  const lines = wrap(skillPreview(u, sk, t), r.w - 52); lines.slice(0, 2).forEach((l, i) => text(l, r.x + 46, r.y + 18 + i * 9, i === 0 ? UI.green : UI.ink));
-  const cost = 'uses the action' + (sk.xp ? ' · +' + sk.xp + ' XP' : '') + (sk.cd ? ' · ' + cooldownText(sk) : ''); text(cost, r.x + 46, r.y + 37, UI.muted);
-  textC((VIEW.touch ? 'tap target: confirm' : 'OK: confirm') + '  ·  X: back', r.x + r.w / 2, r.y + 54, UI.muted, { outline: UI.shadow });
+  r.effect.forEach((l, i) => text(l, r.x + 46, r.y + 18 + i * 9, i === 0 ? UI.green : UI.ink));
+  // the cost footer spans the full width under the portrait, wrapped, never truncated
+  r.cost.forEach((l, i) => text(l, r.x + 6, r.y + 40 + i * 9, UI.muted));
+  textC((VIEW.touch ? 'tap target: confirm' : 'OK: confirm') + '  ·  X: back', r.x + r.w / 2, r.y + r.h + 4, UI.muted, { outline: UI.shadow });
+}
+// Skill card geometry: the forecast's slot, with the effect (two lines beside the portrait) and the wrapped cost footer
+// ("uses the action · +12 XP · every other turn") sized in, so nothing is clipped on a 172-px phone card.
+function skillCardRect() {
+  const u = BT.sel, sk = u && u.skill, t = BT.targets[BT.tIdx]; const r = forecastRect();
+  const effect = sk && t ? wrap(skillPreview(u, sk, t), r.w - 52).slice(0, 2) : [];
+  const cost = sk ? wrap('uses the action' + (sk.xp ? ' · +' + sk.xp + ' XP' : '') + (sk.cd ? ' · ' + cooldownText(sk) : ''), r.w - 12) : [];
+  return { x: r.x, y: r.y, w: r.w, h: 40 + cost.length * 9 + 4, effect, cost };
 }
 function drawCatchCard() {
   const t = BT.targets[BT.tIdx]; if (!t) return; const r = forecastRect(); hudPanel(r.x, r.y, r.w, 50, { title: 'CATCH' });

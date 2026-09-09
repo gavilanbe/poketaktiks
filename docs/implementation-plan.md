@@ -181,3 +181,13 @@ Checks: `node tools/model-tests.cjs` 42 passed (1 new): ten safe Braces leave Lv
 Supervisor browser QA (recorded, not run from this side): Chrome over HTTP at 1280×720, chapter 6 `nosave`: Ivysaur moved within range of the wild Voltorb, Root opened and confirmed, RT marker shown, Ivysaur greyed, READY 5/6; the card then read "next in 3 turns", which is finding 4 above. `text-check.cjs` reported no overflow on `d7cc14b`.
 
 Limits: no browser run from this side for the new fitter or the reordered sheet line (text hook only). The wider human/AI status-action parity audit stays queued for stage 6.
+
+#### Stage 4 review follow-up 2 (2026-09-09)
+
+Finding (supervisor's `skill-text-check.cjs`, reproduced on `d0ececf`): the skill card's cost footer `uses the action · +12 XP · every other turn` (184 px) started 46 px into a 172/187/220-px card and clipped at 180, 195 and 512 logical widths; the supervisor saw it cut after "every o" in the browser at 390×844 on a Root preview.
+
+Fix: `skillCardRect()` (battle.js) sizes the card: the effect keeps its two lines beside the portrait, the cost footer is wrapped across the full card width (`r.w - 12`) under the portrait, the panel grows to `40 + lines × 9 + 4`, and the confirm/back hint sits under the panel. Nothing is truncated; the card still occupies the forecast slot, so the camera reserve and the confirm (card body) / cancel (elsewhere, X) hit areas are unchanged.
+
+Checks: `node tools/model-tests.cjs` 43 passed (1 new): for Root, Mend and Brace at 180, 195 and 512 px, every rendered string inside the view and inside the card, the footer carrying "uses the action", the cadence and "+12 XP" (none for Brace) with every line fitting, the last footer line rendered, the hint below the panel, the card inside the view and clear of every button, a tap on the card confirming and applying the skill, X returning to the menu with nothing spent. Supervisor's `skill-text-check.cjs` now prints nothing. `node --check` on every module; `sh build.sh` rebuilt `index.html` and its script parses.
+
+Supervisor browser QA (recorded, not run from this side): Root checked on desktop 1280×720 and phone 390×844 over HTTP: target highlight, effect, RT marker, spent unit and READY count all correct; the clipped footer was the only skill-card defect observed. Not seen from this side after the fix.

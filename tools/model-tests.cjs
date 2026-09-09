@@ -802,6 +802,26 @@ test('review: Brace earns no XP, useSkill refuses illegal calls without mutating
   const tiny = g.fitForecastLine({ side: 'c', name: 'THUNDERBOLT', dmg: 12, ko: false, hit: 85, crit: 24, critKo: false, braced: false, eff: '', drain: 0, cond: 'only if Wigglytuff survives' }, 150); assert(/85%/.test(tiny.text) && /c(rit )?24%/.test(tiny.text) && /if (Wigglytuff )?alive/.test(tiny.text) && g.textWidth(tiny.text) <= 150, 'the fitter keeps odds and condition at 150 px: ' + tiny.text);
 });
 
+
+// Stage 4 review follow-up 2: the skill card's cost footer wraps across the card instead of clipping.
+test('skill card: Root/Mend/Brace text, panel and hint stay inside 180/195/512 widths, footer wrapped, confirm and cancel hit targets work', T0 => {
+  for (const w of [180, 195, 512]) for (const n of [1, 35, 74]) {
+    const T = loadGame(); const { g, G } = T; G('VIEW.w = ' + w + '; VIEW.h = 390'); arena(T); const BT = G('BT'), HUD = G('HUD'); T.B().phase = 0;
+    const u = place(T, n, 10, 0, 1, 1), t = place(T, 19, 10, n === 35 ? 0 : 1, 2, 1); t.hp = 5; BT.sel = u; BT.targets = [n === 74 ? u : t]; BT.tIdx = 0; BT.mode = 'skillTarget';
+    const boxes = textHook(T); g.battleDraw(); const all = boxes(); const tag = w + ' ' + u.name + ': '; const r = g.skillCardRect();
+    for (const b of all) assert(b.x >= 0 && b.x + b.w <= w && b.y >= 0 && b.y + b.h <= 390, tag + 'text inside the view: ' + b.text);
+    const card = all.filter(b => b.y >= r.y && b.y < r.y + r.h); for (const b of card) assert(b.x >= r.x + 2 && b.x + b.w <= r.x + r.w - 2, tag + 'text inside the card: ' + b.text);
+    const joined = r.cost.join(' '); assert(/uses the action/.test(joined), tag + 'cost present'); if (u.skill.cd) assert(/every other turn/.test(joined), tag + 'cadence present'); if (u.skill.xp) assert(/\+12 XP/.test(joined), tag + 'XP present'); else assert(!/XP/.test(joined), tag + 'Brace shows no XP');
+    assert(r.cost.every(l => g.textWidth(l) <= r.w - 12), tag + 'footer lines fit'); assert(all.some(b => b.text === r.cost[r.cost.length - 1]), tag + 'last footer line rendered');
+    const hint = all.find(b => /confirm/.test(b.text)); assert(hint && hint.y >= r.y + r.h, tag + 'hint below the card'); assert(inside(r, w, 390), tag + 'card inside'); for (const p of HUD.panels) assert(inside(p, w, 390), tag + 'panel inside'); for (const b of HUD.hits) assert(inside(b, w, 390) && !overlaps(r, b), tag + 'card clear of ' + b.label);
+    assert(r.h >= 40 + r.cost.length * 9, tag + 'panel tall enough for ' + r.cost.length + ' footer lines');
+    // pointer: a tap inside the card confirms, a tap on empty board cancels back to the menu
+    const before = JSON.stringify([u.cd, u.brace, t.hp, t.root]); g.pointerInput({ type: 'down', x: r.x + 5, y: r.y + 5, btn: 0 }); g.pointerInput({ type: 'up', x: r.x + 5, y: r.y + 5, btn: 0 }); assert.strictEqual(BT.mode, 'anim', tag + 'tap on the card confirms'); assert.notStrictEqual(JSON.stringify([u.cd, u.brace, t.hp, t.root]), before, tag + 'skill applied');
+    let k = 0; while (BT.mode === 'anim' && k++ < 2000) { g.battleUpdate(1 / 60); g.battleDraw(); } assert.strictEqual(u.acted, true);
+    u.acted = false; u.cd = 0; u.brace = 0; t.hp = 5; t.root = 0; BT.sel = u; g.openActionMenu(u); g.menuChoose('skill'); assert.strictEqual(BT.mode, 'skillTarget', tag + 'reopened'); g.keyInput('back'); assert.strictEqual(BT.mode, 'menu', tag + 'X cancels to the menu'); assert.strictEqual(u.cd, 0);
+  }
+});
+
 // ---------------------------------------------------------------- runner
 function run() {
   let failed = 0;
