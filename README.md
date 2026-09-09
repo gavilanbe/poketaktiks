@@ -49,6 +49,13 @@ Showdown mini-icon sheet, drawn straight from the sheet by dex number.
   level so nobody is left behind. No permadeath: fainted Pokémon come back.
 - **Objectives.** Rout, defeat the boss, seize the Gym, survive N turns.
   Reinforcements arrive on scripted turns. A par turn count earns a star.
+- **Versus.** Two trainers on one device. Snake-draft four Pokémon each from
+  a roster of 28, pick an arena seed, level and whether wild Pokémon roam the
+  middle, then take turns: a hand-off screen asks you to pass the controls
+  before each player phase. Arenas are mirror-symmetric with a Poké Center per
+  side; wild Pokémon you catch join your team on the spot. Last team standing
+  wins (30-turn limit, more survivors wins a timeout). Rematch, redraft or back
+  to the title from the results.
 - **Campaign:** Pallet Meadow → Viridian Forest → Mt. Moon → Nugget Bridge →
   Rocket Hideout → Power Plant (Zapdos) → Cinnabar Volcano (Moltres, survive)
   → Cerulean Cave (Mewtwo). **Skirmish:** value-noise random maps with a road,
@@ -85,11 +92,11 @@ Reduced-motion preference tones the particles and shake down.
 `data.js` types, moves, items, terrain, unit factory · `art.js` procedural
 tiles, cursor, arrow, particles · `model.js` pathfinding, combat, AI ·
 `battle.js` the board scene · `campaign.js` chapters and the skirmish
-generator · `scenes.js` title, starter, prep, story, results · `main.js` flow,
-saves, loop.
+generator · `scenes.js` title, starter, prep, story, results, versus draft · `main.js` flow,
+saves, loop. Deep links: `?ch=N`, `?skirmish=SEED`, `?versus=SEED[&auto]`.
 
 `tools/shot.sh "ch=3&silent&nosave"` takes a headless screenshot;
-`node tools/cdp.cjs smoke|mech|flow|enemy|skirmish|mobile|balance|art` drives the
+`node tools/cdp.cjs smoke|mech|flow|enemy|skirmish|mobile|balance|art|ui` drives the
 game over the DevTools protocol and writes screenshots to `artifacts/`.
 
 Sprites: Pokémon Showdown. Pokémon © Nintendo / Game Freak / Creatures.

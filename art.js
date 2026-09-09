@@ -528,3 +528,29 @@ function portraitBg(x, y, w, h, team) {
   rect(x, y, w, h, teamColorD(team)); ctx.globalAlpha = .18; ctx.fillStyle = '#ffffff'; for (let j = 0; j < h; j++) { const i0 = Math.max(0, w - 10 - j); ctx.fillRect(x + i0, y + j, Math.min(6, w - i0), 1); } ctx.globalAlpha = .35; ctx.fillStyle = '#000000'; for (let j = 0; j < h; j++) { const wdt = Math.max(0, 6 - j); if (wdt) ctx.fillRect(x, y + j, wdt, 1); } ctx.globalAlpha = 1;
   outline(x, y, w, h, shade(teamColorD(team), -.4)); hline(x + 1, y + 1, w - 2, shade(teamColorD(team), .25)); vline(x + 1, y + 1, h - 2, shade(teamColorD(team), .15));
 }
+
+// ---------------------------------------------------------------- UI icons (9×9 stamps)
+const ICONS = {
+  sword: ['......OO.', '.....OWWO', '....OWWO.', 'O..OWWO..', 'OO.OWO...', '.OOWO....', '..OOO....', '.OO.OO...', 'OO...O...'],
+  ball: ['..OOOOO..', '.ORRRRRO.', 'ORRHRRRRO', 'ORRRRRRRO', 'OOOOWOOOO', 'OWWWOWWWO', 'OWWWWWWWO', '.OWWWWWO.', '..OOOOO..'],
+  bag: ['...OOO...', '..O...O..', '.OOOOOOO.', '.OBBBBBO.', '.OBOOOBO.', '.OBBBBBO.', '.OBBBBBO.', '.OBBBBBO.', '.OOOOOOO.'],
+  wait: ['OOOOOOOOO', '.OWWWWWO.', '.OWWWWWO.', '..OWWWO..', '...OWO...', '..OW.WO..', '.OW...WO.', '.OWWWWWO.', 'OOOOOOOOO'],
+  flag: ['OO.......', 'OYYYYO...', 'OYYYYYYO.', 'OYYYYYYYO', 'OYYYYYYO.', 'OYYYYO...', 'OO.......', 'OO.......', 'OO.......'],
+  end: ['..OOOOO..', '.OWWWWWO.', 'OWO...OWO', 'OO.....OO', '........O', 'OO....OWO', 'OWO..OWO.', '.OWOOWO..', '..OOOO...'],
+  skull: ['..OOOOO..', '.OWWWWWO.', 'OWWWWWWWO', 'OWOWWWOWO', 'OWWWOWWWO', '.OWWWWWO.', '..OWOWO..', '..OWWWO..', '..OOOOO..'],
+  help: ['..OOOOO..', '.OWWWWWO.', 'OWWOOOWWO', 'OOO..OWWO', '....OWWO.', '...OWWO..', '...OWO...', '...OO....', '...OO....'],
+  note: ['....OOO..', '....OWWO.', '....OWOO.', '....OW...', '....OW...', '..OOOW...', '.OWWOW...', '.OWWWO...', '..OOO....'],
+  run: ['...OOO...', '..OWWWO..', '..OWWWO..', 'OOOOWOOOO', 'OWWOWOWWO', 'OOOOWOOOO', '..OWOWO..', '.OWO.OWO.', 'OOO...OOO'],
+  x: ['OO.....OO', 'OWO...OWO', '.OWO.OWO.', '..OWOWO..', '...OWO...', '..OWOWO..', '.OWO.OWO.', 'OWO...OWO', 'OO.....OO'],
+  play: ['OO.......', 'OWOO.....', 'OWWWOO...', 'OWWWWWOO.', 'OWWWWWWWO', 'OWWWWWOO.', 'OWWWOO...', 'OWOO.....', 'OO.......'],
+  map: ['OOOOOOOOO', 'OYYOGGOYO', 'OYYOGGOYO', 'OYYOGGOYO', 'OGGOYYOGO', 'OGGOYYOGO', 'OGGOYYOGO', 'OGGOYYOGO', 'OOOOOOOOO'],
+  dice: ['.OOOOOOO.', 'OWOWWWWWO', 'OWWWWWOWO', 'OWWWWWWWO', 'OWWWOWWWO', 'OWWWWWWWO', 'OWOWWWWWO', 'OWWWWWOWO', '.OOOOOOO.'],
+  vs: ['OO.....OO', 'OWO...OWO', '.OWO.OWO.', '..OWOWO..', '...OWO...', '..OWOWO..', '.OWOYOWO.', 'OWO.Y.OWO', 'OO..Y..OO'],
+  crown: ['O...O...O', 'OO.OYO.OO', 'OYOYYYOYO', 'OYYYYYYYO', 'OYYYYYYYO', '.OYYYYYO.', '.OOOOOOO.', '.OYYYYYO.', '.OOOOOOO.'],
+  book: ['.OOOOOOO.', 'OWWWOWWWO', 'OWLWOWLWO', 'OWWWOWWWO', 'OWLWOWLWO', 'OWWWOWWWO', 'OWLWOWLWO', 'OWWWOWWWO', '.OOOOOOO.'],
+};
+// Draw a UI icon; `col` overrides the main (W) colour.
+function iconAt(id, x, y, col) {
+  const rows = ICONS[id]; if (!rows) return;
+  stampAt(x, y, rows, { O: '#101828', W: col || '#f6f2e6', Y: UI.gold, R: '#ff5a5a', H: '#ffb0b0', B: '#c48a4a', G: '#6cbe4e', L: '#a6b0c8' });
+}

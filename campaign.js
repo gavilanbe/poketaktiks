@@ -262,3 +262,27 @@ function skirmishMap(seed, w = 16, h = 11, avgLevel = 12) {
   const items = []; for (let i = 0; i < 2; i++) { const s = spot(3); if (s) items.push({ x: s.x, y: s.y, item: pick(['potion', 'pokeball', 'greatball', 'candy', 'superpotion']) }); }
   return { name: 'Skirmish #' + (seed % 1000), seed, objective: { type: 'boss', bossName: 'the Rival' }, rows, deploy, units, items, par: 10, music: pick(['player', 'calm']) };
 }
+
+// ---------------------------------------------------------------- versus arenas
+// Mirror-symmetric arena for two trainers: the left half is generated with value noise and reflected.
+function versusMap(seed, w = 18, h = 11, opt = {}) {
+  const r = mulberry32(seed * 3 + 11); const noise = (x, y, s) => { const n = Math.sin((x * 12.9898 + y * 78.233 + s) * 43758.5453) * 1e4; return n - Math.floor(n); };
+  const half = Math.ceil(w / 2); const grid = []; const base = r() * 1000;
+  for (let y = 0; y < h; y++) { const row = []; for (let x = 0; x < half; x++) { let v = 0; for (let o = 1; o <= 3; o++) { const s = o * 2; const fx = x / s, fy = y / s; const x0 = Math.floor(fx), y0 = Math.floor(fy); const tx = fx - x0, ty = fy - y0; const a = noise(x0, y0, base + o), b = noise(x0 + 1, y0, base + o), c = noise(x0, y0 + 1, base + o), d = noise(x0 + 1, y0 + 1, base + o); v += lerp(lerp(a, b, tx), lerp(c, d, tx), ty) / o; } row.push(v / 1.83); } grid.push(row); }
+  const rows = []; const theme = Math.floor(r() * 3);
+  for (let y = 0; y < h; y++) { let s = ''; for (let x = 0; x < half; x++) { const v = grid[y][x]; let ch = '.'; if (x <= 1) ch = v > .6 ? 'T' : v > .5 ? 't' : '.'; else if (v < .3) ch = '~'; else if (v < .35) ch = 's'; else if (v > .74) ch = theme === 2 ? '^' : 'M'; else if (v > .63) ch = 'T'; else if (v > .53) ch = 't'; else if (r() < .07) ch = ','; s += ch; } const left = s.slice(0, Math.floor(w / 2)); const mid = w % 2 ? s[half - 1] : ''; rows.push(left + mid + left.split('').reverse().join('')); }
+  const ry = Math.floor(h / 2); rows[ry] = rows[ry].split('').map(c => c === '~' ? '=' : (c === 'M' || c === '^') ? '.' : '#').join('');
+  const put = (x, y, ch) => { rows[y] = rows[y].slice(0, x) + ch + rows[y].slice(x + 1); };
+  // a Poké Center for each side
+  const cy = ry - 2 >= 0 ? ry - 2 : ry + 2; put(3, cy, 'C'); put(w - 4, cy, 'C');
+  // deploy zones: the two outer columns, nearest the middle row first; P2 mirrors P1
+  const order = []; for (let y = 0; y < h; y++) for (let x = 0; x < 2; x++) order.push({ x, y }); order.sort((a, b) => Math.abs(a.y - ry) - Math.abs(b.y - ry) || a.x - b.x);
+  const deploy = []; for (const c of order) { if (deploy.length >= 6) break; if (!'.,t#'.includes(rows[c.y][c.x])) { put(c.x, c.y, '.'); put(w - 1 - c.x, c.y, '.'); } deploy.push(c); }
+  const deploy2 = deploy.map(c => ({ x: w - 1 - c.x, y: c.y }));
+  const units = [], items = []; const taken = new Set([...deploy, ...deploy2].map(d => key(d.x, d.y)));
+  const pool = DEX_LIST.filter(d => d.num < 144 && d.num !== 132 && d.num !== 143);
+  const spot = () => { for (let i = 0; i < 200; i++) { const x = 3 + Math.floor(r() * (half - 3)), y = Math.floor(r() * h); if ('.,t#TsM'.includes(rows[y][x]) && !taken.has(key(x, y)) && !taken.has(key(w - 1 - x, y))) { taken.add(key(x, y)); taken.add(key(w - 1 - x, y)); return { x, y }; } } return null; };
+  if (opt.wild !== false) for (let i = 0; i < 2; i++) { const s = spot(); if (!s) break; const d = pool[Math.floor(r() * pool.length)]; const lvl = Math.max(2, (opt.level || 20) - 3); units.push({ mon: d.num, level: lvl, x: s.x, y: s.y, team: 2, ai: 'aggro' }); if (s.x !== w - 1 - s.x) units.push({ mon: d.num, level: lvl, x: w - 1 - s.x, y: s.y, team: 2, ai: 'aggro' }); }
+  for (let i = 0; i < 2; i++) { const s = spot(); if (!s) break; const it = ['potion', 'pokeball', 'superpotion', 'greatball'][Math.floor(r() * 4)]; items.push({ x: s.x, y: s.y, item: it }); if (s.x !== w - 1 - s.x) items.push({ x: w - 1 - s.x, y: s.y, item: it }); }
+  return { name: 'Arena #' + (seed % 1000), seed, objective: { type: 'versus' }, rows, deploy, deploy2, units, items, par: 0, music: 'player', turnLimit: 30 };
+}

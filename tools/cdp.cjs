@@ -14,7 +14,7 @@ async function main() {
   const chrome = spawn(CHROME, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', `--remote-debugging-port=${PORT}`, `--window-size=${W},${H}`, '--user-data-dir=/tmp/pk-cdp-profile-' + PORT, 'about:blank'], { stdio: 'ignore' });
   const out = [];
   try {
-    let targets = null; for (let i = 0; i < 50 && !targets; i++) { await sleep(200); try { targets = await new Promise((res, rej) => http.get(`http://127.0.0.1:${PORT}/json`, r => { let d = ''; r.on('data', c => d += c); r.on('end', () => res(JSON.parse(d))); }).on('error', rej)); } catch (e) { } }
+    let targets = null; for (let i = 0; i < 200 && !targets; i++) { await sleep(200); try { targets = await new Promise((res, rej) => http.get(`http://127.0.0.1:${PORT}/json`, r => { let d = ''; r.on('data', c => d += c); r.on('end', () => res(JSON.parse(d))); }).on('error', rej)); } catch (e) { } }
     const page = targets.find(t => t.type === 'page'); const ws = new WebSocket(page.webSocketDebuggerUrl); await new Promise(r => ws.on('open', r));
     let id = 0; const pending = new Map(); const logs = [];
     ws.on('message', m => { const d = JSON.parse(m); if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); } else if (d.method === 'Runtime.consoleAPICalled') logs.push(d.params.args.map(a => a.value || a.description).join(' ')); else if (d.method === 'Runtime.exceptionThrown') logs.push('EXC ' + JSON.stringify(d.params.exceptionDetails.exception && d.params.exceptionDetails.exception.description || d.params.exceptionDetails.text)); });
@@ -75,7 +75,8 @@ async function main() {
       await key('z', 'KeyZ'); await waitScene('prep'); await shot('19-prep2');
     }
     if (script === 'skirmish' || script === 'full') { await nav('skirmish=7&silent&nosave'); await sleep(500); await shot('20-skirmish'); await key('z', 'KeyZ'); await waitScene('prep'); await key('e', 'KeyE'); await waitScene('card'); await waitScene('battle', 6000); await waitMode('idle', 6000); await shot('21-skirmish-battle'); out.push('skirmish units: ' + await ev('__pk.B.units.length')); }
-    if (script === 'mobile') { await nav('ch=2&silent&nosave'); await waitMode('idle', 6000); await shot('22-mobile'); const u = JSON.parse(await ev('JSON.stringify(__pk.B.units.filter(u=>u.team===0).map(u=>[u.x,u.y]))')); await tapTile(u[0][0], u[0][1]); await sleep(200); out.push('mobile mode after first tap: ' + await ev('__pk.BT.mode')); await tapTile(u[0][0] + 2, u[0][1]); await sleep(200); out.push('after tile tap: ' + await ev('__pk.BT.mode') + ' path=' + await ev('__pk.BT.path.length')); await shot('23-mobile-path'); await tapTile(u[0][0] + 2, u[0][1]); await waitMode('menu', 4000); await shot('24-mobile-menu'); }
+    if (script === 'mobile') { await nav('ch=2&silent&nosave'); await waitMode('idle', 6000); await shot('22-mobile'); const u = JSON.parse(await ev('JSON.stringify(__pk.B.units.filter(u=>u.team===0).map(u=>[u.x,u.y]))')); await tapTile(u[0][0], u[0][1]); await sleep(200); out.push('mobile mode after first tap: ' + await ev('__pk.BT.mode')); await tapTile(u[0][0] + 2, u[0][1]); await sleep(200); out.push('after tile tap: ' + await ev('__pk.BT.mode') + ' path=' + await ev('__pk.BT.path.length')); await shot('23-mobile-path'); await tapTile(u[0][0] + 2, u[0][1]); await waitMode('menu', 4000); await shot('24-mobile-menu');
+      await nav('silent&nosave'); await sleep(500); await shot('mobile-title'); await nav('versus=5&silent&nosave'); await sleep(500); await shot('mobile-versus'); for (const k of ['z', 'ArrowRight', 'z', 'z', 'ArrowRight', 'z']) await key(k, k.length === 1 ? 'Key' + k.toUpperCase() : k); await shot('mobile-versus-2'); }
 
     if (script === 'mech') {
       // evolution: Charmander Lv15 with 95xp attacks the wild Pidgey → level 16 → Charmeleon
@@ -140,6 +141,31 @@ async function main() {
       out.push('mode after strikes: ' + await ev('__pk.BT.mode'));
       for (const c of [2, 3, 4, 5, 6, 7, 8]) { await nav('ch=' + c + '&silent&nosave&seed=3'); await waitMode('idle', 9000); await sleep(200); await shot('art-ch' + c); const r = await send('Page.captureScreenshot', { format: 'png', clip: { x: 80, y: 60, width: 420, height: 300, scale: 3 } }); fs.writeFileSync(path.join(ROOT, 'artifacts', 'art-ch' + c + '-zoom.png'), Buffer.from(r.result.data, 'base64')); }
       await nav('skirmish=7&silent&nosave'); await waitMode('idle', 9000); await sleep(200); await shot('art-skirmish');
+    }
+    if (script === 'ui') {
+      const clip = async (name, x, y, w, h, sc = 3) => { const r = await send('Page.captureScreenshot', { format: 'png', clip: { x, y, width: w, height: h, scale: sc } }); fs.writeFileSync(path.join(ROOT, 'artifacts', name + '.png'), Buffer.from(r.result.data, 'base64')); };
+      await nav('silent&nosave'); await sleep(600); await shot('ui-title'); await key('ArrowDown', 'ArrowDown'); await sleep(200); await shot('ui-title-2');
+      // versus setup: draft with keys, then start
+      await nav('versus=5&silent&nosave'); await sleep(400); await shot('ui-versus-0');
+      for (const k of ['z', 'ArrowRight', 'z', 'ArrowRight', 'z', 'ArrowDown', 'z', 'ArrowRight', 'z', 'ArrowRight', 'z', 'ArrowDown', 'z', 'ArrowLeft', 'z']) await key(k, k.length === 1 ? 'Key' + k.toUpperCase() : k);
+      await sleep(200); await shot('ui-versus-1'); out.push('teams: ' + await ev('JSON.stringify(__pk.SC.data.teams)'));
+      await key('e', 'KeyE'); await waitMode('handoff', 6000); await sleep(600); await shot('ui-handoff-p1'); out.push('scene/mode: ' + await ev('__pk.SC.name + "/" + __pk.BT.mode + " humans=" + JSON.stringify(__pk.B.humans)'));
+      await key('z', 'KeyZ'); await waitMode('idle', 8000); await shot('ui-vs-idle');
+      const p1 = JSON.parse(await ev('JSON.stringify(__pk.B.units.filter(u=>u.team===0).map(u=>[u.name,u.x,u.y]))')); out.push('p1: ' + JSON.stringify(p1));
+      await tapTile(p1[0][1], p1[0][2]); await waitMode('move', 3000); await shot('ui-vs-move'); await key('x', 'KeyX'); await waitMode('idle', 3000);
+      await ev('__pk.endTurn()'); await waitMode('handoff', 20000); await sleep(600); await shot('ui-handoff-p2'); out.push('phase now: ' + await ev('__pk.B.phase'));
+      await key('z', 'KeyZ'); await waitMode('idle', 8000);
+      const p2 = JSON.parse(await ev('JSON.stringify(__pk.B.units.filter(u=>u.team===1).map(u=>[u.name,u.x,u.y]))')); out.push('p2: ' + JSON.stringify(p2));
+      await tapTile(p2[0][1], p2[0][2]); const okm = await waitMode('move', 3000); out.push('p2 can move: ' + okm); await shot('ui-vs-p2-move'); await key('x', 'KeyX'); await waitMode('idle', 3000);
+      await ev('__pk.B.units.filter(u=>u.team===0).forEach(u=>u.hp=0); __pk.endTurn()'); await waitMode('end', 8000); await sleep(1000); await shot('ui-vs-end');
+      await key('z', 'KeyZ'); await waitScene('results', 8000); await sleep(300); await shot('ui-vs-results'); out.push('result: ' + await ev('JSON.stringify(__pk.SC.data && __pk.SC.data.result)'));
+      // battle UI close-ups on chapter 1
+      await nav('ch=1&silent&nosave&seed=3'); await waitMode('idle', 6000);
+      await ev('(function(){const c=__pk.B.units.find(u=>u.name==="Charmander"); c.x=7; c.y=3; __pk.BT.cx=7; __pk.BT.cy=3;})()');
+      await tapTile(7, 3); await waitMode('move', 3000); await tapTile(8, 3); await waitMode('target', 3000); await sleep(200); await shot('ui-forecast'); await clip('ui-forecast-zoom', 0, 50, 440, 240);
+      await key('x', 'KeyX'); await waitMode('menu', 3000); await key('x', 'KeyX'); await waitMode('move', 3000); await key('x', 'KeyX'); await waitMode('idle', 3000);
+      await tapTile(7, 3); await waitMode('move', 3000); await tapTile(7, 3); await waitMode('menu', 4000); await sleep(200); { const [cx, cy] = await tileCenter(7, 3); await clip('ui-menu-zoom', cx - 60, cy - 80, 320, 200); }
+      await key('x', 'KeyX'); await waitMode('move', 3000); await key('x', 'KeyX'); await waitMode('idle', 3000); await clip('ui-terrain-zoom', 1000, 620, 280, 100); await key('x', 'KeyX'); await waitMode('endmenu', 3000); await sleep(200); await shot('ui-endmenu'); { const [cx, cy] = await tileCenter(7, 3); await clip('ui-endmenu-zoom', cx - 40, cy - 60, 320, 200); }
     }
     out.push('--- console ---'); out.push(...logs.slice(0, 40));
   } finally { chrome.kill(); }

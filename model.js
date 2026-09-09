@@ -10,7 +10,7 @@ function parseMap(def) {
   const rows = def.rows.map(r => r.replace(/\s+$/, '')); const h = rows.length, w = Math.max(...rows.map(r => r.length));
   const tiles = []; for (let y = 0; y < h; y++) { tiles.push([]); for (let x = 0; x < w; x++) { const ch = rows[y][x] || '.'; tiles[y].push(TERRAIN[ch] || TERRAIN['.']); } }
   const variants = []; const vr = mulberry32((def.seed || 1) * 7919); for (let y = 0; y < h; y++) { variants.push([]); for (let x = 0; x < w; x++) variants[y].push(Math.floor(vr() * VARIANTS)); }
-  return { w, h, tiles, variants, name: def.name || 'Map', objective: def.objective || { type: 'rout' }, deploy: def.deploy || [], items: (def.items || []).map(i => Object.assign({}, i)), seize: def.seize || null, turnLimit: def.turnLimit || 0, reinforce: def.reinforce || [], music: def.music || 'player' };
+  return { w, h, tiles, variants, name: def.name || 'Map', objective: def.objective || { type: 'rout' }, deploy: def.deploy || [], deploy2: def.deploy2 || [], items: (def.items || []).map(i => Object.assign({}, i)), seize: def.seize || null, turnLimit: def.turnLimit || 0, reinforce: def.reinforce || [], music: def.music || 'player' };
 }
 function inMap(x, y) { return x >= 0 && y >= 0 && x < B.map.w && y < B.map.h; }
 function terrAt(x, y) { return inMap(x, y) ? B.map.tiles[y][x] : TERRAIN['^']; }
@@ -87,7 +87,7 @@ function resolveCombat(att, def, move, from) {
   };
   strike(fc.a, false); if (fc.c) strike(fc.c, true); if (fc.a.dbl) strike(fc.a, false); else if (fc.c && fc.c.dbl) strike(fc.c, true);
   // experience for player-team survivors
-  for (const [u, o] of [[att, def], [def, att]]) { if (u.team !== 0 || u.hp <= 0) continue; const took = ev.some(e => e.type === 'hit' && e.att === u); if (!took) continue; awardXp(u, xpGain(u, o, o.hp <= 0), ev); }
+  for (const [u, o] of [[att, def], [def, att]]) { if (!isHuman(u.team) || u.hp <= 0) continue; const took = ev.some(e => e.type === 'hit' && e.att === u); if (!took) continue; awardXp(u, xpGain(u, o, o.hp <= 0), ev); }
   return ev;
 }
 function awardXp(u, amount, ev) {
@@ -124,6 +124,7 @@ function useItem(u, item) {
 }
 function checkObjective() {
   const o = B.map.objective; if (B.result) return B.result;
+  if (B.versus) { const a = alive(0).length, b = alive(1).length; if (!a && !b) return B.result = 'draw'; if (!a) return B.result = 'p2'; if (!b) return B.result = 'p1'; if (B.map.turnLimit && B.turn > B.map.turnLimit) return B.result = a > b ? 'p1' : b > a ? 'p2' : 'draw'; return null; }
   if (!alive(0).length) return B.result = 'lose';
   if (o.type === 'rout' && !alive(1).length) return B.result = 'win';
   if (o.type === 'boss' && !B.units.some(u => u.boss && u.hp > 0 && u.team === 1)) return B.result = 'win';
@@ -132,7 +133,7 @@ function checkObjective() {
   if (B.map.turnLimit && o.type !== 'survive' && B.turn > B.map.turnLimit) return B.result = 'lose';
   return null;
 }
-function objectiveText() { const o = B.map.objective; switch (o.type) { case 'rout': return 'Defeat all enemies'; case 'boss': return 'Defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Survive ' + o.turns + ' turns'; case 'seize': return 'Seize the ' + (o.what || 'gym'); } return ''; }
+function objectiveText() { const o = B.map.objective; switch (o.type) { case 'rout': return 'Defeat all enemies'; case 'boss': return 'Defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Survive ' + o.turns + ' turns'; case 'seize': return 'Seize the ' + (o.what || 'gym'); case 'versus': return 'Beat the other team'; } return ''; }
 
 // ---------------------------------------------------------------- AI
 // BFS distance field over terrain the unit can enter (ignores units) from a set of goal cells.

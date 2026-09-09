@@ -7,7 +7,13 @@ const SC = { name: 'loading', t: 0, i: 0, hits: [], dialog: null, data: null };
 function goScene(name, data) { SC.name = name; SC.t = 0; SC.i = 0; SC.hits = []; SC.data = data || null; SC.scroll = 0; if (name === 'title') { Audio.playMusic('title'); } }
 function hit(x, y, w, h, run, label) { SC.hits.push({ x, y, w, h, run, label }); }
 function hitAt(px2, py) { for (const h of SC.hits) if (px2 >= h.x && py >= h.y && px2 < h.x + h.w && py < h.y + h.h) return h; return null; }
-function bigButton(x, y, w, h, label, run, opt = {}) { const hot = (INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h && !VIEW.touch) || opt.hot; rrect(x + 2, y + 2, w, h, UI.shadow, 2); rrect(x, y, w, h, hot ? '#5a7ac0' : (opt.col || UI.panel2), 2); rrect(x + 1, y + 1, w - 2, h - 2, hot ? '#6d8fd6' : shade(opt.col || UI.panel2, .12), 1); rrect(x + 2, y + 2, w - 4, h - 4, hot ? '#5a7ac0' : (opt.col || UI.panel2), 1); outline(x, y, w, h, UI.border); if (hot) pointerHand(x - 10, y + h / 2 - 3, SC.t * 1000); bigC(label, x + w / 2, y + (h - 9) / 2, opt.ink || UI.ink, { outline: UI.shadow }); hit(x, y, w, h, run, label); }
+function bigButton(x, y, w, h, label, run, opt = {}) {
+  const hot = (INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h && !VIEW.touch) || opt.hot; const col = opt.col || UI.panel2; const base = hot ? shade(col, .25) : col;
+  rrect(x + 1, y + 2, w, h, UI.shadow, 2); rrect(x, y, w, h, hot ? UI.gold : UI.border, 2); rrect(x + 1, y + 1, w - 2, h - 2, base, 1);
+  hline(x + 2, y + 1, w - 4, shade(base, .3)); hline(x + 2, y + h - 2, w - 4, shade(base, -.35)); vline(x + 1, y + 2, h - 4, shade(base, .12));
+  if (hot && !opt.small) pointerHand(x - 10, y + h / 2 - 3, SC.t * 1000);
+  if (opt.small) textC(label, x + w / 2, y + (h - 7) / 2, opt.ink || UI.ink, { shadow: UI.shadow }); else bigC(label, x + w / 2, y + (h - 9) / 2, opt.ink || UI.ink, { outline: UI.shadow });
+  hit(x, y, w, h, run, label); }
 
 // ---------------------------------------------------------------- shared: draw a map definition as a backdrop
 let BACKDROP = null;
@@ -16,30 +22,118 @@ function drawBackdrop(bd, ox, oy, dim = .45) { const bw = bd.canvas.width, bh = 
 
 // ---------------------------------------------------------------- title
 const TITLE_MONS = [25, 4, 7, 1, 133, 39, 54, 143, 94, 6, 130, 150];
+const CLOUDS = [{ x: 40, y: 22, r: 36 }, { x: 260, y: 150, r: 48 }, { x: 420, y: 70, r: 30 }, { x: 150, y: 230, r: 42 }, { x: 330, y: 10, r: 26 }];
+function drawCloudShadows(t) { ctx.globalAlpha = .14; for (const c of CLOUDS) { const x = ((c.x + t * 9) % (VIEW.w + 140)) - 70, y = c.y; ellipse(x, y, c.r, Math.round(c.r * .42), '#000'); ellipse(x - Math.round(c.r * .5), y + 4, Math.round(c.r * .6), Math.round(c.r * .28), '#000'); ellipse(x + Math.round(c.r * .5), y + 3, Math.round(c.r * .55), Math.round(c.r * .26), '#000'); } ctx.globalAlpha = 1; }
+// Chunky three-layer logo: long shadow, outline, fill and a top highlight, drawn with the big pixel font scaled up.
+function drawLogo(cx, y, t) {
+  const s = 3; const layer = (str, x, yy, fill, hi, out, sh) => {
+    ctx.save(); ctx.translate(x, yy); ctx.scale(s, s); for (let k = 3; k >= 1; k--) bigC(str, k, k, sh, {}); bigC(str, 0, 0, fill, { outline: out }); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(x - 200, yy, 400, 3 * s); ctx.clip(); ctx.translate(x, yy); ctx.scale(s, s); bigC(str, 0, 0, hi, {}); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(x - 200, yy + 3 * s, 400, 1 * s); ctx.clip(); ctx.translate(x, yy); ctx.scale(s, s); bigC(str, 0, 0, mix(fill, hi, .5), {}); ctx.restore();
+  };
+  const w1 = textWidth('POKÉ', BIG) * s, w2 = textWidth('TAKTIKS', BIG) * s;
+  ctx.globalAlpha = .38; ellipse(cx, y + 30, Math.round(w2 / 2 + 30), 40, '#050a18'); ctx.globalAlpha = 1;
+  // Poké Ball badge beside the first word
+  ctx.save(); ctx.translate(cx - w1 / 2 - 22, y + 13 + Math.round(Math.sin(t * 2) * 1.5)); ctx.scale(3, 3); drawBall(0, 0, '#f04848', 5); ctx.restore();
+  layer('POKÉ', cx + 10, y, UI.gold, '#fff3b0', '#4a2800', '#2a1600');
+  layer('TAKTIKS', cx, y + 31, '#eef3ff', '#ffffff', '#1c2a4a', '#0b1020');
+  rect(cx - w2 / 2, y + 31 + 9 * s + 4, w2, 2, UI.gold); rect(cx - w2 / 2 + 2, y + 31 + 9 * s + 6, w2 - 4, 1, '#4a2800');
+  // twinkles
+  for (let i = 0; i < 4; i++) { const ph = (t * 1.3 + i * .7) % 2; if (ph > 1) continue; const sz = Math.round(Math.sin(ph * Math.PI) * 3); const px0 = cx + [-w2 / 2 - 4, w2 / 2 + 6, -w1 / 2 + 30, w2 / 2 - 10][i], py0 = y + [12, 40, -6, 66][i]; rect(px0 - sz, py0, 2 * sz + 1, 1, '#ffffff'); rect(px0, py0 - sz, 1, 2 * sz + 1, '#ffffff'); }
+  // subtitle ribbon
+  const sub = 'A PIXEL TACTICS ADVENTURE  ·  GEN I'; const sw = textWidth(sub) + 16; const sy = y + 31 + 9 * s + 12;
+  rrect(cx - sw / 2 + 1, sy + 1, sw, 12, UI.shadow, 1); rrect(cx - sw / 2, sy, sw, 12, '#182640', 1); outline(cx - sw / 2, sy, sw, 12, UI.border2); textC(sub, cx, sy + 2, UI.border);
+}
+// Menu card: icon box, big label, small hint; the hot one lifts, glows gold and gets the pointer hand.
+function menuCard(x, y, w, h, label, sub, icon, hot, run, opt = {}) {
+  const fill = hot ? '#2c4784' : (opt.fill || '#16223e'); const lift = hot ? 1 : 0; y -= lift;
+  rrect(x + 2, y + 2 + lift, w, h, UI.shadow, 2); rrect(x, y, w, h, hot ? UI.gold : UI.border2, 2); rrect(x + 1, y + 1, w - 2, h - 2, fill, 1);
+  hline(x + 2, y + 1, w - 4, shade(fill, .25)); hline(x + 2, y + h - 2, w - 4, shade(fill, -.3));
+  rrect(x + 4, y + 4, h - 8, h - 8, hot ? '#1a2a50' : '#0f1830', 1); outline(x + 4, y + 4, h - 8, h - 8, hot ? UI.gold : '#3a4a70'); if (icon) iconAt(icon, x + 4 + (h - 8 - 9) / 2, y + 4 + (h - 8 - 9) / 2, hot ? '#ffffff' : '#d8dce8');
+  bigText(label, x + h + 2, y + (h - 9) / 2 - (sub ? 3 : 0), hot ? '#ffffff' : UI.ink, { outline: hot ? '#1a2a50' : UI.shadow });
+  if (sub) text(sub, x + h + 2, y + h / 2 + 2, hot ? '#ffe9a0' : UI.muted);
+  if (hot) pointerHand(x - 11, y + h / 2 - 4, SC.t * 1000);
+  hit(x, y + lift, w, h, run, label);
+}
 function titleDraw() {
   const W = VIEW.w, H = VIEW.h; if (!BACKDROP) BACKDROP = makeBackdrop(CHAPTERS[3].map);
-  const ox = -((SC.t * 8) % (BACKDROP.canvas.width - W + 1)), oy = Math.min(0, (H - BACKDROP.canvas.height) / 2); drawBackdrop(BACKDROP, ox, oy, .35);
+  const ox = -((SC.t * 8) % (BACKDROP.canvas.width - W + 1)), oy = Math.min(0, (H - BACKDROP.canvas.height) / 2); drawBackdrop(BACKDROP, ox, oy, .3);
+  drawCloudShadows(SC.t);
   // parade of mons walking along the road
-  TITLE_MONS.forEach((n, i) => { const x = ((SC.t * 22 + i * 46) % (W + 60)) - 30, y = H * .78 + Math.round(Math.sin(SC.t * 8 + i) * 2); ellipse(x, y + 1, 10, 3, '#00000060'); drawMon(n, x, y, {}); });
-  // logo
-  const ly = 30 + Math.round(Math.sin(SC.t * 2) * 2);
-  ctx.save(); ctx.translate(W / 2, ly); ctx.scale(3, 3); bigC('POKÉ', 0, 0, UI.gold, { outline: '#3a2000' }); ctx.restore();
-  ctx.save(); ctx.translate(W / 2, ly + 30); ctx.scale(3, 3); bigC('TAKTIKS', 0, 0, '#ffffff', { outline: '#1c2a4a' }); ctx.restore();
-  textC('a pixel tactics adventure · Gen I', W / 2, ly + 62, UI.muted, { outline: UI.shadow });
-  SC.hits = []; const bw = 132, bx = W / 2 - bw / 2; let by = ly + 80;
-  const has = !!loadSave(), susp = !!loadSuspend();
+  TITLE_MONS.forEach((n, i) => { const x = ((SC.t * 22 + i * 46) % (W + 60)) - 30, y = H * .8 + Math.round(Math.sin(SC.t * 8 + i) * 2); ellipse(x, y + 1, 10, 3, '#00000060'); drawMon(n, x, y, {}); });
+  // top and bottom vignette bands so the UI sits on something calm
+  ctx.globalAlpha = .45; rect(0, 0, W, 8, '#05070f'); rect(0, H - 22, W, 22, '#05070f'); ctx.globalAlpha = 1;
+  const portrait = H > W; const ly = (portrait ? Math.round(H * .17) : 22) + Math.round(Math.sin(SC.t * 2) * 1.5);
+  drawLogo(W / 2, ly, SC.t);
+  SC.hits = []; const bw = Math.min(196, W - 40), bh = 22, gap = 4; const bx = W / 2 - bw / 2; let by = ly + 31 + 27 + 30;
+  const save = loadSave(), susp = !!loadSuspend();
   const items = [];
-  if (susp) items.push(['RESUME BATTLE', () => resumeSuspend()]);
-  if (has) items.push(['CONTINUE', () => continueCampaign()]);
-  items.push(['NEW GAME', () => { if (has && !confirm('Start a new game? Your campaign save will be replaced.')) return; startNewGame(); }]);
-  items.push(['SKIRMISH', () => startSkirmishSetup()]);
-  items.forEach((it, i) => { bigButton(bx, by, bw, 18, it[0], () => { Audio.sfx('ok'); it[1](); }, { hot: SC.i === i && !VIEW.touch && INPUT.x < 0 }); by += 22; });
+  if (susp) items.push(['RESUME BATTLE', 'Pick up the suspended fight', 'play', () => resumeSuspend()]);
+  if (save) items.push(['CONTINUE', save.beaten ? 'Campaign complete · replay' : 'Chapter ' + (Math.min(save.chapter, CHAPTERS.length - 1) + 1) + ' · ' + CHAPTERS[Math.min(save.chapter, CHAPTERS.length - 1)].title, 'flag', () => continueCampaign()]);
+  items.push(['NEW GAME', 'Campaign · eight chapters', 'map', () => { if (save && !confirm('Start a new game? Your campaign save will be replaced.')) return; startNewGame(); }]);
+  items.push(['SKIRMISH', 'Random maps · catch wild Pokémon', 'dice', () => startSkirmishSetup()]);
+  items.push(['VERSUS', 'Two trainers · one device', 'vs', () => startVersusSetup()]);
+  if (portrait) by = ly + 31 + 27 + 44; const total = items.length * (bh + gap); if (by + total > H - 26) by = Math.max(ly + 96, H - 26 - total);
+  items.forEach((it, i) => { menuCard(bx, by, bw, bh, it[0], it[1], it[2], SC.i === i, () => { Audio.sfx('ok'); it[3](); }); by += bh + gap; });
   SC.menuLen = items.length;
   text(Audio.muted ? '♪ off  (M)' : '♪ on  (M)', 6, H - 12, UI.muted); textR('Sprites: Pokémon Showdown', W - 6, H - 12, UI.muted);
-  if (Math.floor(SC.t * 2) % 2) textC(VIEW.touch ? 'tap a button' : 'arrows + Z · or click', W / 2, by + 4, UI.muted, { outline: UI.shadow });
+  if (Math.floor(SC.t * 2) % 2) textC(VIEW.touch ? 'tap a card' : 'arrows + Z  ·  or click', W / 2, H - 12, UI.muted, { outline: UI.shadow });
 }
 function titleInput(ev) {
-  if (ev.type === 'key') { if (ev.key === 'up') { SC.i = (SC.i - 1 + SC.menuLen) % SC.menuLen; Audio.sfx('menu'); INPUT.x = -1; } else if (ev.key === 'down') { SC.i = (SC.i + 1) % SC.menuLen; Audio.sfx('menu'); INPUT.x = -1; } else if (ev.key === 'ok') { const h = SC.hits[SC.i]; if (h) h.run(); } else if (ev.key === 'mute') Audio.toggle(); return; }
+  if (ev.type === 'key') { if (ev.key === 'up') { SC.i = (SC.i - 1 + SC.menuLen) % SC.menuLen; Audio.sfx('menu'); } else if (ev.key === 'down') { SC.i = (SC.i + 1) % SC.menuLen; Audio.sfx('menu'); } else if (ev.key === 'ok') { const h = SC.hits[SC.i]; if (h) h.run(); } else if (ev.key === 'mute') Audio.toggle(); return; }
+  if (ev.type === 'move' && !ev.touch) { const h = hitAt(ev.x, ev.y); if (h) { const i = SC.hits.indexOf(h); if (i >= 0 && i !== SC.i) { SC.i = i; Audio.sfx('menu'); } } return; }
+  if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
+}
+
+// ---------------------------------------------------------------- versus setup (draft two teams, pick an arena)
+function vsPick(S, n) {
+  const picks = S.teams[0].length + S.teams[1].length; if (picks >= S.size * 2) { Audio.sfx('error'); return; }
+  if (S.teams[0].includes(n) || S.teams[1].includes(n)) { Audio.sfx('error'); return; }
+  const t = S.order[picks]; S.teams[t].push(n); Audio.sfx(picks + 1 >= S.size * 2 ? 'select' : 'ok');
+}
+function vsUndo(S) { const picks = S.teams[0].length + S.teams[1].length; if (!picks) return false; S.teams[S.order[picks - 1]].pop(); Audio.sfx('cancel'); return true; }
+function vsRandom(S) { const free = VS_ROSTER.filter(n => !S.teams[0].includes(n) && !S.teams[1].includes(n)); while (S.teams[0].length + S.teams[1].length < S.size * 2 && free.length) { const i = Math.floor(Math.random() * free.length); vsPick(S, free.splice(i, 1)[0]); } Audio.sfx('select'); }
+function versusDraw() {
+  const W = VIEW.w, H = VIEW.h, S = SC.data; rect(0, 0, W, H, '#0e0c10');
+  if (!S.bd || S.bdSeed !== S.seed || S.bdWild !== S.wild) { S.map = versusMap(S.seed, 18, 11, { wild: S.wild, level: S.level }); S.bd = makeBackdrop(S.map); S.bdSeed = S.seed; S.bdWild = S.wild; }
+  drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2, (H - S.bd.canvas.height) / 2, .8); SC.hits = [];
+  const picks = S.teams[0].length + S.teams[1].length, full = picks >= S.size * 2; const cur = full ? -1 : S.order[picks]; S.cur = cur;
+  bigC('VERSUS', W / 2, 4, UI.gold, { outline: '#3a2000' });
+  textC(full ? 'Both teams are ready!' : 'PLAYER ' + (cur + 1) + ' picks  ·  ' + (picks + 1) + ' / ' + S.size * 2, W / 2, 16, full ? UI.green : cur === 0 ? '#8ab4ff' : '#ff9a9a', { outline: UI.shadow });
+  // team panels left / right, arena preview in the middle
+  const pw = Math.min(140, Math.floor((W - 110) / 2) - 8), ph = 56, py = 28; const p1x = 6, p2x = W - pw - 6;
+  const teamPanel = (t, x) => { panel(x, py, pw, ph, { title: 'PLAYER ' + (t + 1), fill: t === 0 ? '#17264a' : '#3a1a22', border: cur === t ? UI.gold : UI.border });
+    const sw = Math.floor((pw - 12) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 6 + i * sw; portraitBg(sx, py + 8, sw - 2, 34, t); const n = S.teams[t][i]; if (n != null) { drawMon(n, sx + (sw - 2) / 2, py + 40, { flip: t === 1 }); hit(sx, py + 8, sw - 2, 34, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 8, sw - 2, 34, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 22, '#ffffff40'); }
+    text(S.teams[t].length + '/' + S.size + ' picked', x + 6, py + ph - 10, UI.muted); textR(S.teams[t].length >= S.size ? 'READY' : cur === t ? 'PICKING…' : 'waiting', x + pw - 6, py + ph - 10, S.teams[t].length >= S.size ? UI.green : cur === t ? UI.gold : UI.muted); };
+  teamPanel(0, p1x); teamPanel(1, p2x);
+  const mw = p2x - (p1x + pw) - 12; const sc = Math.min(mw / S.bd.canvas.width, (ph - 4) / S.bd.canvas.height); const pwid = Math.round(S.bd.canvas.width * sc), phei = Math.round(S.bd.canvas.height * sc); const mx = Math.round(W / 2 - pwid / 2), my = py + Math.round((ph - phei) / 2);
+  ctx.drawImage(S.bd.canvas, mx, my, pwid, phei); outline(mx - 1, my - 1, pwid + 2, phei + 2, UI.border); for (const d of S.map.deploy) rect(mx + d.x * TILE * sc, my + d.y * TILE * sc, Math.ceil(TILE * sc), Math.ceil(TILE * sc), '#3d7dff90'); for (const d of S.map.deploy2) rect(mx + d.x * TILE * sc, my + d.y * TILE * sc, Math.ceil(TILE * sc), Math.ceil(TILE * sc), '#ff4b4b90');
+  // roster grid
+  const cols = W < 330 ? 6 : 7, cw = 40, chh = 30; const rows = Math.ceil(VS_ROSTER.length / cols); const gx = Math.round(W / 2 - cols * cw / 2), gy = py + ph + 8;
+  rrect(gx - 3, gy - 3, cols * cw + 6, rows * chh + 6, '#0b1020c0', 2); outline(gx - 3, gy - 3, cols * cw + 6, rows * chh + 6, UI.border2);
+  VS_ROSTER.forEach((n, i) => { const x = gx + (i % cols) * cw, y = gy + Math.floor(i / cols) * chh; const hot = SC.i === i; const t = S.teams[0].includes(n) ? 0 : S.teams[1].includes(n) ? 1 : -1;
+    rrect(x + 1, y + 1, cw - 2, chh - 2, hot ? '#2c4784' : t >= 0 ? teamColorD(t) : '#141c30', 1); if (hot) outline(x + 1, y + 1, cw - 2, chh - 2, UI.gold);
+    if (t >= 0) ctx.globalAlpha = .45; drawMon(n, x + cw / 2, y + chh - 2 + (hot ? Math.round(Math.sin(SC.t * 8)) : 0), {}); ctx.globalAlpha = 1;
+    if (t >= 0) { rrect(x + cw - 13, y + 2, 11, 8, teamColor(t), 1); textC('P' + (t + 1), x + cw - 8, y + 2, '#ffffff'); }
+    hit(x, y, cw, chh, () => { SC.i = i; vsPick(S, n); }); });
+  const d = DEX[VS_ROSTER[SC.i]]; if (d) { const iy = gy + rows * chh + 5; const u = makeUnit(d.num, S.level, 0); text(d.name, gx, iy, UI.ink, { outline: UI.shadow }); d.types.forEach((tp, j) => typeBadge(tp, gx + textWidth(d.name) + 6 + j * 26, iy - 1, 24)); textR(u.moves.slice(0, 3).map(m => m.name).join(' / '), gx + cols * cw, iy, '#98d8f8', { outline: UI.shadow }); text('HP ' + u.maxHp + '  ATK ' + u.atk + '  DEF ' + u.def + '  SPA ' + u.spa + '  SPE ' + u.spe + '  MOV ' + u.mov, gx, iy + 10, UI.muted, { outline: UI.shadow }); }
+  // settings
+  const sy = H - 44; const setting = (x, label, val, dec, inc) => { text(label, x, sy + 4, UI.muted, { outline: UI.shadow }); bigButton(x + 34, sy, 16, 13, '-', dec, { small: true }); textC(String(val), x + 63, sy + 3, UI.gold, { outline: UI.shadow }); bigButton(x + 76, sy, 16, 13, '+', inc, { small: true }); };
+  setting(8, 'Arena', S.seed, () => { S.seed = (S.seed + 999) % 1000; Audio.sfx('menu'); }, () => { S.seed = (S.seed + 1) % 1000; Audio.sfx('menu'); });
+  setting(112, 'Level', S.level, () => { S.level = Math.max(5, S.level - 5); Audio.sfx('menu'); }, () => { S.level = Math.min(50, S.level + 5); Audio.sfx('menu'); });
+  bigButton(216, sy, 70, 13, S.wild ? 'WILD: ON' : 'WILD: OFF', () => { S.wild = !S.wild; Audio.sfx('menu'); }, { small: true, col: S.wild ? '#2a6a3a' : '#3a3a4a' });
+  if (W > 470) text('Snake draft · click a picked slot to drop it', 296, sy + 4, UI.muted, { outline: UI.shadow });
+  // bottom row
+  const by = H - 24;
+  bigButton(6, by, 60, 18, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { col: '#5a4a30' });
+  bigButton(72, by, 70, 18, 'RANDOM', () => vsRandom(S));
+  bigButton(148, by, 60, 18, 'CLEAR', () => { S.teams = [[], []]; Audio.sfx('cancel'); }, { col: '#3a3a4a' });
+  bigButton(W - 96, by, 90, 18, 'BATTLE!', () => { if (!full) { Audio.sfx('error'); return; } Audio.sfx('select'); S.go(); }, { col: full ? '#8a2c2c' : '#3a3a4a', ink: full ? '#ffffff' : UI.muted });
+}
+function versusInput(ev) {
+  const S = SC.data; const cols = VIEW.w < 330 ? 6 : 7;
+  if (ev.type === 'key') { const n = VS_ROSTER.length; if (ev.key === 'left') SC.i = (SC.i + n - 1) % n; else if (ev.key === 'right') SC.i = (SC.i + 1) % n; else if (ev.key === 'up') SC.i = (SC.i + n - cols) % n; else if (ev.key === 'down') SC.i = (SC.i + cols) % n; else if (ev.key === 'ok') vsPick(S, VS_ROSTER[SC.i]); else if (ev.key === 'back') { if (!vsUndo(S)) goScene('title'); } else if (ev.key === 'next') { if (S.teams[0].length + S.teams[1].length >= S.size * 2) S.go(); else vsRandom(S); } else if (ev.key === 'mute') Audio.toggle(); if (['left', 'right', 'up', 'down'].includes(ev.key)) Audio.sfx('cursor'); return; }
+  if (ev.type === 'move' && !ev.touch) { const h = hitAt(ev.x, ev.y); if (h) { const i = VS_ROSTER.findIndex((n, j) => SC.hits.indexOf(h) >= 0 && h.run && h.label == null && false); } return; }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
 
@@ -66,7 +160,7 @@ function starterInput(ev) {
 
 // ---------------------------------------------------------------- chapter card
 function cardDraw() { const W = VIEW.w, H = VIEW.h; const ch = SC.data.chapter; rect(0, 0, W, H, '#0e0c10'); const k = Math.min(1, SC.t / .5); const y = H / 2 - 20; ctx.globalAlpha = k; hline(0, y - 6, W, UI.border2); hline(0, y + 30, W, UI.border2); bigC(ch.num ? 'CHAPTER ' + ch.num : 'SKIRMISH', W / 2, y, UI.muted, { outline: UI.shadow }); ctx.save(); ctx.translate(W / 2, y + 12); ctx.scale(2, 2); bigC(ch.title, 0, 0, UI.gold, { outline: '#3a2000' }); ctx.restore(); ctx.globalAlpha = 1; textC(objectiveTextFor(ch.map.objective), W / 2, y + 40, UI.ink); if (SC.t > 2.2 || (SC.t > .6 && SC.skip)) { SC.skip = false; SC.data.next(); } }
-function objectiveTextFor(o) { switch (o.type) { case 'rout': return 'Objective: defeat all enemies'; case 'boss': return 'Objective: defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Objective: survive ' + o.turns + ' turns'; case 'seize': return 'Objective: seize the ' + (o.what || 'gym'); } return ''; }
+function objectiveTextFor(o) { switch (o.type) { case 'rout': return 'Objective: defeat all enemies'; case 'boss': return 'Objective: defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Objective: survive ' + o.turns + ' turns'; case 'seize': return 'Objective: seize the ' + (o.what || 'gym'); case 'versus': return 'Objective: defeat the other trainer'; } return ''; }
 function cardInput(ev) { if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) SC.skip = true; }
 
 // ---------------------------------------------------------------- story dialogue (drawn over the battle board)
@@ -130,6 +224,17 @@ function prepInput(ev) {
 function resultsDraw() {
   const W = VIEW.w, H = VIEW.h; const R = SC.data; rect(0, 0, W, H, '#0e0c10'); if (BACKDROP) drawBackdrop(BACKDROP, -((SC.t * 6) % 200), 0, .7);
   SC.hits = []; const win = R.win; const w = Math.min(300, W - 12), x = W / 2 - w / 2; let y = 10;
+  if (R.versus) {
+    const t = R.result === 'p1' ? 0 : R.result === 'p2' ? 1 : -1; const ph2 = 128; y = Math.max(10, H / 2 - ph2 / 2 - 16);
+    panel(x, y, w, ph2, { title: t < 0 ? 'DRAW' : 'PLAYER ' + (t + 1) + ' WINS!', fill: t === 0 ? '#17264a' : t === 1 ? '#3a1a22' : UI.panel, border: t >= 0 ? teamColor(t) : UI.border });
+    if (t >= 0) { ctx.save(); ctx.translate(x + w / 2, y + 10); ctx.scale(2, 2); bigC('PLAYER ' + (t + 1), 0, 0, teamColorL(t), { outline: '#000' }); ctx.restore(); bigC('WINS THE ARENA!', x + w / 2, y + 30, UI.gold, { outline: '#3a2000' }); } else bigC('NOBODY IS LEFT STANDING', x + w / 2, y + 16, UI.muted, { outline: UI.shadow });
+    text('Turns ' + R.turns + '   ·   KOs ' + R.kills, x + 8, y + 44, UI.ink);
+    [0, 1].forEach(tm => { const yy = y + 58 + tm * 32; rrect(x + 6, yy, w - 12, 28, teamColorD(tm), 1); text('P' + (tm + 1), x + 10, yy + 3, teamColorL(tm)); R.rosters[tm].forEach((n, i) => { const cx = x + 40 + i * 34; const alive = R.teams[tm].includes(n); if (!alive) ctx.globalAlpha = .3; drawMon(n, cx, yy + 27, { flip: tm === 1 }); ctx.globalAlpha = 1; if (!alive) text('KO', cx - 5, yy + 4, UI.red, { shadow: '#000' }); }); textR(R.teams[tm].length + ' left', x + w - 10, yy + 3, UI.ink); });
+    bigButton(W / 2 - 132, H - 28, 80, 18, 'REMATCH', () => { Audio.sfx('select'); R.rematch(); }, { col: '#8a2c2c' });
+    bigButton(W / 2 - 44, H - 28, 88, 18, 'NEW TEAMS', () => { Audio.sfx('ok'); R.setup(); });
+    bigButton(W / 2 + 52, H - 28, 80, 18, 'TITLE', () => { Audio.sfx('cancel'); R.next(); }, { col: '#5a4a30' });
+    return;
+  }
   const nRew = R.rewards ? Object.keys(R.rewards).length : 0, nC = R.caught ? R.caught.length : 0, nT = R.trained ? Math.min(6, R.trained.length) : 0, nE = R.evolved ? R.evolved.length : 0;
   const ph = 24 + (nRew ? 14 + Math.ceil(nRew / 3) * 10 : 0) + (nC ? 14 + Math.ceil(nC / 4) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + 8;
   panel(x, y, w, Math.min(H - 44, Math.max(60, ph)), { title: win ? (R.skirmish ? 'SKIRMISH WON' : 'CHAPTER CLEAR') : 'RETREAT' });
@@ -157,13 +262,15 @@ function creditsInput(ev) { if (ev.type === 'up' || ev.type === 'key') SC.skip =
 // ---------------------------------------------------------------- skirmish setup
 function skirmishDraw() {
   const W = VIEW.w, H = VIEW.h; const S = SC.data; rect(0, 0, W, H, '#0e0c10'); if (!S.bd || S.bdSeed !== S.seed) { S.map = skirmishMap(S.seed, 16, 11, S.level); S.bd = makeBackdrop(S.map); S.bdSeed = S.seed; }
-  SC.hits = []; bigC('SKIRMISH', W / 2, 8, UI.gold, { outline: '#3a2000' });
-  const sc = Math.max(.5, Math.min(1, Math.floor(Math.min((W - 20) / S.bd.canvas.width, (H - 100) / S.bd.canvas.height) * 2) / 2)); const pw = S.bd.canvas.width * sc, ph = S.bd.canvas.height * sc; const px0 = W / 2 - pw / 2, py0 = 24; ctx.drawImage(S.bd.canvas, px0, py0, pw, ph); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border);
+  drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 + 40, (H - S.bd.canvas.height) / 2 + 30, .82); drawCloudShadows(SC.t);
+  SC.hits = []; bigC('SKIRMISH', W / 2, 6, UI.gold, { outline: '#3a2000' }); textC(S.map.name + '  ·  random map, wild Pokémon to catch, a Rival to beat', W / 2, 18, UI.muted, { outline: UI.shadow });
+  const sc = Math.max(.5, Math.min(1, Math.floor(Math.min((W - 20) / S.bd.canvas.width, (H - 110) / S.bd.canvas.height) * 2) / 2)); const pw = S.bd.canvas.width * sc, ph = S.bd.canvas.height * sc; const px0 = W / 2 - pw / 2, py0 = 30; rrect(px0 - 4, py0 - 4, pw + 8, ph + 8, '#0b1020', 2); ctx.drawImage(S.bd.canvas, px0, py0, pw, ph); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border); outline(px0 - 3, py0 - 3, pw + 6, ph + 6, UI.border2);
   for (const u of S.map.units) { const d = DEX[u.mon]; const ux = px0 + (u.x + .5) * TILE * sc, uy = py0 + (u.y + 1) * TILE * sc; ellipse(ux, uy, 6, 2, teamColor(u.team == null ? 1 : u.team)); ctx.drawImage(monIcon(d.num, true), Math.round(ux - 10), Math.round(uy - 15), 20, 15); }
   for (const d of S.map.deploy) { const ux = px0 + d.x * TILE * sc, uy = py0 + d.y * TILE * sc; outline(ux, uy, TILE * sc, TILE * sc, teamColor(0)); }
-  const by = py0 + ph + 8; text('Map seed', 10, by + 4, UI.muted); bigButton(70, by, 22, 14, '-', () => { S.seed = (S.seed + 999) % 1000; Audio.sfx('menu'); }); text(String(S.seed), 100, by + 3, UI.gold); bigButton(126, by, 22, 14, '+', () => { S.seed = (S.seed + 1) % 1000; Audio.sfx('menu'); });
-  text('Enemy level', 10, by + 22, UI.muted); bigButton(70, by + 18, 22, 14, '-', () => { S.level = Math.max(3, S.level - 2); Audio.sfx('menu'); }); text(String(S.level), 100, by + 21, UI.gold); bigButton(126, by + 18, 22, 14, '+', () => { S.level = Math.min(48, S.level + 2); Audio.sfx('menu'); });
-  text('Party: ' + S.party.length + ' Pokémon' + (S.preset ? ' (loaner team)' : ' (campaign save)'), 170, by + 4, UI.ink); text('Random map, defeat the Rival boss. Wild ones can be caught.', 170, by + 21, UI.muted);
+  const by = py0 + ph + 10; const setting = (x, y, label, val, dec, inc) => { text(label, x, y + 4, UI.muted, { outline: UI.shadow }); bigButton(x + 58, y, 16, 13, '-', dec, { small: true }); textC(String(val), x + 87, y + 3, UI.gold, { outline: UI.shadow }); bigButton(x + 100, y, 16, 13, '+', inc, { small: true }); };
+  setting(10, by, 'Map seed', S.seed, () => { S.seed = (S.seed + 999) % 1000; Audio.sfx('menu'); }, () => { S.seed = (S.seed + 1) % 1000; Audio.sfx('menu'); });
+  setting(10, by + 18, 'Enemy level', S.level, () => { S.level = Math.max(3, S.level - 2); Audio.sfx('menu'); }, () => { S.level = Math.min(48, S.level + 2); Audio.sfx('menu'); });
+  text('Party: ' + S.party.length + ' Pokémon' + (S.preset ? ' (loaner team)' : ' (campaign save)'), 150, by + 4, UI.ink, { outline: UI.shadow }); if (S.party.length) S.party.slice(0, 8).forEach((p, i) => { ctx.drawImage(monIcon(p.num), Math.round(150 + i * 24), by + 12, 24, 18); });
   bigButton(W - 96, H - 24, 90, 18, 'PREPARE', () => { Audio.sfx('select'); S.go(); }, { col: '#2a6a3a' }); bigButton(6, H - 24, 70, 18, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { col: '#5a4a30' });
 }
 function skirmishInput(ev) { const S = SC.data; if (ev.type === 'key') { if (ev.key === 'left') S.seed = (S.seed + 999) % 1000; else if (ev.key === 'right') S.seed = (S.seed + 1) % 1000; else if (ev.key === 'up') S.level = Math.min(48, S.level + 2); else if (ev.key === 'down') S.level = Math.max(3, S.level - 2); else if (ev.key === 'ok') S.go(); else if (ev.key === 'back') goScene('title'); return; } if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); } }

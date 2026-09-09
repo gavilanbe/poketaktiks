@@ -28,6 +28,11 @@ function launchChapter(idx, deployed) {
   if (ch.intro && !PARAMS.has('nostory')) { goScene('battle'); startDialog(ch.intro, go); } else go();
 }
 function onBattleEnd(result) {
+  if (B.versus) {
+    const S = B.setup; const survivors = t => alive(t).map(u => u.num); const again = teams => { const S2 = Object.assign({}, S, { teams }); S2.go = () => launchVersus(S2); return S2; };
+    goScene('results', { versus: true, result: B.result, turns: B.turn, kills: B.kills, teams: [survivors(0), survivors(1)], rosters: [S.teams[0].slice(), S.teams[1].slice()], next: () => goScene('title'), rematch: () => { const S2 = again([S.teams[0].slice(), S.teams[1].slice()]); S2.seed = (S.seed + 1) % 1000; launchVersus(S2); }, setup: () => goScene('versus', again([[], []])) });
+    return;
+  }
   const win = result === 'win'; const idx = B.chapter; const skirmish = B.skirmish;
   clearSuspend();
   const caught = B.captured.slice();
@@ -82,6 +87,16 @@ function startSkirmishSetup() {
   goScene('skirmish', S);
 }
 
+// ---------------------------------------------------------------- versus (two trainers, one device)
+const VS_ROSTER = [5, 8, 2, 25, 17, 33, 12, 15, 28, 37, 39, 42, 44, 54, 58, 61, 64, 67, 75, 93, 95, 123, 125, 126, 111, 104, 133, 116];
+function startVersusSetup(seed) { const S = { seed: seed != null ? seed : Math.floor(Math.random() * 1000), level: 20, wild: true, teams: [[], []], order: [0, 1, 1, 0, 0, 1, 1, 0], size: 4, cur: 0, go: null }; S.go = () => launchVersus(S); goScene('versus', S); }
+function launchVersus(S) {
+  const map = versusMap(S.seed, 18, 11, { wild: S.wild, level: S.level }); const mk = list => list.map(n => partyUnit(n, S.level));
+  const p1 = mk(S.teams[0]), p2 = mk(S.teams[1]); BACKDROP = makeBackdrop(map);
+  startBattle(map, p1, { pokeball: 2, potion: 1 }, { versus: true, humans: [0, 1], party2: p2, bag2: { pokeball: 2, potion: 1 }, seed: (S.seed * 131 + 7) | 1, defer: true, setup: S });
+  goScene('battle'); beginPhase(0, true);
+}
+
 // ---------------------------------------------------------------- main loop
 let lastT = 0;
 function frame(t) {
@@ -92,7 +107,7 @@ function frame(t) {
     if (ev.type === 'key' && ev.key === 'mute' && SC.name !== 'battle') { Audio.toggle(); continue; }
     switch (SC.name) {
       case 'title': titleInput(ev); break; case 'starter': starterInput(ev); break; case 'card': cardInput(ev); break; case 'story': storyInput(ev); break;
-      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break;
+      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break;
     }
   }
   // update
@@ -102,7 +117,7 @@ function frame(t) {
   switch (SC.name) {
     case 'loading': rect(0, 0, VIEW.w, VIEW.h, '#0e0c10'); textC('loading sprites…', VIEW.w / 2, VIEW.h / 2, UI.muted); break;
     case 'title': titleDraw(); break; case 'starter': starterDraw(); break; case 'card': cardDraw(); break; case 'story': storyDraw(); break;
-    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break;
+    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break;
   }
 }
 // Deep links for testing: ?ch=3 jumps into chapter 3 with a loaner party; ?skirmish=42 a skirmish; ?silent mutes.
@@ -117,6 +132,7 @@ function boot() {
     startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: parseInt(PARAMS.get('seed') || '7'), defer: true }); alive(0).forEach((u, i) => u.pid = i); goScene('battle'); beginPhase(0, true); return;
   }
   if (PARAMS.has('skirmish')) { startSkirmishSetup(); SC.data.seed = parseInt(PARAMS.get('skirmish')) || 1; return; }
+  if (PARAMS.has('versus')) { startVersusSetup(parseInt(PARAMS.get('versus')) || 1); if (PARAMS.has('auto')) { const S = SC.data; S.teams = [VS_ROSTER.slice(0, 4), VS_ROSTER.slice(4, 8)]; S.go(); } return; }
   goScene(PARAMS.get('scene') || 'title');
 }
 loadSprites(() => { boot(); });
@@ -133,4 +149,4 @@ function simBattle(maxTurns = 30, cautious = true) {
   }
   return { result: B.result, turn: B.turn, p: alive(0).length, e: alive(1).length };
 }
-window.__pk = { autoTurn, simBattle, get B() { return B; }, BT, SC, VIEW, CAM, INPUT, Audio, get SAVE() { return SAVE; }, HUD, goScene, startBattle, CHAPTERS, DEX, makeUnit, tileAction, endTurn };
+window.__pk = { autoTurn, simBattle, startVersusSetup, launchVersus, get B() { return B; }, BT, SC, VIEW, CAM, INPUT, Audio, get SAVE() { return SAVE; }, HUD, goScene, startBattle, CHAPTERS, DEX, makeUnit, tileAction, endTurn };
