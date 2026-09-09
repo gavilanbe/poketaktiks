@@ -1,0 +1,11 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#1c2a4a;overflow:hidden}canvas{image-rendering:pixelated;display:block}</style></head><body><canvas id="c"></canvas><script>
+// Renders the app icon (a Poké Ball on a navy tile) at the window size; captured with Chrome --screenshot.
+const c=document.getElementById('c'); function draw(){ const S=parseInt(new URLSearchParams(location.search).get('s')||'192'); c.width=S; c.height=S; const g=c.getContext('2d'); g.imageSmoothingEnabled=false;
+const L=24; const o=document.createElement('canvas'); o.width=L; o.height=L; const p=o.getContext('2d');
+const R=(x,y,w,h,col)=>{p.fillStyle=col;p.fillRect(x,y,w,h)}; const C=(cx,cy,r,col)=>{p.fillStyle=col;for(let y=-r;y<=r;y++){const w=Math.floor(Math.sqrt(r*r-y*y)+.5);p.fillRect(cx-w,cy+y,2*w+1,1)}};
+R(0,0,L,L,'#1c2a4a'); R(0,0,L,1,'#2a3d6a'); R(0,L-1,L,1,'#101a30');
+C(12,12,9,'#0b1020'); C(12,12,8,'#f6f2e6'); p.fillStyle='#f04848'; for(let y=-8;y<0;y++){const w=Math.floor(Math.sqrt(64-y*y)+.5);p.fillRect(12-w,12+y,2*w+1,1)}
+R(4,12,17,1,'#0b1020'); C(12,12,3,'#0b1020'); C(12,12,2,'#f6f2e6'); R(12,12,1,1,'#0b1020'); R(8,7,2,1,'#ffb0b0'); R(7,8,1,1,'#ffb0b0');
+g.drawImage(o,0,0,L,L,0,0,S,S); }
+addEventListener('resize',draw); draw(); setTimeout(draw,200); setTimeout(draw,800);
+</script></body></html>

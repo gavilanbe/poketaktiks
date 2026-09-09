@@ -1,0 +1,95 @@
+# POKÉTAKTIKS — pixel tactics with Gen I Pokémon
+
+**Play:** https://gavilanbe.github.io/poketaktiks/
+
+A Fire Emblem / Advance Wars style tactics game played with the Pokémon Showdown
+party icons ("the little ones"). Grid board, move ranges, the yellow path arrow,
+counters, doubles, terrain bonuses, type matchups, catching wild Pokémon, level
+ups and evolutions, an 8-chapter campaign and endless random skirmishes.
+
+Everything is HTML + JS vanilla with no dependencies: `./build.sh` concatenates
+the source files into a single `index.html`. Open it in Chrome (it works from
+`file://`). The only external asset is `assets/pokemonicons-sheet.png`, the
+Showdown mini-icon sheet, drawn straight from the sheet by dex number.
+
+## How it plays
+
+- **Player phase → enemy phase → wild phase.** Pick a Pokémon, walk the yellow
+  arrow through the blue tiles, then Attack / Catch / Bag / Wait. Red tiles are
+  where you can hit after moving. Empty tile or right click opens the menu
+  (End Turn, Danger zone, Help, Retreat).
+- **Combat is Pokémon maths, FE structure.** Real base stats from Showdown at
+  the unit's level, the standard damage formula, STAB (+25%), a softened type
+  chart (super effective ×1.5, ×2.25 for a double weakness, resisted ×0.67,
+  immunities stay at 0). The defender counters if the attacker stands in one
+  of its move ranges. Speed 8+ higher than the foe = you strike twice (×2).
+  Crits are shown in the forecast; the forecast is deterministic apart from
+  HIT and CRIT.
+- **Moves come from types.** Every Pokémon has the best unlocked move of each
+  of its types plus a Normal fallback; ranged types (Fire, Water, Electric,
+  Psychic, Grass, Rock…) reach 1–2 tiles, brawlers hit adjacent only. Statuses:
+  Poison ticks, Burn halves ATK, Paralysis cuts MOV, Frozen skips turns and
+  eats guaranteed crits.
+- **Terrain.** Forest 20% DEF, mountain 30%, tall grass 20 AVO, Poké Centers
+  heal 30% a turn and cure statuses, lava burns anything that is not Fire or
+  flying. Flyers ignore terrain, Water types swim, Rock/Ground/Fighting climb,
+  Bug/Grass walk through woods for free.
+- **Catching.** Wild Pokémon (yellow ring) fight everyone. Weaken one, stand
+  next to it, choose Catch, pick a ball. Chance grows as HP drops, ×1.3 with a
+  status, ×1.5 Great Ball, ×2 Ultra Ball. Caught Pokémon join the party at the
+  end of the map. Trainer Pokémon (red) cannot be stolen.
+- **Your side has an edge.** Trainer-bonded Pokémon (your team, including
+  catches) carry 20% more HP, and the legendary birds and Mewtwo run on
+  scaled-down base stats so a boss hits hard without one-shotting the board.
+  Balance was tuned with `tools/cdp.cjs sim`, which lets the enemy AI play
+  the player side through every chapter.
+- **Growth.** XP on every hit and KO, 100 per level, stats recomputed from base
+  stats. Level thresholds trigger evolutions on the board with a flashing
+  silhouette, and between chapters everybody trains up to the next chapter's
+  level so nobody is left behind. No permadeath: fainted Pokémon come back.
+- **Objectives.** Rout, defeat the boss, seize the Gym, survive N turns.
+  Reinforcements arrive on scripted turns. A par turn count earns a star.
+- **Campaign:** Pallet Meadow → Viridian Forest → Mt. Moon → Nugget Bridge →
+  Rocket Hideout → Power Plant (Zapdos) → Cinnabar Volcano (Moltres, survive)
+  → Cerulean Cave (Mewtwo). **Skirmish:** value-noise random maps with a road,
+  a Poké Center, a Rival boss and wild catches, using your campaign party or a
+  loaner team.
+- **Saves.** Campaign progress saves after each chapter; a suspend save is
+  written at the start of every player phase so you can close the tab and
+  pick the battle up from the title screen.
+
+## Controls
+
+Arrows/WASD move the cursor, Z/Enter/Space confirm, X/Esc cancel (cancelling
+after a move undoes it), Q/E cycle units, C shows unit info (and switches the
+move in the forecast), F toggles fast enemy phases, H help, M mute. Mouse:
+hover and click, right click to cancel, drag or wheel to pan. Touch: tap to
+move the cursor, tap again to confirm, tap-and-drag to pan.
+
+## Juice
+
+Screen shake and hit-stop scaled by crits, white hit flash, squash and stretch
+on select and on landing, hop-along path movement with dust, type-coloured
+particle bursts and projectiles, popping damage numbers and onomatopoeia
+(BONK!, FWOOSH!, BZZT!), "Super effective!" callouts, level-up fanfares with
+stat arrows, evolution flash sequence, Poké Ball throw with shakes and GOTCHA,
+sliding phase banners with the team parading underneath, speech-bubble quips
+when you pick a unit, confetti on victory. Chiptune SFX and a small step
+sequencer for music, all synthesised with WebAudio (nothing to download).
+Reduced-motion preference tones the particles and shake down.
+
+## Files
+
+`core.js` canvas scaling, input, RNG, drawing, sprite atlas, audio ·
+`font.js` pixel fonts · `dex.js` Gen I data (generated by `tools/dex.py`) ·
+`data.js` types, moves, items, terrain, unit factory · `art.js` procedural
+tiles, cursor, arrow, particles · `model.js` pathfinding, combat, AI ·
+`battle.js` the board scene · `campaign.js` chapters and the skirmish
+generator · `scenes.js` title, starter, prep, story, results · `main.js` flow,
+saves, loop.
+
+`tools/shot.sh "ch=3&silent&nosave"` takes a headless screenshot;
+`node tools/cdp.cjs smoke|mech|flow|enemy|skirmish|mobile|balance` drives the
+game over the DevTools protocol and writes screenshots to `artifacts/`.
+
+Sprites: Pokémon Showdown. Pokémon © Nintendo / Game Freak / Creatures.
