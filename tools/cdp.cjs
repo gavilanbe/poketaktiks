@@ -114,6 +114,10 @@ async function main() {
 
     if (script === 'trace') { const ch = process.argv[3] || '4'; await nav('ch=' + ch + '&silent&nosave&seed=1'); await waitMode('idle', 6000); await ev('__pk.simBattle(30, true)'); out.push(await ev('__pk.B.simLog.join("\\n")')); }
     if (script === 'sim') { for (let ch = 1; ch <= 8; ch++) { const res = []; for (const seed of [1, 2, 3, 4, 5]) { await nav('ch=' + ch + '&silent&nosave&seed=' + seed); await waitMode('idle', 6000); const r = await send('Runtime.evaluate', { expression: 'JSON.stringify(__pk.simBattle(30, true))', returnByValue: true }); const v = r.result && r.result.result ? JSON.parse(r.result.result.value) : { result: '?' }; res.push((v.result || '-')[0] + v.turn + ' p' + v.p + 'e' + v.e); } out.push('ch' + ch + ': ' + res.join('  ')); } }
+    if (script === 'probe') { // ad-hoc: PK_EXPR is evaluated after loading ch1, then a zoomed clip is saved as artifacts/probe.png
+      await nav(process.env.PK_NAV || 'ch=1&silent&nosave&seed=3'); await waitMode('idle', 6000); if (process.env.PK_EXPR) out.push('expr: ' + await ev(process.env.PK_EXPR)); await sleep(parseInt(process.env.PK_WAIT || '200'));
+      const [ax, ay] = await tileCenter(parseInt(process.env.PK_TX || '3'), parseInt(process.env.PK_TY || '3')); const r = await send('Page.captureScreenshot', { format: 'png', clip: { x: ax - 170, y: ay - 120, width: 340, height: 240, scale: 3 } }); fs.writeFileSync(path.join(ROOT, 'artifacts', 'probe.png'), Buffer.from(r.result.data, 'base64'));
+    }
     if (script === 'art') {
       // art review: arrow with corners, danger zone, typed hit effects, KO, and clean chapter views
       await nav('ch=1&silent&nosave&seed=3'); await waitMode('idle', 6000);

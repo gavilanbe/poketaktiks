@@ -331,69 +331,106 @@ function rangeOverlay(cells, inSet, sx, sy, col, edgeCol, phase) {
     if (!inSet(c.x + 1, c.y)) { rect(X + TILE - 1, Y, 1, TILE, edgeCol); ctx.globalAlpha = .5; rect(X + TILE - 2, Y, 1, TILE, dark); ctx.globalAlpha = 1; }
   }
 }
-// Bracket cursor: four L-shaped corners, white body with a coloured inner accent and a dark outline, breathing in and out.
+// Pixel ellipse ring (outer radius rx/ry, `th` pixels thick) — used for unit bases and selection pulses.
+function ellipseRing(cx, cy, rx, ry, th, c) {
+  ctx.fillStyle = c; cx |= 0; cy |= 0;
+  for (let y = -ry; y <= ry; y++) {
+    const wo = Math.floor(rx * Math.sqrt(Math.max(0, 1 - (y * y) / (ry * ry))) + .5);
+    const ry2 = ry - th, rx2 = rx - th; const wi = (ry2 > 0 && Math.abs(y) <= ry2) ? Math.floor(rx2 * Math.sqrt(Math.max(0, 1 - (y * y) / (ry2 * ry2))) + .5) : -1;
+    if (wi < 0) ctx.fillRect(cx - wo, cy + y, 2 * wo + 1, 1); else { ctx.fillRect(cx - wo, cy + y, wo - wi, 1); ctx.fillRect(cx + wi + 1, cy + y, wo - wi, 1); }
+  }
+}
+// Bracket cursor: four L-shaped corners that snap in from wide when the cursor lands on a new tile, then breathe.
+const CUR = { x: null, y: null, t0: 0 };
+function drawCursorGlow(x, y, t) {
+  const k = .5 + .5 * Math.sin(t / 220); ctx.globalAlpha = .08 + .07 * k; rect(x, y, TILE, TILE, '#ffffff');
+  ctx.globalAlpha = .18 + .12 * k; outline(x, y, TILE, TILE, '#ffffff'); ctx.globalAlpha = 1;
+}
 function drawCursor(x, y, t, col = '#ffffff', col2 = '#ffd24a') {
-  const o = 2 + Math.round(Math.sin(t / 180) * 1.5); const L = 9, T2 = 3;
+  if (CUR.x !== x || CUR.y !== y) { CUR.x = x; CUR.y = y; CUR.t0 = t; }
+  const snap = REDUCED ? 0 : Math.max(0, 1 - (t - CUR.t0) / 130); // 1 → just landed
+  const o = 2 + Math.round(Math.sin(t / 180) * 1.5 + snap * snap * 7); const L = 9, T2 = 3;
   const corners = [[x - o, y - o, 1, 1], [x + TILE + o, y - o, -1, 1], [x - o, y + TILE + o, 1, -1], [x + TILE + o, y + TILE + o, -1, -1]];
   const Lshape = (cx, cy, dx, dy, len, th, c, inset) => {
     const x0 = dx > 0 ? cx + inset : cx - inset - len + 1, y0 = dy > 0 ? cy + inset : cy - inset - th + 1; rect(x0, y0, len, th, c);
     const x1 = dx > 0 ? cx + inset : cx - inset - th + 1, y1 = dy > 0 ? cy + inset : cy - inset - len + 1; rect(x1, y1, th, len, c);
   };
+  const dark = shade(col2, -.6);
   for (const [cx, cy, dx, dy] of corners) {
-    Lshape(cx + 1, cy + 1, dx, dy, L + 1, T2 + 2, UI.shadow, -1); // drop shadow
-    Lshape(cx, cy, dx, dy, L + 1, T2 + 2, UI.shadow, -1);
-    Lshape(cx, cy, dx, dy, L, T2, col, 0);
-    Lshape(cx, cy, dx, dy, L - 1, 1, col2, T2 - 1);
+    ctx.globalAlpha = .45; Lshape(cx + 1, cy + 2, dx, dy, L + 1, T2 + 2, '#000000', -1); ctx.globalAlpha = 1; // soft drop shadow
+    Lshape(cx, cy, dx, dy, L + 1, T2 + 2, UI.shadow, -1); // outline
+    Lshape(cx, cy, dx, dy, L, T2, col, 0); // body
+    Lshape(cx, cy, dx, dy, L - 1, 1, col2, T2 - 1); // inner accent
+    Lshape(cx, cy, dx, dy, L - 2, 1, dark, T2 - 1); ctx.globalAlpha = .35; Lshape(cx, cy, dx, dy, L - 2, 1, col2, T2 - 1); ctx.globalAlpha = 1; // accent shading
+    px(cx, cy, col2); // rounded outer corner: coloured tip pixel
+    px(cx + dx * (L - 1), cy, col2); px(cx, cy + dy * (L - 1), col2); // bright tips on the bracket ends
   }
+  if (snap > .5 && !REDUCED) { ctx.globalAlpha = (snap - .5) * 2 * .6; outline(x - 1, y - 1, TILE + 2, TILE + 2, col); ctx.globalAlpha = 1; }
 }
-// FE-style path arrow built from per-cell pieces (tail, straight, corner, head) rendered once into offscreen canvases.
+// FE-style path arrow. Each cell is one piece (tail, straight, corner, head), built once from a silhouette mask and
+// shaded per pixel (light from the top-left) so the shaft reads as a bevelled tube with a crisp dark outline.
 const ARROW = {};
 const DIRS = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
-function arrowPiece(din, dout) {
-  const key = din + dout; if (ARROW[key]) return ARROW[key];
-  const c = tileCanvas(); const g = c.getContext('2d'); const p = painter(g);
-  const OUT = '#5a2400', DK = '#d86a14', MID = '#ffa42a', LT = '#ffd970', hw = 5, C = 16;
-  const bar = (d, from, to, col, w) => { const [dx, dy] = DIRS[d]; if (dx) { const x0 = Math.min(C + dx * from, C + dx * to), x1 = Math.max(C + dx * from, C + dx * to); p.R(x0, C - w, x1 - x0 + 1, 2 * w + 1, col); } else { const y0 = Math.min(C + dy * from, C + dy * to), y1 = Math.max(C + dy * from, C + dy * to); p.R(C - w, y0, 2 * w + 1, y1 - y0 + 1, col); } };
-  const shadeBar = (d, from, to) => { const [dx, dy] = DIRS[d]; if (dx) { const x0 = Math.min(C + dx * from, C + dx * to), x1 = Math.max(C + dx * from, C + dx * to); p.R(x0, C - hw, x1 - x0 + 1, 1, LT); p.R(x0, C + hw, x1 - x0 + 1, 1, DK); } else { const y0 = Math.min(C + dy * from, C + dy * to), y1 = Math.max(C + dy * from, C + dy * to); p.R(C - hw, y0, 1, y1 - y0 + 1, LT); p.R(C + hw, y0, 1, y1 - y0 + 1, DK); } };
-  const inD = din !== '-' ? opp(din) : null; // direction toward the previous cell
-  if (dout !== '-' && din !== '-' && din !== dout) { // corner
-    bar(inD, 0, 16, OUT, hw + 1); bar(dout, 0, 16, OUT, hw + 1);
-    bar(inD, 0, 16, MID, hw); bar(dout, 0, 16, MID, hw);
-    shadeBar(inD, 0, 16); shadeBar(dout, 0, 16); p.R(C - hw, C - hw, 2 * hw + 1, 2 * hw + 1, MID);
-    // re-shade the elbow: light on the top/left edges of the outer corner, dark on the bottom/right
-    const [ax, ay] = DIRS[inD], [bx, by] = DIRS[dout]; const ex = -(ax + bx), ey = -(ay + by); // outer corner direction
-    if (ey < 0) p.R(C - hw, C - hw, 2 * hw + 1, 1, LT); if (ex < 0) p.R(C - hw, C - hw, 1, 2 * hw + 1, LT);
-    if (ey > 0) p.R(C - hw, C + hw, 2 * hw + 1, 1, DK); if (ex > 0) p.R(C + hw, C - hw, 1, 2 * hw + 1, DK);
-    // chamfer the outer corner by two pixels (outline steps in), and the inner corner by one
-    const ox = C + ex * (hw + 1), oy = C + ey * (hw + 1);
-    g.clearRect(ox - (ex < 0 ? 0 : 1), oy - (ey < 0 ? 0 : 1), 2, 2); g.clearRect(ox - (ex < 0 ? 0 : 0), oy - (ey < 0 ? 0 : 0), 1, 1);
-    p.P(ox - ex, oy - ey * 2, OUT); p.P(ox - ex * 2, oy - ey, OUT); p.P(ox - ex * 2, oy - ey * 2, OUT); p.P(ox, oy - ey * 3, OUT); p.P(ox - ex * 3, oy, OUT);
-    p.P(ox - ex, oy - ey * 3, ey < 0 || ex < 0 ? LT : DK); p.P(ox - ex * 3, oy - ey, ey < 0 || ex < 0 ? LT : DK); p.P(ox - ex * 2, oy - ey * 2, ey < 0 && ex < 0 ? LT : ey > 0 && ex > 0 ? DK : MID); p.P(ox - ex * 2, oy - ey * 2, OUT);
-    const ix = C - ex * (hw + 1), iy = C - ey * (hw + 1); p.P(ix, iy, OUT);
-  } else if (din === '-') { // tail: round cap toward dout
-    p.C(C, C, hw + 2, OUT); if (dout !== '-') bar(dout, 0, 16, OUT, hw + 1); p.C(C, C, hw + 1, MID); if (dout !== '-') { bar(dout, 0, 16, MID, hw); shadeBar(dout, 0, 16); }
-    p.C(C, C, hw - 1, MID); p.R(C - 3, C - hw, 5, 1, LT); p.P(C - hw + 1, C - 3, LT); p.P(C - 4, C - 4, LT); p.R(C - 3, C + hw, 5, 1, DK);
-    p.C(C, C, 3, OUT); p.C(C, C, 2, '#ffe9a0');
-  } else if (dout === '-') { // head: bar from the incoming edge, then a chevron
-    const d = din; const [dx, dy] = DIRS[d]; bar(inD, 0, 16, OUT, hw + 1); bar(inD, 0, 16, MID, hw); shadeBar(inD, 0, 16);
-    const HW = 10, HL = 12; const base = -4, tip = base + HL; // along d from centre
-    for (let k = 0; k <= HL + 1; k++) { const w = Math.round((HW + 1) * (1 - (k - 1) / (HL + 1))); if (w < 0) break; const s = base - 1 + k; if (dx) p.R(C + dx * s, C - w, 1, 2 * w + 1, OUT); else p.R(C - w, C + dy * s, 2 * w + 1, 1, OUT); }
-    for (let k = 0; k <= HL; k++) { const w = Math.round(HW * (1 - k / HL)); const s = base + k; if (dx) p.R(C + dx * s, C - w, 1, 2 * w + 1, k === 0 ? OUT : MID); else p.R(C - w, C + dy * s, 2 * w + 1, 1, k === 0 ? OUT : MID); }
-    for (let k = 1; k <= HL; k++) { const w = Math.round(HW * (1 - k / HL)); const s = base + k; if (dx) { p.P(C + dx * s, C - w, LT); p.P(C + dx * s, C + w, DK); } else { p.P(C - w, C + dy * s, LT); p.P(C + w, C + dy * s, DK); } }
-    if (dx) p.R(C + dx * (base + 1), C - hw, 1, 2 * hw + 1, dx > 0 ? MID : MID); else p.R(C - hw, C + dy * (base + 1), 2 * hw + 1, 1, MID);
-    if (dx) { p.R(C + dx * (base + 1), C - HW + 1, 1, 2, LT); } else { p.R(C - HW + 1, C + dy * (base + 1), 2, 1, LT); }
-  } else { // straight
-    bar(inD, 0, 16, OUT, hw + 1); bar(dout, 0, 16, OUT, hw + 1); bar(inD, 0, 16, MID, hw); bar(dout, 0, 16, MID, hw); shadeBar(inD, 0, 16); shadeBar(dout, 0, 16);
+const ARROW_PAL = { OUT: '#4a1e00', DK: '#d0601a', MID: '#ff9f2e', LT: '#ffd45a', LT2: '#ffbf42', GL: '#fff2b0' };
+function arrowMask(din, dout) {
+  const C = 16, hw = 4, inD = din !== '-' ? opp(din) : null; const dirs = []; if (inD) dirs.push(inD); if (dout !== '-') dirs.push(dout);
+  const m = new Uint8Array(32 * 32); const set = (x, y) => { if (x >= 0 && y >= 0 && x < 32 && y < 32) m[y * 32 + x] = 1; };
+  const inBar = (d, x, y) => { const [dx, dy] = DIRS[d]; const ax = x - C, ay = y - C; if (dx) return Math.sign(ax) === dx || ax === 0 ? Math.abs(ay) <= hw : false; return Math.sign(ay) === dy || ay === 0 ? Math.abs(ax) <= hw : false; };
+  const isHead = dout === '-' && din !== '-';
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+    let on = false;
+    if (isHead) { // shaft from the entering edge to the head base, then a chevron
+      const d = din, [dx, dy] = DIRS[d]; const s = dx ? (x - C) * dx : (y - C) * dy, w = dx ? Math.abs(y - C) : Math.abs(x - C);
+      const base = -3, tip = 9, HW = 9; if (s <= base && w <= hw) on = true; if (s >= base && s <= tip) { const ww = Math.round(HW * (1 - (s - base) / (tip - base))); if (w <= ww) on = true; }
+    } else {
+      for (const d of dirs) if (inBar(d, x, y)) on = true;
+      if (din === '-') { const dd = (x - C) * (x - C) + (y - C) * (y - C); if (dd <= (hw + 1.5) * (hw + 1.5)) on = true; } // tail knob
+      if (dirs.length === 2 && inD !== dout) { // round the outer elbow of a corner
+        const [ax, ay] = DIRS[inD], [bx, by] = DIRS[dout]; const ex = -(ax + bx), ey = -(ay + by);
+        if (Math.sign(x - C) === ex && Math.sign(y - C) === ey) { const dd = (x - C) * (x - C) + (y - C) * (y - C); if (dd > (hw + .5) * (hw + .5)) on = false; }
+      }
+    }
+    if (on) set(x, y);
   }
+  return m;
+}
+function arrowPiece(din, dout, variant = '') {
+  const key = din + dout + variant; if (ARROW[key]) return ARROW[key];
+  const c = tileCanvas(); const g = c.getContext('2d'); const m = arrowMask(din, dout); const P = ARROW_PAL;
+  const ex = new Set(); if (din !== '-') ex.add(opp(din)); if (dout !== '-') ex.add(dout); // sides where the shaft leaves the cell
+  const at = (x, y) => x >= 0 && y >= 0 && x < 32 && y < 32 ? m[y * 32 + x] : ((x < 0 && ex.has('W') || x >= 32 && ex.has('E')) && Math.abs(y - 16) <= 4 || (y < 0 && ex.has('N') || y >= 32 && ex.has('S')) && Math.abs(x - 16) <= 4 ? 1 : 0);
+  const isOut = (x, y) => !at(x, y) && (at(x - 1, y) || at(x + 1, y) || at(x, y - 1) || at(x, y + 1) || at(x - 1, y - 1) || at(x + 1, y - 1) || at(x - 1, y + 1) || at(x + 1, y + 1));
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+    if (variant === 'shadow') { if (at(x, y) || isOut(x, y)) { g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(x, y, 1, 1); } continue; }
+    if (variant === 'shine') { if (at(x, y)) { g.fillStyle = '#ffffff'; g.fillRect(x, y, 1, 1); } continue; }
+    if (!at(x, y)) { if (isOut(x, y)) { g.fillStyle = P.OUT; g.fillRect(x, y, 1, 1); } continue; }
+    let col = P.MID;
+    if (!at(x, y - 1)) col = P.LT; else if (!at(x, y - 2)) col = P.LT2; else if (!at(x - 1, y)) col = P.LT; else if (!at(x - 2, y)) col = P.LT2;
+    else if (!at(x, y + 1)) col = P.DK; else if (!at(x + 1, y)) col = P.DK;
+    if (!at(x, y - 1) && !at(x - 1, y)) col = P.GL; // top-left corner glint
+    g.fillStyle = col; g.fillRect(x, y, 1, 1);
+  }
+  if (variant === '' && din === '-') { const p = painter(g); p.C(16, 16, 2, P.OUT); p.P(16, 16, P.GL); p.P(15, 15, P.GL); } // tail knob ring
   ARROW[key] = c; return c;
 }
 function opp(d) { return d === 'N' ? 'S' : d === 'S' ? 'N' : d === 'E' ? 'W' : 'E'; }
 function dirOf(a, b) { return b.x > a.x ? 'E' : b.x < a.x ? 'W' : b.y > a.y ? 'S' : 'N'; }
-function drawArrow(path, sx, sy) {
+const ARROW_ST = { sig: '', t0: 0 };
+function drawArrow(path, sx, sy, t = performance.now()) {
   if (path.length < 2) return;
-  for (let i = 0; i < path.length; i++) {
-    const din = i > 0 ? dirOf(path[i - 1], path[i]) : '-', dout = i < path.length - 1 ? dirOf(path[i], path[i + 1]) : '-';
-    ctx.drawImage(arrowPiece(din, dout), sx + path[i].x * TILE, sy + path[i].y * TILE);
+  const n = path.length; const last = path[n - 1]; const sig = n + ':' + last.x + ',' + last.y; if (sig !== ARROW_ST.sig) { ARROW_ST.sig = sig; ARROW_ST.t0 = t; }
+  const pop = REDUCED ? 0 : Math.max(0, 1 - (t - ARROW_ST.t0) / 110);
+  const kinds = []; for (let i = 0; i < n; i++) kinds.push([i > 0 ? dirOf(path[i - 1], path[i]) : '-', i < n - 1 ? dirOf(path[i], path[i + 1]) : '-']);
+  for (let i = 0; i < n; i++) ctx.drawImage(arrowPiece(kinds[i][0], kinds[i][1], 'shadow'), sx + path[i].x * TILE + 1, sy + path[i].y * TILE + 2);
+  for (let i = 0; i < n; i++) {
+    const X = sx + path[i].x * TILE, Y = sy + path[i].y * TILE;
+    if (i === n - 1 && pop > 0) { const sc = 1 + pop * .35; ctx.drawImage(arrowPiece(kinds[i][0], kinds[i][1]), Math.round(X - (sc - 1) * 16), Math.round(Y - (sc - 1) * 16), Math.round(32 * sc), Math.round(32 * sc)); }
+    else ctx.drawImage(arrowPiece(kinds[i][0], kinds[i][1]), X, Y);
+  }
+  if (!REDUCED) { // a soft light pulse runs from the tail to the head
+    const pos = ((t / 1000) * 7) % (n + 4) - 1;
+    for (let i = 0; i < n; i++) { const a = Math.max(0, 1 - Math.abs(i - pos) / 1.5) * .45; if (a <= 0) continue; ctx.globalAlpha = a; ctx.drawImage(arrowPiece(kinds[i][0], kinds[i][1], 'shine'), sx + path[i].x * TILE, sy + path[i].y * TILE); }
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -517,11 +554,13 @@ function stampAt(x, y, rows, pal) { for (let j = 0; j < rows.length; j++) for (l
 function pointerHand(x, y, t) { const b = Math.round(Math.sin(t / 120)); x += b; stampAt(x, y - 1, ST.hand, { O: UI.shadow, W: '#ffffff' }); px(x + 2, y + 3, '#e0d8c8'); px(x + 3, y + 5, '#e0d8c8'); }
 function drawCrown(x, y) { stampAt(x, y, ST.crownGold, { O: '#5a3a00', Y: UI.gold }); px(x + 2, y + 2, '#ff5a5a'); px(x + 1, y + 1, '#fff0a0'); }
 function drawSkull(x, y) { stampAt(x, y, ST.skull, { O: '#3a1020', W: '#f0e8f0' }); px(x + 1, y + 2, '#ff5a5a'); px(x + 3, y + 2, '#ff5a5a'); }
-// Unit base plate: elliptical stand in the team colour with a dark rim and a glossy top edge.
-function drawStand(cx, by, team, a = 1) {
-  ctx.globalAlpha = .55 * a; ellipse(cx + 1, by + 2, 12, 4, '#000000'); ctx.globalAlpha = a;
-  ellipse(cx, by + 1, 12, 4, teamColorD(team)); ellipse(cx, by, 11, 3, teamColor(team)); ellipse(cx, by + 1, 8, 2, teamColorD(team));
-  ctx.globalAlpha = .7 * a; hline(cx - 6, by - 2, 7, teamColorL(team)); px(cx - 8, by - 1, teamColorL(team)); ctx.globalAlpha = 1;
+// Unit base: a translucent team plate with a glossy rim, and a soft ground shadow that shrinks while the unit is airborne.
+function drawStand(cx, by, team, a = 1, air = 0) {
+  const sh = Math.max(.4, 1 - air / 18);
+  ctx.globalAlpha = .22 * a; ellipse(cx, by, 11, 3, teamColor(team));
+  ctx.globalAlpha = .3 * a * sh; ellipse(cx, by, Math.round(8 * sh), Math.max(1, Math.round(2.5 * sh)), '#000000');
+  ctx.globalAlpha = a; ellipseRing(cx, by + 1, 13, 5, 1, '#0b1020'); ellipseRing(cx, by, 13, 5, 1, teamColorD(team)); ellipseRing(cx, by, 12, 4, 1, teamColor(team));
+  ctx.globalAlpha = .9 * a; hline(cx - 5, by - 4, 8, teamColorL(team)); px(cx - 8, by - 3, teamColorL(team)); px(cx - 10, by - 2, teamColorL(team)); px(cx + 4, by - 4, '#ffffff'); ctx.globalAlpha = 1;
 }
 // Portrait window background used by cards: team colour, diagonal light band, inner frame.
 function portraitBg(x, y, w, h, team) {

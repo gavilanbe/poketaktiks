@@ -104,9 +104,9 @@ function updateAnim(dt) {
   if (q.kind === 'move') {
     const p = q.path; if (p.length < 2) { q.unit.x = p[0].x; q.unit.y = p[0].y; nextAnim(); return; }
     const total = (p.length - 1) * q.dur; const k = Math.min(1, q.t / total); const seg = Math.min(p.length - 2, Math.floor(k * (p.length - 1))); const f = k * (p.length - 1) - seg;
-    const a = p[seg], b = p[seg + 1]; q.unit.x = a.x; q.unit.y = a.y; q.unit.fx.dx = (b.x - a.x) * f * TILE; q.unit.fx.dy = (b.y - a.y) * f * TILE - Math.abs(Math.sin(f * Math.PI)) * 5; q.unit.fx.facing = b.x - a.x !== 0 ? Math.sign(b.x - a.x) : q.unit.fx.facing;
+    const a = p[seg], b = p[seg + 1]; const h = Math.abs(Math.sin(f * Math.PI)); q.unit.x = a.x; q.unit.y = a.y; q.unit.fx.dx = (b.x - a.x) * f * TILE; q.unit.fx.air = h * 6; q.unit.fx.dy = (b.y - a.y) * f * TILE - h * 6; q.unit.fx.sy = 1 + h * .14; q.unit.fx.sx = 1 - h * .1; q.unit.fx.facing = b.x - a.x !== 0 ? Math.sign(b.x - a.x) : q.unit.fx.facing;
     if (seg !== q.i) { q.i = seg; Audio.sfx('step'); spawnParts(a.x * TILE + TILE / 2, a.y * TILE + TILE - 4, 3, ['#d8c8a0', '#ffffff'], { speed: 20, life: .35, grav: -10, flat: true }); }
-    if (k >= 1) { const l = p[p.length - 1]; q.unit.x = l.x; q.unit.y = l.y; q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.unit.fx.sy = .8; q.unit.fx.sx = 1.2; nextAnim(); }
+    if (k >= 1) { const l = p[p.length - 1]; q.unit.x = l.x; q.unit.y = l.y; q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.unit.fx.air = 0; q.unit.fx.sy = .78; q.unit.fx.sx = 1.24; Audio.sfx('step'); for (let i = 0; i < 3; i++) spawnSprite('poof', l.x * TILE + TILE / 2 + (i - 1) * 9, l.y * TILE + TILE - 5, { size: 3, life: .3, col: '#e8e0d0', col2: '#ffffff', vx: (i - 1) * 24, vy: -8, delay: 0 }); nextAnim(); }
     return;
   }
   if (q.kind === 'strike') {
@@ -397,7 +397,8 @@ function battleDraw() {
   if (BT.mode === 'unitinfo' && BT.info && BT.info.team !== HT()) { const r = reachable(BT.info); const cells = [...r.values()].filter(n => canStand(BT.info, n.x, n.y)); rangeOverlay(cells, (x, y) => r.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6)); const ac = attackCells(BT.info, r); rangeOverlay(ac, (x, y) => r.has(key(x, y)) || ac.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e07030', '#ffc0a0', Math.floor(BT.time * 6)); }
   // target highlights
   if (BT.mode === 'target' || BT.mode === 'catchTarget') for (const t of BT.targets) { const X = tileX(t.x), Y = tileY(t.y); const k = Math.floor(BT.time * 8) % 2; outline(X + 1 + k, Y + 1 + k, TILE - 2 - 2 * k, TILE - 2 - 2 * k, t === BT.targets[BT.tIdx] ? '#ffffff' : '#ff6060'); }
-  if (BT.mode === 'move' && BT.path.length > 1) drawArrow(BT.path, -CAM.x + FX.shakeX, -CAM.y + FX.shakeY);
+  if (BT.mode === 'move' && BT.path.length > 1) drawArrow(BT.path, -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, BT.time * 1000);
+  if (['idle', 'move', 'target', 'catchTarget', 'unitinfo'].includes(BT.mode)) drawCursorGlow(tileX(BT.cx), tileY(BT.cy), BT.time * 1000);
   // units (sorted by y so southern sprites overlap northern ones)
   const units = B.units.filter(u => u.hp > 0 || (BT.anim && BT.anim.kind === 'event' && (BT.anim.ev.unit === u))).sort((a, b) => (a.y + a.fx.dy / TILE) - (b.y + b.fx.dy / TILE));
   for (const u of units) drawUnit(u);
@@ -434,24 +435,37 @@ function drawVoid() {
 }
 function drawUnit(u) {
   const f = u.fx; const X = tileX(u.x) + f.dx, Y = tileY(u.y) + f.dy; const cx = X + TILE / 2, by = Y + TILE - 3;
-  const idle = (u.team === HT() && !u.acted && BT.mode !== 'anim') ? Math.round(Math.sin(BT.time * 6 + u.id) * 1) : 0;
-  const sel = BT.sel === u && BT.mode === 'move';
-  const bob = sel ? Math.round(Math.abs(Math.sin(BT.time * 10)) * -3) : idle;
-  // shadow / team stand
-  drawStand(cx, by + 1, u.team, f.alpha);
-  if (u.boss) { ctx.globalAlpha = f.alpha; const k = Math.floor(BT.time * 4) % 2; ellipse(cx, by + 1, 13 + k, 5, '#ffd24a'); drawStand(cx, by + 1, u.team, f.alpha); ctx.globalAlpha = 1; }
+  const ready = u.team === HT() && !u.acted && BT.mode !== 'anim';
+  const sel = BT.sel === u && (BT.mode === 'move' || BT.mode === 'target' || BT.mode === 'menu');
+  const hovered = BT.cx === u.x && BT.cy === u.y && (BT.mode === 'idle' || BT.mode === 'unitinfo');
+  // idle life: ready units breathe with a slow hop; the hovered one perks up; the selected one bounces
+  let hop = 0, bsx = 1, bsy = 1;
+  if (sel) { const p = Math.abs(Math.sin(BT.time * 9)); hop = p * 3; bsy = 1 + p * .08; bsx = 1 - p * .05; }
+  else if (hovered && !REDUCED) { const p = Math.abs(Math.sin(BT.time * 7 + u.id)); hop = p * 2; bsy = 1 + p * .06; bsx = 1 - p * .04; }
+  else if (ready && !REDUCED) { const p = Math.abs(Math.sin(BT.time * 3 + u.id * 1.7)); hop = p * 1.5; bsy = 1 + p * .05; bsx = 1 - p * .03; }
+  else if (!REDUCED) { const p = .5 + .5 * Math.sin(BT.time * 2.2 + u.id * 2.1); bsy = 1 - p * .035; bsx = 1 + p * .02; }
+  const bob = -Math.round(hop); const air = (f.air || 0) + hop; const gy = by + 1 + (f.air || 0); // ground baseline
+  // ground shadow + team ring (+ boss halo, + selection pulse)
+  if (u.boss) { ctx.globalAlpha = f.alpha * .9; const k = Math.floor(BT.time * 4) % 2; ellipseRing(cx, gy, 15 + k, 6, 2, '#ffd24a'); ctx.globalAlpha = 1; }
+  drawStand(cx, gy, u.team, f.alpha, air);
+  if (sel && !REDUCED) { const k = (BT.time * 1.4) % 1; ctx.globalAlpha = (1 - k) * .8 * f.alpha; ellipseRing(cx, gy, Math.round(12 + k * 8), Math.round(4 + k * 3), 1, teamColorL(u.team)); ctx.globalAlpha = 1; }
   const grey = u.team === HT() && u.acted && BT.mode !== 'anim';
   const num = f.showNum || u.num; const flip = u.team === 1 || u.team === 2 ? f.facing !== 1 : f.facing === -1;
-  let tint = null; if (f.flash) tint = '#ffffff'; else if (grey) tint = null;
+  let tint = null; if (f.flash) tint = '#ffffff';
+  const sx = f.sx * bsx, sy = f.sy * bsy;
   if (f.alpha > 0) {
-    if (grey) { ctx.globalAlpha = .9 * f.alpha; drawMon(num, cx, by + bob, { flip, sx: f.sx, sy: f.sy, tint: 'grey' }); ctx.globalAlpha = 1; }
-    else drawMon(num, cx, by + bob, { flip, sx: f.sx, sy: f.sy, tint, alpha: f.alpha });
-    if (f.flash === 1 && !grey) { ctx.globalAlpha = f.alpha; drawMon(num, cx, by + bob, { flip, sx: f.sx, sy: f.sy, tint: '#ffffff' }); ctx.globalAlpha = 1; }
+    if (grey) { ctx.globalAlpha = .9 * f.alpha; drawMon(num, cx, by + bob, { flip, sx, sy, tint: 'grey' }); ctx.globalAlpha = 1; }
+    else drawMon(num, cx, by + bob, { flip, sx, sy, tint, alpha: f.alpha });
+    if (f.flash === 1 && !grey) { ctx.globalAlpha = f.alpha; drawMon(num, cx, by + bob, { flip, sx, sy, tint: '#ffffff' }); ctx.globalAlpha = 1; }
   }
-  // hp pip bar + level + status
+  // segmented hp bar + status + leader / boss marks
   if (f.alpha > 0 && u.hp > 0) {
     const show = BT.hpShow.get(u.id); let hp = u.hp; if (show) hp = Math.round(lerp(show.from, show.to, Math.min(1, show.t)));
-    ctx.globalAlpha = f.alpha; const bw = 20; rrect(cx - bw / 2 - 1, by + 4, bw + 2, 5, UI.shadow, 1); rect(cx - bw / 2, by + 5, bw, 3, '#2b2b33'); const ratio = clamp(hp / u.maxHp, 0, 1); const w = Math.round(bw * ratio); if (w) { const hc = hpColor(ratio); rect(cx - bw / 2, by + 5, w, 3, hc); hline(cx - bw / 2, by + 5, w, shade(hc, .4)); }
+    ctx.globalAlpha = f.alpha; const bw = 20, bx = cx - bw / 2, byy = gy + 4;
+    rrect(bx - 2, byy - 1, bw + 4, 7, UI.shadow, 1); rrect(bx - 1, byy, bw + 2, 5, teamColorD(u.team), 1); rect(bx, byy + 1, bw, 3, '#1c1c24');
+    const ratio = clamp(hp / u.maxHp, 0, 1); const w = Math.round(bw * ratio);
+    if (w) { const hc = hpColor(ratio); rect(bx, byy + 1, w, 3, hc); hline(bx, byy + 1, w, shade(hc, .45)); ctx.globalAlpha = .35 * f.alpha; for (let i = 4; i < w; i += 4) vline(bx + i, byy + 1, 3, '#000000'); ctx.globalAlpha = f.alpha; }
+    if (show && show.t < 1 && show.from > show.to) { const w0 = Math.round(bw * clamp(show.from / u.maxHp, 0, 1)); if (w0 > w) { ctx.globalAlpha = f.alpha * (Math.floor(BT.time * 16) % 2 ? .9 : .4); rect(bx + w, byy + 1, w0 - w, 3, '#ffffff'); ctx.globalAlpha = f.alpha; } }
     if (u.status) statusBadge(u.status, cx + 6, Y - 2);
     if (u.leader) { const k = Math.round(Math.sin(BT.time * 5) * 1); drawCrown(cx - 16, Y + 2 + k); }
     if (u.boss) { const k = Math.round(Math.sin(BT.time * 4) * 1); drawSkull(cx + 10, Y - 4 + k); }
