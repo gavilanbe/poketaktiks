@@ -443,7 +443,7 @@ function spawnParts(x, y, n, col, opt = {}) {
 // Shaped effect sprite. kinds: burst flash slash flame drop bolt leaf bubble shard rock wisp psy poof spark heart wind star
 function spawnSprite(kind, x, y, o = {}) {
   if (REDUCED && FX.sprites.length > 12) return null;
-  const s = { kind, x, y, vx: o.vx || 0, vy: o.vy || 0, t: -(o.delay || 0), life: o.life || .5, col: o.col || '#ffffff', col2: o.col2 || '#ffffff', size: o.size || 6, grav: o.grav || 0, rot: o.rot || 0, spin: o.spin || 0, seed: Math.floor(vrnd() * 1e6), arc: o.arc || 0, x0: x, y0: y, tx: o.tx, ty: o.ty, trail: o.trail || null };
+  const s = { kind, x, y, vx: o.vx || 0, vy: o.vy || 0, t: -(o.delay || 0), life: o.life || .5, col: o.col || '#ffffff', col2: o.col2 || '#ffffff', size: o.size || 6, grav: o.grav || 0, rot: o.rot || 0, spin: o.spin || 0, seed: Math.floor(vrnd() * 1e6), arc: o.arc || 0, x0: x, y0: y, tx: o.tx, ty: o.ty, trail: o.trail || null, len: o.len || 0 };
   FX.sprites.push(s); return s;
 }
 function floatText(x, y, s, col = '#ffffff', opt = {}) { FX.texts.push({ x, y, s, col, t: 0, life: opt.life || 1, big: !!opt.big, outline: opt.outline || UI.shadow, vy: opt.vy == null ? -26 : opt.vy, delay: opt.delay || 0, pop: opt.pop !== false }); }
@@ -481,6 +481,8 @@ function drawSprite(s, ox, oy) {
     case 'poof': { const r = Math.max(1, Math.round(s.size * (0.5 + k * .8))); ctx.globalAlpha = fade * .85; circle(x, y, r, s.col); circle(x - r, y + 1, Math.max(1, r - 2), s.col); circle(x + r, y + 1, Math.max(1, r - 2), s.col); circle(x - 1, y - 1, Math.max(0, r - 2), s.col2); break; }
     case 'heart': { const sc = k < .2 ? 1 : 1; ctx.fillStyle = s.col; const rows = ST.heart; for (let j = 0; j < rows.length; j++) for (let i = 0; i < rows[j].length; i++) if (rows[j][i] !== '.') { ctx.fillStyle = rows[j][i] === 'L' ? '#ffffff' : s.col; ctx.fillRect(x - 2 + i, y - 2 + j, 1, 1); } break; }
     case 'wind': { const L = s.size; ctx.fillStyle = s.col; for (let n = 0; n < 3; n++) { const o = (n - 1) * 3, len = L - n * 2; ctx.fillRect(x - len + Math.round(k * 6), y + o, len, 1); } ctx.fillStyle = '#ffffff'; ctx.fillRect(x - 2, y, 3, 1); break; }
+    // horizontal beam of signed length `len` from (x,y): grows out fast, holds, then thins away
+    case 'beam': { const len = Math.round(s.len * Math.min(1, k * 2.5)); const th = Math.max(1, Math.round(s.size * (k < .25 ? k / .25 : k > .7 ? (1 - k) / .3 : 1))); const x0 = Math.min(x, x + len), w = Math.abs(len); const fl = (Math.floor(s.t * 40) + s.seed) % 2; ctx.fillStyle = s.col; ctx.fillRect(x0, y - th - fl, w, 2 * th + 1 + fl); ctx.fillStyle = s.col2; ctx.fillRect(x0, y - (th >> 1), w, (th >> 1) * 2 + 1); break; }
   }
   ctx.globalAlpha = 1;
 }

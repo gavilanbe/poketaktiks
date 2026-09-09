@@ -76,7 +76,7 @@ function titleDraw() {
   if (portrait) by = ly + 31 + 27 + 44; const total = items.length * (bh + gap); if (by + total > H - 26) by = Math.max(ly + 96, H - 26 - total);
   items.forEach((it, i) => { menuCard(bx, by, bw, bh, it[0], it[1], it[2], SC.i === i, () => { Audio.sfx('ok'); it[3](); }); by += bh + gap; });
   SC.menuLen = items.length;
-  text(Audio.muted ? '♪ off  (M)' : '♪ on  (M)', 6, H - 12, UI.muted); textR('Sprites: Pokémon Showdown', W - 6, H - 12, UI.muted);
+  text(Audio.muted ? '♪ off  (M)' : '♪ on  (M)', 6, H - 12, UI.muted); textR('Sprites: Pokémon Showdown · PokeAPI', W - 6, H - 12, UI.muted);
   if (Math.floor(SC.t * 2) % 2) textC(VIEW.touch ? 'tap a card' : 'arrows + Z  ·  or click', W / 2, H - 12, UI.muted, { outline: UI.shadow });
 }
 function titleInput(ev) {

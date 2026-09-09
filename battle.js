@@ -35,7 +35,8 @@ function startBattle(mapDef, party, bag, opts = {}) {
   const fresh = { acted: false, status: null, recharge: 0 };
   party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus ? 1 : BOND_HP })); u.hp = u.maxHp; u.leader = i === 0; B.units.push(u); });
   if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fx.facing = -1; B.units.push(u); });
-  BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.log = []; BT.showDanger = false;
+  BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.log = []; BT.showDanger = false; BT.hpShow.clear();
+  for (const u of B.units) requestBigSprite(u.num); // warm the duel scene's sprites; nothing waits on them
   const first = alive(0)[0]; BT.cx = first ? first.x : 0; BT.cy = first ? first.y : 0; centerCam(BT.cx, BT.cy, true);
   FX.parts = []; FX.texts = []; FX.sprites = [];
   Audio.playMusic(map.music);
@@ -61,7 +62,7 @@ function beginPhase(team, first, resumed = false) {
   BT.queue = ev.map(e => ({ kind: 'event', ev: e }));
   BT.afterBanner = () => { playQueue(() => { if (isHuman(team)) { const f = alive(team).find(u => !u.acted); if (f) { BT.cx = f.x; BT.cy = f.y; keepCursorVisible(); } BT.mode = 'idle'; } else runEnemyPhase(team); }); };
 }
-function spawnReinforcements() { const out = []; for (const r of B.map.reinforce) if (r.turn === B.turn && !r.done) { r.done = true; for (const d of r.units) { if (unitAt(d.x, d.y)) continue; const u = makeUnit(d.mon, d.level, d.team == null ? 1 : d.team, { x: d.x, y: d.y, ai: d.ai || 'aggro', boss: d.boss }); B.units.push(u); out.push(u); } } return out; }
+function spawnReinforcements() { const out = []; for (const r of B.map.reinforce) if (r.turn === B.turn && !r.done) { r.done = true; for (const d of r.units) { if (unitAt(d.x, d.y)) continue; const u = makeUnit(d.mon, d.level, d.team == null ? 1 : d.team, { x: d.x, y: d.y, ai: d.ai || 'aggro', boss: d.boss }); B.units.push(u); out.push(u); requestBigSprite(u.num); } } return out; }
 function nextPhase() {
   if (checkObjective()) { endBattle(); return; }
   let t = B.phase; for (let i = 0; i < 4; i++) { t = (t + 1) % 4; if (t === 0 || alive(t).length) break; }
@@ -77,6 +78,7 @@ function nextAnim() {
   if (!q) { BT.anim = null; const d = BT.queueDone; BT.queueDone = null; if (d) d(); return; }
   BT.anim = q; q.t = 0;
   if (q.kind === 'event') { setupEvent(q); }
+  if (q.kind === 'duel') { startDuel(q); }
   if (q.kind === 'move') { q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.i = 0; q.dur = (BT.fast ? .05 : .11); if (q.path.length > 1) { const l = q.path[q.path.length - 1]; if (Math.abs(l.x * TILE - CAM.tx - VIEW.w / 2) > VIEW.w * .6 || Math.abs(l.y * TILE - CAM.ty - VIEW.h / 2) > VIEW.h * .6) centerCam(q.path[0].x, q.path[0].y); } }
   if (q.kind === 'strike') { q.dur = BT.fast ? .35 : .62; centerCamBetween(q.att, q.def); }
   if (q.kind === 'msg') { q.dur = BT.fast ? .5 : 1.1; }
@@ -88,10 +90,10 @@ function setupEvent(q) {
   const e = q.ev; q.dur = BT.fast ? .35 : .7;
   const ux = u => u.x * TILE + TILE / 2, uy = u => u.y * TILE + 4;
   switch (e.type) {
-    case 'ko': q.dur = BT.fast ? .5 : .9; Audio.sfx('ko'); shake(4); spawnParts(ux(e.unit), uy(e.unit) + 8, 18, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 90, life: .7, grav: 60 }); if (e.unit.team !== 0) B.kills++; floatText(ux(e.unit), uy(e.unit) - 14, e.unit.team === 0 ? 'FAINTED!' : 'KO!', e.unit.team === 0 ? UI.red : UI.gold, { big: true, life: 1.3 }); if (e.unit.leader) { BT.leaderDown = true; } break;
+    case 'ko': q.dur = BT.fast ? .5 : .9; Audio.sfx('ko'); shake(4); spawnParts(ux(e.unit), uy(e.unit) + 8, 18, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 90, life: .7, grav: 60 }); noteKo(e); floatText(ux(e.unit), uy(e.unit) - 14, e.unit.team === 0 ? 'FAINTED!' : 'KO!', e.unit.team === 0 ? UI.red : UI.gold, { big: true, life: 1.3 }); break;
     case 'xp': q.dur = BT.fast ? .5 : 1.0; q.from = e.unit.xp - e.amount; break;
     case 'levelup': q.dur = BT.fast ? .9 : 2.1; Audio.sfx('levelup'); spawnParts(ux(e.unit), uy(e.unit), 24, ['#ffd24a', '#ffffff', '#5ee06a'], { speed: 70, life: .9, grav: -30, shape: 'ring' }); break;
-    case 'evolve': q.dur = BT.fast ? 1.4 : 3.2; Audio.sfx('evolve'); break;
+    case 'evolve': q.dur = BT.fast ? 1.4 : 3.2; Audio.sfx('evolve'); requestBigSprite(e.to.num); break;
     case 'heal': Audio.sfx('heal'); floatText(ux(e.unit), uy(e.unit), '+' + e.amount, UI.green, { outline: '#0a3a10' }); spawnParts(ux(e.unit), uy(e.unit) + 10, 10, ['#5ee06a', '#ffffff'], { speed: 30, grav: -60, life: .8 }); break;
     case 'cure': floatText(ux(e.unit), uy(e.unit) - 8, e.kind === 'frz' ? 'Thawed!' : e.kind === 'par' ? 'Recovered!' : 'Cured!', '#98d8f8'); break;
     case 'thaw': floatText(ux(e.unit), uy(e.unit) - 8, 'Thawed!', '#98d8f8'); break;
@@ -104,7 +106,9 @@ function setupEvent(q) {
   }
 }
 function updateAnim(dt) {
-  const q = BT.anim; if (!q) return; q.t += dt;
+  const q = BT.anim; if (!q) return;
+  if (q.kind === 'duel') { updateDuel(q, dt); if (q.done) nextAnim(); return; }
+  q.t += dt;
   if (q.kind === 'move') {
     const p = q.path; if (p.length < 2) { q.unit.x = p[0].x; q.unit.y = p[0].y; nextAnim(); return; }
     const total = (p.length - 1) * q.dur; const k = Math.min(1, q.t / total); const seg = Math.min(p.length - 2, Math.floor(k * (p.length - 1))); const f = k * (p.length - 1) - seg;
@@ -221,17 +225,28 @@ function confirmAttack() {
   const cf = currentForecast(); if (!cf) return; const u = BT.sel, t = cf.target; Audio.sfx('ok');
   if (t.team === 1 && t.ai !== 'aggro') t.provoked = true; if (t.boss) t.provoked = true;
   for (const e of B.units) if (e.team === 1 && e.hp > 0 && e.ai === 'boss' && dist(e, t) <= 3) e.provoked = true;
-  const ev = resolveCombat(u, t, cf.move, u); BT.queue = eventsToQueue(ev, u, t); BT.mode = 'anim';
+  BT.queue = combatQueue(u, t, cf.move, u); BT.mode = 'anim';
   playQueue(() => { finishUnit(u); });
 }
-function eventsToQueue(ev, u, t) {
+// The one place an exchange is resolved for display: snapshot both HP values, roll the combat once, and
+// hand the same event list to whichever presentation is active (duel scene or strikes on the board).
+function combatQueue(att, def, move, from) { const hp0 = { [att.id]: att.hp, [def.id]: def.hp }; return eventsToQueue(resolveCombat(att, def, move, from), att, def, hp0); }
+const DUEL_EVENTS = new Set(['hit', 'miss', 'ko', 'thaw']);
+function eventsToQueue(ev, u, t, hp0) {
   const q = [];
+  if (hp0 && PREF.battle !== 'map') { // the strikes and KOs play in the scene; recharge, XP, level ups and evolutions follow on the board
+    const scene = ev.filter(e => DUEL_EVENTS.has(e.type)); if (scene.length) q.push({ kind: 'duel', att: u, def: t, events: scene, hp0 });
+    for (const e of ev) if (!DUEL_EVENTS.has(e.type)) q.push({ kind: 'event', ev: e });
+    return q;
+  }
   for (const e of ev) {
     if (e.type === 'hit' || e.type === 'miss') { const d = dist(e.att, e.def); q.push({ kind: 'strike', att: e.att, def: e.def, move: e.move, ev: e, ranged: d > 1 }); }
     else q.push({ kind: 'event', ev: e });
   }
   return q;
 }
+// KO bookkeeping for the results screen, done once per KO event whichever presentation shows it.
+function noteKo(e) { if (e.noted) return; e.noted = true; if (e.unit.team !== 0) B.kills++; if (e.unit.leader) BT.leaderDown = true; }
 function confirmCatch() {
   const u = BT.sel, t = BT.targets[BT.tIdx]; const ball = BT.ball; if (!t || !ball) return;
   B.bag[ball]--; if (B.bag[ball] <= 0) delete B.bag[ball]; const r = tryCapture(t, ITEMS[ball]);
@@ -255,7 +270,12 @@ function cancel() {
   else if (BT.mode === 'ballPick') { BT.mode = 'catchTarget'; Audio.sfx('cancel'); }
   else if (BT.mode === 'itemTarget') { BT.mode = 'item'; Audio.sfx('cancel'); }
   else if (BT.mode === 'help' || BT.mode === 'unitinfo' || BT.mode === 'endmenu') { BT.mode = 'idle'; Audio.sfx('cancel'); }
-  else if (BT.mode === 'idle') { BT.mode = 'endmenu'; BT.menu = { items: [{ id: 'endturn', label: 'End Turn', icon: 'end', sub: B.versus ? 'Pass to the other trainer' : 'Pass to the enemy' }, { id: 'danger', label: (BT.showDanger ? 'Hide' : 'Show') + ' Danger', icon: 'skull', sub: 'Enemy attack range' }, { id: 'help', label: 'Help', icon: 'help', sub: 'Controls & rules' }, { id: 'mute', label: Audio.muted ? 'Unmute' : 'Mute', icon: 'note', sub: 'Sound on/off' }, { id: 'retreat', label: B.versus ? 'Forfeit' : 'Retreat', icon: 'run', sub: B.versus ? 'Concede the arena' : 'Give up this map' }, { id: 'close', label: 'Close', icon: 'x', sub: '' }], i: 0 }; Audio.sfx('menu'); }
+  else if (BT.mode === 'idle') { openEndMenu(); Audio.sfx('menu'); }
+}
+const BATTLE_PREF_LABEL = { full: 'Full duel', quick: 'Quick duel', map: 'Map only' };
+function openEndMenu(keepIndex = 0) {
+  BT.mode = 'endmenu';
+  BT.menu = { items: [{ id: 'endturn', label: 'End Turn', icon: 'end', sub: B.versus ? 'Pass to the other trainer' : 'Pass to the enemy' }, { id: 'danger', label: (BT.showDanger ? 'Hide' : 'Show') + ' Danger', icon: 'skull', sub: 'Enemy attack range' }, { id: 'scene', label: 'Battle: ' + BATTLE_PREF_LABEL[PREF.battle], icon: 'vs', sub: 'Attack scene: full, quick or on the map' }, { id: 'help', label: 'Help', icon: 'help', sub: 'Controls & rules' }, { id: 'mute', label: Audio.muted ? 'Unmute' : 'Mute', icon: 'note', sub: 'Sound on/off' }, { id: 'retreat', label: B.versus ? 'Forfeit' : 'Retreat', icon: 'run', sub: B.versus ? 'Concede the arena' : 'Give up this map' }, { id: 'close', label: 'Close', icon: 'x', sub: '' }], i: keepIndex };
 }
 function endTurn() { BT.mode = 'anim'; BT.sel = null; BT.autoEnd = 0; for (const u of alive(HT())) u.acted = true; nextPhase(); }
 
@@ -271,7 +291,7 @@ function runEnemyPhase(team) {
     if (!d) { step(); return; }
     BT.queue = [];
     if (d.x !== u.x || d.y !== u.y) { const reach = reachable(u); const p = pathTo(reach, d.x, d.y); if (p) BT.queue.push({ kind: 'fn', fn: () => { centerCam(u.x, u.y); } }, { kind: 'wait', t2: .25 }, { kind: 'move', unit: u, path: p }); }
-    if (d.target) { BT.queue.push({ kind: 'fn', fn: () => { const ev = resolveCombat(u, d.target, d.move, { x: d.x, y: d.y }); BT.queue.unshift(...eventsToQueue(ev, u, d.target)); } }); }
+    if (d.target) { BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...combatQueue(u, d.target, d.move, { x: d.x, y: d.y })); } }); }
     BT.queue.push({ kind: 'wait', t2: .15 });
     playQueue(() => { u.acted = true; step(); });
   };
@@ -281,7 +301,8 @@ function runEnemyPhase(team) {
 // ---------------------------------------------------------------- input handling
 function battleInput(ev) {
   if (ev.type === 'key' && ev.key === 'mute') { Audio.toggle(); return; }
-  if (ev.type === 'key' && ev.key === 'fast') { BT.fast = !BT.fast; floatText(VIEW.w / 2 + CAM.x, CAM.y + 40, BT.fast ? 'FAST MODE' : 'NORMAL SPEED', UI.gold); return; }
+  if (ev.type === 'key' && ev.key === 'fast') { BT.fast = !BT.fast; const d = duelActive(); floatText(VIEW.w / 2 + (d ? 0 : CAM.x), (d ? 0 : CAM.y) + 40, BT.fast ? 'FAST MODE' : 'NORMAL SPEED', UI.gold); return; }
+  if (duelActive()) { duelInput(BT.anim, ev); return; }
   if (BT.mode === 'banner') { if (ev.type === 'down' || (ev.type === 'key' && ev.key === 'ok')) BT.banner.t = Math.max(BT.banner.t, 1.1); return; }
   if (BT.mode === 'handoff') { if (BT.handoff.t > .4 && (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok'))) { BT.mode = 'banner'; BT.banner.t = 0; Audio.sfx('phase'); } return; }
   if (BT.mode === 'anim') { if (ev.type === 'down' || ev.type === 'key') { BT.fastTap = .4; } return; }
@@ -311,7 +332,7 @@ function activateMenu() {
   if (BT.mode === 'menu') menuChoose(it.id);
   else if (BT.mode === 'item') { BT.item = it.id; BT.mode = 'itemTarget'; Audio.sfx('ok'); }
   else if (BT.mode === 'ballPick') { BT.ball = it.id; confirmCatch(); }
-  else if (BT.mode === 'endmenu') { Audio.sfx('ok'); if (it.id === 'endturn') endTurn(); else if (it.id === 'danger') { BT.showDanger = !BT.showDanger; BT.mode = 'idle'; } else if (it.id === 'help') { BT.mode = 'help'; BT.helpPage = 0; } else if (it.id === 'mute') { Audio.toggle(); BT.mode = 'idle'; } else if (it.id === 'retreat') { B.result = B.versus ? (HT() === 0 ? 'p2' : 'p1') : 'retreat'; endBattle(); } else BT.mode = 'idle'; }
+  else if (BT.mode === 'endmenu') { Audio.sfx('ok'); if (it.id === 'endturn') endTurn(); else if (it.id === 'danger') { BT.showDanger = !BT.showDanger; BT.mode = 'idle'; } else if (it.id === 'scene') { cyclePref('battle'); openEndMenu(m.i); } else if (it.id === 'help') { BT.mode = 'help'; BT.helpPage = 0; } else if (it.id === 'mute') { Audio.toggle(); BT.mode = 'idle'; } else if (it.id === 'retreat') { B.result = B.versus ? (HT() === 0 ? 'p2' : 'p1') : 'retreat'; endBattle(); } else BT.mode = 'idle'; }
 }
 function pickBall() { const balls = Object.keys(B.bag).filter(k => ITEMS[k].kind === 'ball' && B.bag[k] > 0); if (!balls.length) { Audio.sfx('error'); return; } const t = BT.targets[BT.tIdx]; BT.menu = { items: balls.map(k => ({ id: k, label: ITEMS[k].name + ' ×' + B.bag[k], sub: Math.round(clamp((.22 + .68 * (1 - t.hp / t.maxHp)) * ITEMS[k].rate * (t.status ? 1.3 : 1) * (t.boss ? .5 : 1), .05, .97) * 100) + '% chance' })), i: 0 }; BT.mode = 'ballPick'; Audio.sfx('ok'); }
 function useItemOn(u) { const it = BT.item; B.bag[it]--; if (B.bag[it] <= 0) delete B.bag[it]; Audio.sfx('item'); const ev = useItem(u, it); BT.queue = ev.map(e => ({ kind: 'event', ev: e })); playQueue(() => finishUnit(u)); }
@@ -367,7 +388,7 @@ function battleUpdate(dt) {
   if (BT.fastTap > 0) { BT.fastTap -= dt; dt *= 2.2; }
   const cs = BT.mode === 'anim' || BT.mode === 'banner' ? 10 : 14; CAM.x += (CAM.tx - CAM.x) * Math.min(1, dt * cs); CAM.y += (CAM.ty - CAM.y) * Math.min(1, dt * cs); if (Math.abs(CAM.tx - CAM.x) < .5) CAM.x = CAM.tx; if (Math.abs(CAM.ty - CAM.y) < .5) CAM.y = CAM.ty;
   for (const u of B.units) { const f = u.fx; f.sx += (1 - f.sx) * Math.min(1, dt * 12); f.sy += (1 - f.sy) * Math.min(1, dt * 12); if (f.hit > 0) { f.hit -= dt; if (f.hit <= 0) { f.flash = 0; f.dx = f.dy = 0; } } if (f.dodge > 0) { f.dodge -= dt; if (f.dodge <= 0) f.dx = 0; } }
-  for (const [id, h] of BT.hpShow) { h.t += dt * 2.5; if (h.t >= 1) BT.hpShow.delete(id); }
+  for (const [id, h] of BT.hpShow) { if (h.hold) continue; h.t += dt * 2.5; if (h.t >= 1) BT.hpShow.delete(id); }
   if (BT.quip) { BT.quip.t += dt; if (BT.quip.t > 1.6) BT.quip = null; }
   if (BT.mode === 'handoff') BT.handoff.t += dt;
   if (BT.mode === 'banner') { BT.banner.t += dt; if (BT.banner.t > (BT.fast ? .9 : 1.5)) { BT.mode = 'anim'; const f = BT.afterBanner; BT.afterBanner = null; f(); } }
@@ -380,6 +401,10 @@ function battleUpdate(dt) {
 
 // ---------------------------------------------------------------- drawing
 function battleDraw() {
+  const d = duelActive(); if (d) { drawDuelFrame(d); return; }
+  drawBoard(); drawHUD();
+}
+function drawBoard() {
   const m = B.map; const f = Math.floor(BT.time * 3) % WATER_FRAMES;
   drawVoid();
   const x0 = Math.max(0, Math.floor(CAM.x / TILE)), y0 = Math.max(0, Math.floor(CAM.y / TILE)), x1 = Math.min(m.w - 1, Math.ceil((CAM.x + VIEW.w) / TILE)), y1 = Math.min(m.h - 1, Math.ceil((CAM.y + VIEW.h) / TILE));
@@ -408,14 +433,15 @@ function battleDraw() {
   if (BT.mode === 'move' && BT.path.length > 1) drawArrow(BT.path, -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, BT.time * 1000);
   if (['idle', 'move', 'target', 'catchTarget', 'unitinfo'].includes(BT.mode)) drawCursorGlow(tileX(BT.cx), tileY(BT.cy), BT.time * 1000);
   // units (sorted by y so southern sprites overlap northern ones)
-  const units = B.units.filter(u => u.hp > 0 || (BT.anim && BT.anim.kind === 'event' && (BT.anim.ev.unit === u))).sort((a, b) => (a.y + a.fx.dy / TILE) - (b.y + b.fx.dy / TILE));
+  // a unit whose KO the duel scene has not shown yet stays on the board (its HP bar is held at the pre-exchange value)
+  const held = u => { const h = BT.hpShow.get(u.id); return h && h.hold; };
+  const units = B.units.filter(u => u.hp > 0 || (BT.anim && BT.anim.kind === 'event' && (BT.anim.ev.unit === u)) || held(u)).sort((a, b) => (a.y + a.fx.dy / TILE) - (b.y + b.fx.dy / TILE));
   for (const u of units) drawUnit(u);
   // cursor
   if (['idle', 'move', 'target', 'catchTarget', 'unitinfo'].includes(BT.mode)) { const hostileCur = unitAt(BT.cx, BT.cy) && hostile(unitAt(BT.cx, BT.cy).team, HT()); drawCursor(tileX(BT.cx), tileY(BT.cy), BT.time * 1000, '#ffffff', (BT.mode === 'target' || hostileCur) ? '#ff5a5a' : '#ffd24a'); }
   if (BT.anim && BT.anim.ball) { const b = BT.anim.ball; drawBall(Math.round(b.x - CAM.x), Math.round(b.y - CAM.y), ITEMS[BT.anim.ev.ball].col, 5); }
   drawFX(-CAM.x + FX.shakeX, -CAM.y + FX.shakeY);
   if (FX.flash > 0) { ctx.globalAlpha = FX.flash * .7; rect(0, 0, VIEW.w, VIEW.h, FX.flashCol); ctx.globalAlpha = 1; }
-  drawHUD();
 }
 // The land outside the board: the map's own border terrain, dimmed, so the world seems to continue past the frame.
 const VOID = { key: null, canvas: null };
@@ -467,8 +493,8 @@ function drawUnit(u) {
     if (f.flash === 1 && !grey) { ctx.globalAlpha = f.alpha; drawMon(num, cx, by + bob, { flip, sx, sy, tint: '#ffffff' }); ctx.globalAlpha = 1; }
   }
   // segmented hp bar + status + leader / boss marks
-  if (f.alpha > 0 && u.hp > 0) {
-    const show = BT.hpShow.get(u.id); let hp = u.hp; if (show) hp = Math.round(lerp(show.from, show.to, Math.min(1, show.t)));
+  const show = BT.hpShow.get(u.id); let hp = u.hp; if (show) hp = Math.round(lerp(show.from, show.to, Math.min(1, show.t)));
+  if (f.alpha > 0 && hp > 0) {
     ctx.globalAlpha = f.alpha; const bw = 20, bx = cx - bw / 2, byy = gy + 4;
     rrect(bx - 2, byy - 1, bw + 4, 7, UI.shadow, 1); rrect(bx - 1, byy, bw + 2, 5, teamColorD(u.team), 1); rect(bx, byy + 1, bw, 3, '#1c1c24');
     const ratio = clamp(hp / u.maxHp, 0, 1); const w = Math.round(bw * ratio);
@@ -638,7 +664,7 @@ function drawUnitSheet(u) {
 function drawHelp() {
   const W = VIEW.w, H = VIEW.h; const w = Math.min(280, W - 12), h = 124; const x = W / 2 - w / 2, y = H / 2 - h / 2; panel(x, y, w, h, { title: 'HELP ' + (BT.helpPage + 1) + '/3' });
   const pages = [
-    ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back', 'Mouse: hover + click. Right click or empty tile: menu', 'Touch: tap to move the cursor, tap again to confirm', 'Q/E: next unit · C: unit info / switch move · F: fast', 'Drag or wheel to pan · M: mute · H: this help'],
+    ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back', 'Mouse: hover + click. Right click or empty tile: menu', 'Touch: tap to move the cursor, tap again to confirm', 'Q/E: next unit · C: unit info / switch move · F: fast', 'Drag or wheel to pan · M: mute · H: this help', 'Attack scene: any key speeds it up, X skips. The menu', 'switches between full, quick and map-only battles.'],
     ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch,', 'use the Bag or Wait. Blue = move, red = attack.', 'Defenders counter if you are in their move range and', 'still standing. Speed 8+ higher = you strike twice (×2).', 'Terrain gives DEF% and AVO. Poké Centers heal 30%/turn', 'and cure. Danger: red = foe reach, yellow = wild reach.', 'Hyper Beam: no counter after it, next turn recharging.'],
     ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67.', 'STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV,', 'Frozen skips turns and crits are guaranteed on it.', 'Wild (yellow) Pokémon can be caught when weak: stand', 'next to them, choose Catch and throw a ball. Trainer', 'Pokémon (red) cannot be stolen. Level ups can evolve!'],
   ];

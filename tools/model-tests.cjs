@@ -6,7 +6,7 @@
 'use strict';
 const vm = require('vm'), fs = require('fs'), path = require('path'), assert = require('assert');
 const ROOT = path.join(__dirname, '..');
-const FILES = ['core.js', 'font.js', 'dex.js', 'data.js', 'art.js', 'model.js', 'battle.js', 'campaign.js', 'scenes.js', 'main.js'];
+const FILES = ['core.js', 'font.js', 'dex.js', 'data.js', 'art.js', 'model.js', 'battle.js', 'duel.js', 'campaign.js', 'scenes.js', 'main.js'];
 
 // ---------------------------------------------------------------- harness
 function loadGame() {
@@ -246,6 +246,109 @@ test('drain heals from HP actually taken, not overkill, in preview and resolver'
   const ev = g.resolveCombat(ven, onix, m, ven); assert.strictEqual(ev[0].drain, 1); assert.strictEqual(ev[0].attHpAfter, 11); assert.strictEqual(ven.hp, 11); assert.strictEqual(onix.hp, 0);
   arena(T); fixedRoll(T, .5); const v2 = place(T, 3, 30, 0, 2, 2), o2 = place(T, 95, 30, 1, 3, 2); v2.hp = 10; o2.hp = 7;
   const fc2 = g.forecast(v2, o2, m, v2); assert.strictEqual(fc2.strikes[0].drain, Math.floor(7 * .5)); const ev2 = g.resolveCombat(v2, o2, m, v2); assert.strictEqual(ev2[0].drain, 3); assert.strictEqual(v2.hp, 13);
+});
+
+// Stage 2: the duel scene replays the resolver's events; it never rerolls, never touches units, and skipping lands on the same numbers.
+const sceneEvents = ev => ev.filter(e => ['hit', 'miss', 'ko', 'thaw'].includes(e.type));
+// Play a duel queue item to the end in fixed steps; optionally skip part-way. Returns the beats fired and the HP shown at the end.
+function playDuel(T, q, skipAt = -1) {
+  const g = T.g; g.startDuel(q); let n = 0;
+  while (!q.done && n++ < 5000) { g.updateDuel(q, 1 / 60); if (skipAt >= 0 && q.t >= skipAt && !q.skipped) g.skipDuel(q); }
+  assert(q.done, 'duel finished'); return { fired: q.i, hpA: g.duelHpAt(q.script, q.t, q.att.id), hpD: g.duelHpAt(q.script, q.t, q.def.id), t: q.t };
+}
+
+test('duel script mirrors the resolver: pre-hit HP holds, drops in event order, skipping matches playing', T => {
+  const { g, G } = T; arena(T); fixedRoll(T, .5);
+  const att = place(T, 25, 20, 0, 1, 1), def = place(T, 79, 20, 1, 2, 1); // Pikachu doubles Slowpoke, which answers in between
+  const hp0 = { [att.id]: att.hp, [def.id]: def.hp }; const ev = g.resolveCombat(att, def, move(att, 'Thunder Shock'), att);
+  const hits = ev.filter(e => e.type === 'hit'); assert.strictEqual(hits.length, 3); assert(def.hp < hp0[def.id] && att.hp < hp0[att.id], 'both took damage');
+  G('var __rolls = 0; rnd = () => { __rolls++; return .5; }'); const S = g.duelScript(sceneEvents(ev), hp0);
+  assert.strictEqual(S.beats.map(b => b.kind).join(' '), 'intro windup launch impact windup launch impact windup launch impact outro');
+  const impacts = S.beats.filter(b => b.kind === 'impact');
+  impacts.forEach((b, i) => { const e = hits[i]; assert.strictEqual(b.ev, e); assert.strictEqual(b.hpTo, e.hpAfter, 'impact ' + i + ' lands on the event HP'); assert.strictEqual(b.hpFrom - b.hpTo, Math.min(e.dmg, b.hpFrom), 'impact ' + i + ' drops exactly the HP taken'); assert.strictEqual(b.attTo, e.attHpAfter); });
+  assert.strictEqual(impacts[0].hpFrom, hp0[def.id], 'the first hit starts from the pre-exchange HP, not the model HP'); assert.strictEqual(S.beats[4].counter, true, 'the counter is labelled');
+  assert.strictEqual(S.hpEnd[def.id], def.hp); assert.strictEqual(S.hpEnd[att.id], att.hp);
+  // shown HP: untouched until the first impact, then never rising for the defender, final at the end
+  assert.strictEqual(g.duelHpAt(S, impacts[0].t - .01, def.id), hp0[def.id]); assert.strictEqual(g.duelHpAt(S, impacts[0].t - .01, att.id), hp0[att.id]);
+  let last = hp0[def.id]; for (let t = 0; t <= S.total; t += .02) { const v = g.duelHpAt(S, t, def.id); assert(v <= last, 'defender HP never rises'); last = v; }
+  assert.strictEqual(g.duelHpAt(S, S.total, def.id), def.hp); assert.strictEqual(g.duelHpAt(S, S.total, att.id), att.hp);
+  assert.strictEqual(G('__rolls'), 0, 'building the script rolled dice');
+  assert(S.total >= 2 && S.total <= 4.2, 'a three-strike exchange runs ' + S.total.toFixed(2) + 's');
+  // playing through, speeding up and skipping all reach the same numbers, and none of them touches the units
+  const snap = () => JSON.stringify([g.serializeUnit(att), g.serializeUnit(def)]); const before = snap(); const kills = T.B().kills;
+  const mk = () => ({ kind: 'duel', att, def, events: sceneEvents(ev), hp0 });
+  const full = playDuel(T, mk()); const skipped = playDuel(T, mk(), impacts[0].t + .05); const boosted = mk(); boosted.boost = true; const fast = playDuel(T, boosted);
+  assert.strictEqual(full.fired, S.beats.length, 'every beat fired'); assert.strictEqual(full.hpD, def.hp); assert.strictEqual(full.hpA, att.hp);
+  for (const r of [skipped, fast]) { assert.strictEqual(r.hpD, full.hpD); assert.strictEqual(r.hpA, full.hpA); }
+  assert(fast.t >= S.total, 'speeding up still reaches the end of the script');
+  assert.strictEqual(snap(), before, 'the scene mutated a unit'); assert.strictEqual(T.B().kills, kills, 'no KO here'); assert.strictEqual(G('__rolls'), 0, 'the scene rolled dice');
+});
+
+test('combatQueue: one duel item carries the strikes, XP follows on the board, a KO is counted once in either mode', T => {
+  const { g, G } = T; arena(T); fixedRoll(T, .5); G("setPref('battle', 'full')");
+  const att = place(T, 6, 30, 0, 1, 1), def = place(T, 10, 3, 1, 2, 1); const B = T.B(); B.kills = 0;
+  const q = g.combatQueue(att, def, move(att, 'Flamethrower'), att);
+  assert.strictEqual(q[0].kind, 'duel'); assert.strictEqual(q[0].events.map(e => e.type).join(' '), 'hit ko'); assert.strictEqual(JSON.stringify(q[0].hp0), JSON.stringify({ [att.id]: att.maxHp, [def.id]: def.maxHp }), 'snapshot taken before the roll');
+  assert(q.slice(1).every(x => x.kind === 'event' && !['hit', 'miss', 'ko', 'thaw'].includes(x.ev.type)), 'the rest stays on the board'); assert(q.slice(1).some(x => x.ev.type === 'xp'), 'XP still awarded once, after the scene');
+  // the KO is booked when the scene starts, exactly once, and the ko beat comes before the outro
+  const r = playDuel(T, q[0]); assert.strictEqual(B.kills, 1); g.noteKo(q[0].events[1]); assert.strictEqual(B.kills, 1, 'a second look at the same event does not count again');
+  const kinds = q[0].script.beats.map(b => b.kind); assert.strictEqual(kinds.slice(-2).join(' '), 'ko outro'); assert.strictEqual(r.hpD, 0);
+  // the board's HP bars are held at the pre-exchange value while the scene runs, then released
+  const q2 = g.combatQueue(place(T, 25, 30, 0, 4, 4), place(T, 19, 30, 1, 5, 4), T.G('MOVES')['Thunder Shock'], { x: 4, y: 4 })[0];
+  assert.strictEqual(q2.kind, 'duel'); g.startDuel(q2); const BT = G('BT'); const held = BT.hpShow.get(q2.def.id); assert(held && held.hold && held.from === q2.hp0[q2.def.id], 'board bar held at pre-hit HP');
+  while (!q2.done) g.updateDuel(q2, 1 / 30); assert(!BT.hpShow.has(q2.def.id), 'hold released at the outro');
+  // map mode: the same events become board strikes, and the board's KO event counts once too
+  G("setPref('battle', 'map')"); arena(T); fixedRoll(T, .5); const a2 = place(T, 6, 30, 0, 1, 1), d2 = place(T, 10, 3, 1, 2, 1); T.B().kills = 0;
+  const qm = g.combatQueue(a2, d2, move(a2, 'Flamethrower'), a2); assert.strictEqual(qm[0].kind, 'strike'); assert.strictEqual(qm[1].ev.type, 'ko');
+  g.setupEvent(qm[1]); g.setupEvent(qm[1]); assert.strictEqual(T.B().kills, 1);
+  assert.strictEqual(G("localStorage.getItem('pk_battle')"), 'map', 'preference persisted'); G("setPref('battle', 'full')");
+});
+
+test('duel beats for a miss, an immune hit, drain and a lethal counter; sides put the player on the left', T => {
+  const { g } = T; arena(T); fixedRoll(T, 1);
+  const pika = place(T, 25, 20, 0, 1, 1), lax = place(T, 143, 20, 2, 2, 1); const hp0 = { [pika.id]: pika.hp, [lax.id]: lax.hp };
+  let ev = g.resolveCombat(pika, lax, move(pika, 'Thunder Shock'), pika); assert.strictEqual(ev[0].type, 'miss');
+  let S = g.duelScript(sceneEvents(ev), hp0); assert(S.beats.some(b => b.kind === 'miss')); assert(!S.beats.some(b => b.kind === 'impact' && b.def === lax), 'no impact on a miss');
+  assert.strictEqual(g.duelHpAt(S, S.total, lax.id), hp0[lax.id], 'HP untouched by a miss');
+  arena(T); fixedRoll(T, 0); const p2 = place(T, 25, 30, 0, 2, 2), dig = place(T, 50, 30, 1, 3, 2); p2.hp = p2.maxHp = dig.hp = dig.maxHp = 1000; const h2 = { [p2.id]: 1000, [dig.id]: 1000 };
+  ev = g.resolveCombat(p2, dig, move(p2, 'Thunderbolt'), p2); S = g.duelScript(sceneEvents(ev), h2); const imm = S.beats.find(b => b.kind === 'impact' && b.def === dig);
+  assert(imm && imm.hpFrom === imm.hpTo && imm.ev.dmg === 0, 'an immune hit shows a 0 with no drop');
+  arena(T); fixedRoll(T, .5); const ven = place(T, 3, 30, 0, 2, 2), onix = place(T, 95, 30, 1, 3, 2); ven.hp = 10; const h3 = { [ven.id]: 10, [onix.id]: onix.hp };
+  ev = g.resolveCombat(ven, onix, move(ven, 'Giga Drain'), ven); S = g.duelScript(sceneEvents(ev), h3); const dr = S.beats.find(b => b.kind === 'impact');
+  assert(dr.attTo > dr.attFrom, 'drain raises the attacker'); assert.strictEqual(g.duelHpAt(S, dr.t - .01, ven.id), 10); assert.strictEqual(g.duelHpAt(S, S.total, ven.id), ven.hp);
+  // a counter that KOs the attacker: impact, counter impact, ko, outro; the KO'd side reads 0
+  arena(T); fixedRoll(T, .5); const weak = place(T, 25, 20, 0, 1, 1, { hp: 1 }), big = place(T, 143, 20, 1, 2, 1); const h4 = { [weak.id]: 1, [big.id]: big.hp };
+  ev = g.resolveCombat(weak, big, move(weak, 'Thunder Shock'), weak); assert.strictEqual(kinds(ev), 'hit hit* ko');
+  S = g.duelScript(sceneEvents(ev), h4); assert.strictEqual(S.beats.map(b => b.kind).join(' '), 'intro windup launch impact windup launch impact ko outro');
+  assert.strictEqual(S.beats.find(b => b.kind === 'ko').unit, weak); assert.strictEqual(g.duelHpAt(S, S.total, weak.id), 0);
+  const sides = g.duelSides(big, weak); assert.strictEqual(sides.left, weak, 'the player stands on the left even when attacked'); assert.strictEqual(g.duelSides(weak, big).left, weak);
+  const wild = place(T, 16, 5, 2, 4, 4); assert.strictEqual(g.duelSides(big, wild).left, wild, 'wild before enemy trainer'); assert.strictEqual(g.duelSides(wild, weak).left, weak);
+  assert.strictEqual(g.duelFamily(T.G('MOVES').Tackle), 'contact'); assert.strictEqual(g.duelFamily(T.G('MOVES')['Ice Shard']), 'contact'); assert.strictEqual(g.duelFamily(T.G('MOVES').Ember), 'fire'); assert.strictEqual(g.duelFamily(T.G('MOVES')['Hyper Beam']), 'neutral');
+});
+
+test('duel layout keeps panels, terrain strips and 96px sprites on screen on desktop and narrow portrait', T => {
+  const { g, G } = T; arena(T); const a = place(T, 25, 20, 0, 1, 1), d = place(T, 79, 20, 1, 2, 1); const q = { sides: g.duelSides(a, d) };
+  for (const [w, h] of [[480, 270], [390, 844], [300, 600], [320, 480], [1024, 600]]) {
+    G('VIEW.w = ' + w + '; VIEW.h = ' + h); const L = g.duelLayout(q); const pa = L.panels[a.id], pd = L.panels[d.id];
+    for (const p of [pa, pd]) { assert(p.x >= 0 && p.x + p.w <= w, w + 'x' + h + ': panel inside'); assert(p.w >= 120, 'panel wide enough for name, level and HP'); assert(p.y + p.h + 2 + L.TH <= L.top, 'terrain strip above the field'); }
+    if (!L.stacked) assert(pa.x + pa.w < pd.x, 'side-by-side panels do not overlap'); else assert(pa.y + pa.h + L.TH < pd.y, 'stacked panels do not overlap');
+    for (const id of [a.id, d.id]) { const p = L.pos[id]; assert(p.x - 48 >= 0 && p.x + 48 <= w, w + 'x' + h + ': sprite inside'); assert(p.y - 96 >= L.top, 'sprite below the panels'); assert(p.y <= h - 20, 'ground above the hint line'); }
+    assert(L.pos[a.id].x + 48 <= L.pos[d.id].x - 48 + 8, 'sprites do not overlap at rest');
+  }
+});
+
+test('an attack runs through the board queue: duel, then XP on the board, then the unit is spent; map mode ends the same', T => {
+  const { g, G } = T;
+  for (const pref of ['full', 'quick', 'map']) {
+    G("setPref('battle', '" + pref + "')"); arena(T); fixedRoll(T, .5); const BT = G('BT');
+    const att = place(T, 6, 30, 0, 1, 1), def = place(T, 10, 3, 1, 2, 1); place(T, 19, 3, 1, 6, 4); // a second foe keeps the map going after the KO
+    BT.sel = att; BT.targets = [def]; BT.tIdx = 0; BT.moveIdx = att.moves.indexOf(move(att, 'Flamethrower')); BT.mode = 'target';
+    g.confirmAttack(); assert.strictEqual(BT.mode, 'anim'); const sawDuel = BT.anim && BT.anim.kind === 'duel'; assert.strictEqual(sawDuel, pref !== 'map', pref + ': presentation picked');
+    let frames = 0, drew = 0; for (const [w, h] of [[480, 270], [300, 600]]) { G('VIEW.w = ' + w + '; VIEW.h = ' + h); while (BT.mode === 'anim' && frames++ < 2000) { g.battleUpdate(1 / 60); g.battleDraw(); drew++; if (BT.anim && BT.anim.kind === 'duel' && frames === 40) g.duelInput(BT.anim, { type: 'key', key: 'ok' }); } }
+    assert.strictEqual(BT.mode, 'idle', pref + ': back on the board after ' + frames + ' frames'); assert(frames < 2000, 'finished in time'); assert(drew > 10);
+    assert.strictEqual(def.hp, 0, 'Caterpie down'); assert.strictEqual(att.acted, true, 'attacker spent'); assert.strictEqual(T.B().kills, 1, pref + ': one KO counted'); assert(att.xp > 0, 'XP awarded once'); assert.strictEqual(BT.hpShow.size, 0, 'no held bars left');
+  }
+  G("setPref('battle', 'full')");
 });
 
 // ---------------------------------------------------------------- runner

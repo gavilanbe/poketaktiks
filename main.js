@@ -76,7 +76,8 @@ function resumeSuspend() {
   B = { map, units: [], turn: s.turn, phase: 0, bag: s.bag, result: null, seized: false, captured: s.captured || [], kills: s.kills || 0, chapter: s.chapter, log: [], seed: s.seed, skirmish: !!s.skirmish };
   map.items.forEach((it, i) => { it.taken = !!s.items[i]; }); map.reinforce.forEach((r, i) => { r.done = !!s.reinforce[i]; });
   for (const d of s.units) { if (d.hp <= 0 && !d.leader) continue; if (d.hpBonus == null && d.team === 0) d.hpBonus = BOND_HP; const u = restoreUnit(d); u.pid = d.pid; u.leader = d.leader; u.provoked = d.provoked; if (d.hp <= 0) continue; B.units.push(u); }
-  BACKDROP = makeBackdrop(mapDef); BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.cx = s.cx; BT.cy = s.cy; centerCam(BT.cx, BT.cy, true); FX.parts = []; FX.texts = [];
+  BACKDROP = makeBackdrop(mapDef); BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.hpShow.clear(); BT.cx = s.cx; BT.cy = s.cy; centerCam(BT.cx, BT.cy, true); FX.parts = []; FX.texts = [];
+  for (const u of B.units) requestBigSprite(u.num);
   if (s.skirmish && s.preset) SC.data = { preset: true };
   // the save was written after this phase's upkeep: resume without applying it again
   goScene('battle'); Audio.playMusic(map.music); beginPhase(0, true, true);

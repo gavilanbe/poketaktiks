@@ -8,6 +8,12 @@ const VIEW = { w: 480, h: 270, scale: 2, dpr: 1, touch: false };
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d', { alpha: false });
 const REDUCED = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Persisted presentation preferences. battle: 'full' (lateral duel scene), 'quick' (same scene, faster) or 'map' (strikes on the board).
+const PREF = { battle: 'full' };
+const PREF_VALUES = { battle: ['full', 'quick', 'map'] };
+try { for (const k in PREF) { const v = localStorage.getItem('pk_' + k); if (PREF_VALUES[k].includes(v)) PREF[k] = v; } } catch (_) { }
+function setPref(k, v) { if (!PREF_VALUES[k].includes(v)) return; PREF[k] = v; try { localStorage.setItem('pk_' + k, v); } catch (_) { } }
+function cyclePref(k) { const vs = PREF_VALUES[k]; setPref(k, vs[(vs.indexOf(PREF[k]) + 1) % vs.length]); return PREF[k]; }
 
 function resize() {
   const cw = innerWidth, ch = innerHeight, dpr = Math.min(devicePixelRatio || 1, 3);
@@ -133,6 +139,42 @@ function drawMon(num, cx, by, o = {}) {
   if (o.alpha != null) ctx.globalAlpha = 1;
 }
 
+// ---------------------------------------------------------------- battle sprites (96×96 Gen V fronts, assets/battle/<num>.png)
+// Loaded lazily per species and never awaited: the duel scene asks for both combatants when it starts
+// and draws the mini icon at 2× until (or if never) the big sprite is ready. Missing files are harmless.
+const BIGSPR = { img: {}, state: {}, cache: {}, bottom: {} };
+function requestBigSprite(num) {
+  if (BIGSPR.state[num] || typeof Image === 'undefined') return;
+  BIGSPR.state[num] = 'loading'; const img = new Image();
+  img.onload = () => { BIGSPR.img[num] = img; BIGSPR.state[num] = 'ok'; BIGSPR.bottom[num] = spriteBottom(img); };
+  img.onerror = () => { BIGSPR.state[num] = 'fail'; };
+  img.src = 'assets/battle/' + num + '.png';
+}
+function bigReady(num) { return BIGSPR.state[num] === 'ok'; }
+// Last opaque row, so sprites with transparent margins stand on the ground line. Pixel reads are refused
+// for file:// images in some browsers; the default matches the usual margin of the set.
+function spriteBottom(img) {
+  try { const c = document.createElement('canvas'); c.width = 96; c.height = 96; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, 96, 96).data; for (let y = 95; y >= 0; y--) for (let x = 0; x < 96; x++) if (d[(y * 96 + x) * 4 + 3] > 40) return y + 1; } catch (_) { }
+  return 90;
+}
+// Offscreen copy of one big sprite, optionally mirrored or tinted. Null until the image is ready.
+function bigSprite(num, flip = false, tint = null) {
+  if (!bigReady(num)) return null; const key = num + (flip ? 'f' : '') + (tint || ''); let c = BIGSPR.cache[key]; if (c) return c;
+  c = document.createElement('canvas'); c.width = 96; c.height = 96; const g = c.getContext('2d');
+  if (flip) { g.translate(96, 0); g.scale(-1, 1); } g.drawImage(BIGSPR.img[num], 0, 0);
+  if (tint) { g.globalCompositeOperation = 'source-atop'; g.fillStyle = tint; g.fillRect(-96, 0, 192, 96); }
+  BIGSPR.cache[key] = c; return c;
+}
+// Draw a battle sprite standing on baseline `by`, centred on cx. Falls back to the mini icon at 2×.
+function drawBig(num, cx, by, o = {}) {
+  const img = bigSprite(num, !!o.flip, o.tint || null); const sx = o.sx || 1, sy = o.sy || 1;
+  if (!img) { drawMon(num, cx, by, { flip: o.flip, tint: o.tint, alpha: o.alpha, sx: 2 * sx, sy: 2 * sy }); return; }
+  const w = 96 * sx, h = 96 * sy, bottom = (BIGSPR.bottom[num] || 90) * sy;
+  if (o.alpha != null) ctx.globalAlpha = o.alpha;
+  ctx.drawImage(img, Math.round(cx - w / 2), Math.round(by - bottom), Math.round(w), Math.round(h));
+  if (o.alpha != null) ctx.globalAlpha = 1;
+}
+
 // ---------------------------------------------------------------- audio (synth SFX + tiny sequencer)
 const Audio = {
   ac: null, muted: localStorage.getItem('pk_mute') === '1', master: null, musicGain: null, music: null, musicTimer: 0,
@@ -185,6 +227,16 @@ const Audio = {
       case 'error': this.tone('square', 200, 180, .12, .15); break;
       case 'text': this.tone('square', 1200, 1100, .015, .03); break;
       case 'boss': this.tone('sawtooth', 110, 55, .6, .3); this.noise(.5, .2, 0, 80); break;
+      // duel scene cues: the wipe, a wind-up, one launch sound per attack family, a fainting slump
+      case 'wipe': this.noise(.18, .16, 0, 1500); this.tone('sine', 300, 900, .18, .07); break;
+      case 'swing': this.noise(.09, .18, 0, 2500); this.tone('sine', 500, 200, .1, .1); break;
+      case 'fire': this.noise(.35, .28, 0, 500); this.tone('sawtooth', 160, 60, .35, .16); break;
+      case 'water': this.tone('sine', 1000, 300, .22, .16); this.noise(.25, .16, .05, 3000); break;
+      case 'elec': for (let i = 0; i < 6; i++) this.tone('square', i % 2 ? 1800 : 1200, i % 2 ? 1500 : 900, .04, .11, i * .045); this.noise(.2, .12, 0, 4000); break;
+      case 'grass': [1400, 1100, 1700].forEach((f, i) => this.tone('triangle', f, f * .5, .09, .13, i * .07)); break;
+      case 'psy': this.tone('sine', 400, 1400, .45, .14); this.tone('sine', 800, 2800, .45, .05, .02); break;
+      case 'beam': this.tone('sawtooth', 300, 1200, .3, .12); this.tone('square', 600, 2400, .3, .05, .03); break;
+      case 'faint': this.tone('square', 330, 40, .55, .22); this.tone('triangle', 220, 30, .6, .12, .05); break;
     }
   },
   // Music: a tiny 3-voice step sequencer. Songs are {bpm, bass:[...], lead:[...], arp:[...]} with note numbers (semitones from A3) or null.
