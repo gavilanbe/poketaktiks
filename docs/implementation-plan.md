@@ -128,3 +128,14 @@ Not verified / limits:
 - Zoom is a two-step toggle (×1 / ×.5), not continuous, and floating texts keep their size when zoomed out while unit HP plates and badges shrink with the board.
 - The hover anchor also delays menu-row highlighting until the pointer moves 4 px after a menu opens.
 - `tools/cdp.cjs` `tileCenter` now accounts for `BT.zoom`, but the scripted screenshot runs were not executed.
+
+#### Stage 3 review follow-up (2026-09-09)
+
+Findings (supervisor's text-position script and 390×844 browser playback) and fixes:
+
+- **Offscreen text at 180 px.** Title menu-card subtitles are now truncated to the card with an ellipsis (`menuCard`). The starter scene wraps Prof. Oak's line to the view, shortens the heading on the narrowest phones, and lays the phone cards out with two short stat rows (HP · ATK · DEF / SPA · SPD · SPE · MOV) plus the move list, each fitted to the card. Versus settings on phones use a compact `label [-] value [+]` at 84 px each, so both `+` controls (not only their text) sit inside 180 px and remain tappable.
+- **Missing glyph.** The zoom-out button read `ZOOM ?`: U+2212 is not in the pixel font. Button and help now use ASCII `-`; a test asserts every help line, button label, menu label/hint and the forecast's fixed strings resolve to real glyphs.
+
+Checks: `node tools/model-tests.cjs` 35 passed (3 new): (1) rendered-text bounds via a `text` hook that follows save/translate/scale, for title, Versus, starter, prep, skirmish, results, board HUD, forecast, unit sheet and the three help pages at 180×390, 195×422, 207×448 and 512×288, plus every scene/HUD control inside the view, at least 14×12 and pairwise non-overlapping; (2) phone keyboard/touch access at 180×390: both Versus `+` controls change level/seed, arrow keys and OK draft a Pokémon with four-column row stepping, all five Versus buttons present, three starter cards and arrow selection, prep OK toggles a card and BACK/AUTO PICK/START are present; (3) glyph coverage as above. The supervisor's `text-check.cjs` now prints nothing (no overflow). `node --check` on every module; `sh build.sh` rebuilt `index.html` (360,757 bytes) and its script block parses. Camera/forecast behaviour from the stage 3 commit is untouched.
+
+Caveats: still no browser run from this side; the compact starter cards and the ellipsised subtitles were checked by measured text width, not seen.

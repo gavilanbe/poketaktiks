@@ -646,7 +646,7 @@ function drawButtons(L) {
   if (idle) items.push({ label: 'END TURN', col: '#7a3030', run: () => { Audio.sfx('ok'); endTurn(); } }, { label: BT.showDanger ? 'DANGER ●' : 'DANGER ○', run: () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); } });
   if (acting) items.push({ label: 'BACK', col: '#5a4a30', run: () => cancel() });
   if (enemyAnim) items.push({ label: BT.fast ? 'FAST ●' : 'FAST ○', run: () => { BT.fast = !BT.fast; } });
-  if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM −' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
+  if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
   if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; Audio.sfx('menu'); } }, { label: Audio.muted ? '♪ ○' : '♪ ●', half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
   if (!items.length) return;
   if (L.stack) { // two rows across the bottom: row 1 = the two main actions, row 2 = the rest
@@ -814,7 +814,7 @@ function drawUnitSheet(u) {
   textC('◂ ▸ browse  ·  X close', W / 2, y + h + 4, UI.muted, { outline: UI.shadow });
 }
 const HELP_PAGES = [
-  ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back. Mouse: hover + click; right click or an empty tile opens the menu. Touch: tap to move the cursor, tap again to confirm.', 'Q/E: next unit · C: unit info / switch move · F: fast · +/−: zoom · M: mute · H: help. Drag or wheel to pan.', 'Attack scene: any key speeds it up, X skips. The menu switches between full, quick and map-only battles.'],
+  ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back. Mouse: hover + click; right click or an empty tile opens the menu. Touch: tap to move the cursor, tap again to confirm.', 'Q/E: next unit · C: unit info / switch move · F: fast · +/-: zoom · M: mute · H: help. Drag or wheel to pan.', 'Attack scene: any key speeds it up, X skips. The menu switches between full, quick and map-only battles.'],
   ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch, use the Bag or Wait. Blue = move, red = attack. Greyed units have acted.', 'Defenders counter if you are in their move range and still standing. Speed 8+ higher = you strike twice (×2). The forecast lists the strikes in order; a bracketed one only happens if an earlier strike misses.', 'Terrain gives DEF% and AVO. Poké Centers heal 30%/turn and cure. Danger: red = foe reach, yellow = wild reach. Hyper Beam: no counter after it, next turn recharging.'],
   ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67. STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV, Frozen skips turns and crits are guaranteed on it.', 'Wild Pokémon (dashed ring) can be caught when weak: stand next to them, choose Catch and throw a ball. Trainer Pokémon (spiked ring) cannot be stolen. Level ups can evolve!'],
 ];

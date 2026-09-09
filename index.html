@@ -2230,7 +2230,7 @@ function drawButtons(L) {
   if (idle) items.push({ label: 'END TURN', col: '#7a3030', run: () => { Audio.sfx('ok'); endTurn(); } }, { label: BT.showDanger ? 'DANGER ●' : 'DANGER ○', run: () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); } });
   if (acting) items.push({ label: 'BACK', col: '#5a4a30', run: () => cancel() });
   if (enemyAnim) items.push({ label: BT.fast ? 'FAST ●' : 'FAST ○', run: () => { BT.fast = !BT.fast; } });
-  if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM −' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
+  if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
   if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; Audio.sfx('menu'); } }, { label: Audio.muted ? '♪ ○' : '♪ ●', half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
   if (!items.length) return;
   if (L.stack) { // two rows across the bottom: row 1 = the two main actions, row 2 = the rest
@@ -2398,7 +2398,7 @@ function drawUnitSheet(u) {
   textC('◂ ▸ browse  ·  X close', W / 2, y + h + 4, UI.muted, { outline: UI.shadow });
 }
 const HELP_PAGES = [
-  ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back. Mouse: hover + click; right click or an empty tile opens the menu. Touch: tap to move the cursor, tap again to confirm.', 'Q/E: next unit · C: unit info / switch move · F: fast · +/−: zoom · M: mute · H: help. Drag or wheel to pan.', 'Attack scene: any key speeds it up, X skips. The menu switches between full, quick and map-only battles.'],
+  ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back. Mouse: hover + click; right click or an empty tile opens the menu. Touch: tap to move the cursor, tap again to confirm.', 'Q/E: next unit · C: unit info / switch move · F: fast · +/-: zoom · M: mute · H: help. Drag or wheel to pan.', 'Attack scene: any key speeds it up, X skips. The menu switches between full, quick and map-only battles.'],
   ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch, use the Bag or Wait. Blue = move, red = attack. Greyed units have acted.', 'Defenders counter if you are in their move range and still standing. Speed 8+ higher = you strike twice (×2). The forecast lists the strikes in order; a bracketed one only happens if an earlier strike misses.', 'Terrain gives DEF% and AVO. Poké Centers heal 30%/turn and cure. Danger: red = foe reach, yellow = wild reach. Hyper Beam: no counter after it, next turn recharging.'],
   ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67. STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV, Frozen skips turns and crits are guaranteed on it.', 'Wild Pokémon (dashed ring) can be caught when weak: stand next to them, choose Catch and throw a ball. Trainer Pokémon (spiked ring) cannot be stolen. Level ups can evolve!'],
 ];
@@ -3028,7 +3028,7 @@ function menuCard(x, y, w, h, label, sub, icon, hot, run, opt = {}) {
   hline(x + 2, y + 1, w - 4, shade(fill, .25)); hline(x + 2, y + h - 2, w - 4, shade(fill, -.3));
   rrect(x + 4, y + 4, h - 8, h - 8, hot ? '#1a2a50' : '#0f1830', 1); outline(x + 4, y + 4, h - 8, h - 8, hot ? UI.gold : '#3a4a70'); if (icon) iconAt(icon, x + 4 + (h - 8 - 9) / 2, y + 4 + (h - 8 - 9) / 2, hot ? '#ffffff' : '#d8dce8');
   bigText(label, x + h + 2, y + (h - 9) / 2 - (sub ? 3 : 0), hot ? '#ffffff' : UI.ink, { outline: hot ? '#1a2a50' : UI.shadow });
-  if (sub) text(sub, x + h + 2, y + h / 2 + 2, hot ? '#ffe9a0' : UI.muted);
+  if (sub) { let s = sub; const avail = w - h - 6; while (textWidth(s) > avail && s.length > 4) s = s.slice(0, -1); if (s !== sub) s = s.replace(/[ ·]+$/, '') + '…'; text(s, x + h + 2, y + h / 2 + 2, hot ? '#ffe9a0' : UI.muted); }
   if (hot) pointerHand(x - 11, y + h / 2 - 4, SC.t * 1000);
   hit(x, y + lift, w, h, run, label);
 }
@@ -3105,9 +3105,11 @@ function versusDraw() {
     hit(x, y, cw, chh, () => { SC.i = i; vsPick(S, n); }); });
   const d = DEX[VS_ROSTER[SC.i]]; if (d) { const iy = gy + rows * chh + 5; const u = makeUnit(d.num, S.level, 0); text(d.name, gx, iy, UI.ink, { outline: UI.shadow }); d.types.forEach((tp, j) => typeBadge(tp, gx + textWidth(d.name) + 6 + j * 26, iy - 1, 24)); const mv = u.moves.slice(0, 3).map(m => m.name).join(' / '); if (narrow) text(mv, gx, iy + 10, '#98d8f8', { outline: UI.shadow }); else { textR(mv, gx + cols * cw, iy, '#98d8f8', { outline: UI.shadow }); text('HP ' + u.maxHp + '  ATK ' + u.atk + '  DEF ' + u.def + '  SPA ' + u.spa + '  SPE ' + u.spe + '  MOV ' + u.mov, gx, iy + 10, UI.muted, { outline: UI.shadow }); } }
   // settings and the bottom row: one row each on wide screens, two rows each on phones
-  const sy = narrow ? H - 2 * (bh + 4) - sbh - 8 : H - 44; const setting = (x, label, val, dec, inc) => { text(label, x, sy + (sbh - 7) / 2, UI.muted, { outline: UI.shadow }); bigButton(x + 34, sy, 18, sbh, '-', dec, { small: true }); textC(String(val), x + 64, sy + (sbh - 7) / 2, UI.gold, { outline: UI.shadow }); bigButton(x + 76, sy, 18, sbh, '+', inc, { small: true }); };
-  setting(8, 'Arena', S.seed, () => { S.seed = (S.seed + 999) % 1000; Audio.sfx('menu'); }, () => { S.seed = (S.seed + 1) % 1000; Audio.sfx('menu'); });
-  setting(narrow ? 100 : 112, 'Level', S.level, () => { S.level = Math.max(5, S.level - 5); Audio.sfx('menu'); }, () => { S.level = Math.min(50, S.level + 5); Audio.sfx('menu'); });
+  // a setting is label, [-], value, [+]; on phones the two settings share one row at 84 px each so the [+] stays inside 180 px
+  const sy = narrow ? H - 2 * (bh + 4) - sbh - 8 : H - 44; const o = narrow ? { m: 28, v: 55, p: 64 } : { m: 34, v: 64, p: 76 };
+  const setting = (x, label, val, dec, inc) => { text(label, x, sy + (sbh - 7) / 2, UI.muted, { outline: UI.shadow }); bigButton(x + o.m, sy, 18, sbh, '-', dec, { small: true }); textC(String(val), x + o.v, sy + (sbh - 7) / 2, UI.gold, { outline: UI.shadow }); bigButton(x + o.p, sy, 18, sbh, '+', inc, { small: true }); };
+  setting(6, 'Arena', S.seed, () => { S.seed = (S.seed + 999) % 1000; Audio.sfx('menu'); }, () => { S.seed = (S.seed + 1) % 1000; Audio.sfx('menu'); });
+  setting(narrow ? Math.min(92, W - 88) : 112, 'Level', S.level, () => { S.level = Math.max(5, S.level - 5); Audio.sfx('menu'); }, () => { S.level = Math.min(50, S.level + 5); Audio.sfx('menu'); });
   const wildBtn = (x, y, w, h) => bigButton(x, y, w, h, S.wild ? 'WILD: ON' : 'WILD: OFF', () => { S.wild = !S.wild; Audio.sfx('menu'); }, { small: true, col: S.wild ? '#2a6a3a' : '#3a3a4a' });
   if (!narrow) { wildBtn(216, sy, 70, sbh); if (W > 470) text('Snake draft · click a picked slot to drop it', 296, sy + 4, UI.muted, { outline: UI.shadow }); }
   const go = () => { if (!full) { Audio.sfx('error'); return; } Audio.sfx('select'); S.go(); }; const goOpt = { col: full ? '#8a2c2c' : '#3a3a4a', ink: full ? '#ffffff' : UI.muted };
@@ -3128,17 +3130,19 @@ function versusInput(ev) {
 // ---------------------------------------------------------------- starter pick
 function starterDraw() {
   const W = VIEW.w, H = VIEW.h; drawBackdrop(BACKDROP, 0, 0, .6);
-  bigC('CHOOSE YOUR PARTNER', W / 2, 14, UI.gold, { outline: '#3a2000' }); textC('Prof. Oak: "Take one. They are all good, I checked."', W / 2, 28, UI.ink, { outline: UI.shadow });
-  SC.hits = []; const cw = 96, gap = 10; const x0 = W / 2 - (cw * 3 + gap * 2) / 2;
-  if (W < cw * 3 + gap * 2 + 8) { // phones: three wide, short cards stacked down the screen
-    const w = W - 12, h = Math.min(56, Math.floor((H - 70) / 3) - 6);
+  const title = W < 200 ? 'YOUR PARTNER' : 'CHOOSE YOUR PARTNER'; bigC(title, W / 2, 14, UI.gold, { outline: '#3a2000' });
+  const quote = wrap('Prof. Oak: "Take one. They are all good, I checked."', W - 12); quote.forEach((l, i) => textC(l, W / 2, 28 + i * 9, UI.ink, { outline: UI.shadow }));
+  SC.hits = []; const cw = 96, gap = 10; const x0 = W / 2 - (cw * 3 + gap * 2) / 2; const top = 28 + quote.length * 9 + 7;
+  if (W < cw * 3 + gap * 2 + 8) { // phones: three wide, short cards stacked down the screen; stats on two short rows
+    const w = W - 12, h = Math.min(56, Math.floor((H - top - 26) / 3) - 6);
     STARTERS.forEach((n, i) => {
-      const d = DEX[n]; const x = 6, y = 44 + i * (h + 6); const sel = SC.i === i; panel(x, y, w, h, { fill: sel ? '#2a3d6a' : UI.panel, border: sel ? UI.gold : UI.border });
+      const d = DEX[n]; const x = 6, y = top + i * (h + 6); const sel = SC.i === i; panel(x, y, w, h, { fill: sel ? '#2a3d6a' : UI.panel, border: sel ? UI.gold : UI.border });
       const bob = sel ? Math.round(Math.abs(Math.sin(SC.t * 6)) * -3) : 0; rect(x + 6, y + 6, 40, h - 12, teamColorD(0)); drawMon(n, x + 26, y + h - 8 + bob, {});
-      text(d.name, x + 52, y + 6, sel ? UI.gold : UI.ink); d.types.forEach((t, j) => typeBadge(t, x + 52 + textWidth(d.name) + 6 + j * 26, y + 5, 24));
-      const u = makeUnit(n, 5, 0, { hpBonus: BOND_HP }); text('HP ' + u.maxHp + ' ATK ' + u.atk + ' DEF ' + u.def + ' SPA ' + u.spa + ' SPE ' + u.spe, x + 52, y + 17, UI.muted);
-      let mv = 'MOV ' + u.mov + ' · ' + u.moves.map(m => m.name).join('/'); while (textWidth(mv) > w - 58 && mv.length > 6) mv = mv.slice(0, -1); text(mv, x + 52, y + 28, UI.muted);
-      if (h >= 48) text(sel ? (VIEW.touch ? 'tap again to choose' : 'Z to choose') : '', x + 52, y + 39, UI.gold);
+      const tx = x + 52, tw = w - 58; text(d.name, tx, y + 6, sel ? UI.gold : UI.ink); d.types.forEach((t, j) => typeBadge(t, tx + textWidth(d.name) + 6 + j * 26, y + 5, 24));
+      const u = makeUnit(n, 5, 0, { hpBonus: BOND_HP }); const fit = s => { while (textWidth(s) > tw && s.length > 4) s = s.slice(0, -1); return s; };
+      text(fit('HP ' + u.maxHp + ' · ATK ' + u.atk + ' · DEF ' + u.def), tx, y + 17, UI.muted); text(fit('SPA ' + u.spa + ' · SPD ' + u.spd + ' · SPE ' + u.spe + ' · MOV ' + u.mov), tx, y + 27, UI.muted);
+      text(fit(u.moves.map(m => m.name).join(' / ')), tx, y + 37, '#98d8f8');
+      if (h >= 54) text(sel ? (VIEW.touch ? 'tap again to choose' : 'Z to choose') : '', tx, y + 47, UI.gold);
       hit(x, y, w, h, () => { if (SC.i === i) { Audio.sfx('select'); pickStarter(n); } else { SC.i = i; Audio.sfx('cursor'); } });
     });
     textC(VIEW.touch ? 'tap twice to choose' : 'click / Z to choose', W / 2, H - 14, UI.muted, { outline: UI.shadow }); return;

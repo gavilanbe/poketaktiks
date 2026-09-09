@@ -523,6 +523,54 @@ test('drain reports the HP actually restored: nothing at full HP, the missing HP
   [ven, onix] = setup(null, null); const q = g.combatQueue(ven, onix, m, ven)[0]; g.startDuel(q); while (!q.done) g.updateDuel(q, 1 / 60); assert(!T.G('FX.texts').some(t => String(t.s).startsWith('+')) && q.script.beats.find(b => b.kind === 'impact').attFrom === q.script.beats.find(b => b.kind === 'impact').attTo, 'no +heal popup data at full HP');
 });
 
+
+// Stage 3 review follow-up: rendered text stays inside narrow views, every control is reachable, every label uses real glyphs.
+// Hooks `text` to record where each string lands (following save/translate/scale), like the supervisor's text-check script.
+function textHook(T) {
+  T.G(`var __boxes = [], __m = [1, 0, 0, 1, 0, 0], __st = []; ctx.save = () => __st.push(__m.slice()); ctx.restore = () => { __m = __st.pop() || [1, 0, 0, 1, 0, 0]; }; ctx.translate = (x, y) => { __m[4] += __m[0] * x; __m[5] += __m[3] * y; }; ctx.scale = (x, y) => { __m[0] *= x; __m[3] *= y; };
+    text = (s, x, y, col, opt = {}) => { const w = textWidth(s, opt.font || FONT); __boxes.push({ text: String(s), x: __m[0] * x + __m[4], y: __m[3] * y + __m[5], w: w * __m[0], h: 7 * __m[3] }); return w; };`);
+  return () => { const b = T.G('__boxes'); T.G('__boxes = []'); return b; };
+}
+const battleSetup = `const ch = CHAPTERS[5]; startBattle(ch.map, [4, 7, 1, 25, 133, 66].map(n => partyUnit(n, ch.level)), {}, { chapter: 5, defer: true }); goScene('battle'); BT.mode = 'idle'; BT.time = 2;`;
+const TEXT_CASES = [
+  ['title', `goScene('title'); SC.t = 5;`, 'titleDraw()'],
+  ['versus', `startVersusSetup(5); SC.t = 5;`, 'versusDraw()'],
+  ['starter', `goScene('title'); titleDraw(); startNewGame(); SC.t = 5;`, 'starterDraw()'],
+  ['prep', `SAVE = { chapter: 5, party: [4, 7, 1, 25, 133, 66, 74, 16].map(n => partyUnit(n, 20)), bag: { pokeball: 3, potion: 2 }, stars: {}, beaten: false }; prepChapter(5); SC.t = 5;`, 'prepDraw()'],
+  ['skirmish', `startSkirmishSetup(); SC.t = 5;`, 'skirmishDraw()'],
+  ['results', `goScene('results', { win: true, turns: 5, kills: 3, par: 8, rewards: { pokeball: 1, greatball: 1, potion: 1 }, caught: [{ num: 16, level: 5 }, { num: 19, level: 4 }], trained: ['Charmeleon trained from Lv14 to Lv17'], evolved: ['Charmander evolved into Charmeleon!'], next: () => {} }); SC.t = 5;`, 'resultsDraw()'],
+  ['board', battleSetup, 'drawHUD()'],
+  ['forecast', battleSetup + ` BT.sel = alive(0)[0]; BT.sel.x = 5; BT.sel.y = 2; BT.targets = [alive(1)[0]]; BT.tIdx = 0; BT.moveIdx = 0; BT.mode = 'target'; setTargetCursor();`, 'drawHUD()'],
+  ['unitinfo', battleSetup + ` BT.info = B.units.find(u => u.boss) || B.units[0]; BT.mode = 'unitinfo';`, 'drawHUD()'],
+  ...[0, 1, 2].map(p => ['help' + p, battleSetup + ` BT.mode = 'help'; BT.helpPage = ${p};`, 'drawHUD()']),
+];
+test('narrow screens: every rendered string and every control stays inside the view on phones and desktop', T0 => {
+  for (const [w, h] of [[180, 390], [195, 422], [207, 448], [512, 288]]) for (const [name, setup, draw] of TEXT_CASES) {
+    const T = loadGame(); const tag = w + 'x' + h + ' ' + name + ': '; T.G('VIEW.w = ' + w + '; VIEW.h = ' + h + '; ' + setup); const boxes = textHook(T); T.G(draw);
+    const bad = boxes().filter(b => b.x < -1 || b.x + b.w > w + 1 || b.y < -1 || b.y + b.h > h + 1); assert(!bad.length, tag + 'text outside the view: ' + JSON.stringify(bad.slice(0, 3)));
+    const hits = T.G('SC.name === "battle" ? HUD.hits : SC.hits'); for (const r of hits) { assert(inside(r, w, h), tag + 'control outside: ' + (r.label || '?') + ' ' + JSON.stringify([r.x, r.y, r.w, r.h])); assert(r.w >= 14 && r.h >= 12, tag + 'control too small: ' + (r.label || '?')); }
+    for (let i = 0; i < hits.length; i++) for (let j = i + 1; j < hits.length; j++) assert(!overlaps(hits[i], hits[j]), tag + 'controls overlap: ' + (hits[i].label || i) + ' / ' + (hits[j].label || j));
+  }
+});
+test('phone keyboard and touch access: Versus draft, prep toggles and starter pick work through keys and their on-screen controls', T => {
+  const { g, G } = T; G('VIEW.w = 180; VIEW.h = 390');
+  g.startVersusSetup(5); const S = G('SC.data'); g.versusDraw(); const hits = G('SC.hits');
+  const plus = hits.filter(h => h.label === '+'); assert.strictEqual(plus.length, 2, 'both [+] controls are on screen'); const lvl = S.level; plus[1].run(); assert.strictEqual(S.level, lvl + 5, 'the level [+] is usable'); const seed = S.seed; plus[0].run(); assert.strictEqual(S.seed, (seed + 1) % 1000, 'the arena [+] is usable');
+  for (const k of ['right', 'down', 'ok']) g.versusInput({ type: 'key', key: k }); assert.strictEqual(S.teams[0].length + S.teams[1].length, 1, 'keys draft a Pokémon'); assert.strictEqual(G('SC.i'), 1 + g.vsCols(), 'down moves one roster row (four columns on phones)');
+  g.versusDraw(); for (const l of ['BACK', 'RANDOM', 'CLEAR', 'BATTLE!']) assert(G('SC.hits').some(h => h.label === l), l + ' button present'); assert(G('SC.hits').some(h => h.label && h.label.startsWith('WILD')), 'WILD toggle present');
+  g.goScene('title'); g.titleDraw(); G('SAVE = { chapter: 0, party: [], bag: {}, stars: {}, beaten: false }'); g.goScene('starter'); g.starterDraw(); assert.strictEqual(G('SC.hits').length, 3, 'three starter cards'); g.starterInput({ type: 'key', key: 'right' }); assert.strictEqual(G('SC.i'), 1);
+  G('SAVE.party = [partyUnit(4, 5), partyUnit(25, 5), partyUnit(7, 5), partyUnit(1, 5)]'); g.prepChapter(0); const P = G('SC.data'); g.prepDraw(); const n0 = P.deploy.length; g.prepInput({ type: 'key', key: 'down' }); g.prepInput({ type: 'key', key: 'ok' }); assert.notStrictEqual(P.deploy.length, n0, 'OK toggles the selected card'); g.prepDraw(); for (const l of ['BACK', 'AUTO PICK', 'START']) assert(G('SC.hits').some(h => h.label === l), l + ' button present on the phone layout');
+});
+test('every UI label uses glyphs the pixel font has (no "?" fallbacks)', T => {
+  const { g, G, C } = T; const has = c => G('!!(FONT[' + JSON.stringify(c) + '] || FONT[stripAccents(' + JSON.stringify(c) + ')])');
+  const check = (s, where) => { for (const c of String(s)) if (c !== ' ') assert(has(c), where + ': glyph missing for U+' + c.codePointAt(0).toString(16) + ' in "' + s + '"'); };
+  for (const p of G('HELP_PAGES')) for (const l of p) check(l, 'help');
+  g.startBattle(C.CHAPTERS[5].map, [g.partyUnit(4, 20)], { pokeball: 1 }, { chapter: 5, seed: 7, defer: true }); const BT = G('BT'), HUD = G('HUD');
+  for (const mode of ['idle', 'move']) { BT.mode = mode; BT.sel = mode === 'move' ? T.B().units[0] : null; if (mode === 'move') { BT.reach = g.reachable(BT.sel); BT.atk = []; BT.path = [{ x: BT.sel.x, y: BT.sel.y }]; } for (const z of [1, .5]) { BT.zoom = z; g.battleDraw(); for (const b of HUD.hits) check(b.label, mode + ' button'); } }
+  BT.mode = 'idle'; g.openEndMenu(); for (const it of BT.menu.items) { check(it.label, 'menu'); check(it.sub, 'menu hint'); }
+  for (const s of ['OK: attack  ·  X: back  ·  C: move', '◂ ▸ browse  ·  X close', 'READY 3/5', 'ZOOM -', 'ZOOM +', '32 →', '×1.5', '×2.25']) check(s, 'label');
+});
+
 // ---------------------------------------------------------------- runner
 function run() {
   let failed = 0;
