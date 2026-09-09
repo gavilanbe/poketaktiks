@@ -56,13 +56,16 @@ const MOVE_LIST = [
 const MOVES = {}; for (const m of MOVE_LIST) MOVES[m[0]] = { name: m[0], type: m[1], pow: m[2], kind: m[3], rng: m[4], acc: m[5], eff: m[6], lvl: m[7] };
 // Move flavour texts (what pops up over the target)
 const MOVE_POP = { Normal: 'BONK!', Fire: 'FWOOSH!', Water: 'SPLASH!', Electric: 'BZZT!', Grass: 'SWISH!', Ice: 'CRACK!', Fighting: 'POW!', Poison: 'BLORP!', Ground: 'THUD!', Flying: 'WHOOSH!', Psychic: 'WOOOM!', Bug: 'CHOMP!', Rock: 'CRUNCH!', Ghost: 'BOO!', Dragon: 'ROAR!', Dark: 'GRR!', Steel: 'CLANG!', Fairy: 'TWINKLE!' };
-// The best unlocked move of each type at this level (plus a Normal fallback).
+// A small loadout for this level: per own type the strongest unlocked move, plus the strongest
+// unlocked move of that type that can hit an adjacent foe when the strongest one cannot (Fire Blast
+// keeps Flamethrower). Non-Normal types get a melee Normal fallback (never Hyper Beam). The species
+// signature move leads the list once its own unlock level is reached.
 function movesFor(types, level, signature) {
-  const out = [];
-  const best = t => { let b = null; for (const m of MOVE_LIST) if (m[1] === t && m[7] <= level && (!b || m[2] > b.pow)) b = MOVES[m[0]]; return b; };
-  for (const t of types) { const m = best(t); if (m && !out.includes(m)) out.push(m); }
-  if (!types.includes('Normal')) { const n = best('Normal'); if (n) out.push(n); }
-  if (signature && MOVES[signature] && !out.includes(MOVES[signature])) out.unshift(MOVES[signature]);
+  const out = []; const add = m => { if (m && !out.includes(m)) out.push(m); };
+  const best = (t, melee) => { let b = null; for (const m of MOVE_LIST) if (m[1] === t && m[7] <= level && (!melee || m[4][0] === 1) && (!b || m[2] > b.pow)) b = MOVES[m[0]]; return b; };
+  for (const t of types) { const m = best(t, false); add(m); if (m && m.rng[0] > 1) add(best(t, true)); }
+  if (!types.includes('Normal')) add(best('Normal', true));
+  const sig = signature && MOVES[signature]; if (sig && sig.lvl <= level && !out.includes(sig)) out.unshift(sig);
   return out;
 }
 const STATUS = { psn: { name: 'PSN', col: '#b050d0', text: 'poisoned' }, brn: { name: 'BRN', col: '#f08030', text: 'burned' }, par: { name: 'PAR', col: '#f8d030', text: 'paralyzed' }, frz: { name: 'FRZ', col: '#98d8f8', text: 'frozen' }, slp: { name: 'SLP', col: '#a0a0c0', text: 'asleep' } };
@@ -135,8 +138,12 @@ function statFor(base, level) { return Math.floor(2 * base * level / 100) + 5; }
 function hpFor(base, level) { return Math.floor(2.4 * base * level / 100) + level + 12; }
 function movFor(dex) { const s = dex.base.spe; let m = s < 45 ? 3 : s < 80 ? 4 : s < 110 ? 5 : 6; if (dex.types.includes('Flying')) m = Math.max(m, 5); if (dex.num === 129) m = 2; return m; }
 let UID = 1;
+// Campaign difficulty edge: the trainer's own party (and its catches) carries 20% more HP. It is a
+// per-unit multiplier set by the campaign flow, never by team number, so Versus stays symmetric.
+const BOND_HP = 1.2;
+// extra: x, y, ai, boss, nick, hp, hpBonus (HP multiplier, default 1).
 function makeUnit(numOrName, level, team, extra = {}) {
-  const dex = dexOf(numOrName); const u = { id: UID++, num: dex.num, team, level, xp: 0, status: null, statusTurns: 0, acted: false, moved: false, x: extra.x | 0, y: extra.y | 0, ai: extra.ai || 'aggro', boss: !!extra.boss, nick: extra.nick || null, wild: team === 2, fx: { dx: 0, dy: 0, sx: 1, sy: 1, alpha: 1, flash: 0 } };
+  const dex = dexOf(numOrName); const u = { id: UID++, num: dex.num, team, level, xp: 0, status: null, statusTurns: 0, recharge: 0, acted: false, moved: false, x: extra.x | 0, y: extra.y | 0, ai: extra.ai || 'aggro', boss: !!extra.boss, nick: extra.nick || null, wild: team === 2, hpBonus: extra.hpBonus || 1, fx: { dx: 0, dy: 0, sx: 1, sy: 1, alpha: 1, flash: 0 } };
   applyDex(u, dex); u.hp = u.maxHp; if (extra.hp != null) u.hp = extra.hp;
   return u;
 }
@@ -145,7 +152,7 @@ const LEGEND_SCALE = { 144: .7, 145: .7, 146: .7, 150: .6, 151: .75, 149: .9 };
 function applyDex(u, dex) {
   u.num = dex.num; u.name = u.nick || dex.name; u.types = dex.types.slice(); u.dex = dex;
   const L = u.level, k = LEGEND_SCALE[dex.num] || 1; const b = k === 1 ? dex.base : { hp: dex.base.hp, atk: Math.round(dex.base.atk * k), def: Math.round(dex.base.def * k), spa: Math.round(dex.base.spa * k), spd: Math.round(dex.base.spd * k), spe: Math.round(dex.base.spe * k) };
-  u.maxHp = Math.round(hpFor(b.hp, L) * (u.team === 0 ? 1.2 : 1)); u.atk = statFor(b.atk, L); u.def = statFor(b.def, L); u.spa = statFor(b.spa, L); u.spd = statFor(b.spd, L); u.spe = statFor(b.spe, L);
+  u.maxHp = Math.round(hpFor(b.hp, L) * (u.hpBonus || 1)); u.atk = statFor(b.atk, L); u.def = statFor(b.def, L); u.spa = statFor(b.spa, L); u.spd = statFor(b.spd, L); u.spe = statFor(b.spe, L);
   u.mov = movFor(dex);
   u.fly = dex.types.includes('Flying') || dex.num === 92 || dex.num === 93 || dex.num === 94 || dex.num === 81 || dex.num === 82 || dex.num === 109 || dex.num === 110 || dex.num === 151; // ghosts, magnets, koffing and Mew float
   u.swim = dex.types.includes('Water'); u.climb = dex.types.includes('Rock') || dex.types.includes('Ground') || dex.types.includes('Fighting') || dex.types.includes('Steel');
@@ -158,5 +165,6 @@ function evolutionFor(u) { const evs = u.dex.evos.filter(e => u.level >= e[1] &&
 function evolve(u, dex) { const oldMax = u.maxHp; u.dex = dex; applyDex(u, dex); u.hp = Math.min(u.maxHp, u.hp + (u.maxHp - oldMax)); }
 function xpToNext() { return 100; }
 function xpGain(att, def, kill) { const diff = clamp(def.level - att.level, -8, 8); let xp = 15 + diff * 2 + (kill ? 35 + diff * 3 : 0); if (def.boss && kill) xp += 40; return Math.max(3, Math.round(xp)); }
-function serializeUnit(u) { return { num: u.num, level: u.level, xp: u.xp, hp: u.hp, nick: u.nick, team: u.team, x: u.x, y: u.y, ai: u.ai, boss: u.boss, status: u.status, statusTurns: u.statusTurns, acted: u.acted, id: u.id }; }
-function restoreUnit(s) { const u = makeUnit(s.num, s.level, s.team, { x: s.x, y: s.y, ai: s.ai, boss: s.boss, nick: s.nick }); u.xp = s.xp || 0; u.hp = s.hp != null ? Math.min(u.maxHp, s.hp) : u.maxHp; u.status = s.status || null; u.statusTurns = s.statusTurns || 0; u.acted = !!s.acted; if (s.id) { u.id = s.id; UID = Math.max(UID, s.id + 1); } return u; }
+function serializeUnit(u) { return { num: u.num, level: u.level, xp: u.xp, hp: u.hp, nick: u.nick, team: u.team, x: u.x, y: u.y, ai: u.ai, boss: u.boss, status: u.status, statusTurns: u.statusTurns, recharge: u.recharge || 0, acted: u.acted, hpBonus: u.hpBonus || 1, id: u.id }; }
+// Older saves have no hpBonus: callers that know the unit is a campaign party member pass BOND_HP themselves.
+function restoreUnit(s) { const u = makeUnit(s.num, s.level, s.team, { x: s.x, y: s.y, ai: s.ai, boss: s.boss, nick: s.nick, hpBonus: s.hpBonus }); u.xp = s.xp || 0; u.hp = s.hp != null ? Math.min(u.maxHp, s.hp) : u.maxHp; u.status = s.status || null; u.statusTurns = s.statusTurns || 0; u.recharge = s.recharge ? 1 : 0; u.acted = !!s.acted; if (s.id) { u.id = s.id; UID = Math.max(UID, s.id + 1); } return u; }

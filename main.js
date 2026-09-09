@@ -4,11 +4,14 @@
 'use strict';
 let SAVE = null;   // { chapter, party:[serialized], bag:{}, stars:{}, beaten }
 const PARAMS = new URLSearchParams(location.search);
-function loadSave() { try { return JSON.parse(localStorage.getItem('pk_save')); } catch (e) { return null; } }
+// Saves written before the HP edge became an explicit per-unit field: every campaign party member carries it.
+function migrateParty(list) { if (list) for (const p of list) if (p.hpBonus == null) p.hpBonus = BOND_HP; return list; }
+function loadSave() { try { const s = JSON.parse(localStorage.getItem('pk_save')); if (s) migrateParty(s.party); return s; } catch (e) { return null; } }
 function writeSave() { try { localStorage.setItem('pk_save', JSON.stringify(SAVE)); } catch (e) { } }
 function loadSuspend() { try { return JSON.parse(localStorage.getItem('pk_suspend')); } catch (e) { return null; } }
 function clearSuspend() { try { localStorage.removeItem('pk_suspend'); } catch (e) { } }
-function partyUnit(num, level) { const u = makeUnit(num, level, 0); let evo; while ((evo = evolutionFor(u))) evolve(u, evo); u.hp = u.maxHp; return serializeUnit(u); }
+// A serialized party member at full HP, evolved for its level. Campaign parties carry the HP edge; Versus passes 1.
+function partyUnit(num, level, hpBonus = BOND_HP) { const u = makeUnit(num, level, 0, { hpBonus }); let evo; while ((evo = evolutionFor(u))) evolve(u, evo); u.hp = u.maxHp; return serializeUnit(u); }
 
 // ---------------------------------------------------------------- campaign flow
 function startNewGame() { clearSuspend(); SAVE = { chapter: 0, party: [], bag: { pokeball: 3, potion: 1 }, stars: {}, beaten: false }; goScene('starter'); }
@@ -55,8 +58,8 @@ function onBattleEnd(result) {
 // Write the battle's team-0 units back into SAVE.party (levels, evolutions), heal everyone, add captures.
 function applyBattleToParty() {
   if (!SAVE) return;
-  for (const u of B.units) { if (u.team !== 0 || u.pid == null) continue; const s = serializeUnit(u); s.hp = u.maxHp; s.status = null; s.acted = false; SAVE.party[u.pid] = s; }
-  for (const c of B.captured) { const s = Object.assign({}, c); s.team = 0; s.acted = false; s.status = null; const u = restoreUnit(s); u.hp = u.maxHp; SAVE.party.push(serializeUnit(u)); }
+  for (const u of B.units) { if (u.team !== 0 || u.pid == null) continue; const s = serializeUnit(u); s.hp = u.maxHp; s.status = null; s.acted = false; s.recharge = 0; SAVE.party[u.pid] = s; }
+  for (const c of B.captured) { const s = Object.assign({}, c, { team: 0, acted: false, status: null, recharge: 0, hpBonus: BOND_HP }); const u = restoreUnit(s); u.hp = u.maxHp; SAVE.party.push(serializeUnit(u)); }
   SAVE.bag = Object.assign({}, B.bag);
 }
 // ---------------------------------------------------------------- suspend (mid-battle save at the start of each player phase)
@@ -72,10 +75,11 @@ function resumeSuspend() {
   seedRng(s.seed ^ (s.turn * 7919)); const map = parseMap(mapDef); map.def = mapDef; UID = 1;
   B = { map, units: [], turn: s.turn, phase: 0, bag: s.bag, result: null, seized: false, captured: s.captured || [], kills: s.kills || 0, chapter: s.chapter, log: [], seed: s.seed, skirmish: !!s.skirmish };
   map.items.forEach((it, i) => { it.taken = !!s.items[i]; }); map.reinforce.forEach((r, i) => { r.done = !!s.reinforce[i]; });
-  for (const d of s.units) { if (d.hp <= 0 && !d.leader) continue; const u = restoreUnit(d); u.pid = d.pid; u.leader = d.leader; u.provoked = d.provoked; if (d.hp <= 0) continue; B.units.push(u); }
+  for (const d of s.units) { if (d.hp <= 0 && !d.leader) continue; if (d.hpBonus == null && d.team === 0) d.hpBonus = BOND_HP; const u = restoreUnit(d); u.pid = d.pid; u.leader = d.leader; u.provoked = d.provoked; if (d.hp <= 0) continue; B.units.push(u); }
   BACKDROP = makeBackdrop(mapDef); BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.cx = s.cx; BT.cy = s.cy; centerCam(BT.cx, BT.cy, true); FX.parts = []; FX.texts = [];
   if (s.skirmish && s.preset) SC.data = { preset: true };
-  goScene('battle'); Audio.playMusic(map.music); beginPhase(0, true);
+  // the save was written after this phase's upkeep: resume without applying it again
+  goScene('battle'); Audio.playMusic(map.music); beginPhase(0, true, true);
 }
 // ---------------------------------------------------------------- skirmish
 function startSkirmishSetup() {
@@ -91,7 +95,7 @@ function startSkirmishSetup() {
 const VS_ROSTER = [5, 8, 2, 25, 17, 33, 12, 15, 28, 37, 39, 42, 44, 54, 58, 61, 64, 67, 75, 93, 95, 123, 125, 126, 111, 104, 133, 116];
 function startVersusSetup(seed) { const S = { seed: seed != null ? seed : Math.floor(Math.random() * 1000), level: 20, wild: true, teams: [[], []], order: [0, 1, 1, 0, 0, 1, 1, 0], size: 4, cur: 0, go: null }; S.go = () => launchVersus(S); goScene('versus', S); }
 function launchVersus(S) {
-  const map = versusMap(S.seed, 18, 11, { wild: S.wild, level: S.level }); const mk = list => list.map(n => partyUnit(n, S.level));
+  const map = versusMap(S.seed, 18, 11, { wild: S.wild, level: S.level }); const mk = list => list.map(n => partyUnit(n, S.level, 1)); // both trainers: plain stats
   const p1 = mk(S.teams[0]), p2 = mk(S.teams[1]); BACKDROP = makeBackdrop(map);
   startBattle(map, p1, { pokeball: 2, potion: 1 }, { versus: true, humans: [0, 1], party2: p2, bag2: { pokeball: 2, potion: 1 }, seed: (S.seed * 131 + 7) | 1, defer: true, setup: S });
   goScene('battle'); beginPhase(0, true);
@@ -141,7 +145,7 @@ requestAnimationFrame(frame);
 function autoTurn() { if (!B || B.phase !== 0 || BT.mode !== 'idle') return false; for (const u of alive(0)) { if (u.acted) continue; const d = aiDecide(u); if (d) { u.x = d.x; u.y = d.y; if (d.target) { resolveCombat(u, d.target, d.move, u); } } u.acted = true; if (checkObjective()) { endBattle(); return true; } } endTurn(); return true; }
 // Debug: simulate a whole battle model-only (no animation), AI on both sides. Returns a summary.
 function simBattle(maxTurns = 30, cautious = true) {
-  const log = B.simLog = []; const act = team => { for (const u of alive(team)) { if (u.status === 'frz') continue; const d = aiDecide(u, team === 0 && cautious); if (d) { u.x = d.x; u.y = d.y; if (d.target) { const ev = resolveCombat(u, d.target, d.move, u); for (const e of ev) if (e.type === 'hit' || e.type === 'ko') log.push('T' + B.turn + ' ' + (e.type === 'ko' ? 'KO ' + e.unit.name + ' by ' + e.by.name : e.att.name + '(' + e.att.team + ')L' + e.att.level + ' ' + e.move.name + '→' + e.def.name + 'L' + e.def.level + ' ' + e.dmg + (e.crit ? '!' : '') + ' hp' + e.hpAfter + '/' + e.def.maxHp)); } } u.acted = true; if (checkObjective()) return true; } return false; };
+  const log = B.simLog = []; const act = team => { for (const u of alive(team)) { if (u.status === 'frz' || u.acted) continue; const d = aiDecide(u, team === 0 && cautious); if (d) { u.x = d.x; u.y = d.y; if (d.target) { const ev = resolveCombat(u, d.target, d.move, u); for (const e of ev) if (e.type === 'hit' || e.type === 'ko') log.push('T' + B.turn + ' ' + (e.type === 'ko' ? 'KO ' + e.unit.name + ' by ' + e.by.name : e.att.name + '(' + e.att.team + ')L' + e.att.level + ' ' + e.move.name + '→' + e.def.name + 'L' + e.def.level + ' ' + e.dmg + (e.crit ? '!' : '') + ' hp' + e.hpAfter + '/' + e.def.maxHp)); } } u.acted = true; if (checkObjective()) return true; } return false; };
   while (!B.result && B.turn <= maxTurns) {
     if (act(0)) break;
     let done = false; for (const t of [1, 2, 3]) { if (!alive(t).length) continue; upkeep(t); if (t === 1) spawnReinforcements(); if (act(t)) { done = true; break; } } if (done) break;

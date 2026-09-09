@@ -40,7 +40,19 @@ function pathTo(reach, x, y) { let n = reach.get(key(x, y)); if (!n) return null
 function ring(x, y, min, max) { const out = []; for (let dy = -max; dy <= max; dy++) for (let dx = -max; dx <= max; dx++) { const d = Math.abs(dx) + Math.abs(dy); if (d >= min && d <= max && inMap(x + dx, y + dy)) out.push({ x: x + dx, y: y + dy }); } return out; }
 function targetsFrom(u, x, y) { const out = []; for (const v of B.units) { if (v.hp <= 0 || !hostile(u.team, v.team)) continue; const d = Math.abs(v.x - x) + Math.abs(v.y - y); if (u.moves.some(m => d >= m.rng[0] && d <= m.rng[1])) out.push(v); } return out; }
 function attackCells(u, reach) { const set = new Set(), out = []; for (const n of reach.values()) { if (!canStand(u, n.x, n.y)) continue; for (const c of ring(n.x, n.y, u.rngMin, u.rngMax)) { const k = key(c.x, c.y); if (!set.has(k) && !reach.has(k)) { set.add(k); out.push(c); } } } return out; }
-function dangerZone(team) { const set = new Set(); for (const e of B.units) { if (e.hp <= 0 || !hostile(e.team, team) || e.team === 2) continue; const r = reachable(e); for (const n of r.values()) { if (unitAt(n.x, n.y) && unitAt(n.x, n.y) !== e) continue; for (const c of ring(n.x, n.y, e.rngMin, e.rngMax)) set.add(key(c.x, c.y)); } } return set; }
+// Cells every hostile unit could hit on its next phase, split by who threatens them: trainer teams
+// (enemy or rival trainer) and wild Pokémon. A unit that must recharge skips its next phase, so it
+// threatens nothing; frozen and paralyzed units may recover, so they stay in.
+function dangerZones(team) {
+  const zones = { trainer: new Set(), wild: new Set() };
+  for (const e of B.units) {
+    if (e.hp <= 0 || !hostile(e.team, team) || e.recharge) continue;
+    const set = e.team === 2 ? zones.wild : zones.trainer; const r = reachable(e);
+    for (const n of r.values()) { if (unitAt(n.x, n.y) && unitAt(n.x, n.y) !== e) continue; for (const c of ring(n.x, n.y, e.rngMin, e.rngMax)) set.add(key(c.x, c.y)); }
+  }
+  return zones;
+}
+function dangerZone(team) { const z = dangerZones(team); return new Set([...z.trainer, ...z.wild]); }
 
 // ---------------------------------------------------------------- combat maths
 function attackStat(u, move) { let a = move.kind === 'P' ? u.atk : u.spa; if (u.status === 'brn' && move.kind === 'P') a = Math.floor(a / 2); return a; }
@@ -59,33 +71,58 @@ function calcDmg(att, def, move, defTerr, crit = false) {
   return Math.max(eff > 0 ? 1 : 0, d);
 }
 function doubles(att, def) { return att.status !== 'par' && att.spe >= def.spe + 8; }
-function bestMove(att, def, d, terr) { let best = null, bd = -1; for (const m of usableMoves(att, d)) { const v = calcDmg(att, def, m, terr) * calcHit(att, def, m, terr) / 100; if (v > bd) { bd = v; best = m; } } return best; }
-// Forecast both sides. attFrom: {x,y} where attacker will stand.
+// Hyper Beam needs a charge: it cannot be fired as a counter, and a unit that fired it cannot counter until it has recharged.
+function needsRecharge(move) { return !!(move.eff && move.eff.recharge); }
+function counterBlock(def) { return def.status === 'frz' ? 'frozen' : def.recharge ? 'recharging' : null; }
+function bestMove(att, def, d, terr, asCounter = false) { let best = null, bd = -1; for (const m of usableMoves(att, d)) { if (asCounter && needsRecharge(m)) continue; const v = calcDmg(att, def, m, terr) * calcHit(att, def, m, terr) / 100; if (v > bd) { bd = v; best = m; } } return best; }
+// Short labels for a move's chance-based or lasting effects, for forecasts and help.
+function moveEffects(move) { const e = move.eff, out = []; if (!e) return out; if (e.status) out.push(e.chance + '% ' + STATUS[e.status].name); if (e.drain) out.push('drains ' + Math.round(e.drain * 100) + '%'); if (e.crit) out.push('high crit'); if (e.recharge) out.push('must recharge'); return out; }
+// Forecast the whole exchange with the attacker standing at `from`. Deterministic and side-effect
+// free: no dice, no unit mutation. The strike order is exactly the one resolveCombat walks, so the
+// preview cannot promise a counter or a double that the resolver would skip.
+//   a, c       attacker / counter sides {unit, move, dmg, hit, crit, dbl, eff}; c is null when no counter is possible
+//   strikes    ordered [{side:'a'|'c', unit, move, dmg, hit, crit, eff, drain, nominal, cond}]
+//              nominal: happens when every earlier strike lands; cond: why it would not
+//   hpA, hpD   HP after the nominal exchange (every strike lands, no crits, no status procs)
+//   noCounter  'range' | 'frozen' | 'recharging' | null
 function forecast(att, def, move, from) {
   const d = Math.abs(def.x - from.x) + Math.abs(def.y - from.y);
   const aT = terrAt(from.x, from.y), dT = terrAt(def.x, def.y);
-  const a = { unit: att, move, dmg: calcDmg(att, def, move, dT), hit: calcHit(att, def, move, dT), crit: calcCrit(att, def, move), dbl: doubles(att, def), eff: effMult(move.type, def.types) };
-  const cm = def.status === 'frz' ? null : bestMove(def, att, d, aT);
-  const c = cm ? { unit: def, move: cm, dmg: calcDmg(def, att, cm, aT), hit: calcHit(def, att, cm, aT), crit: calcCrit(def, att, cm), dbl: doubles(def, att), eff: effMult(cm.type, att.types) } : null;
-  return { a, c, d };
+  const side = (A, Dn, m, terr) => ({ unit: A, move: m, dmg: calcDmg(A, Dn, m, terr), hit: calcHit(A, Dn, m, terr), crit: calcCrit(A, Dn, m), dbl: doubles(A, Dn), eff: effMult(m.type, Dn.types) });
+  const a = side(att, def, move, dT);
+  const block = counterBlock(def); const cm = block ? null : bestMove(def, att, d, aT, true);
+  const c = cm ? side(def, att, cm, aT) : null;
+  const order = [a]; if (c) order.push(c); if (a.dbl) order.push(a); else if (c && c.dbl) order.push(c);
+  let hpA = att.hp, hpD = def.hp; const strikes = [];
+  for (const s of order) {
+    const isA = s === a; const strikerHp = isA ? hpA : hpD, targetHp = isA ? hpD : hpA; const nominal = strikerHp > 0 && targetHp > 0;
+    const e = { side: isA ? 'a' : 'c', unit: s.unit, move: s.move, dmg: s.dmg, hit: s.hit, crit: s.crit, eff: s.eff, drain: 0, nominal, cond: null };
+    if (nominal) {
+      const dr = s.move.eff && s.move.eff.drain && s.dmg > 0 ? Math.max(1, Math.floor(s.dmg * s.move.eff.drain)) : 0; e.drain = dr;
+      if (isA) { hpD = Math.max(0, hpD - s.dmg); hpA = Math.min(att.maxHp, hpA + dr); } else { hpA = Math.max(0, hpA - s.dmg); hpD = Math.min(def.maxHp, hpD + dr); }
+    } else e.cond = 'only if ' + (strikerHp <= 0 ? s.unit : isA ? def : att).name + ' survives';
+    strikes.push(e);
+  }
+  return { a, c, d, strikes, hpA, hpD, koA: hpA <= 0, koD: hpD <= 0, noCounter: c ? null : (block || 'range'), recharge: needsRecharge(move) };
 }
-// Resolve a full exchange. Mutates units; returns an event list for the animation layer.
+// Resolve a full exchange by rolling the forecast's strikes in order. Mutates units; returns an event list for the animation layer.
 function resolveCombat(att, def, move, from) {
   const fc = forecast(att, def, move, from); const ev = [];
-  const strike = (side, isCounter) => {
-    const A = side.unit, Dn = side === fc.a ? def : att; if (A.hp <= 0 || Dn.hp <= 0) return;
-    const hit = rnd() * 100 < side.hit;
-    if (!hit) { ev.push({ type: 'miss', att: A, def: Dn, move: side.move, counter: isCounter }); return; }
-    const crit = rnd() * 100 < side.crit; const dmg = calcDmg(A, Dn, side.move, terrAt(Dn.x, Dn.y), crit);
+  for (const s of fc.strikes) {
+    const A = s.unit, Dn = s.side === 'a' ? def : att, isCounter = s.side === 'c'; if (A.hp <= 0 || Dn.hp <= 0) continue;
+    const hit = rnd() * 100 < s.hit;
+    if (!hit) { ev.push({ type: 'miss', att: A, def: Dn, move: s.move, counter: isCounter }); continue; }
+    const crit = rnd() * 100 < s.crit; const dmg = calcDmg(A, Dn, s.move, terrAt(Dn.x, Dn.y), crit);
     Dn.hp = Math.max(0, Dn.hp - dmg); let status = null;
-    const ef = side.move.eff;
+    const ef = s.move.eff;
     if (ef && ef.status && !Dn.status && Dn.hp > 0 && rnd() * 100 < ef.chance) { const st = ef.status; if (!(st === 'brn' && Dn.types.includes('Fire')) && !(st === 'psn' && (Dn.types.includes('Poison') || Dn.types.includes('Steel'))) && !(st === 'par' && Dn.types.includes('Electric')) && !(st === 'frz' && Dn.types.includes('Ice'))) { Dn.status = st; Dn.statusTurns = 0; status = st; } }
-    let drain = 0; if (side.move.eff && side.move.eff.drain && dmg > 0) { drain = Math.max(1, Math.floor(dmg * side.move.eff.drain)); A.hp = Math.min(A.maxHp, A.hp + drain); }
-    ev.push({ type: 'hit', att: A, def: Dn, move: side.move, dmg, crit, eff: side.eff, hpAfter: Dn.hp, status, drain, attHpAfter: A.hp, counter: isCounter });
+    let drain = 0; if (ef && ef.drain && dmg > 0) { drain = Math.max(1, Math.floor(dmg * ef.drain)); A.hp = Math.min(A.maxHp, A.hp + drain); }
+    ev.push({ type: 'hit', att: A, def: Dn, move: s.move, dmg, crit, eff: s.eff, hpAfter: Dn.hp, status, drain, attHpAfter: A.hp, counter: isCounter });
     if (Dn.hp <= 0) ev.push({ type: 'ko', unit: Dn, by: A });
-    if (Dn.status === 'frz' && dmg > 0 && side.move.type === 'Fire') { Dn.status = null; ev.push({ type: 'thaw', unit: Dn }); }
-  };
-  strike(fc.a, false); if (fc.c) strike(fc.c, true); if (fc.a.dbl) strike(fc.a, false); else if (fc.c && fc.c.dbl) strike(fc.c, true);
+    if (Dn.status === 'frz' && dmg > 0 && s.move.type === 'Fire') { Dn.status = null; ev.push({ type: 'thaw', unit: Dn }); }
+  }
+  // firing a recharge move costs the next turn whether it hit or missed
+  if (fc.recharge && att.hp > 0) { att.recharge = 1; ev.push({ type: 'recharge', unit: att }); }
   // experience for player-team survivors
   for (const [u, o] of [[att, def], [def, att]]) { if (!isHuman(u.team) || u.hp <= 0) continue; const took = ev.some(e => e.type === 'hit' && e.att === u); if (!took) continue; awardXp(u, xpGain(u, o, o.hp <= 0), ev); }
   return ev;
@@ -94,13 +131,18 @@ function awardXp(u, amount, ev) {
   if (u.level >= 50) return; u.xp += amount; ev.push({ type: 'xp', unit: u, amount });
   while (u.xp >= xpToNext() && u.level < 50) { u.xp -= xpToNext(); const gains = levelUp(u); ev.push({ type: 'levelup', unit: u, gains, level: u.level }); const evo = evolutionFor(u); if (evo) { const from = u.dex; ev.push({ type: 'evolve', unit: u, from, to: evo }); evolve(u, evo); } }
 }
-// Start-of-phase upkeep for one team: status damage, terrain heals, thaw checks. Returns events.
+// Start-of-phase upkeep for one team: recharge, status damage, terrain heals and cures, thaw checks.
+// Returns events. Runs exactly once per phase; a resumed suspend save skips it (see beginPhase).
 function upkeep(team) {
   const ev = [];
   for (const u of alive(team)) {
     u.acted = false; u.moved = false;
+    if (u.recharge) { u.recharge = 0; u.acted = true; u.moved = true; ev.push({ type: 'recharge', unit: u, done: true }); }
     const t = terrAt(u.x, u.y);
-    if (t.heal && u.hp < u.maxHp) { const h = Math.max(1, Math.floor(u.maxHp * t.heal)); u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: h }); if (u.status) { ev.push({ type: 'cure', unit: u }); u.status = null; } }
+    if (t.heal) {
+      if (u.hp < u.maxHp) { const h = Math.max(1, Math.floor(u.maxHp * t.heal)); u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: h }); }
+      if (u.status) { ev.push({ type: 'cure', unit: u }); u.status = null; }
+    }
     if (t.burn && !u.fly && !u.types.includes('Fire')) { const d = Math.max(1, Math.floor(u.maxHp / 6)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'lava' }); }
     if (u.status === 'psn') { const d = Math.max(1, Math.floor(u.maxHp / 8)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'psn' }); }
     if (u.status === 'brn') { const d = Math.max(1, Math.floor(u.maxHp / 16)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'brn' }); }
@@ -153,11 +195,14 @@ function aiDecide(u, cautious = false) {
     if (u.ai !== 'aggro' && !u.provoked && !(n.x === u.x && n.y === u.y) && u.ai === 'guard') continue; // guards never move
     const aT = terrAt(n.x, n.y);
     for (const t of targets) {
-      const d = Math.abs(t.x - n.x) + Math.abs(t.y - n.y); const mv = bestMove(u, t, d, terrAt(t.x, t.y)); if (!mv) continue;
-      const fc = forecast(u, t, mv, n);
-      let s = fc.a.dmg * fc.a.hit / 100 * (fc.a.dbl ? 1.8 : 1);
-      if (fc.a.dmg * (fc.a.dbl ? 2 : 1) >= t.hp) s += 45 + t.level;
-      if (fc.c) { const cd = fc.c.dmg * fc.c.hit / 100 * (fc.c.dbl ? 1.8 : 1); s -= cd * .7; if (fc.c.dmg * (fc.c.dbl ? 2 : 1) >= u.hp) s -= 60; }
+      const d = Math.abs(t.x - n.x) + Math.abs(t.y - n.y); const tT = terrAt(t.x, t.y); let mv = bestMove(u, t, d, tT); if (!mv) continue;
+      // a recharge move is only worth its lost turn when it finishes the target
+      if (needsRecharge(mv) && calcDmg(u, t, mv, tT) < t.hp) { const alt = bestMove(u, t, d, tT, true); if (alt) mv = alt; }
+      const fc = forecast(u, t, mv, n); const hits = side => fc.strikes.filter(x => x.side === side && x.nominal).length;
+      let s = fc.a.dmg * fc.a.hit / 100 * (hits('a') > 1 ? 1.8 : 1);
+      if (fc.koD) s += 45 + t.level; else if (fc.recharge) s -= 15 + u.level * .5; // the lost turn and the open flank
+
+      if (fc.c && hits('c')) { const cd = fc.c.dmg * fc.c.hit / 100 * (hits('c') > 1 ? 1.8 : 1); s -= cd * .7; if (fc.koA) s -= 60; }
       s += terrainDef(aT, u) * .4 + terrainEva(aT, u) * .2; s += (1 - t.hp / t.maxHp) * 12; if (t.team === 0 && t.leader) s += 6;
       if (t.team === 2 && u.team === 1) s -= 15; // trainers prefer trainers
       if (n.x === u.x && n.y === u.y) s += 1.5;

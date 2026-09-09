@@ -22,14 +22,24 @@ Showdown mini-icon sheet, drawn straight from the sheet by dex number.
   the unit's level, the standard damage formula, STAB (+25%), a softened type
   chart (super effective ×1.5, ×2.25 for a double weakness, resisted ×0.67,
   immunities stay at 0). The defender counters if the attacker stands in one
-  of its move ranges. Speed 8+ higher than the foe = you strike twice (×2).
-  Crits are shown in the forecast; the forecast is deterministic apart from
-  HIT and CRIT.
-- **Moves come from types.** Every Pokémon has the best unlocked move of each
-  of its types plus a Normal fallback; ranged types (Fire, Water, Electric,
-  Psychic, Grass, Rock…) reach 1–2 tiles, brawlers hit adjacent only. Statuses:
-  Poison ticks, Burn halves ATK, Paralysis cuts MOV, Frozen skips turns and
-  eats guaranteed crits.
+  of its move ranges and is still standing. Speed 8+ higher than the foe = you
+  strike twice (×2). The forecast walks the exchange in order (strike, counter,
+  double): a counter or double that only happens if an earlier hit misses is
+  shown in brackets and named ("KO first · counters on miss"), and chance
+  effects (status %, drain, recharge) are listed separately from the numbers.
+  The forecast is deterministic apart from HIT and CRIT and never rolls dice.
+- **Moves come from types.** Every Pokémon carries a small loadout: the best
+  unlocked move of each of its types, the best adjacent-capable move of that
+  type when the strongest one only fires at range (Fire Blast keeps
+  Flamethrower), and a melee Normal fallback. Signature moves lead the list
+  once their level is reached. Ranged types (Fire, Water, Electric, Psychic,
+  Grass, Rock…) reach 1–2 tiles, brawlers hit adjacent only. Hyper Beam (Normal
+  types, Lv40) must recharge: no counter after firing, and the next turn is
+  spent recharging. Statuses: Poison ticks, Burn halves ATK, Paralysis cuts
+  MOV, Frozen skips turns and eats guaranteed crits.
+- **Danger zone.** Red tiles are where trainer Pokémon can hit next phase,
+  yellow tiles where wild Pokémon can. A Pokémon that must recharge threatens
+  nothing.
 - **Terrain.** Forest 20% DEF, mountain 30%, tall grass 20 AVO, Poké Centers
   heal 30% a turn and cure statuses, lava burns anything that is not Fire or
   flying. Flyers ignore terrain, Water types swim, Rock/Ground/Fighting climb,
@@ -38,11 +48,11 @@ Showdown mini-icon sheet, drawn straight from the sheet by dex number.
   next to it, choose Catch, pick a ball. Chance grows as HP drops, ×1.3 with a
   status, ×1.5 Great Ball, ×2 Ultra Ball. Caught Pokémon join the party at the
   end of the map. Trainer Pokémon (red) cannot be stolen.
-- **Your side has an edge.** Trainer-bonded Pokémon (your team, including
-  catches) carry 20% more HP, and the legendary birds and Mewtwo run on
-  scaled-down base stats so a boss hits hard without one-shotting the board.
-  Balance was tuned with `tools/cdp.cjs sim`, which lets the enemy AI play
-  the player side through every chapter.
+- **Your side has an edge (campaign only).** Your campaign party, including
+  catches, carries 20% more HP; in Versus both trainers use plain stats. The
+  legendary birds and Mewtwo run on scaled-down base stats so a boss hits hard
+  without one-shotting the board. Balance was tuned with `tools/cdp.cjs sim`,
+  which lets the enemy AI play the player side through every chapter.
 - **Growth.** XP on every hit and KO, 100 per level, stats recomputed from base
   stats. Level thresholds trigger evolutions on the board with a flashing
   silhouette, and between chapters everybody trains up to the next chapter's
@@ -95,7 +105,9 @@ tiles, cursor, arrow, particles · `model.js` pathfinding, combat, AI ·
 generator · `scenes.js` title, starter, prep, story, results, versus draft · `main.js` flow,
 saves, loop. Deep links: `?ch=N`, `?skirmish=SEED`, `?versus=SEED[&auto]`.
 
-`tools/shot.sh "ch=3&silent&nosave"` takes a headless screenshot;
+`node tools/model-tests.cjs` runs the deterministic model tests (combat
+forecast vs resolver, moves, upkeep, recharge, saves and resume) with Node
+built-ins only. `tools/shot.sh "ch=3&silent&nosave"` takes a headless screenshot;
 `node tools/cdp.cjs smoke|mech|flow|enemy|skirmish|mobile|balance|art|ui` drives the
 game over the DevTools protocol and writes screenshots to `artifacts/`.
 

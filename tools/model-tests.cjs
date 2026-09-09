@@ -1,0 +1,215 @@
+#!/usr/bin/env node
+// Deterministic model tests: node tools/model-tests.cjs
+// Loads the game sources (same order as build.sh) into a vm context with a tiny DOM stub, so the
+// real unit factory, combat model, upkeep, AI and suspend/resume flow run without a browser.
+// Built-ins only. Exit code 1 on any failure.
+'use strict';
+const vm = require('vm'), fs = require('fs'), path = require('path'), assert = require('assert');
+const ROOT = path.join(__dirname, '..');
+const FILES = ['core.js', 'font.js', 'dex.js', 'data.js', 'art.js', 'model.js', 'battle.js', 'campaign.js', 'scenes.js', 'main.js'];
+
+// ---------------------------------------------------------------- harness
+function loadGame() {
+  const store = new Map();
+  const ctx2d = () => new Proxy({}, {
+    get(t, k) { if (k in t) return t[k]; if (k === 'measureText') return () => ({ width: 0 }); if (k === 'getImageData' || k === 'createImageData') return (a, b, w, h) => ({ width: w || a, height: h || b, data: new Uint8ClampedArray((w || a) * (h || b) * 4) }); return () => undefined; },
+    set(t, k, v) { t[k] = v; return true; },
+  });
+  const canvas = () => { const c = { width: 0, height: 0, style: {}, addEventListener() { }, setPointerCapture() { }, getBoundingClientRect: () => ({ left: 0, top: 0 }) }; c.getContext = () => c.ctx || (c.ctx = ctx2d()); return c; };
+  const g = {
+    console, setTimeout, clearTimeout, URLSearchParams, Image: class { },
+    document: { getElementById: canvas, createElement: canvas },
+    localStorage: { getItem: k => store.has(k) ? store.get(k) : null, setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k), clear: () => store.clear() },
+    location: { search: '' }, innerWidth: 960, innerHeight: 540, devicePixelRatio: 1,
+    matchMedia: () => ({ matches: false }), addEventListener() { }, requestAnimationFrame() { }, performance: { now: () => 0 },
+  };
+  g.window = g; vm.createContext(g);
+  vm.runInContext(FILES.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n'), g, { filename: 'game.js' });
+  const G = expr => vm.runInContext(expr, g); // evaluates inside the game: reaches top-level let/const such as B, BT, rnd
+  const C = {}; for (const n of ['BOND_HP', 'CHAPTERS', 'DEX', 'DEX_LIST', 'SIGNATURE', 'key']) C[n] = G(n); // top-level consts are not global properties
+  return { g, G, C, store, B: () => G('B') };
+}
+const PLAINS = ['.......', '.......', '.......', '.......', '.......'];
+// A battle on an ASCII map with no party; units are placed by hand with `place`.
+function arena(T, rows = PLAINS, opts = {}) {
+  T.g.startBattle({ name: 'test', seed: 3, rows, deploy: [], units: [], objective: { type: 'rout' } }, [], { pokeball: 1 }, Object.assign({ defer: true, seed: 5 }, opts));
+  return T.B();
+}
+function place(T, num, level, team, x, y, extra = {}) { const u = T.g.makeUnit(num, level, team, Object.assign({ x, y }, extra)); T.B().units.push(u); return u; }
+function move(u, name) { const m = u.moves.find(m => m.name === name); assert(m, u.name + ' has no ' + name + ' (has ' + u.moves.map(m => m.name).join(', ') + ')'); return m; }
+const fixedRoll = (T, v) => T.G('rnd = () => ' + v); // .5 = every 51%+ strike lands, no crits, no status procs
+const kinds = ev => ev.map(e => e.type + (e.counter ? '*' : '')).join(' ');
+
+// ---------------------------------------------------------------- tests
+const tests = [];
+const test = (name, fn) => tests.push({ name, fn });
+
+test('unit factory ignores team number; campaign edge is explicit; Versus trainers are symmetric', T => {
+  const { g, C } = T; const plain = g.makeUnit(25, 20, 1);
+  assert.strictEqual(g.makeUnit(25, 20, 0).maxHp, plain.maxHp, 'team 0 alone must not change HP');
+  assert.strictEqual(g.makeUnit(25, 20, 0, { hpBonus: C.BOND_HP }).maxHp, Math.round(plain.maxHp * C.BOND_HP), 'explicit bonus applies');
+  g.launchVersus({ seed: 5, level: 20, wild: true, teams: [[25, 5], [25, 8]], order: [0, 1, 1, 0], size: 2, cur: 0 });
+  const B = T.B(); const p1 = B.units.find(u => u.team === 0 && u.num === 25), p2 = B.units.find(u => u.team === 1 && u.num === 25);
+  assert(p1 && p2, 'both trainers field a Pikachu');
+  for (const k of ['maxHp', 'hp', 'atk', 'def', 'spa', 'spd', 'spe']) assert.strictEqual(p1[k], p2[k], 'versus ' + k);
+  assert.strictEqual(p1.maxHp, plain.maxHp, 'versus Pikachu has plain HP');
+  g.levelUp(p1); g.levelUp(p2); assert.strictEqual(p1.maxHp, p2.maxHp, 'level up stays symmetric');
+  g.evolve(p1, C.DEX[26]); g.evolve(p2, C.DEX[26]); assert.strictEqual(p1.maxHp, p2.maxHp, 'evolution stays symmetric');
+  const r1 = g.restoreUnit(g.serializeUnit(p1)), r2 = g.restoreUnit(g.serializeUnit(p2)); assert.strictEqual(r1.maxHp, r2.maxHp, 'restore stays symmetric'); assert.strictEqual(r1.maxHp, p1.maxHp);
+  const wild = B.units.find(u => u.team === 2); if (wild) { const before = wild.maxHp; wild.team = 0; assert.strictEqual(wild.maxHp, before, 'a Versus catch keeps its stats'); }
+});
+
+test('campaign party keeps its HP edge; wild and enemy do not; catches join with it', T => {
+  const { g, G, C } = T;
+  g.startBattle(C.CHAPTERS[0].map, [g.partyUnit(25, 20)], { pokeball: 1 }, { chapter: 0, seed: 7, defer: true });
+  const B = T.B(); const mine = B.units.find(u => u.team === 0); const plain = g.makeUnit(25, 20, 1).maxHp;
+  assert.strictEqual(mine.maxHp, Math.round(plain * C.BOND_HP), 'party Pikachu carries the edge');
+  const wild = place(T, 25, 20, 2, 5, 5); assert.strictEqual(wild.maxHp, plain, 'wild Pikachu is plain');
+  G('SAVE = { chapter: 0, party: [], bag: {}, stars: {}, beaten: false }');
+  B.captured.push(g.serializeUnit(Object.assign({}, wild, { team: 0, hp: 5 }))); g.applyBattleToParty();
+  const saved = G('SAVE').party[0]; assert.strictEqual(saved.hpBonus, C.BOND_HP); assert.strictEqual(g.restoreUnit(saved).maxHp, mine.maxHp, 'catch gets the party edge');
+  // a save written before hpBonus existed migrates on load
+  T.store.set('pk_save', JSON.stringify({ chapter: 1, party: [{ num: 4, level: 9, xp: 0, hp: 30, team: 0 }], bag: {}, stars: {} }));
+  const old = g.loadSave(); assert.strictEqual(old.party[0].hpBonus, C.BOND_HP, 'legacy party member migrated');
+});
+
+test('forecast: a first-strike KO cancels the counter and the resolver agrees', T => {
+  const { g } = T; arena(T); fixedRoll(T, .5);
+  const att = place(T, 6, 30, 1, 1, 1), def = place(T, 10, 3, 2, 2, 1); // Charizard vs Caterpie, adjacent
+  const fc = g.forecast(att, def, move(att, 'Flamethrower'), att);
+  assert(fc.c, 'Caterpie could counter in principle'); assert.strictEqual(fc.strikes[0].nominal, true);
+  const counter = fc.strikes.find(s => s.side === 'c'); assert.strictEqual(counter.nominal, false); assert.strictEqual(counter.cond, 'only if Caterpie survives');
+  assert.strictEqual(fc.hpD, 0); assert.strictEqual(fc.koD, true); assert.strictEqual(fc.hpA, att.hp, 'no damage promised to the attacker');
+  const ev = g.resolveCombat(att, def, move(att, 'Flamethrower'), att);
+  assert.strictEqual(kinds(ev), 'hit ko', 'one hit, KO, no counter'); assert.strictEqual(def.hp, 0); assert.strictEqual(att.hp, fc.hpA);
+});
+
+test('forecast: counter then a speed double, all matching the resolver', T => {
+  const { g } = T; arena(T); fixedRoll(T, .5);
+  const att = place(T, 25, 20, 1, 1, 1), def = place(T, 79, 20, 0, 2, 1); // Pikachu doubles Slowpoke, which survives and answers
+  const m = move(att, 'Thunder Shock'); const fc = g.forecast(att, def, m, att);
+  assert.strictEqual(fc.strikes.map(s => s.side).join(' '), 'a c a'); assert(fc.strikes.every(s => s.nominal), 'every strike is nominal');
+  assert.strictEqual(fc.hpD, def.hp - 2 * fc.a.dmg); assert.strictEqual(fc.hpA, att.hp - fc.c.dmg);
+  const ev = g.resolveCombat(att, def, m, att);
+  assert.strictEqual(kinds(ev).replace(/ xp.*$/, ''), 'hit hit* hit'); assert.strictEqual(def.hp, fc.hpD); assert.strictEqual(att.hp, fc.hpA);
+});
+
+test('forecast: a counter that KOs the attacker cancels its double', T => {
+  const { g } = T; arena(T); fixedRoll(T, .5);
+  const att = place(T, 25, 20, 1, 1, 1, { hp: 1 }), def = place(T, 143, 20, 2, 2, 1);
+  const m = move(att, 'Thunder Shock'); const fc = g.forecast(att, def, m, att);
+  assert.strictEqual(fc.koA, true); const dbl = fc.strikes[2]; assert.strictEqual(dbl.side, 'a'); assert.strictEqual(dbl.nominal, false); assert.strictEqual(dbl.cond, 'only if Pikachu survives');
+  const ev = g.resolveCombat(att, def, m, att); assert.strictEqual(kinds(ev), 'hit hit* ko'); assert.strictEqual(att.hp, 0); assert.strictEqual(def.hp, fc.hpD);
+});
+
+test('forecast: no counter out of range, when frozen, or while recharging', T => {
+  const { g } = T; arena(T);
+  const att = place(T, 25, 20, 1, 1, 1), def = place(T, 66, 10, 2, 3, 1); // Machop only reaches adjacent tiles
+  const m = move(att, 'Thunder Shock');
+  let fc = g.forecast(att, def, m, att); assert.strictEqual(fc.c, null); assert.strictEqual(fc.noCounter, 'range');
+  def.x = 2; fc = g.forecast(att, def, m, att); assert(fc.c, 'adjacent Machop counters'); assert.strictEqual(fc.noCounter, null);
+  def.status = 'frz'; fc = g.forecast(att, def, m, att); assert.strictEqual(fc.noCounter, 'frozen'); def.status = null;
+  def.recharge = 1; fc = g.forecast(att, def, m, att); assert.strictEqual(fc.noCounter, 'recharging');
+});
+
+test('forecast: drain heals the attacker in the preview and in the resolver', T => {
+  const { g } = T; arena(T); fixedRoll(T, .5);
+  const att = place(T, 3, 30, 1, 1, 1), def = place(T, 95, 30, 2, 2, 1); att.hp = 20; // Venusaur's Giga Drain on Onix
+  const m = move(att, 'Giga Drain'); const fc = g.forecast(att, def, m, att);
+  const first = fc.strikes[0]; assert(first.drain > 0, 'preview shows drain'); assert.strictEqual(first.drain, Math.floor(fc.a.dmg * .5));
+  const ev = g.resolveCombat(att, def, m, att); assert.strictEqual(ev[0].drain, first.drain); assert.strictEqual(att.hp, fc.hpA); assert.strictEqual(def.hp, fc.hpD);
+});
+
+test('forecast never rolls dice or touches the units; a miss deals nothing', T => {
+  const { g, G } = T; arena(T);
+  const att = place(T, 25, 20, 1, 1, 1), def = place(T, 143, 20, 2, 2, 1); const m = move(att, 'Thunder Shock');
+  G('var __rolls = 0; rnd = () => { __rolls++; return .5; }');
+  const before = JSON.stringify([g.serializeUnit(att), g.serializeUnit(def)]);
+  for (let i = 0; i < 3; i++) g.forecast(att, def, m, att);
+  assert.strictEqual(G('__rolls'), 0, 'forecast consumed RNG'); assert.strictEqual(JSON.stringify([g.serializeUnit(att), g.serializeUnit(def)]), before, 'forecast mutated a unit');
+  fixedRoll(T, 1); const ev = g.resolveCombat(att, def, m, att); assert.strictEqual(ev[0].type, 'miss'); assert.strictEqual(def.hp, def.maxHp);
+});
+
+test('danger zone counts wild threats separately and drops recharging units', T => {
+  const { g, C } = T; arena(T);
+  place(T, 25, 10, 0, 0, 0); const wild = place(T, 16, 5, 2, 6, 4), foe = place(T, 19, 5, 1, 0, 4);
+  const z = g.dangerZones(0); assert(z.wild.size > 0, 'wild reach shown'); assert(z.trainer.size > 0, 'enemy reach shown');
+  assert(z.wild.has(C.key(wild.x - 1, wild.y)), 'the tile beside the wild Pidgey is dangerous');
+  const all = g.dangerZone(0); for (const k of z.wild) assert(all.has(k)); for (const k of z.trainer) assert(all.has(k));
+  foe.recharge = 1; assert.strictEqual(g.dangerZones(0).trainer.size, 0, 'a recharging foe threatens nothing next phase');
+  const zv = g.dangerZones(1); assert(zv.trainer.has(C.key(1, 0)), 'from the enemy side the player is the trainer threat');
+});
+
+test('move loadouts honor unlock levels, keep an adjacent option and stay small', T => {
+  const { g, C } = T; const names = (num, lvl) => g.movesFor(C.DEX[num].types, lvl, C.SIGNATURE[num]).map(m => m.name);
+  assert(!names(25, 5).includes('Thunderbolt'), 'Pikachu Lv5 has no Thunderbolt'); assert(names(25, 5).includes('Thunder Shock'));
+  assert.strictEqual(names(25, 26)[0], 'Thunderbolt', 'signature leads once unlocked');
+  assert(names(25, 40).includes('Thunder') && names(25, 40).includes('Thunderbolt'), 'Thunder (2-3) keeps Thunderbolt for adjacent foes');
+  for (const L of [39, 40]) { const ms = g.movesFor(C.DEX[38].types, L); assert(ms.some(m => m.rng[0] === 1), 'Ninetales Lv' + L + ' can hit adjacent'); }
+  assert(!names(38, 40).includes('Hyper Beam'), 'Hyper Beam is not a fallback for non-Normal types'); assert(names(143, 40).includes('Hyper Beam') && names(143, 40).includes('Body Slam'));
+  for (const d of C.DEX_LIST) for (let L = 1; L <= 50; L += 7) { const ms = g.movesFor(d.types, L, C.SIGNATURE[d.num]); assert(ms.length >= 1 && ms.length <= 5, d.name + ' Lv' + L + ' has ' + ms.length + ' moves'); assert(ms.some(m => m.rng[0] === 1), d.name + ' Lv' + L + ' cannot hit adjacent'); for (const m of ms) assert(m.lvl <= L, d.name + ' Lv' + L + ' has ' + m.name + ' early'); }
+});
+
+test('upkeep: Poké Center cures at full HP, heals the hurt, poison ticks once', T => {
+  const { g } = T; arena(T, ['C......', 'C......', '.......']);
+  const full = place(T, 25, 10, 0, 0, 0); full.status = 'par'; const hurt = place(T, 4, 10, 0, 0, 1); hurt.hp = 5; hurt.status = 'psn'; const sick = place(T, 7, 10, 0, 3, 1); sick.status = 'psn';
+  const ev = g.upkeep(0);
+  assert.strictEqual(full.status, null, 'full-HP paralysis cured'); assert(!ev.some(e => e.type === 'heal' && e.unit === full), 'no heal at full HP'); assert(ev.some(e => e.type === 'cure' && e.unit === full));
+  assert.strictEqual(hurt.hp, 5 + Math.floor(hurt.maxHp * .3)); assert.strictEqual(hurt.status, null);
+  assert.strictEqual(sick.hp, sick.maxHp - Math.max(1, Math.floor(sick.maxHp / 8)), 'poison ticks'); assert.strictEqual(sick.status, 'psn');
+});
+
+test('Hyper Beam: recharge blocks counters, costs the next turn, survives save/restore, AI respects it', T => {
+  const { g, C } = T; arena(T); fixedRoll(T, .5);
+  const lax = place(T, 143, 40, 1, 1, 1), tank = place(T, 95, 40, 0, 3, 1); // Snorlax fires from two tiles at Onix
+  const beam = move(lax, 'Hyper Beam'); const fc = g.forecast(lax, tank, beam, lax); assert.strictEqual(fc.recharge, true); assert(g.moveEffects(beam).includes('must recharge'));
+  const ev = g.resolveCombat(lax, tank, beam, lax); assert.strictEqual(lax.recharge, 1); assert(ev.some(e => e.type === 'recharge' && e.unit === lax && !e.done));
+  assert.strictEqual(g.bestMove(lax, tank, 2, g.terrAt(3, 1), true), null, 'Hyper Beam is never a counter');
+  tank.x = 2; assert.strictEqual(g.forecast(tank, lax, tank.moves[0], tank).noCounter, 'recharging', 'a recharging Snorlax cannot answer');
+  const s = g.serializeUnit(lax); assert.strictEqual(s.recharge, 1); const r = g.restoreUnit(s); assert.strictEqual(r.recharge, 1);
+  const up = g.upkeep(1); assert.strictEqual(lax.recharge, 0); assert.strictEqual(lax.acted, true, 'the recharge turn is spent'); assert(up.some(e => e.type === 'recharge' && e.done));
+  assert(g.dangerZones(0).trainer.size > 0, 'once recharged it threatens the following phase again');
+  // AI: with a same-range alternative the beam is only fired to finish a target
+  arena(T); const ai = place(T, 40, 40, 1, 1, 1), target = place(T, 95, 40, 0, 3, 1); // Wigglytuff: Hyper Beam, Body Slam, Moonblast (1-2)
+  assert(ai.moves.some(m => m.name === 'Hyper Beam') && ai.moves.some(m => m.name === 'Moonblast'));
+  let d = g.aiDecide(ai); assert(d && d.move, 'AI attacks'); assert.strictEqual(d.move.name, 'Moonblast', 'no lost turn against a healthy target');
+  target.hp = 1; ai.x = 1; ai.y = 1; d = g.aiDecide(ai); assert(d && d.target === target && g.calcDmg(ai, target, d.move, g.terrAt(target.x, target.y)) >= 1, 'AI finishes the weak target');
+});
+
+test('XP, level up, evolution and restore keep stats and progress', T => {
+  const { g, C } = T; arena(T); fixedRoll(T, .5);
+  const cat = place(T, 10, 6, 0, 1, 1), rat = place(T, 19, 2, 1, 2, 1, { hp: 1 }); cat.xp = 90;
+  const ev = g.resolveCombat(cat, rat, move(cat, 'Bug Bite'), cat);
+  assert(ev.some(e => e.type === 'ko'), 'Rattata down'); assert(ev.some(e => e.type === 'levelup'), 'Caterpie levels'); assert(ev.some(e => e.type === 'evolve'), 'and evolves');
+  assert.strictEqual(cat.num, 11); assert.strictEqual(cat.level, 7); assert(cat.hp > 0 && cat.hp <= cat.maxHp);
+  const r = g.restoreUnit(g.serializeUnit(cat)); for (const k of ['num', 'level', 'xp', 'hp', 'maxHp', 'atk', 'def', 'hpBonus']) assert.strictEqual(r[k], cat[k], 'restore ' + k);
+  assert.strictEqual(r.moves.map(m => m.name).join(), cat.moves.map(m => m.name).join());
+});
+
+test('resuming a start-of-turn suspend save does not apply upkeep a second time', T => {
+  const { g, G, C } = T;
+  g.startBattle(C.CHAPTERS[0].map, [g.partyUnit(4, 5), g.partyUnit(25, 5), g.partyUnit(7, 5)], { pokeball: 1 }, { chapter: 0, seed: 7, defer: true });
+  let B = T.B(); const char = B.units.find(u => u.num === 4), pika = B.units.find(u => u.num === 25), squirt = B.units.find(u => u.num === 7);
+  char.x = 0; char.y = 5; char.hp = char.maxHp - 10; char.status = 'par'; // on the Poké Center
+  pika.status = 'psn'; squirt.recharge = 1; G('BT.fast = true');
+  g.beginPhase(0, true);
+  const after = { char: char.hp, pika: pika.hp, turn: B.turn }; assert.strictEqual(char.status, null); assert.strictEqual(pika.hp, pika.maxHp - Math.max(1, Math.floor(pika.maxHp / 8))); assert.strictEqual(squirt.acted, true);
+  const rec = JSON.parse(T.store.get('pk_suspend')); assert(rec, 'suspend written'); assert.strictEqual(rec.units.find(u => u.num === 25).hp, after.pika, 'save holds post-upkeep HP'); assert.strictEqual(rec.units.find(u => u.num === 7).acted, true, 'save holds the spent recharge turn');
+  g.resumeSuspend(); B = T.B(); assert.notStrictEqual(B.units.find(u => u.num === 4), char, 'a fresh battle object');
+  const char2 = B.units.find(u => u.num === 4), pika2 = B.units.find(u => u.num === 25), squirt2 = B.units.find(u => u.num === 7);
+  assert.strictEqual(pika2.hp, after.pika, 'poison did not tick again'); assert.strictEqual(char2.hp, after.char, 'center did not heal again'); assert.strictEqual(char2.status, null);
+  assert.strictEqual(squirt2.acted, true, 'reload does not refund the recharge turn'); assert.strictEqual(squirt2.recharge, 0); assert.strictEqual(B.turn, after.turn); assert.strictEqual(B.phase, 0);
+  assert.strictEqual(char2.maxHp, char.maxHp, 'party HP edge survives the resume');
+});
+
+// ---------------------------------------------------------------- runner
+function run() {
+  let failed = 0;
+  for (const t of tests) {
+    try { t.fn(loadGame()); console.log('  ok   ' + t.name); }
+    catch (e) { failed++; console.log('  FAIL ' + t.name + '\n       ' + (e && e.stack ? e.stack.split('\n').slice(0, 4).join('\n       ') : e)); }
+  }
+  console.log(failed ? `${failed} of ${tests.length} tests failed` : `${tests.length} tests passed`);
+  process.exit(failed ? 1 : 0);
+}
+if (require.main === module) run(); else module.exports = { loadGame, arena, place }; // reusable headless harness

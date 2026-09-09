@@ -539,13 +539,16 @@ const MOVE_LIST = [
 const MOVES = {}; for (const m of MOVE_LIST) MOVES[m[0]] = { name: m[0], type: m[1], pow: m[2], kind: m[3], rng: m[4], acc: m[5], eff: m[6], lvl: m[7] };
 // Move flavour texts (what pops up over the target)
 const MOVE_POP = { Normal: 'BONK!', Fire: 'FWOOSH!', Water: 'SPLASH!', Electric: 'BZZT!', Grass: 'SWISH!', Ice: 'CRACK!', Fighting: 'POW!', Poison: 'BLORP!', Ground: 'THUD!', Flying: 'WHOOSH!', Psychic: 'WOOOM!', Bug: 'CHOMP!', Rock: 'CRUNCH!', Ghost: 'BOO!', Dragon: 'ROAR!', Dark: 'GRR!', Steel: 'CLANG!', Fairy: 'TWINKLE!' };
-// The best unlocked move of each type at this level (plus a Normal fallback).
+// A small loadout for this level: per own type the strongest unlocked move, plus the strongest
+// unlocked move of that type that can hit an adjacent foe when the strongest one cannot (Fire Blast
+// keeps Flamethrower). Non-Normal types get a melee Normal fallback (never Hyper Beam). The species
+// signature move leads the list once its own unlock level is reached.
 function movesFor(types, level, signature) {
-  const out = [];
-  const best = t => { let b = null; for (const m of MOVE_LIST) if (m[1] === t && m[7] <= level && (!b || m[2] > b.pow)) b = MOVES[m[0]]; return b; };
-  for (const t of types) { const m = best(t); if (m && !out.includes(m)) out.push(m); }
-  if (!types.includes('Normal')) { const n = best('Normal'); if (n) out.push(n); }
-  if (signature && MOVES[signature] && !out.includes(MOVES[signature])) out.unshift(MOVES[signature]);
+  const out = []; const add = m => { if (m && !out.includes(m)) out.push(m); };
+  const best = (t, melee) => { let b = null; for (const m of MOVE_LIST) if (m[1] === t && m[7] <= level && (!melee || m[4][0] === 1) && (!b || m[2] > b.pow)) b = MOVES[m[0]]; return b; };
+  for (const t of types) { const m = best(t, false); add(m); if (m && m.rng[0] > 1) add(best(t, true)); }
+  if (!types.includes('Normal')) add(best('Normal', true));
+  const sig = signature && MOVES[signature]; if (sig && sig.lvl <= level && !out.includes(sig)) out.unshift(sig);
   return out;
 }
 const STATUS = { psn: { name: 'PSN', col: '#b050d0', text: 'poisoned' }, brn: { name: 'BRN', col: '#f08030', text: 'burned' }, par: { name: 'PAR', col: '#f8d030', text: 'paralyzed' }, frz: { name: 'FRZ', col: '#98d8f8', text: 'frozen' }, slp: { name: 'SLP', col: '#a0a0c0', text: 'asleep' } };
@@ -618,8 +621,12 @@ function statFor(base, level) { return Math.floor(2 * base * level / 100) + 5; }
 function hpFor(base, level) { return Math.floor(2.4 * base * level / 100) + level + 12; }
 function movFor(dex) { const s = dex.base.spe; let m = s < 45 ? 3 : s < 80 ? 4 : s < 110 ? 5 : 6; if (dex.types.includes('Flying')) m = Math.max(m, 5); if (dex.num === 129) m = 2; return m; }
 let UID = 1;
+// Campaign difficulty edge: the trainer's own party (and its catches) carries 20% more HP. It is a
+// per-unit multiplier set by the campaign flow, never by team number, so Versus stays symmetric.
+const BOND_HP = 1.2;
+// extra: x, y, ai, boss, nick, hp, hpBonus (HP multiplier, default 1).
 function makeUnit(numOrName, level, team, extra = {}) {
-  const dex = dexOf(numOrName); const u = { id: UID++, num: dex.num, team, level, xp: 0, status: null, statusTurns: 0, acted: false, moved: false, x: extra.x | 0, y: extra.y | 0, ai: extra.ai || 'aggro', boss: !!extra.boss, nick: extra.nick || null, wild: team === 2, fx: { dx: 0, dy: 0, sx: 1, sy: 1, alpha: 1, flash: 0 } };
+  const dex = dexOf(numOrName); const u = { id: UID++, num: dex.num, team, level, xp: 0, status: null, statusTurns: 0, recharge: 0, acted: false, moved: false, x: extra.x | 0, y: extra.y | 0, ai: extra.ai || 'aggro', boss: !!extra.boss, nick: extra.nick || null, wild: team === 2, hpBonus: extra.hpBonus || 1, fx: { dx: 0, dy: 0, sx: 1, sy: 1, alpha: 1, flash: 0 } };
   applyDex(u, dex); u.hp = u.maxHp; if (extra.hp != null) u.hp = extra.hp;
   return u;
 }
@@ -628,7 +635,7 @@ const LEGEND_SCALE = { 144: .7, 145: .7, 146: .7, 150: .6, 151: .75, 149: .9 };
 function applyDex(u, dex) {
   u.num = dex.num; u.name = u.nick || dex.name; u.types = dex.types.slice(); u.dex = dex;
   const L = u.level, k = LEGEND_SCALE[dex.num] || 1; const b = k === 1 ? dex.base : { hp: dex.base.hp, atk: Math.round(dex.base.atk * k), def: Math.round(dex.base.def * k), spa: Math.round(dex.base.spa * k), spd: Math.round(dex.base.spd * k), spe: Math.round(dex.base.spe * k) };
-  u.maxHp = Math.round(hpFor(b.hp, L) * (u.team === 0 ? 1.2 : 1)); u.atk = statFor(b.atk, L); u.def = statFor(b.def, L); u.spa = statFor(b.spa, L); u.spd = statFor(b.spd, L); u.spe = statFor(b.spe, L);
+  u.maxHp = Math.round(hpFor(b.hp, L) * (u.hpBonus || 1)); u.atk = statFor(b.atk, L); u.def = statFor(b.def, L); u.spa = statFor(b.spa, L); u.spd = statFor(b.spd, L); u.spe = statFor(b.spe, L);
   u.mov = movFor(dex);
   u.fly = dex.types.includes('Flying') || dex.num === 92 || dex.num === 93 || dex.num === 94 || dex.num === 81 || dex.num === 82 || dex.num === 109 || dex.num === 110 || dex.num === 151; // ghosts, magnets, koffing and Mew float
   u.swim = dex.types.includes('Water'); u.climb = dex.types.includes('Rock') || dex.types.includes('Ground') || dex.types.includes('Fighting') || dex.types.includes('Steel');
@@ -641,8 +648,9 @@ function evolutionFor(u) { const evs = u.dex.evos.filter(e => u.level >= e[1] &&
 function evolve(u, dex) { const oldMax = u.maxHp; u.dex = dex; applyDex(u, dex); u.hp = Math.min(u.maxHp, u.hp + (u.maxHp - oldMax)); }
 function xpToNext() { return 100; }
 function xpGain(att, def, kill) { const diff = clamp(def.level - att.level, -8, 8); let xp = 15 + diff * 2 + (kill ? 35 + diff * 3 : 0); if (def.boss && kill) xp += 40; return Math.max(3, Math.round(xp)); }
-function serializeUnit(u) { return { num: u.num, level: u.level, xp: u.xp, hp: u.hp, nick: u.nick, team: u.team, x: u.x, y: u.y, ai: u.ai, boss: u.boss, status: u.status, statusTurns: u.statusTurns, acted: u.acted, id: u.id }; }
-function restoreUnit(s) { const u = makeUnit(s.num, s.level, s.team, { x: s.x, y: s.y, ai: s.ai, boss: s.boss, nick: s.nick }); u.xp = s.xp || 0; u.hp = s.hp != null ? Math.min(u.maxHp, s.hp) : u.maxHp; u.status = s.status || null; u.statusTurns = s.statusTurns || 0; u.acted = !!s.acted; if (s.id) { u.id = s.id; UID = Math.max(UID, s.id + 1); } return u; }
+function serializeUnit(u) { return { num: u.num, level: u.level, xp: u.xp, hp: u.hp, nick: u.nick, team: u.team, x: u.x, y: u.y, ai: u.ai, boss: u.boss, status: u.status, statusTurns: u.statusTurns, recharge: u.recharge || 0, acted: u.acted, hpBonus: u.hpBonus || 1, id: u.id }; }
+// Older saves have no hpBonus: callers that know the unit is a campaign party member pass BOND_HP themselves.
+function restoreUnit(s) { const u = makeUnit(s.num, s.level, s.team, { x: s.x, y: s.y, ai: s.ai, boss: s.boss, nick: s.nick, hpBonus: s.hpBonus }); u.xp = s.xp || 0; u.hp = s.hp != null ? Math.min(u.maxHp, s.hp) : u.maxHp; u.status = s.status || null; u.statusTurns = s.statusTurns || 0; u.recharge = s.recharge ? 1 : 0; u.acted = !!s.acted; if (s.id) { u.id = s.id; UID = Math.max(UID, s.id + 1); } return u; }
 // ============================================================================
 // art.js — hand-tuned procedural pixel art: terrain tiles with autotiling
 // (shorelines, road edges, wall faces), decorations, FE-style path arrow,
@@ -1191,7 +1199,8 @@ function drawBall(x, y, col = '#f04848', r = 5) {
 }
 const TYPE_ABBR = { Normal: 'NRM', Fire: 'FIR', Water: 'WTR', Electric: 'ELC', Grass: 'GRS', Ice: 'ICE', Fighting: 'FGT', Poison: 'PSN', Ground: 'GRD', Flying: 'FLY', Psychic: 'PSY', Bug: 'BUG', Rock: 'RCK', Ghost: 'GHO', Dragon: 'DRG', Dark: 'DRK', Steel: 'STL', Fairy: 'FRY' };
 function typeBadge(t, x, y, w = 24) { const c = TYPE_COL[t] || '#888'; rrect(x, y, w, 9, shade(c, -.55), 1); rrect(x + 1, y + 1, w - 2, 7, c, 0); hline(x + 2, y + 1, w - 4, shade(c, .3)); hline(x + 2, y + 7, w - 4, shade(c, -.25)); textC(w >= 40 ? t.toUpperCase() : TYPE_ABBR[t] || t.slice(0, 3).toUpperCase(), x + w / 2, y + 1, '#ffffff', { shadow: shade(c, -.5) }); }
-function statusBadge(st, x, y) { const s = STATUS[st]; if (!s) return; rrect(x, y, 15, 8, shade(s.col, -.55), 1); rrect(x + 1, y + 1, 13, 6, s.col, 0); hline(x + 2, y + 1, 11, shade(s.col, .3)); textC(s.name, x + 8, y + 1, '#ffffff', { shadow: shade(s.col, -.5) }); }
+function miniBadge(label, col, x, y) { rrect(x, y, 15, 8, shade(col, -.55), 1); rrect(x + 1, y + 1, 13, 6, col, 0); hline(x + 2, y + 1, 11, shade(col, .3)); textC(label, x + 8, y + 1, '#ffffff', { shadow: shade(col, -.5) }); }
+function statusBadge(st, x, y) { const s = STATUS[st]; if (s) miniBadge(s.name, s.col, x, y); }
 function teamColor(team) { return team === 0 ? '#3d7dff' : team === 1 ? '#ff4b4b' : team === 2 ? '#e0c040' : '#40d060'; }
 function teamColorD(team) { return team === 0 ? '#1c3a8a' : team === 1 ? '#8a1c1c' : team === 2 ? '#7a6010' : '#1a6a30'; }
 function teamColorL(team) { return team === 0 ? '#8ab4ff' : team === 1 ? '#ff9a9a' : team === 2 ? '#fff0a0' : '#a0f0b0'; }
@@ -1280,7 +1289,19 @@ function pathTo(reach, x, y) { let n = reach.get(key(x, y)); if (!n) return null
 function ring(x, y, min, max) { const out = []; for (let dy = -max; dy <= max; dy++) for (let dx = -max; dx <= max; dx++) { const d = Math.abs(dx) + Math.abs(dy); if (d >= min && d <= max && inMap(x + dx, y + dy)) out.push({ x: x + dx, y: y + dy }); } return out; }
 function targetsFrom(u, x, y) { const out = []; for (const v of B.units) { if (v.hp <= 0 || !hostile(u.team, v.team)) continue; const d = Math.abs(v.x - x) + Math.abs(v.y - y); if (u.moves.some(m => d >= m.rng[0] && d <= m.rng[1])) out.push(v); } return out; }
 function attackCells(u, reach) { const set = new Set(), out = []; for (const n of reach.values()) { if (!canStand(u, n.x, n.y)) continue; for (const c of ring(n.x, n.y, u.rngMin, u.rngMax)) { const k = key(c.x, c.y); if (!set.has(k) && !reach.has(k)) { set.add(k); out.push(c); } } } return out; }
-function dangerZone(team) { const set = new Set(); for (const e of B.units) { if (e.hp <= 0 || !hostile(e.team, team) || e.team === 2) continue; const r = reachable(e); for (const n of r.values()) { if (unitAt(n.x, n.y) && unitAt(n.x, n.y) !== e) continue; for (const c of ring(n.x, n.y, e.rngMin, e.rngMax)) set.add(key(c.x, c.y)); } } return set; }
+// Cells every hostile unit could hit on its next phase, split by who threatens them: trainer teams
+// (enemy or rival trainer) and wild Pokémon. A unit that must recharge skips its next phase, so it
+// threatens nothing; frozen and paralyzed units may recover, so they stay in.
+function dangerZones(team) {
+  const zones = { trainer: new Set(), wild: new Set() };
+  for (const e of B.units) {
+    if (e.hp <= 0 || !hostile(e.team, team) || e.recharge) continue;
+    const set = e.team === 2 ? zones.wild : zones.trainer; const r = reachable(e);
+    for (const n of r.values()) { if (unitAt(n.x, n.y) && unitAt(n.x, n.y) !== e) continue; for (const c of ring(n.x, n.y, e.rngMin, e.rngMax)) set.add(key(c.x, c.y)); }
+  }
+  return zones;
+}
+function dangerZone(team) { const z = dangerZones(team); return new Set([...z.trainer, ...z.wild]); }
 
 // ---------------------------------------------------------------- combat maths
 function attackStat(u, move) { let a = move.kind === 'P' ? u.atk : u.spa; if (u.status === 'brn' && move.kind === 'P') a = Math.floor(a / 2); return a; }
@@ -1299,33 +1320,58 @@ function calcDmg(att, def, move, defTerr, crit = false) {
   return Math.max(eff > 0 ? 1 : 0, d);
 }
 function doubles(att, def) { return att.status !== 'par' && att.spe >= def.spe + 8; }
-function bestMove(att, def, d, terr) { let best = null, bd = -1; for (const m of usableMoves(att, d)) { const v = calcDmg(att, def, m, terr) * calcHit(att, def, m, terr) / 100; if (v > bd) { bd = v; best = m; } } return best; }
-// Forecast both sides. attFrom: {x,y} where attacker will stand.
+// Hyper Beam needs a charge: it cannot be fired as a counter, and a unit that fired it cannot counter until it has recharged.
+function needsRecharge(move) { return !!(move.eff && move.eff.recharge); }
+function counterBlock(def) { return def.status === 'frz' ? 'frozen' : def.recharge ? 'recharging' : null; }
+function bestMove(att, def, d, terr, asCounter = false) { let best = null, bd = -1; for (const m of usableMoves(att, d)) { if (asCounter && needsRecharge(m)) continue; const v = calcDmg(att, def, m, terr) * calcHit(att, def, m, terr) / 100; if (v > bd) { bd = v; best = m; } } return best; }
+// Short labels for a move's chance-based or lasting effects, for forecasts and help.
+function moveEffects(move) { const e = move.eff, out = []; if (!e) return out; if (e.status) out.push(e.chance + '% ' + STATUS[e.status].name); if (e.drain) out.push('drains ' + Math.round(e.drain * 100) + '%'); if (e.crit) out.push('high crit'); if (e.recharge) out.push('must recharge'); return out; }
+// Forecast the whole exchange with the attacker standing at `from`. Deterministic and side-effect
+// free: no dice, no unit mutation. The strike order is exactly the one resolveCombat walks, so the
+// preview cannot promise a counter or a double that the resolver would skip.
+//   a, c       attacker / counter sides {unit, move, dmg, hit, crit, dbl, eff}; c is null when no counter is possible
+//   strikes    ordered [{side:'a'|'c', unit, move, dmg, hit, crit, eff, drain, nominal, cond}]
+//              nominal: happens when every earlier strike lands; cond: why it would not
+//   hpA, hpD   HP after the nominal exchange (every strike lands, no crits, no status procs)
+//   noCounter  'range' | 'frozen' | 'recharging' | null
 function forecast(att, def, move, from) {
   const d = Math.abs(def.x - from.x) + Math.abs(def.y - from.y);
   const aT = terrAt(from.x, from.y), dT = terrAt(def.x, def.y);
-  const a = { unit: att, move, dmg: calcDmg(att, def, move, dT), hit: calcHit(att, def, move, dT), crit: calcCrit(att, def, move), dbl: doubles(att, def), eff: effMult(move.type, def.types) };
-  const cm = def.status === 'frz' ? null : bestMove(def, att, d, aT);
-  const c = cm ? { unit: def, move: cm, dmg: calcDmg(def, att, cm, aT), hit: calcHit(def, att, cm, aT), crit: calcCrit(def, att, cm), dbl: doubles(def, att), eff: effMult(cm.type, att.types) } : null;
-  return { a, c, d };
+  const side = (A, Dn, m, terr) => ({ unit: A, move: m, dmg: calcDmg(A, Dn, m, terr), hit: calcHit(A, Dn, m, terr), crit: calcCrit(A, Dn, m), dbl: doubles(A, Dn), eff: effMult(m.type, Dn.types) });
+  const a = side(att, def, move, dT);
+  const block = counterBlock(def); const cm = block ? null : bestMove(def, att, d, aT, true);
+  const c = cm ? side(def, att, cm, aT) : null;
+  const order = [a]; if (c) order.push(c); if (a.dbl) order.push(a); else if (c && c.dbl) order.push(c);
+  let hpA = att.hp, hpD = def.hp; const strikes = [];
+  for (const s of order) {
+    const isA = s === a; const strikerHp = isA ? hpA : hpD, targetHp = isA ? hpD : hpA; const nominal = strikerHp > 0 && targetHp > 0;
+    const e = { side: isA ? 'a' : 'c', unit: s.unit, move: s.move, dmg: s.dmg, hit: s.hit, crit: s.crit, eff: s.eff, drain: 0, nominal, cond: null };
+    if (nominal) {
+      const dr = s.move.eff && s.move.eff.drain && s.dmg > 0 ? Math.max(1, Math.floor(s.dmg * s.move.eff.drain)) : 0; e.drain = dr;
+      if (isA) { hpD = Math.max(0, hpD - s.dmg); hpA = Math.min(att.maxHp, hpA + dr); } else { hpA = Math.max(0, hpA - s.dmg); hpD = Math.min(def.maxHp, hpD + dr); }
+    } else e.cond = 'only if ' + (strikerHp <= 0 ? s.unit : isA ? def : att).name + ' survives';
+    strikes.push(e);
+  }
+  return { a, c, d, strikes, hpA, hpD, koA: hpA <= 0, koD: hpD <= 0, noCounter: c ? null : (block || 'range'), recharge: needsRecharge(move) };
 }
-// Resolve a full exchange. Mutates units; returns an event list for the animation layer.
+// Resolve a full exchange by rolling the forecast's strikes in order. Mutates units; returns an event list for the animation layer.
 function resolveCombat(att, def, move, from) {
   const fc = forecast(att, def, move, from); const ev = [];
-  const strike = (side, isCounter) => {
-    const A = side.unit, Dn = side === fc.a ? def : att; if (A.hp <= 0 || Dn.hp <= 0) return;
-    const hit = rnd() * 100 < side.hit;
-    if (!hit) { ev.push({ type: 'miss', att: A, def: Dn, move: side.move, counter: isCounter }); return; }
-    const crit = rnd() * 100 < side.crit; const dmg = calcDmg(A, Dn, side.move, terrAt(Dn.x, Dn.y), crit);
+  for (const s of fc.strikes) {
+    const A = s.unit, Dn = s.side === 'a' ? def : att, isCounter = s.side === 'c'; if (A.hp <= 0 || Dn.hp <= 0) continue;
+    const hit = rnd() * 100 < s.hit;
+    if (!hit) { ev.push({ type: 'miss', att: A, def: Dn, move: s.move, counter: isCounter }); continue; }
+    const crit = rnd() * 100 < s.crit; const dmg = calcDmg(A, Dn, s.move, terrAt(Dn.x, Dn.y), crit);
     Dn.hp = Math.max(0, Dn.hp - dmg); let status = null;
-    const ef = side.move.eff;
+    const ef = s.move.eff;
     if (ef && ef.status && !Dn.status && Dn.hp > 0 && rnd() * 100 < ef.chance) { const st = ef.status; if (!(st === 'brn' && Dn.types.includes('Fire')) && !(st === 'psn' && (Dn.types.includes('Poison') || Dn.types.includes('Steel'))) && !(st === 'par' && Dn.types.includes('Electric')) && !(st === 'frz' && Dn.types.includes('Ice'))) { Dn.status = st; Dn.statusTurns = 0; status = st; } }
-    let drain = 0; if (side.move.eff && side.move.eff.drain && dmg > 0) { drain = Math.max(1, Math.floor(dmg * side.move.eff.drain)); A.hp = Math.min(A.maxHp, A.hp + drain); }
-    ev.push({ type: 'hit', att: A, def: Dn, move: side.move, dmg, crit, eff: side.eff, hpAfter: Dn.hp, status, drain, attHpAfter: A.hp, counter: isCounter });
+    let drain = 0; if (ef && ef.drain && dmg > 0) { drain = Math.max(1, Math.floor(dmg * ef.drain)); A.hp = Math.min(A.maxHp, A.hp + drain); }
+    ev.push({ type: 'hit', att: A, def: Dn, move: s.move, dmg, crit, eff: s.eff, hpAfter: Dn.hp, status, drain, attHpAfter: A.hp, counter: isCounter });
     if (Dn.hp <= 0) ev.push({ type: 'ko', unit: Dn, by: A });
-    if (Dn.status === 'frz' && dmg > 0 && side.move.type === 'Fire') { Dn.status = null; ev.push({ type: 'thaw', unit: Dn }); }
-  };
-  strike(fc.a, false); if (fc.c) strike(fc.c, true); if (fc.a.dbl) strike(fc.a, false); else if (fc.c && fc.c.dbl) strike(fc.c, true);
+    if (Dn.status === 'frz' && dmg > 0 && s.move.type === 'Fire') { Dn.status = null; ev.push({ type: 'thaw', unit: Dn }); }
+  }
+  // firing a recharge move costs the next turn whether it hit or missed
+  if (fc.recharge && att.hp > 0) { att.recharge = 1; ev.push({ type: 'recharge', unit: att }); }
   // experience for player-team survivors
   for (const [u, o] of [[att, def], [def, att]]) { if (!isHuman(u.team) || u.hp <= 0) continue; const took = ev.some(e => e.type === 'hit' && e.att === u); if (!took) continue; awardXp(u, xpGain(u, o, o.hp <= 0), ev); }
   return ev;
@@ -1334,13 +1380,18 @@ function awardXp(u, amount, ev) {
   if (u.level >= 50) return; u.xp += amount; ev.push({ type: 'xp', unit: u, amount });
   while (u.xp >= xpToNext() && u.level < 50) { u.xp -= xpToNext(); const gains = levelUp(u); ev.push({ type: 'levelup', unit: u, gains, level: u.level }); const evo = evolutionFor(u); if (evo) { const from = u.dex; ev.push({ type: 'evolve', unit: u, from, to: evo }); evolve(u, evo); } }
 }
-// Start-of-phase upkeep for one team: status damage, terrain heals, thaw checks. Returns events.
+// Start-of-phase upkeep for one team: recharge, status damage, terrain heals and cures, thaw checks.
+// Returns events. Runs exactly once per phase; a resumed suspend save skips it (see beginPhase).
 function upkeep(team) {
   const ev = [];
   for (const u of alive(team)) {
     u.acted = false; u.moved = false;
+    if (u.recharge) { u.recharge = 0; u.acted = true; u.moved = true; ev.push({ type: 'recharge', unit: u, done: true }); }
     const t = terrAt(u.x, u.y);
-    if (t.heal && u.hp < u.maxHp) { const h = Math.max(1, Math.floor(u.maxHp * t.heal)); u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: h }); if (u.status) { ev.push({ type: 'cure', unit: u }); u.status = null; } }
+    if (t.heal) {
+      if (u.hp < u.maxHp) { const h = Math.max(1, Math.floor(u.maxHp * t.heal)); u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: h }); }
+      if (u.status) { ev.push({ type: 'cure', unit: u }); u.status = null; }
+    }
     if (t.burn && !u.fly && !u.types.includes('Fire')) { const d = Math.max(1, Math.floor(u.maxHp / 6)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'lava' }); }
     if (u.status === 'psn') { const d = Math.max(1, Math.floor(u.maxHp / 8)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'psn' }); }
     if (u.status === 'brn') { const d = Math.max(1, Math.floor(u.maxHp / 16)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'brn' }); }
@@ -1393,11 +1444,14 @@ function aiDecide(u, cautious = false) {
     if (u.ai !== 'aggro' && !u.provoked && !(n.x === u.x && n.y === u.y) && u.ai === 'guard') continue; // guards never move
     const aT = terrAt(n.x, n.y);
     for (const t of targets) {
-      const d = Math.abs(t.x - n.x) + Math.abs(t.y - n.y); const mv = bestMove(u, t, d, terrAt(t.x, t.y)); if (!mv) continue;
-      const fc = forecast(u, t, mv, n);
-      let s = fc.a.dmg * fc.a.hit / 100 * (fc.a.dbl ? 1.8 : 1);
-      if (fc.a.dmg * (fc.a.dbl ? 2 : 1) >= t.hp) s += 45 + t.level;
-      if (fc.c) { const cd = fc.c.dmg * fc.c.hit / 100 * (fc.c.dbl ? 1.8 : 1); s -= cd * .7; if (fc.c.dmg * (fc.c.dbl ? 2 : 1) >= u.hp) s -= 60; }
+      const d = Math.abs(t.x - n.x) + Math.abs(t.y - n.y); const tT = terrAt(t.x, t.y); let mv = bestMove(u, t, d, tT); if (!mv) continue;
+      // a recharge move is only worth its lost turn when it finishes the target
+      if (needsRecharge(mv) && calcDmg(u, t, mv, tT) < t.hp) { const alt = bestMove(u, t, d, tT, true); if (alt) mv = alt; }
+      const fc = forecast(u, t, mv, n); const hits = side => fc.strikes.filter(x => x.side === side && x.nominal).length;
+      let s = fc.a.dmg * fc.a.hit / 100 * (hits('a') > 1 ? 1.8 : 1);
+      if (fc.koD) s += 45 + t.level; else if (fc.recharge) s -= 15 + u.level * .5; // the lost turn and the open flank
+
+      if (fc.c && hits('c')) { const cd = fc.c.dmg * fc.c.hit / 100 * (hits('c') > 1 ? 1.8 : 1); s -= cd * .7; if (fc.koA) s -= 60; }
       s += terrainDef(aT, u) * .4 + terrainEva(aT, u) * .2; s += (1 - t.hp / t.maxHp) * 12; if (t.team === 0 && t.leader) s += 6;
       if (t.team === 2 && u.team === 1) s -= 15; // trainers prefer trainers
       if (n.x === u.x && n.y === u.y) s += 1.5;
@@ -1451,20 +1505,23 @@ function startBattle(mapDef, party, bag, opts = {}) {
   B = { map, units: [], turn: 1, phase: 0, bag: bag, result: null, seized: false, captured: [], kills: 0, chapter: opts.chapter != null ? opts.chapter : null, log: [], seed: opts.seed || 1, skirmish: !!opts.skirmish, turnsUsed: 0, versus: !!opts.versus, humans: opts.humans || [0], bags: opts.versus ? [bag, Object.assign({}, opts.bag2 || bag)] : null, setup: opts.setup || null };
   // enemies / wild / allies from the map definition
   for (const d of mapDef.units) { const u = makeUnit(d.mon, d.level, d.team == null ? 1 : d.team, { x: d.x, y: d.y, ai: d.ai, boss: d.boss, nick: d.nick }); if (d.hp) u.hp = Math.max(1, Math.floor(u.maxHp * d.hp)); u.provoked = false; B.units.push(u); }
-  // player party on deploy tiles
-  party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, { team: 0, x: slot.x, y: slot.y, acted: false, status: null })); u.hp = u.maxHp; u.leader = i === 0; B.units.push(u); });
-  if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, { team: 1, x: slot.x, y: slot.y, acted: false, status: null })); u.hp = u.maxHp; u.leader = i === 0; u.fx.facing = -1; B.units.push(u); });
+  // player party on deploy tiles: the campaign party keeps its HP edge, Versus trainers are built identically
+  const fresh = { acted: false, status: null, recharge: 0 };
+  party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus ? 1 : BOND_HP })); u.hp = u.maxHp; u.leader = i === 0; B.units.push(u); });
+  if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fx.facing = -1; B.units.push(u); });
   BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.log = []; BT.showDanger = false;
   const first = alive(0)[0]; BT.cx = first ? first.x : 0; BT.cy = first ? first.y : 0; centerCam(BT.cx, BT.cy, true);
   FX.parts = []; FX.texts = []; FX.sprites = [];
   Audio.playMusic(map.music);
   if (!opts.defer) beginPhase(0, true);
 }
-function beginPhase(team, first) {
+// first: the battle's opening phase (no turn increment). resumed: the phase comes from a suspend save,
+// which was written after upkeep already ran, so heals, ticks and recharges must not apply again.
+function beginPhase(team, first, resumed = false) {
   B.phase = team;
-  const ev = upkeep(team);
+  const ev = resumed ? [] : upkeep(team);
   if (team === 0 && !first) { B.turn++; if (checkObjective()) { endBattle(); return; } }
-  if (team === 0 && !B.versus) { saveSuspend(); }
+  if (team === 0 && !B.versus && !resumed) { saveSuspend(); }
   if (B.versus && B.bags && isHuman(team)) B.bag = B.bags[team];
   const teamsPresent = [0, 1, 2, 3].filter(t => alive(t).length);
   if (!teamsPresent.includes(team) && team !== 0) { nextPhase(); return; }
@@ -1512,6 +1569,7 @@ function setupEvent(q) {
     case 'heal': Audio.sfx('heal'); floatText(ux(e.unit), uy(e.unit), '+' + e.amount, UI.green, { outline: '#0a3a10' }); spawnParts(ux(e.unit), uy(e.unit) + 10, 10, ['#5ee06a', '#ffffff'], { speed: 30, grav: -60, life: .8 }); break;
     case 'cure': floatText(ux(e.unit), uy(e.unit) - 8, e.kind === 'frz' ? 'Thawed!' : e.kind === 'par' ? 'Recovered!' : 'Cured!', '#98d8f8'); break;
     case 'thaw': floatText(ux(e.unit), uy(e.unit) - 8, 'Thawed!', '#98d8f8'); break;
+    case 'recharge': q.dur = BT.fast ? .3 : .6; if (e.done && (e.unit.x * TILE < CAM.x || e.unit.x * TILE > CAM.x + VIEW.w)) centerCam(e.unit.x, e.unit.y); floatText(ux(e.unit), uy(e.unit) - 8, e.done ? 'Recharging...' : 'Must recharge!', RECHARGE_COL, { outline: '#000' }); break;
     case 'dot': Audio.sfx(e.kind === 'brn' ? 'burn' : 'poison'); shake(1); floatText(ux(e.unit), uy(e.unit), '-' + e.amount, e.kind === 'psn' ? '#d080ff' : '#ff9040'); spawnParts(ux(e.unit), uy(e.unit) + 8, 8, e.kind === 'psn' ? ['#b050d0', '#7030a0'] : ['#ff8030', '#ffd040'], { speed: 30, grav: -50, life: .7 }); if (e.unit.x * TILE < CAM.x || e.unit.x * TILE > CAM.x + VIEW.w) centerCam(e.unit.x, e.unit.y); break;
     case 'spawn': q.dur = BT.fast ? .3 : .6; centerCam(e.unit.x, e.unit.y); Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 8, 12, ['#ffffff', '#ff4b4b'], { speed: 50, life: .5, grav: 0 }); floatText(ux(e.unit), uy(e.unit) - 10, 'Reinforcements!', UI.red); break;
     case 'capture': q.dur = BT.fast ? 1.6 : 2.6 + e.shakes * .5; Audio.sfx('catch'); break;
@@ -1677,7 +1735,7 @@ function endTurn() { BT.mode = 'anim'; BT.sel = null; BT.autoEnd = 0; for (const
 
 // ---------------------------------------------------------------- enemy phase playback
 function runEnemyPhase(team) {
-  const order = alive(team).filter(u => u.hp > 0).sort((a, b) => b.level - a.level);
+  const order = alive(team).filter(u => u.hp > 0 && !u.acted).sort((a, b) => b.level - a.level); // acted: spent the turn recharging
   const step = () => {
     if (checkObjective()) { endBattle(); return; }
     const u = order.shift(); if (!u) { nextPhase(); return; }
@@ -1806,8 +1864,12 @@ function battleDraw() {
   for (const it of m.items) if (!it.taken) { const X = tileX(it.x) + TILE / 2, Y = tileY(it.y) + TILE / 2 + Math.round(Math.sin(BT.time * 4 + it.x) * 2); drawBall(X, Y, ITEMS[it.item] ? ITEMS[it.item].col : '#f04848', 5); if (Math.floor(BT.time * 6 + it.x) % 5 === 0) px(X + 6, Y - 6, '#ffffff'); }
   // seize target marker
   if (m.seize) { const X = tileX(m.seize.x), Y = tileY(m.seize.y); const k = Math.floor(BT.time * 4) % 2; outline(X + 2 + k, Y + 2 + k, TILE - 4 - 2 * k, TILE - 4 - 2 * k, UI.gold); bigC('!', X + TILE / 2, Y - 8 + Math.round(Math.sin(BT.time * 5) * 2), UI.gold, { outline: '#000' }); }
-  // danger zone
-  if (BT.showDanger && (BT.mode === 'idle' || BT.mode === 'move')) { const dz = dangerZone(HT()); const cells = []; for (const k of dz) { const [x, y] = k.split(',').map(Number); cells.push({ x, y }); } rangeOverlay(cells, (x, y) => dz.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#b03030', '#ff8080', Math.floor(BT.time * 6)); }
+  // danger zone: wild threats in yellow underneath, trainer threats in red on top
+  if (BT.showDanger && (BT.mode === 'idle' || BT.mode === 'move')) {
+    const dz = dangerZones(HT()); const toCells = set => [...set].map(k => { const [x, y] = k.split(',').map(Number); return { x, y }; });
+    rangeOverlay(toCells(dz.wild), (x, y) => dz.wild.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, DANGER.wild[0], DANGER.wild[1], Math.floor(BT.time * 6));
+    rangeOverlay(toCells(dz.trainer), (x, y) => dz.trainer.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, DANGER.trainer[0], DANGER.trainer[1], Math.floor(BT.time * 6));
+  }
   // move / attack ranges
   if (BT.sel && (BT.mode === 'move' || BT.mode === 'anim' && BT.anim && BT.anim.kind === 'move' && BT.anim.unit === BT.sel)) {
     const cells = [...BT.reach.values()].filter(n => canStand(BT.sel, n.x, n.y));
@@ -1887,6 +1949,7 @@ function drawUnit(u) {
     if (w) { const hc = hpColor(ratio); rect(bx, byy + 1, w, 3, hc); hline(bx, byy + 1, w, shade(hc, .45)); ctx.globalAlpha = .35 * f.alpha; for (let i = 4; i < w; i += 4) vline(bx + i, byy + 1, 3, '#000000'); ctx.globalAlpha = f.alpha; }
     if (show && show.t < 1 && show.from > show.to) { const w0 = Math.round(bw * clamp(show.from / u.maxHp, 0, 1)); if (w0 > w) { ctx.globalAlpha = f.alpha * (Math.floor(BT.time * 16) % 2 ? .9 : .4); rect(bx + w, byy + 1, w0 - w, 3, '#ffffff'); ctx.globalAlpha = f.alpha; } }
     if (u.status) statusBadge(u.status, cx + 6, Y - 2);
+    if (u.recharge) miniBadge('CHG', RECHARGE_COL, cx + 6, u.status ? Y - 11 : Y - 2);
     if (u.leader) { const k = Math.round(Math.sin(BT.time * 5) * 1); drawCrown(cx - 16, Y + 2 + k); }
     if (u.boss) { const k = Math.round(Math.sin(BT.time * 4) * 1); drawSkull(cx + 10, Y - 4 + k); }
     ctx.globalAlpha = 1;
@@ -1928,8 +1991,17 @@ function drawHUD() {
   if (BT.mode === 'anim' && BT.anim && BT.anim.kind === 'msg') { panel(W / 2 - 80, 30, 160, 20); textC(BT.anim.text, W / 2, 36, UI.ink); }
   // bottom-right buttons (touch-friendly)
   if (BT.mode === 'idle') { button(W - 62, 4, 58, 14, 'END TURN', () => { Audio.sfx('ok'); endTurn(); }, { col: '#7a3030' }); button(W - 62, 20, 58, 14, BT.showDanger ? 'DANGER ●' : 'DANGER ○', () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); }); button(W - 62, 36, 28, 14, 'HELP', () => { BT.mode = 'help'; BT.helpPage = 0; Audio.sfx('menu'); }); button(W - 32, 36, 28, 14, Audio.muted ? '♪ ○' : '♪ ●', () => { Audio.toggle(); Audio.sfx('menu'); }); }
+  if (BT.showDanger && (BT.mode === 'idle' || BT.mode === 'move')) drawDangerLegend(W - 62, 52);
   if (BT.mode === 'anim' && !isHuman(B.phase)) { textC(phaseLabel(B.phase) + (BT.fast ? ' · FAST' : ''), W / 2, 6, UI.red, { outline: UI.shadow }); button(W - 46, 4, 42, 14, BT.fast ? 'FAST ●' : 'FAST ○', () => { BT.fast = !BT.fast; }); }
   if (BT.mode === 'move' || BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'menu') { button(W - 46, 4, 42, 14, 'BACK', () => cancel(), { col: '#5a4a30' }); }
+}
+// Danger overlay colours [fill, edge] per threat kind, and the recharge marker colour.
+const DANGER = { trainer: ['#b03030', '#ff8080'], wild: ['#b08a20', '#ffd24a'] };
+const RECHARGE_COL = '#a0a0ff';
+function drawDangerLegend(x, y) {
+  const wild = B.units.some(u => u.hp > 0 && u.team === 2 && hostile(2, HT())); const w = wild ? 58 : 34;
+  panel(x, y, w, 13, { fill: UI.panelDark, flat: true }); rect(x + 4, y + 4, 5, 5, DANGER.trainer[1]); text('foe', x + 11, y + 3, UI.ink);
+  if (wild) { rect(x + 30, y + 4, 5, 5, DANGER.wild[1]); text('wild', x + 37, y + 3, UI.ink); }
 }
 function drawUnitCard(u, x, y) {
   const w = 136; panel(x, y, w, 42);
@@ -1937,7 +2009,7 @@ function drawUnitCard(u, x, y) {
   text(u.name, x + 46, y + 5, UI.ink); textR('Lv' + u.level, x + w - 5, y + 5, UI.gold);
   hpBar(x + 46, y + 15, w - 52, u.hp, u.maxHp); text(u.hp + '/' + u.maxHp, x + 46, y + 22, UI.ink);
   u.types.forEach((t, i) => typeBadge(t, x + 46 + i * 26, y + 31, 24)); if (u.status) statusBadge(u.status, x + w - 20, y + 22);
-  if (u.boss) text('BOSS', x + w - 28, y + 31, UI.red);
+  if (u.boss) text('BOSS', x + w - 28, y + 31, UI.red); else if (u.recharge) miniBadge('CHG', RECHARGE_COL, x + w - 20, y + 31);
 }
 function menuRect() { const m = BT.menu; const w = m.items.some(it => it.icon) ? 122 : 108, h = m.items.length * 13 + 8; let x = tileX(BT.cx) + TILE + 6, y = tileY(BT.cy) - 4; if (BT.mode === 'endmenu') { x = VIEW.w / 2 - w / 2; y = VIEW.h / 2 - h / 2; } if (x + w > VIEW.w - 4) x = tileX(BT.cx) - w - 6; if (x < 4) x = 4; y = clamp(y, 30, VIEW.h - h - 4); return { x, y, w, h }; }
 function menuHit(px2, py) { const r = menuRect(); if (px2 < r.x || px2 >= r.x + r.w || py < r.y || py >= r.y + r.h) return -1; return clamp(Math.floor((py - r.y - 4) / 13), 0, BT.menu.items.length - 1); }
@@ -1946,7 +2018,7 @@ function drawMenu() {
   m.items.forEach((it, i) => { const y = r.y + 4 + i * 13; const hot = i === m.i; if (hot) { rrect(r.x + 3, y - 1, r.w - 6, 12, UI.menuSel, 1); hline(r.x + 4, y - 1, r.w - 8, shade(UI.menuSel, .3)); pointerHand(r.x + 5, y + 1, BT.time * 1000); } if (it.icon) { iconAt(it.icon, r.x + 15, y + 1, hot ? '#ffffff' : '#d8dce8'); text(it.label, r.x + 28, y + 2, hot ? UI.hi : UI.ink); } else text(it.label, r.x + 16, y + 2, hot ? UI.hi : UI.ink); });
   const it = m.items[m.i]; if (it && it.sub) { const sw = textWidth(it.sub) + 10; const sx = clamp(r.x, 2, VIEW.w - sw - 2); panel(sx, r.y + r.h + 3, sw, 13, { fill: UI.panelDark }); text(it.sub, sx + 5, r.y + r.h + 6, UI.muted); }
 }
-function forecastRect() { const w = 204, h = 94; const left = BT.cx * TILE - CAM.x > VIEW.w / 2; return { x: left ? 6 : VIEW.w - w - 6, y: 32, w, h }; }
+function forecastRect() { const w = 204, h = 104; const left = BT.cx * TILE - CAM.x > VIEW.w / 2; return { x: left ? 6 : VIEW.w - w - 6, y: 32, w, h }; }
 function forecastHit(x, y) { const r = forecastRect(); return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h - 14; }
 function moveSwitchHit(x, y) { const r = forecastRect(); return x >= r.x && y >= r.y + r.h - 14 && x < r.x + r.w && y < r.y + r.h + 4; }
 // HP bar that previews the damage: the part about to be lost is hatched in red.
@@ -1956,10 +2028,18 @@ function hpBarPredict(x, y, w, cur, after, max) {
   if (fw > aw) { rect(x + 1 + aw, y + 1, fw - aw, 4, '#c02828'); dither(x + 1 + aw, y + 1, fw - aw, 4, '#ff8080', Math.floor(BT.time * 8) % 2); }
   outline(x, y, w, 6, UI.shadow);
 }
+// One line summing up the ordered exchange: who answers, who doubles, who drops first.
+function exchangeSummary(fc) {
+  const hits = side => fc.strikes.filter(s => s.side === side && s.nominal).length;
+  if (!fc.c) return { text: fc.noCounter === 'frozen' ? 'frozen · no counter' : fc.noCounter === 'recharging' ? 'recharging · no counter' : 'no counter', col: UI.green };
+  if (!hits('c')) return { text: 'KO first · counters on miss', col: UI.gold };
+  let t = 'counters' + (fc.c.eff > 1 ? ' hard' : ''); if (fc.koA) t += ' · KOs you!'; else if (hits('a') > 1) t += ' · you hit ×2'; else if (hits('c') > 1) t += ' ×2';
+  return { text: t, col: fc.koA ? UI.red : fc.c.eff > 1 ? '#ffa0a0' : UI.muted };
+}
 function drawForecast() {
   const cf = currentForecast(); if (!cf) return; const { fc, move, moves, target } = cf; const r = forecastRect(); const u = BT.sel; const a = fc.a, c = fc.c;
   panel(r.x, r.y, r.w, r.h, { title: 'BATTLE FORECAST' });
-  const hpAfterU = Math.max(0, u.hp - (c ? c.dmg * (c.dbl ? 2 : 1) * (c.hit > 0 ? 1 : 0) : 0)), hpAfterT = Math.max(0, target.hp - a.dmg * (a.dbl ? 2 : 1));
+  const hpAfterU = fc.hpA, hpAfterT = fc.hpD; const hits = side => fc.strikes.filter(s => s.side === side && s.nominal).length; const aHits = hits('a'), cHits = hits('c');
   const side = (x, unit, flip, after, right) => {
     ctx.save(); ctx.beginPath(); ctx.rect(x, r.y + 7, 48, 34); ctx.clip(); portraitBg(x, r.y + 7, 48, 34, unit.team); drawMon(unit.num, x + 24, r.y + 40, { flip }); ctx.restore();
     if (right) textR(unit.name, x + 48, r.y + 43, UI.ink); else text(unit.name, x, r.y + 43, UI.ink);
@@ -1969,11 +2049,15 @@ function drawForecast() {
   side(r.x + 6, u, false, hpAfterU, false); side(r.x + r.w - 54, target, true, hpAfterT, true);
   // centre column: move, then the three numbers side by side
   const cx = r.x + r.w / 2; typeBadge(move.type, cx - 12, r.y + 7, 24); textC(move.name, cx, r.y + 18, TYPE_COL[move.type] || UI.ink, { shadow: '#000' });
-  const rows = [['DMG', a.dmg + (a.dbl ? '×2' : ''), c ? c.dmg + (c.dbl ? '×2' : '') : '—'], ['HIT', a.hit + '%', c ? c.hit + '%' : '—'], ['CRT', a.crit + '%', c ? c.crit + '%' : '—']];
-  rows.forEach((row, i) => { const y = r.y + 29 + i * 10; rrect(cx - 40, y - 1, 80, 9, i % 2 ? '#1a2848' : '#16223e', 0); textC(row[0], cx, y, UI.muted); textR(row[1], cx - 14, y, i === 0 && a.eff > 1 ? UI.gold : UI.ink); text(row[2], cx + 14, y, i === 0 && c && c.eff > 1 ? '#ffa0a0' : UI.ink); });
+  // damage that only lands if an earlier strike misses is shown in brackets
+  const rows = [['DMG', a.dmg + (aHits > 1 ? '×2' : ''), c ? (cHits ? c.dmg + (cHits > 1 ? '×2' : '') : '(' + c.dmg + ')') : '—'], ['HIT', a.hit + '%', c ? c.hit + '%' : '—'], ['CRT', a.crit + '%', c ? c.crit + '%' : '—']];
+  rows.forEach((row, i) => { const y = r.y + 29 + i * 10; rrect(cx - 40, y - 1, 80, 9, i % 2 ? '#1a2848' : '#16223e', 0); textC(row[0], cx, y, UI.muted); textR(row[1], cx - 14, y, i === 0 && a.eff > 1 ? UI.gold : UI.ink); text(row[2], cx + 14, y, c && !cHits ? UI.muted : i === 0 && c && c.eff > 1 ? '#ffa0a0' : UI.ink); });
   text('▸', cx - 40, r.y + 29, '#8ab4ff'); textR('◂', cx + 40, r.y + 29, c ? '#ff9a9a' : '#3a4a70');
   const el = effLabel(a.eff); textC(el || 'normal damage', cx, r.y + 60, a.eff > 1 ? UI.gold : a.eff < 1 ? '#a0d0ff' : UI.muted);
-  textC(!c ? 'no counter' : 'counters' + (c.eff > 1 ? ' hard!' : ''), cx, r.y + 69, !c ? UI.green : c.eff > 1 ? '#ffa0a0' : UI.muted);
+  const sum = exchangeSummary(fc); textC(sum.text, cx, r.y + 69, sum.col);
+  // chance-based and lasting effects of both moves (never counted in the numbers above)
+  const ea = moveEffects(move), ec = c ? moveEffects(c.move) : []; const fxText = (ea.length ? '▸ ' + ea.join(' · ') : '') + (ea.length && ec.length ? '   ' : '') + (ec.length ? '◂ ' + ec.join(' · ') : '');
+  textC(fxText || 'no side effects', r.x + r.w / 2, r.y + 80, fxText ? (ea.some(t => t === 'must recharge') ? RECHARGE_COL : UI.ink) : UI.muted);
   // move selector (bottom)
   rrect(r.x + 3, r.y + r.h - 14, r.w - 6, 11, UI.panelDark, 1); typeBadge(move.type, r.x + 5, r.y + r.h - 13, 24); text(move.name + '  ' + move.pow + 'pw  rng ' + move.rng[0] + (move.rng[1] > move.rng[0] ? '-' + move.rng[1] : ''), r.x + 32, r.y + r.h - 12, UI.ink); if (moves.length > 1) textR('C ▸ switch', r.x + r.w - 5, r.y + r.h - 12, UI.gold);
   textC('OK: attack  ·  X: back' + (moves.length > 1 ? '  ·  C: move' : ''), r.x + r.w / 2, r.y + r.h + 4, UI.muted, { outline: UI.shadow });
@@ -2016,8 +2100,9 @@ function drawUnitSheet(u) {
   hpBar(x + 60, y + 30, w - 66, u.hp, u.maxHp); text('HP ' + u.hp + '/' + u.maxHp, x + 60, y + 37, UI.ink);
   const stats = [['ATK', u.atk], ['DEF', u.def], ['SPA', u.spa], ['SPD', u.spd], ['SPE', u.spe], ['MOV', effMov(u)]]; stats.forEach((s, i) => { const sx = x + 6 + (i % 3) * 44, sy = y + 54 + Math.floor(i / 3) * 10; text(s[0], sx, sy, UI.muted); textR(String(s[1]), sx + 38, sy, UI.ink); });
   const traits = []; if (u.fly) traits.push('FLIES'); if (u.swim) traits.push('SWIMS'); if (u.climb) traits.push('CLIMBS'); if (u.forester) traits.push('WOODS'); text(traits.join(' · '), x + 140, y + 54, UI.green);
-  text('Moves', x + 140, y + 64, UI.muted); u.moves.slice(0, 3).forEach((m, i) => { typeBadge(m.type, x + 140, y + 73 + i * 10, 24); text(m.name + ' ' + m.pow + (m.rng[1] > 1 ? ' R' + m.rng[0] + '-' + m.rng[1] : ''), x + 169, y + 74 + i * 10, UI.ink); });
+  text('Moves', x + 140, y + 64, UI.muted); u.moves.slice(0, 4).forEach((m, i) => { typeBadge(m.type, x + 140, y + 73 + i * 10, 24); text(m.name + ' ' + m.pow + (m.rng[1] > 1 ? ' R' + m.rng[0] + '-' + m.rng[1] : ''), x + 169, y + 74 + i * 10, UI.ink); });
   const ev = u.dex.evos.length && isHuman(u.team) ? 'Evolves at Lv' + Math.min(...u.dex.evos.map(e => e[1])) : ''; text(ev, x + 6, y + 76, '#98d8f8');
+  if (u.recharge && !u.boss) text('RECHARGING', x + 60 + textWidth(u.name) + 6, y + 8, RECHARGE_COL);
   // type matchup hints
   const weak = TYPES.filter(t => effRaw(t, u.types) >= 2).slice(0, 4), res = TYPES.filter(t => effRaw(t, u.types) < 1).slice(0, 4);
   text('Weak:', x + 6, y + 88, UI.muted); weak.forEach((t, i) => typeBadge(t, x + 36 + i * 25, y + 87, 24)); text('Resist:', x + 6, y + 99, UI.muted); res.forEach((t, i) => typeBadge(t, x + 36 + i * 25, y + 98, 24));
@@ -2027,7 +2112,7 @@ function drawHelp() {
   const W = VIEW.w, H = VIEW.h; const w = Math.min(280, W - 12), h = 124; const x = W / 2 - w / 2, y = H / 2 - h / 2; panel(x, y, w, h, { title: 'HELP ' + (BT.helpPage + 1) + '/3' });
   const pages = [
     ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back', 'Mouse: hover + click. Right click or empty tile: menu', 'Touch: tap to move the cursor, tap again to confirm', 'Q/E: next unit · C: unit info / switch move · F: fast', 'Drag or wheel to pan · M: mute · H: this help'],
-    ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch,', 'use the Bag or Wait. Blue = move, red = attack.', 'Defenders counter if you are in their move range.', 'Speed 8+ higher than the foe = you strike twice (×2).', 'Terrain gives DEF% and AVO. Poké Centers heal 30%/turn.'],
+    ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch,', 'use the Bag or Wait. Blue = move, red = attack.', 'Defenders counter if you are in their move range and', 'still standing. Speed 8+ higher = you strike twice (×2).', 'Terrain gives DEF% and AVO. Poké Centers heal 30%/turn', 'and cure. Danger: red = foe reach, yellow = wild reach.', 'Hyper Beam: no counter after it, next turn recharging.'],
     ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67.', 'STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV,', 'Frozen skips turns and crits are guaranteed on it.', 'Wild (yellow) Pokémon can be caught when weak: stand', 'next to them, choose Catch and throw a ball. Trainer', 'Pokémon (red) cannot be stolen. Level ups can evolve!'],
   ];
   const p = pages[BT.helpPage]; text(p[0], x + 8, y + 8, UI.gold); p.slice(1).forEach((l, i) => text(l, x + 8, y + 20 + i * 11, UI.ink)); textC('click / OK: next page', W / 2, y + h - 12, UI.muted);
@@ -2488,7 +2573,7 @@ function starterDraw() {
     const d = DEX[n]; const x = x0 + i * (cw + gap), y = 44, h = 150; const sel = SC.i === i; panel(x, y, cw, h, { fill: sel ? '#2a3d6a' : UI.panel, border: sel ? UI.gold : UI.border });
     const bob = sel ? Math.round(Math.abs(Math.sin(SC.t * 6)) * -4) : 0; rect(x + 8, y + 8, cw - 16, 36, teamColorD(0)); drawMon(n, x + cw / 2, y + 42 + bob, { sy: 1 + (sel ? Math.sin(SC.t * 8) * .05 : 0) });
     textC(d.name, x + cw / 2, y + 48, sel ? UI.gold : UI.ink); d.types.forEach((t, j) => typeBadge(t, x + cw / 2 - (d.types.length * 26) / 2 + j * 26 + 1, y + 58, 24));
-    const u = makeUnit(n, 5, 0); const st = [['HP', u.maxHp, 40], ['ATK', u.atk, 20], ['DEF', u.def, 20], ['SPA', u.spa, 20], ['SPD', u.spd, 20], ['SPE', u.spe, 20]];
+    const u = makeUnit(n, 5, 0, { hpBonus: BOND_HP }); const st = [['HP', u.maxHp, 40], ['ATK', u.atk, 20], ['DEF', u.def, 20], ['SPA', u.spa, 20], ['SPD', u.spd, 20], ['SPE', u.spe, 20]];
     st.forEach((s, j) => { const sy = y + 70 + j * 9; text(s[0], x + 8, sy, UI.muted); bar(x + 30, sy + 1, cw - 40, 5, s[1] / s[2], sel ? UI.gold : UI.blue); });
     text('MOV ' + u.mov + ' · ' + u.moves.map(m => m.name).join('/'), x + 8, y + h - 10, UI.muted);
     hit(x, y, cw, h, () => { if (SC.i === i) { Audio.sfx('select'); pickStarter(n); } else { SC.i = i; Audio.sfx('cursor'); } });
@@ -2622,11 +2707,14 @@ function skirmishInput(ev) { const S = SC.data; if (ev.type === 'key') { if (ev.
 'use strict';
 let SAVE = null;   // { chapter, party:[serialized], bag:{}, stars:{}, beaten }
 const PARAMS = new URLSearchParams(location.search);
-function loadSave() { try { return JSON.parse(localStorage.getItem('pk_save')); } catch (e) { return null; } }
+// Saves written before the HP edge became an explicit per-unit field: every campaign party member carries it.
+function migrateParty(list) { if (list) for (const p of list) if (p.hpBonus == null) p.hpBonus = BOND_HP; return list; }
+function loadSave() { try { const s = JSON.parse(localStorage.getItem('pk_save')); if (s) migrateParty(s.party); return s; } catch (e) { return null; } }
 function writeSave() { try { localStorage.setItem('pk_save', JSON.stringify(SAVE)); } catch (e) { } }
 function loadSuspend() { try { return JSON.parse(localStorage.getItem('pk_suspend')); } catch (e) { return null; } }
 function clearSuspend() { try { localStorage.removeItem('pk_suspend'); } catch (e) { } }
-function partyUnit(num, level) { const u = makeUnit(num, level, 0); let evo; while ((evo = evolutionFor(u))) evolve(u, evo); u.hp = u.maxHp; return serializeUnit(u); }
+// A serialized party member at full HP, evolved for its level. Campaign parties carry the HP edge; Versus passes 1.
+function partyUnit(num, level, hpBonus = BOND_HP) { const u = makeUnit(num, level, 0, { hpBonus }); let evo; while ((evo = evolutionFor(u))) evolve(u, evo); u.hp = u.maxHp; return serializeUnit(u); }
 
 // ---------------------------------------------------------------- campaign flow
 function startNewGame() { clearSuspend(); SAVE = { chapter: 0, party: [], bag: { pokeball: 3, potion: 1 }, stars: {}, beaten: false }; goScene('starter'); }
@@ -2673,8 +2761,8 @@ function onBattleEnd(result) {
 // Write the battle's team-0 units back into SAVE.party (levels, evolutions), heal everyone, add captures.
 function applyBattleToParty() {
   if (!SAVE) return;
-  for (const u of B.units) { if (u.team !== 0 || u.pid == null) continue; const s = serializeUnit(u); s.hp = u.maxHp; s.status = null; s.acted = false; SAVE.party[u.pid] = s; }
-  for (const c of B.captured) { const s = Object.assign({}, c); s.team = 0; s.acted = false; s.status = null; const u = restoreUnit(s); u.hp = u.maxHp; SAVE.party.push(serializeUnit(u)); }
+  for (const u of B.units) { if (u.team !== 0 || u.pid == null) continue; const s = serializeUnit(u); s.hp = u.maxHp; s.status = null; s.acted = false; s.recharge = 0; SAVE.party[u.pid] = s; }
+  for (const c of B.captured) { const s = Object.assign({}, c, { team: 0, acted: false, status: null, recharge: 0, hpBonus: BOND_HP }); const u = restoreUnit(s); u.hp = u.maxHp; SAVE.party.push(serializeUnit(u)); }
   SAVE.bag = Object.assign({}, B.bag);
 }
 // ---------------------------------------------------------------- suspend (mid-battle save at the start of each player phase)
@@ -2690,10 +2778,11 @@ function resumeSuspend() {
   seedRng(s.seed ^ (s.turn * 7919)); const map = parseMap(mapDef); map.def = mapDef; UID = 1;
   B = { map, units: [], turn: s.turn, phase: 0, bag: s.bag, result: null, seized: false, captured: s.captured || [], kills: s.kills || 0, chapter: s.chapter, log: [], seed: s.seed, skirmish: !!s.skirmish };
   map.items.forEach((it, i) => { it.taken = !!s.items[i]; }); map.reinforce.forEach((r, i) => { r.done = !!s.reinforce[i]; });
-  for (const d of s.units) { if (d.hp <= 0 && !d.leader) continue; const u = restoreUnit(d); u.pid = d.pid; u.leader = d.leader; u.provoked = d.provoked; if (d.hp <= 0) continue; B.units.push(u); }
+  for (const d of s.units) { if (d.hp <= 0 && !d.leader) continue; if (d.hpBonus == null && d.team === 0) d.hpBonus = BOND_HP; const u = restoreUnit(d); u.pid = d.pid; u.leader = d.leader; u.provoked = d.provoked; if (d.hp <= 0) continue; B.units.push(u); }
   BACKDROP = makeBackdrop(mapDef); BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.cx = s.cx; BT.cy = s.cy; centerCam(BT.cx, BT.cy, true); FX.parts = []; FX.texts = [];
   if (s.skirmish && s.preset) SC.data = { preset: true };
-  goScene('battle'); Audio.playMusic(map.music); beginPhase(0, true);
+  // the save was written after this phase's upkeep: resume without applying it again
+  goScene('battle'); Audio.playMusic(map.music); beginPhase(0, true, true);
 }
 // ---------------------------------------------------------------- skirmish
 function startSkirmishSetup() {
@@ -2709,7 +2798,7 @@ function startSkirmishSetup() {
 const VS_ROSTER = [5, 8, 2, 25, 17, 33, 12, 15, 28, 37, 39, 42, 44, 54, 58, 61, 64, 67, 75, 93, 95, 123, 125, 126, 111, 104, 133, 116];
 function startVersusSetup(seed) { const S = { seed: seed != null ? seed : Math.floor(Math.random() * 1000), level: 20, wild: true, teams: [[], []], order: [0, 1, 1, 0, 0, 1, 1, 0], size: 4, cur: 0, go: null }; S.go = () => launchVersus(S); goScene('versus', S); }
 function launchVersus(S) {
-  const map = versusMap(S.seed, 18, 11, { wild: S.wild, level: S.level }); const mk = list => list.map(n => partyUnit(n, S.level));
+  const map = versusMap(S.seed, 18, 11, { wild: S.wild, level: S.level }); const mk = list => list.map(n => partyUnit(n, S.level, 1)); // both trainers: plain stats
   const p1 = mk(S.teams[0]), p2 = mk(S.teams[1]); BACKDROP = makeBackdrop(map);
   startBattle(map, p1, { pokeball: 2, potion: 1 }, { versus: true, humans: [0, 1], party2: p2, bag2: { pokeball: 2, potion: 1 }, seed: (S.seed * 131 + 7) | 1, defer: true, setup: S });
   goScene('battle'); beginPhase(0, true);
@@ -2759,7 +2848,7 @@ requestAnimationFrame(frame);
 function autoTurn() { if (!B || B.phase !== 0 || BT.mode !== 'idle') return false; for (const u of alive(0)) { if (u.acted) continue; const d = aiDecide(u); if (d) { u.x = d.x; u.y = d.y; if (d.target) { resolveCombat(u, d.target, d.move, u); } } u.acted = true; if (checkObjective()) { endBattle(); return true; } } endTurn(); return true; }
 // Debug: simulate a whole battle model-only (no animation), AI on both sides. Returns a summary.
 function simBattle(maxTurns = 30, cautious = true) {
-  const log = B.simLog = []; const act = team => { for (const u of alive(team)) { if (u.status === 'frz') continue; const d = aiDecide(u, team === 0 && cautious); if (d) { u.x = d.x; u.y = d.y; if (d.target) { const ev = resolveCombat(u, d.target, d.move, u); for (const e of ev) if (e.type === 'hit' || e.type === 'ko') log.push('T' + B.turn + ' ' + (e.type === 'ko' ? 'KO ' + e.unit.name + ' by ' + e.by.name : e.att.name + '(' + e.att.team + ')L' + e.att.level + ' ' + e.move.name + '→' + e.def.name + 'L' + e.def.level + ' ' + e.dmg + (e.crit ? '!' : '') + ' hp' + e.hpAfter + '/' + e.def.maxHp)); } } u.acted = true; if (checkObjective()) return true; } return false; };
+  const log = B.simLog = []; const act = team => { for (const u of alive(team)) { if (u.status === 'frz' || u.acted) continue; const d = aiDecide(u, team === 0 && cautious); if (d) { u.x = d.x; u.y = d.y; if (d.target) { const ev = resolveCombat(u, d.target, d.move, u); for (const e of ev) if (e.type === 'hit' || e.type === 'ko') log.push('T' + B.turn + ' ' + (e.type === 'ko' ? 'KO ' + e.unit.name + ' by ' + e.by.name : e.att.name + '(' + e.att.team + ')L' + e.att.level + ' ' + e.move.name + '→' + e.def.name + 'L' + e.def.level + ' ' + e.dmg + (e.crit ? '!' : '') + ' hp' + e.hpAfter + '/' + e.def.maxHp)); } } u.acted = true; if (checkObjective()) return true; } return false; };
   while (!B.result && B.turn <= maxTurns) {
     if (act(0)) break;
     let done = false; for (const t of [1, 2, 3]) { if (!alive(t).length) continue; upkeep(t); if (t === 1) spawnReinforcements(); if (act(t)) { done = true; break; } } if (done) break;

@@ -28,3 +28,27 @@ Work in the stages below. Finish one stage, run meaningful checks, rebuild `inde
 ## Execution record
 
 Planning baseline: clean `main` at `1df3ba9`. Implementation branch: `codex/advance-wars-battles`.
+
+### Stage 1: trustworthy combat (2026-09-09)
+
+Changes:
+
+- **Equal Versus stats.** `applyDex` no longer keys HP on team 0. The campaign edge is an explicit per-unit `hpBonus` (`BOND_HP` = 1.2) set by the campaign flow (`partyUnit`, `startBattle` for non-Versus parties, catches in `applyBattleToParty`); Versus passes 1 for both trainers. `hpBonus` is serialized; older `pk_save` parties and suspend records migrate on load.
+- **Ordered forecast shared with the resolver.** `forecast()` now returns the ordered `strikes` (attack, counter, faster side's double) with `nominal` flags, conditions ("only if X survives"), drain, `hpA`/`hpD` after the nominal exchange, `koA`/`koD`, and `noCounter` (`range` / `frozen` / `recharging`). It rolls no dice and mutates nothing. `resolveCombat` walks the same strike list. The forecast card shows conditional counter damage in brackets, a one-line exchange summary, and the moves' chance/lasting effects on their own line. The AI scores with the same preview.
+- **Danger zone.** `dangerZones(team)` splits trainer and wild threats; the overlay draws wild reach in yellow under trainer reach in red, with an on-screen legend. Units that must recharge are excluded because they skip their next phase; frozen/paralyzed units stay in.
+- **Moves.** `movesFor` honors unlock levels for signatures (Pikachu Lv5 has Thunder Shock, Thunderbolt from Lv26), keeps the best adjacent-capable move of a type whose strongest move is range-only (Ninetales Lv40: Fire Blast + Flamethrower), and uses a melee Normal fallback (Hyper Beam only for Normal types). Loadouts are 1–5 moves; the unit sheet lists four.
+- **Poké Center** cures status independently of missing HP.
+- **Hyper Beam recharge.** After firing (hit or miss) `unit.recharge = 1`: it cannot counter, cannot be used as a counter, and its next upkeep clears the flag and marks the unit acted (turn spent). Enemy phase skips acted units. State is saved/restored; the map shows a CHG badge, the unit card/sheet a marker, the forecast "must recharge", and help page 2 states the rule.
+- **Resume timing.** The suspend save is written after upkeep; `resumeSuspend` now calls `beginPhase(0, true, true)` which skips upkeep and re-saving, so heals, poison ticks and recharge turns are not applied twice and a reload cannot refund a spent turn.
+
+Checks run:
+
+- `node tools/model-tests.cjs`: 14 tests passed (Versus symmetry incl. level up/evolve/restore, campaign edge and save migration, first-strike KO cancels counter, counter + double, counter KO cancels double, no-counter reasons, drain, forecast purity and miss path, danger zones, move loadouts across the whole dex at Lv1–50, center cure/heal/poison, recharge rules + AI + save round trip, XP/level/evolve/restore, suspend/resume without double upkeep).
+- `node --check` on every module; `sh build.sh` regenerated `index.html` and its script block parses.
+- Model-only smoke of all eight chapters through the same harness (`simBattle`, cautious AI on the player side, seed 7, loaner party): every battle ran to completion without exceptions. Compared with the pre-change sources on the same seed the outcomes were identical for chapters 1–5 and 7 and flipped from loss to win on chapters 6 and 8. One seed only; not a balance result.
+
+Not verified / limits:
+
+- No browser run in this stage (supervisor does browser checks): forecast card layout (height 94→104), danger legend placement and the CHG badge were only reasoned about.
+- Campaign balance shifted slightly: low-level party members no longer get their signature move early (starters at Lv5 use Ember/Water Gun/Vine Whip until the signature level), and the AI no longer fears counters that cannot happen. `tools/cdp.cjs balance` was not re-run.
+- The AI fires Hyper Beam when it is the only move usable from a spot and the score (minus a lost-turn penalty) still wins; it prefers a same-range alternative unless the beam finishes the target.
