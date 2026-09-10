@@ -180,6 +180,7 @@ async function main() {
       await nav('territory=3&silent&nosave&noguide'); await sleep(500); await shot('ui2-territory-setup');
       await nav('territory=3&auto&silent&nosave'); await waitMode('territoryGuide', 8000); await sleep(300); await shot('ui2-territory-guide'); await key('z', 'KeyZ'); await waitMode('idle', 5000); await sleep(200); await shot('ui2-territory-idle');
       await nav('ch=1&silent&nosave&seed=3'); await waitMode('idle', 6000);
+      await ev('__pk.HUD.hits.find(h=>h.label==="END TURN").run()'); await sleep(250); await shot('ui2-endconfirm'); await key('x', 'KeyX'); await waitMode('idle', 3000);
       await key('h', 'KeyH'); await sleep(200); await shot('ui2-help'); await key('z', 'KeyZ'); await sleep(200); await shot('ui2-help-2'); await key('x', 'KeyX'); await sleep(200);
       await ev('__pk.BT.cx=8; __pk.BT.cy=3'); await key('c', 'KeyC'); await sleep(200); await shot('ui2-unitsheet'); await key('x', 'KeyX'); await sleep(200);
       await ev('(function(){const c=__pk.B.units.find(u=>u.name==="Charmander"); c.x=7; c.y=3; __pk.BT.cx=7; __pk.BT.cy=3;})()'); await sleep(200); await shot('ui2-hover');

@@ -2190,6 +2190,11 @@ function cancel() {
   else if (BT.mode === 'idle') { openEndMenu(); Audio.sfx('menu'); }
 }
 const BATTLE_PREF_LABEL = { full: 'Full duel', quick: 'Quick duel', map: 'Map only' };
+// END TURN with Pokémon still ready asks first: a two-item menu that names how many can still act.
+function confirmEndTurn() {
+  const ready = alive(HT()).filter(u => !u.acted).length; if (!ready) { endTurn(); return; }
+  BT.sel = null; BT.autoEnd = 0; BT.mode = 'endmenu'; BT.menu = { title: 'END TURN?', i: 1, items: [{ id: 'endturn', label: 'End turn', icon: 'end', sub: ready + (ready > 1 ? ' Pokémon can' : ' Pokémon can') + ' still act this turn' }, { id: 'close', label: 'Keep playing', icon: 'play', sub: 'Back to the board' }] };
+}
 function openEndMenu(keepIndex = 0) {
   BT.mode = 'endmenu';
   BT.menu = { items: [{ id: 'endturn', label: 'End Turn', icon: 'end', sub: B.versus ? 'Pass to the other trainer' : 'Pass to the enemy' }, { id: 'danger', label: (BT.showDanger ? 'Hide' : 'Show') + ' Danger', icon: 'skull', sub: 'Enemy attack range' }, { id: 'scene', label: 'Battle: ' + BATTLE_PREF_LABEL[PREF.battle], icon: 'vs', sub: 'Attack scene: full, quick or on the map' }, { id: 'help', label: 'Help', icon: 'help', sub: 'Controls & rules' }, { id: 'mute', label: Audio.muted ? 'Unmute' : 'Mute', icon: 'note', sub: 'Sound on/off' }, { id: 'retreat', label: B.versus ? 'Forfeit' : 'Retreat', icon: 'run', sub: B.versus ? 'Concede the arena' : 'Give up this map' }, { id: 'close', label: 'Close', icon: 'x', sub: '' }], i: keepIndex };
@@ -2539,7 +2544,7 @@ function drawButtons(L) {
   const idle = m === 'idle', acting = m === 'move' || m === 'target' || m === 'catchTarget' || m === 'skillTarget' || m === 'menu', enemyAnim = m === 'anim' && !isHuman(B.phase);
   if (enemyAnim) textC(phaseLabel(B.phase) + (BT.fast ? ' · FAST' : ''), W / 2, L.top.y + L.top.h + 4, UI.red, { outline: UI.shadow });
   const items = [];
-  if (idle) items.push({ label: 'END TURN', variant: 'danger', run: () => { Audio.sfx('ok'); endTurn(); } }, { label: 'DANGER', on: BT.showDanger, run: () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); } });
+  if (idle) items.push({ label: 'END TURN', variant: 'danger', run: () => { Audio.sfx('ok'); confirmEndTurn(); } }, { label: 'DANGER', on: BT.showDanger, run: () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); } });
   if (acting) items.push({ label: m === 'move' && BT.dart ? 'STAY' : 'BACK', variant: 'ghost', run: () => cancel() });
   if (enemyAnim) items.push({ label: 'FAST', on: BT.fast, run: () => { BT.fast = !BT.fast; } });
   if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
@@ -2610,8 +2615,8 @@ function drawMenu() {
 // The forecast sits on the side away from the cursor on wide screens and spans the bottom on portrait phones.
 function forecastRect() {
   const W = VIEW.w, H = VIEW.h, L = hudLayout();
-  if (L.stack) { const h = 118; return { x: 4, y: L.bar.y - h - 4, w: W - 8, h, stack: true }; }
-  const w = Math.min(220, W - 12), h = 112; const left = toScreenX(tileX(BT.cx) - FX.shakeX) + TILE * BT.zoom / 2 > W / 2; const bb = 4 + (canZoom() ? 2 : 1) * (btnH() + 2); // under the BACK / ZOOM buttons on the right
+  if (L.stack) { const h = W - 8 >= 200 ? 128 : 118; return { x: 4, y: L.bar.y - h - 4, w: W - 8, h, stack: true }; }
+  const w = Math.min(220, W - 12), h = 124; const left = toScreenX(tileX(BT.cx) - FX.shakeX) + TILE * BT.zoom / 2 > W / 2; const bb = 4 + (canZoom() ? 2 : 1) * (btnH() + 2); // under the BACK / ZOOM buttons on the right
   return { x: left ? 6 : W - w - 6, y: Math.min(Math.max(L.top.y + L.top.h + 14, left ? 0 : bb + 4), Math.max(4, H - h - 24)), w, h, stack: false };
 }
 function forecastHit(x, y) { const r = forecastRect(); return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h - 16; }
@@ -2678,12 +2683,25 @@ function drawForecast() {
   side(r.x, u, fc.hpA, false); side(r.x + half, target, fc.hpD, true);
   vline(r.x + half, r.y + 8, 48, UI.border2);
   // the ordered exchange, one line per strike; optional parts are dropped from the right until the line fits
-  const lines = forecastLines(fc, u, target); const ly = r.y + 58;
-  lines.slice(0, 3).forEach((l, i) => {
+  const lines = forecastLines(fc, u, target); const ly = r.y + 58; const table = r.w >= 200;
+  const koTag = (kx, y, colr) => { rect(kx - 1, y - 1, textWidth('KO') + 2, 9, colr); text('KO', kx, y, '#ffffff'); };
+  if (table) { // aligned columns: the strike (with its conditions), then DMG · HIT · CRIT right-aligned
+    const cx = [r.x + r.w - 6 - 66, r.x + r.w - 6 - 36, r.x + r.w - 6]; text('STRIKE', r.x + 6, ly, UI.dim); textR('DMG', cx[0], ly, UI.dim); textR('HIT', cx[1], ly, UI.dim); textR('CRIT', cx[2], ly, UI.dim); hline(r.x + 5, ly + 8, r.w - 10, UI.inset); hline(r.x + 5, ly + 9, r.w - 10, shade(UI.panel, .15));
+    lines.slice(0, 3).forEach((l, i) => {
+      const y = ly + 12 + i * 9; const col = !l.nominal ? UI.muted : l.side === 'a' ? '#8ab4ff' : '#ff9a9a'; const tagCol = l.side === 'a' ? '#2a6a3a' : '#8a2c2c';
+      // the condition is essential and never dropped (it compacts to "if alive"); braced / effectiveness / drain go first, then the name shortens
+      const nameW = cx[0] - 34 - (r.x + 6); let cond = l.cond ? l.cond.replace(/^only if (.*) survives$/, 'if $1 alive') : null; const opt = [l.eff || null, l.braced ? 'braced' : null, l.drain ? '+' + l.drain : null].filter(Boolean); let name = l.name;
+      const build = () => { const ex = (cond ? [cond] : []).concat(opt); return (l.side === 'a' ? '▸ ' : '◂ ') + name + (ex.length ? '  ' + ex.join(' · ') : ''); }; let s = build();
+      while (textWidth(s) > nameW && opt.length) { opt.pop(); s = build(); } if (textWidth(s) > nameW && cond) { cond = 'if alive'; s = build(); } while (textWidth(s) > nameW && name.length > 3) { name = name.slice(0, -1); s = build(); }
+      text(s, r.x + 6, y, col);
+      textR(String(l.dmg), cx[0] - (l.ko ? 15 : 0), y, col); if (l.ko) koTag(cx[0] - 11, y, tagCol);
+      textR(l.hit + '%', cx[1], y, col); textR(l.crit + '%', cx[2] - (l.critKo ? 15 : 0), y, col); if (l.critKo) koTag(cx[2] - 11, y, tagCol);
+    });
+  } else lines.slice(0, 3).forEach((l, i) => {
     const y = ly + i * 9; const col = !l.nominal ? UI.muted : l.side === 'a' ? '#8ab4ff' : '#ff9a9a'; const f = fitForecastLine(l, r.w - 12);
-    text(f.text, r.x + 6, y, col); const tag = (kx, colr) => { rect(kx - 1, y - 1, textWidth('KO') + 2, 9, colr); text('KO', kx, y, '#ffffff'); };
-    if (l.ko) tag(r.x + 6 + textWidth(f.head) - textWidth('KO'), l.side === 'a' ? '#2a6a3a' : '#8a2c2c');
-    if (f.critKoAt != null) tag(r.x + 6 + f.critKoAt, l.side === 'a' ? '#2a6a3a' : '#8a2c2c');
+    text(f.text, r.x + 6, y, col);
+    if (l.ko) koTag(r.x + 6 + textWidth(f.head) - textWidth('KO'), y, l.side === 'a' ? '#2a6a3a' : '#8a2c2c');
+    if (f.critKoAt != null) koTag(r.x + 6 + f.critKoAt, y, l.side === 'a' ? '#2a6a3a' : '#8a2c2c');
   });
   // summary of the exchange, then the moves' side effects (never counted in the numbers above)
   const sum = exchangeSummary(fc); const ea = a.eff === 0 ? [] : moveEffects(move), ec = c && c.eff !== 0 ? moveEffects(c.move) : [];
@@ -2733,7 +2751,14 @@ function drawDuelCard(q) {
 function drawEventCard(q) {
   const e = q.ev, W = VIEW.w, H = VIEW.h;
   if (e.type === 'xp') { const u = e.unit; const w = 120, x = W / 2 - w / 2, y = H - 40; panel(x, y, w, 24); const k = Math.min(1, q.t / q.dur); const shown = Math.min(100, q.from + e.amount * k); text(u.name, x + 6, y + 4, UI.ink); textR('+' + e.amount + ' EXP', x + w - 6, y + 4, UI.gold); bar(x + 6, y + 14, w - 12, 6, (shown % 100) / 100, '#6ad0ff'); }
-  if (e.type === 'levelup') { const u = e.unit; const w = Math.min(176, W - 12), h = 70, x = W / 2 - w / 2; const uy = toScreenY(tileY(u.y)), ts = TILE * BT.zoom; const y = uy < H / 2 ? Math.min(H - h - 8, uy + ts + 10) : Math.max(28, uy - h - 12); const k = Math.min(1, q.t / .25); const yy = y + (1 - easeOut(k)) * -20; panel(x, yy, w, h, { title: 'LEVEL UP!' }); drawMon(u.fx.showNum || u.num, x + 26, yy + 40, {}); bigText('LV ' + e.level, x + 50, yy + 8, UI.gold, { outline: '#402000' }); const g = e.gains; const stats = [['HP', g.maxHp], ['ATK', g.atk], ['DEF', g.def], ['SPA', g.spa], ['SPD', g.spd], ['SPE', g.spe]]; const cw = Math.floor((w - 56) / 3); stats.forEach((s, i) => { const sx = x + 50 + (i % 3) * cw, sy = yy + 24 + Math.floor(i / 3) * 12; const showAt = .3 + i * .12; if (q.t > showAt) { text(s[0], sx, sy, UI.muted); text((s[1] >= 0 ? '+' : '') + s[1], sx + 20, sy, s[1] > 0 ? UI.green : UI.ink); } }); if (q.t > 1.1) { const nm = u.moves.map(m => m.name); let s = 'Moves: ' + nm.join(', '); while (textWidth(s) > w - 12 && s.length > 8) s = s.slice(0, -1); text(s, x + 6, yy + 52, UI.ink); } }
+  if (e.type === 'levelup') {
+    const u = e.unit; const w = Math.min(190, W - 12), h = 74, x = W / 2 - w / 2; const uy = toScreenY(tileY(u.y)), ts = TILE * BT.zoom; const y = uy < H / 2 ? Math.min(H - h - 8, uy + ts + 10) : Math.max(28, uy - h - 12); const k = Math.min(1, q.t / .25); const yy = Math.round(y + (1 - easeOut(k)) * -20);
+    const p = panel(x, yy, w, h, { header: 'LEVEL UP!', headerRight: 'Lv ' + (e.level - 1) + ' ▸ ' + e.level, headerRightCol: UI.gold });
+    ctx.save(); ctx.beginPath(); ctx.rect(x + 6, p.cy, 34, 30); ctx.clip(); portraitBg(x + 6, p.cy, 34, 30, u.team); drawMon(u.fx.showNum || u.num, x + 23, p.cy + 29 + Math.round(Math.sin(q.t * 10) * (q.t < .6 ? 2 : 0)), {}); ctx.restore();
+    text(u.name, x + 46, p.cy, UI.ink); const g = e.gains; const stats = [['HP', g.maxHp], ['ATK', g.atk], ['DEF', g.def], ['SPA', g.spa], ['SPD', g.spd], ['SPE', g.spe]]; const cw = Math.floor((w - 52) / 3);
+    stats.forEach((s, i) => { const sx = x + 46 + (i % 3) * cw, sy = p.cy + 11 + Math.floor(i / 3) * 10; const showAt = .3 + i * .1; text(s[0], sx, sy, UI.muted); if (q.t > showAt) textR((s[1] >= 0 ? '+' : '') + s[1], sx + cw - 6, sy, s[1] > 0 ? UI.green : UI.ink); });
+    if (q.t > 1) { const nm = u.moves.map(m => m.name); let s = 'Moves: ' + nm.join(', '); while (textWidth(s) > w - 12 && s.length > 8) s = s.slice(0, -1); hline(x + 5, p.cy + 32, w - 10, UI.inset); text(s, x + 6, p.cy + 35, UI.info); }
+  }
   if (e.type === 'evolve') { const k = q.t / q.dur; const msg = k < .5 ? 'What? ' + e.from.name + ' is evolving!' : e.from.name + ' evolved into ' + e.to.name + '!'; const w = Math.min(W - 12, Math.max(160, textWidth(msg) + 16)), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(msg, W / 2, y + 6, k < .5 ? UI.ink : UI.gold); if (k > .15 && k < .8 && Math.floor(q.t * 14) % 2) { ctx.globalAlpha = .25; rect(0, 0, W, H, '#ffffff'); ctx.globalAlpha = 1; } }
   if (e.type === 'capture' && q.t > q.dur - .8 && e.ok) { const w = Math.min(150, W - 12), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(e.unit.name + ' was caught!', W / 2, y + 6, UI.gold); }
   if (e.type === 'skill') { const msg = e.unit.name + ' uses ' + e.skill.name + (e.target && e.target !== e.unit ? ' on ' + e.target.name : '') + '!'; const w = Math.min(W - 12, Math.max(120, textWidth(msg) + 16)), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20, { border: ROLES[e.unit.role].col }); let s = msg; while (textWidth(s) > w - 12 && s.length > 6) s = s.slice(0, -1); textC(s, W / 2, y + 6, UI.ink); }

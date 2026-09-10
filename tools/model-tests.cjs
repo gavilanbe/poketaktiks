@@ -529,7 +529,7 @@ test('drain reports the HP actually restored: nothing at full HP, the missing HP
 function textHook(T) {
   T.G(`var __boxes = [], __m = [1, 0, 0, 1, 0, 0], __st = []; ctx.save = () => __st.push(__m.slice()); ctx.restore = () => { __m = __st.pop() || [1, 0, 0, 1, 0, 0]; }; ctx.translate = (x, y) => { __m[4] += __m[0] * x; __m[5] += __m[3] * y; }; ctx.scale = (x, y) => { __m[0] *= x; __m[3] *= y; };
     text = (s, x, y, col, opt = {}) => { const w = textWidth(s, opt.font || FONT); __boxes.push({ text: String(s), x: __m[0] * x + __m[4], y: __m[3] * y + __m[5], w: w * __m[0], h: 7 * __m[3] }); return w; };`);
-  return () => { const b = T.G('__boxes'); T.G('__boxes = []'); return b; };
+  const take = () => { const b = T.G('__boxes'); T.G('__boxes = []'); take.__last = b; return b; }; return take;
 }
 const battleSetup = `const ch = CHAPTERS[5]; startBattle(ch.map, [4, 7, 1, 25, 133, 66].map(n => partyUnit(n, ch.level)), {}, { chapter: 5, defer: true }); goScene('battle'); BT.mode = 'idle'; BT.time = 2;`;
 const TEXT_CASES = [
@@ -616,7 +616,8 @@ test('speed rules: crits are flat (4 / 24 / 100 on frozen), hit bonus capped at 
   d.hp = fc.a.dmg; fc = g.forecast(a, d, mv, a); L = g.forecastLines(fc, a, d); assert.strictEqual(L[0].ko, true); assert.strictEqual(L[0].critKo, false, 'no crit flag when the normal hit already KOs');
   d.hp = 500; fc = g.forecast(a, d, mv, a); L = g.forecastLines(fc, a, d); assert.strictEqual(L[0].critKo, false); assert.strictEqual(L[0].crit, 4);
   const G = T.G; G('VIEW.w = 480; VIEW.h = 270'); const BT = G('BT'); BT.sel = a; BT.targets = [d]; BT.tIdx = 0; BT.moveIdx = a.moves.indexOf(mv); BT.mode = 'target'; d.hp = fc.a.dmg + 1; const boxes = textHook(T); g.drawHUD(); const strs = boxes().map(b => b.text);
-  assert(strs.some(s => s.includes('NORMAL HITS')), 'the forecast title says the numbers are for normal hits'); assert(strs.some(s => /crit 4% KO/.test(s)), 'the crit KO risk is spelled out: ' + strs.filter(s => s.includes('crit')).join(' | '));
+  assert(strs.some(s => s.includes('NORMAL HITS')), 'the forecast title says the numbers are for normal hits');
+  { const all = boxes.__last || []; const crit = all.find(b => b.text === '4%'); assert(crit && all.some(b => b.text === 'KO' && b.y === crit.y && b.x > crit.x), 'the crit KO risk is spelled out next to the crit odds: ' + strs.join(' | ')); }
 });
 
 test('skills: legal targets, action cost, cooldown, brace and root expiry, cleanse, danger zone and dart', T => {
@@ -787,14 +788,20 @@ test('review: Brace earns no XP, useSkill refuses illegal calls without mutating
   for (const [w, h] of [[180, 390], [195, 422], [207, 448], [480, 270]]) {
     const T2 = loadGame(); const g2 = T2.g, G2 = T2.G; G2('VIEW.w = ' + w + '; VIEW.h = ' + h); arena(T2); G2('rnd = () => .5'); const BT2 = G2('BT');
     const a = place(T2, 6, 30, 0, 1, 1), d = place(T2, 10, 3, 1, 2, 1); const mv = a.moves.find(m => m.name === 'Flamethrower'); BT2.sel = a; BT2.targets = [d]; BT2.tIdx = 0; BT2.moveIdx = a.moves.indexOf(mv); BT2.mode = 'target';
-    const rows = () => { const bx = textHook(T2); g2.drawHUD(); const all = bx(); const fr = g2.forecastRect(); for (const b of all) assert(b.x >= fr.x - 1 && b.x + b.w <= fr.x + fr.w + 1 || b.y < fr.y || b.y > fr.y + fr.h + 12, w + 'x' + h + ': forecast text inside its card: ' + b.text); return { rows: all.filter(b => /^[▸◂] /.test(b.text)).map(b => b.text), ko: all.filter(b => b.text === 'KO').map(b => b.x), fr }; };
+    const rows = () => { const bx = textHook(T2); g2.drawHUD(); const all = bx(); const fr = g2.forecastRect(); for (const b of all) assert(b.x >= fr.x - 1 && b.x + b.w <= fr.x + fr.w + 1 || b.y < fr.y || b.y > fr.y + fr.h + 12, w + 'x' + h + ': forecast text inside its card: ' + b.text); const rb = all.filter(b => /^[▸◂] /.test(b.text)); return { rows: rb.map(b => b.text), cells: rb.map(r => all.filter(b => b.y === r.y && b.x > r.x).map(b => b.text)), ko: all.filter(b => b.text === 'KO').map(b => b.x), fr, table: fr.w >= 200 }; };
     let R = rows(); const tag = w + 'x' + h + ': '; assert.strictEqual(R.rows.length, 3, tag + 'three strike rows');
-    assert(/^▸ FLAMET\w* 555 KO  100% · crit 4%/.test(R.rows[0]), tag + 'first row: ' + R.rows[0]);
-    assert(/^◂ TACKLE 2  \d+% · c(rit )?4% · if (Caterpie )?alive$/.test(R.rows[1]), tag + 'conditional counter keeps hit, crit and the condition: ' + R.rows[1]);
-    assert(/^▸ FLAMET\w* 555  100% · c(rit )?4% · if (Caterpie )?alive$/.test(R.rows[2]), tag + 'conditional follow-up too: ' + R.rows[2]);
+    if (R.table) { // wide cards lay the strikes out as a table: the name and condition in the first column, DMG / HIT / CRIT as cells
+      assert(/^▸ FLAMET\w*(  .*)?$/.test(R.rows[0]) && R.cells[0].includes('555') && R.cells[0].includes('100%') && R.cells[0].includes('4%') && R.cells[0].includes('KO'), tag + 'first row: ' + R.rows[0] + ' | ' + R.cells[0].join(' '));
+      assert(/^◂ TACKLE  if (Caterpie )?alive$/.test(R.rows[1]) && R.cells[1].includes('2') && R.cells[1].some(s => /^\d+%$/.test(s)) && R.cells[1].includes('4%'), tag + 'conditional counter keeps hit, crit and the condition: ' + R.rows[1] + ' | ' + R.cells[1].join(' '));
+      assert(/^▸ FLAMET\w*  if (Caterpie )?alive$/.test(R.rows[2]) && R.cells[2].includes('555') && R.cells[2].includes('100%') && R.cells[2].includes('4%'), tag + 'conditional follow-up too: ' + R.rows[2] + ' | ' + R.cells[2].join(' '));
+    } else {
+      assert(/^▸ FLAMET\w* 555 KO  100% · crit 4%/.test(R.rows[0]), tag + 'first row: ' + R.rows[0]);
+      assert(/^◂ TACKLE 2  \d+% · c(rit )?4% · if (Caterpie )?alive$/.test(R.rows[1]), tag + 'conditional counter keeps hit, crit and the condition: ' + R.rows[1]);
+      assert(/^▸ FLAMET\w* 555  100% · c(rit )?4% · if (Caterpie )?alive$/.test(R.rows[2]), tag + 'conditional follow-up too: ' + R.rows[2]);
+    }
     assert(R.ko.length >= 1, tag + 'KO tag drawn'); assert(g2.textWidth(R.rows[0]) <= R.fr.w - 12 && g2.textWidth(R.rows[1]) <= R.fr.w - 12 && g2.textWidth(R.rows[2]) <= R.fr.w - 12, tag + 'rows fit the card');
-    // a critical that would KO where the normal hit does not: the crit part reads "crit 4% KO" with its own tag
-    const fc = g2.forecast(a, d, mv, a); d.hp = fc.a.dmg + 1; R = rows(); assert(/^▸ FLAMET\w* 555  100% · c(rit )?4% KO/.test(R.rows[0]), tag + 'crit KO warning: ' + R.rows[0]); assert(R.ko.length >= 2, tag + 'crit KO tag drawn (' + R.ko.length + ')');
+    // a critical that would KO where the normal hit does not: the crit part reads "crit 4% KO" (a second KO tag next to the crit cell on wide cards)
+    const fc = g2.forecast(a, d, mv, a); d.hp = fc.a.dmg + 1; R = rows(); if (!R.table) assert(/^▸ FLAMET\w* 555  100% · c(rit )?4% KO/.test(R.rows[0]), tag + 'crit KO warning: ' + R.rows[0]); assert(R.ko.length >= 2, tag + 'crit KO tag drawn (' + R.ko.length + ')');
     const HUD = G2('HUD'); const fr = g2.forecastRect(); assert(inside(fr, w, h)); for (const b of HUD.hits) assert(inside(b, w, h) && !overlaps(fr, b), tag + 'forecast clear of ' + b.label); assert(g2.forecastHit(fr.x + 5, fr.y + 5) && g2.moveSwitchHit(fr.x + 5, fr.y + fr.h - 6), tag + 'hit areas intact');
     BT2.mode = 'help'; for (let p = 0; p < G2('HELP_PAGES').length; p++) { BT2.helpPage = p; g2.battleDraw(); const hr = g2.helpRect(); assert(inside(hr, w, h) && hr.lines.every(l => g2.textWidth(l) <= hr.w - 16), tag + 'help page ' + p + ' fits'); }
   }
