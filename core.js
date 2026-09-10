@@ -145,6 +145,7 @@ function uiButton(x, y, w, h, label, opt = {}) {
   const ink = dis ? UI.dim : opt.ink || (opt.hot ? UI.hi : UI.ink); const iw = opt.icon ? 12 : 0;
   const big = opt.big && h >= 15; const lw = textWidth(big ? String(label).toUpperCase() : label, big ? BIG : FONT) + iw; let lx = x + Math.round((w - lw) / 2);
   if (opt.icon) { iconAt(opt.icon, lx, y + Math.round((h - 9) / 2), dis ? UI.dim : ink); lx += iw; }
+  if (opt.on != null) { const ly = y + Math.round((h - 5) / 2); lx -= 5; rect(lx + lw + 4, ly, 5, 5, UI.inset); rect(lx + lw + 5, ly + 1, 3, 3, opt.on ? UI.gold : '#3a4058'); if (opt.on) px(lx + lw + 5, ly + 1, '#fff3b0'); } // toggle lamp
   if (big) bigText(label, lx, y + Math.round((h - 9) / 2), ink, { shadow: shade(face, -.6) }); else text(label, lx, y + Math.round((h - 7) / 2), ink, { shadow: dis ? null : shade(face, -.55) });
 }
 // Menu row highlight: filled band with a gold marker at the left edge.

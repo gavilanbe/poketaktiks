@@ -175,6 +175,7 @@ async function main() {
       // every non-battle screen plus the modal cards, for design review
       await nav('silent&nosave'); await sleep(500); await ev('__pk.startNewGame()'); await waitScene('starter', 5000); await sleep(300); await shot('ui2-starter');
       await nav('ch=1&prep&silent&nosave'); await waitScene('prep', 5000); await sleep(300); await shot('ui2-prep');
+      await ev('__pk.SC.hits.find(h=>h.label==="START").run()'); await waitScene('card', 5000); await sleep(700); await shot('ui2-card');
       await nav('silent&nosave'); await sleep(500); await ev('__pk.startSkirmishSetup()'); await waitScene('skirmish', 5000); await sleep(300); await shot('ui2-skirmish');
       await nav('territory=3&silent&nosave&noguide'); await sleep(500); await shot('ui2-territory-setup');
       await nav('territory=3&auto&silent&nosave'); await waitMode('territoryGuide', 8000); await sleep(300); await shot('ui2-territory-guide'); await key('z', 'KeyZ'); await waitMode('idle', 5000); await sleep(200); await shot('ui2-territory-idle');

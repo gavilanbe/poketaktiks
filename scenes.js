@@ -29,7 +29,7 @@ function drawLogo(cx, y, t) {
     ctx.save(); ctx.beginPath(); ctx.rect(x - 200, yy + 3 * s, 400, 1 * s); ctx.clip(); ctx.translate(x, yy); ctx.scale(s, s); bigC(str, 0, 0, mix(fill, hi, .5), {}); ctx.restore();
   };
   const w1 = textWidth('POKÉ', BIG) * s, w2 = textWidth('TAKTIKS', BIG) * s;
-  ctx.globalAlpha = .38; ellipse(cx, y + 30, Math.round(w2 / 2 + 30), 40, '#050a18'); ctx.globalAlpha = 1;
+  ctx.globalAlpha = .3; ellipse(cx, y + 30, Math.round(w2 / 2 + 24), 36, '#050a18'); ctx.globalAlpha = .2; ellipse(cx, y + 30, Math.round(w2 / 2 + 36), 46, '#050a18'); ctx.globalAlpha = 1;
   // Poké Ball badge beside the first word
   ctx.save(); ctx.translate(cx - w1 / 2 - 22, y + 13 + Math.round(Math.sin(t * 2) * 1.5)); ctx.scale(3, 3); drawBall(0, 0, '#f04848', 5); ctx.restore();
   layer('POKÉ', cx + 10, y, UI.gold, '#fff3b0', '#4a2800', '#2a1600');
@@ -188,7 +188,18 @@ function starterInput(ev) {
 }
 
 // ---------------------------------------------------------------- chapter card
-function cardDraw() { const W = VIEW.w, H = VIEW.h; const ch = SC.data.chapter; rect(0, 0, W, H, '#0e0c10'); const k = Math.min(1, SC.t / .5); const y = H / 2 - 20; const ts = textWidth(ch.title.toUpperCase(), BIG) * 2 > W - 8 ? 1 : 2; ctx.globalAlpha = k; hline(0, y - 6, W, UI.border2); hline(0, y + 30, W, UI.border2); bigC(ch.num ? 'CHAPTER ' + ch.num : 'SKIRMISH', W / 2, y, UI.muted, { outline: UI.shadow }); ctx.save(); ctx.translate(W / 2, y + 12 + (ts === 1 ? 4 : 0)); ctx.scale(ts, ts); bigC(ch.title, 0, 0, UI.gold, { outline: '#3a2000' }); ctx.restore(); ctx.globalAlpha = 1; wrap(objectiveTextFor(ch.map.objective), W - 12).forEach((l, i) => textC(l, W / 2, y + 40 + i * 9, UI.ink)); if (SC.t > 2.2 || (SC.t > .6 && SC.skip)) { SC.skip = false; SC.data.next(); } }
+// Chapter title card: the map itself, dimmed, behind a letterboxed band; the title grows in and the rules follow.
+function cardDraw() {
+  const W = VIEW.w, H = VIEW.h; const ch = SC.data.chapter; rect(0, 0, W, H, '#0e0c10');
+  if (!SC.data.bd) SC.data.bd = makeBackdrop(ch.map); const bd = SC.data.bd; drawBackdrop(bd, (W - bd.canvas.width) / 2 - SC.t * 4, (H - bd.canvas.height) / 2, .78);
+  const k = Math.min(1, SC.t / .5), y = Math.round(H / 2 - 22); const ts = textWidth(ch.title.toUpperCase(), BIG) * 2 > W - 8 ? 1 : 2;
+  const bandH = 64; rect(0, 0, W, Math.max(0, y - 14 - Math.round(H * .18)), '#070a14'); rect(0, y - 14 + bandH + Math.round(H * .18), W, H, '#070a14');
+  ctx.globalAlpha = .82 * k; rect(0, y - 14, W, bandH, '#070a14'); ctx.globalAlpha = k; hline(0, y - 14, W, UI.gold); hline(0, y - 13, W, UI.goldDark); hline(0, y - 14 + bandH, W, UI.gold); hline(0, y - 15 + bandH, W, UI.goldDark);
+  bigC(ch.num ? 'CHAPTER ' + ch.num : 'SKIRMISH', W / 2, y - 6, UI.muted, { outline: UI.shadow });
+  const grow = easeOut(k); ctx.save(); ctx.translate(W / 2, y + 8 + (ts === 1 ? 4 : 0)); ctx.scale(ts * (.6 + .4 * grow), ts * (.6 + .4 * grow)); bigC(ch.title, 0, 0, UI.gold, { outline: '#3a2000' }); ctx.restore();
+  if (SC.t > .35) { ctx.globalAlpha = Math.min(1, (SC.t - .35) / .3); wrap(objectiveTextFor(ch.map.objective), W - 12).forEach((l, i) => textC(l, W / 2, y + 34 + i * 9, UI.ink)); }
+  ctx.globalAlpha = 1; if (SC.t > 2.4 || (SC.t > .6 && SC.skip)) { SC.skip = false; SC.data.next(); }
+}
 function objectiveTextFor(o) { switch (o.type) { case 'rout': return 'Objective: defeat all enemies'; case 'boss': return 'Objective: defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Objective: survive ' + o.turns + ' turns'; case 'seize': return 'Objective: seize the ' + (o.what || 'gym'); case 'versus': return 'Objective: defeat the other trainer'; } return ''; }
 function cardInput(ev) { if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) SC.skip = true; }
 
@@ -199,7 +210,8 @@ function storyDraw() {
   battleDraw(); const d = SC.dialog; if (!d) return; const W = VIEW.w, H = VIEW.h; const line = d.lines[d.i];
   ctx.globalAlpha = .35; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
   const bh = 58, by = H - bh - 6, bx = 6, bw = W - 12; panel(bx, by, bw, bh, { fill: '#182640' });
-  if (line.mon) { ctx.save(); ctx.beginPath(); ctx.rect(bx + 6, by + 8, 44, 40); ctx.clip(); portraitBg(bx + 6, by + 8, 44, 40, 0); ctx.restore(); drawMon(line.mon, bx + 28, by + 46 + Math.round(Math.sin(d.t * 6) * (d.chars < line.text.length ? 1 : 0)), { flip: false }); }
+  if (line.mon) { requestBigSprite(line.mon); ctx.save(); ctx.beginPath(); ctx.rect(bx + 6, by + 8, 44, 40); ctx.clip(); portraitBg(bx + 6, by + 8, 44, 40, 0);
+    const talk = d.chars < line.text.length ? Math.round(Math.sin(d.t * 8)) : 0; if (bigReady(line.mon)) drawBig(line.mon, bx + 28, by + 8 + 40 + 14 + talk, { flip: true }); else drawMon(line.mon, bx + 28, by + 46 + talk, { flip: false }); ctx.restore(); outline(bx + 6, by + 8, 44, 40, UI.inset); }
   const tx = bx + (line.mon ? 58 : 10); { const tw = textWidth(line.who) + 12; rrect(tx - 4, by - 9, tw, 12, UI.inset, 1); rect(tx - 3, by - 8, tw - 2, 10, UI.gold); hline(tx - 2, by - 8, tw - 4, '#fff0b0'); text(line.who, tx + 2, by - 7, UI.goldDark); }
   const lines = wrap(line.text, bw - (line.mon ? 70 : 22)); let shown = Math.floor(d.chars); lines.forEach((l, i) => { if (shown <= 0) return; const s = l.slice(0, shown); shown -= l.length + 1; text(s, tx, by + 12 + i * 11, UI.ink); });
   if (d.chars >= line.text.length && Math.floor(d.t * 3) % 2) { const ax = bx + bw - 12, ay = by + bh - 9; rect(ax - 3, ay, 7, 1, UI.gold); rect(ax - 2, ay + 1, 5, 1, UI.gold); rect(ax - 1, ay + 2, 3, 1, UI.gold); px(ax, ay + 3, UI.gold); }

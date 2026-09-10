@@ -609,8 +609,8 @@ function drawUnit(u) {
   // top-left: crown (leader) or skull (boss), with a CHG tag under it while recharging; top-right: status.
   const show = BT.hpShow.get(u.id); let hp = u.hp; if (show) hp = Math.round(lerp(show.from, show.to, Math.min(1, show.t)));
   if (f.alpha > 0 && hp > 0) {
-    ctx.globalAlpha = f.alpha; const bw = 20, bx = cx - bw / 2 + 3, byy = gy + 4; const pc = grey ? '#3a3e48' : teamColorD(u.team);
-    rrect(bx - 9, byy - 1, bw + 11, 7, UI.shadow, 1); rrect(bx - 8, byy, bw + 9, 5, pc, 1); rect(bx, byy + 1, bw, 3, '#1c1c24');
+    ctx.globalAlpha = f.alpha; const bw = 18, bx = cx - bw / 2 + 3, byy = gy + 4; const pc = grey ? '#2e323c' : teamColorD(u.team);
+    ctx.globalAlpha = .85 * f.alpha; rrect(bx - 8, byy - 1, bw + 10, 7, UI.inset, 1); ctx.globalAlpha = f.alpha; rect(bx - 7, byy, 6, 5, pc); rect(bx, byy + 1, bw, 3, '#1c1c24');
     teamGlyph(bx - 7, byy, u.team, grey ? '#9a9eaa' : teamColorL(u.team));
     const ratio = clamp(hp / u.maxHp, 0, 1); const w = Math.round(bw * ratio);
     if (w) { const hc = hpColor(ratio); rect(bx, byy + 1, w, 3, hc); hline(bx, byy + 1, w, shade(hc, .45)); ctx.globalAlpha = .35 * f.alpha; for (let i = 4; i < w; i += 4) vline(bx + i, byy + 1, 3, '#000000'); ctx.globalAlpha = f.alpha; }
@@ -630,7 +630,7 @@ function hudHit(x, y) { for (const h of HUD.hits) if (x >= h.x && y >= h.y && x 
 // Is the point over a HUD panel or button drawn this frame (so the board under it is not being pointed at)?
 function hudCovers(x, y) { for (const r of HUD.hits.concat(HUD.panels)) if (x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h) return true; return false; }
 function hudPanel(x, y, w, h, opt) { const p = panel(x, y, w, h, opt); HUD.panels.push({ x, y, w, h }); return p; }
-function button(x, y, w, h, label, run, opt = {}) { const hot = INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h && !VIEW.touch; uiButton(x, y, w, h, label, { hot, col: opt.col, variant: opt.variant, ink: opt.ink, icon: opt.icon, disabled: opt.disabled }); HUD.hits.push({ x, y, w, h, run, label }); }
+function button(x, y, w, h, label, run, opt = {}) { const hot = INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h && !VIEW.touch; uiButton(x, y, w, h, label, { hot, col: opt.col, variant: opt.variant, ink: opt.ink, icon: opt.icon, disabled: opt.disabled, on: opt.on }); HUD.hits.push({ x, y, w, h, run, label }); }
 // Screen rectangle of the board (the map itself, not the void around it).
 function boardRect() { const z = BT.zoom; return { x: toScreenX(tileX(0) - FX.shakeX), y: toScreenY(tileY(0) - FX.shakeY), w: Math.round(B.map.w * TILE * z), h: Math.round(B.map.h * TILE * z) }; }
 // Where the HUD goes. Portrait phones stack everything under the board: context cards, then a two-row button bar.
@@ -693,26 +693,26 @@ function drawTurnCard(r) {
   const counts = [[0, alive(0).length], [1, alive(1).length]]; if (alive(2).length) counts.push([2, alive(2).length]); if (alive(3).length) counts.push([3, alive(3).length]);
   const cy = tall ? r.y + 24 : r.y + 14; let cx = r.x + r.w - 6; counts.reverse().forEach(([team, n]) => { cx -= textWidth(String(n)); text(String(n), cx, cy, UI.ink); cx -= 8; circle(cx + 2, cy + 3, 3, UI.inset); circle(cx + 2, cy + 3, 2, teamColor(team)); cx -= 8; });
   let ob = objectiveText(); const avail = tall ? r.w - 12 : cx - r.x - 10; while (textWidth(ob) > avail && ob.length > 4) ob = ob.slice(0, -1); text(ob, r.x + 6, r.y + 14, UI.muted);
-  if (tall) { hline(r.x + 5, r.y + 22, r.w - 10, UI.inset); hline(r.x + 5, r.y + 23, r.w - 10, shade(UI.panel, .15)); text('ON THE FIELD', r.x + 6, r.y + 24, UI.dim); }
+  if (tall) { hline(r.x + 5, r.y + 22, r.w - 10, UI.inset); hline(r.x + 5, r.y + 23, r.w - 10, shade(UI.panel, .15)); text('UNITS', r.x + 6, r.y + 24, UI.dim); }
 }
 function drawButtons(L) {
   const W = VIEW.w, bh = L.bh, m = BT.mode;
   const idle = m === 'idle', acting = m === 'move' || m === 'target' || m === 'catchTarget' || m === 'skillTarget' || m === 'menu', enemyAnim = m === 'anim' && !isHuman(B.phase);
   if (enemyAnim) textC(phaseLabel(B.phase) + (BT.fast ? ' · FAST' : ''), W / 2, L.top.y + L.top.h + 4, UI.red, { outline: UI.shadow });
   const items = [];
-  if (idle) items.push({ label: 'END TURN', variant: 'danger', run: () => { Audio.sfx('ok'); endTurn(); } }, { label: BT.showDanger ? 'DANGER ●' : 'DANGER ○', run: () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); } });
+  if (idle) items.push({ label: 'END TURN', variant: 'danger', run: () => { Audio.sfx('ok'); endTurn(); } }, { label: 'DANGER', on: BT.showDanger, run: () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); } });
   if (acting) items.push({ label: m === 'move' && BT.dart ? 'STAY' : 'BACK', variant: 'ghost', run: () => cancel() });
-  if (enemyAnim) items.push({ label: BT.fast ? 'FAST ●' : 'FAST ○', run: () => { BT.fast = !BT.fast; } });
+  if (enemyAnim) items.push({ label: 'FAST', on: BT.fast, run: () => { BT.fast = !BT.fast; } });
   if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
   if (idle && B.territory) items.push({ label: 'RESERVE', run: () => openTerritoryReserves() });
-  if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; Audio.sfx('menu'); } }, { label: Audio.muted ? '♪ ○' : '♪ ●', half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
+  if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; Audio.sfx('menu'); } }, { label: '♪', on: !Audio.muted, half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
   if (B.territory && L.stack && idle) { const mute = items.findIndex(it => it.label.startsWith('♪')); if (mute >= 0) items.splice(mute, 1); }
   if (!items.length) return;
   if (L.stack) { // two rows across the bottom: row 1 = the two main actions, row 2 = the rest
-    const b = L.bar; const row1 = items.slice(0, 2), row2 = items.slice(2); const lay = (row, y) => { if (!row.length) return; const gap = 4, w = Math.floor((b.w - gap * (row.length - 1)) / row.length); row.forEach((it, i) => button(b.x + i * (w + gap), y, w, bh, it.label, it.run, { col: it.col, variant: it.variant })); };
+    const b = L.bar; const row1 = items.slice(0, 2), row2 = items.slice(2); const lay = (row, y) => { if (!row.length) return; const gap = 4, w = Math.floor((b.w - gap * (row.length - 1)) / row.length); row.forEach((it, i) => button(b.x + i * (w + gap), y, w, bh, it.label, it.run, { col: it.col, variant: it.variant, on: it.on })); };
     lay(row1, b.y); lay(row2, b.y + bh + 4);
   } else {
-    const bx = L.buttons.x, bw = L.buttons.w; let y = 4; for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.half && items[i + 1] && items[i + 1].half) { button(bx, y, bw / 2 - 1, bh, it.label, it.run, { col: it.col, variant: it.variant }); button(bx + bw / 2 + 1, y, bw / 2 - 1, bh, items[i + 1].label, items[i + 1].run, { col: items[i + 1].col, variant: items[i + 1].variant }); i++; } else button(bx, y, bw, bh, it.label, it.run, { col: it.col, variant: it.variant }); y += bh + 2; }
+    const bx = L.buttons.x, bw = L.buttons.w; let y = 4; for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.half && items[i + 1] && items[i + 1].half) { button(bx, y, bw / 2 - 1, bh, it.label, it.run, { col: it.col, variant: it.variant, on: it.on }); button(bx + bw / 2 + 1, y, bw / 2 - 1, bh, items[i + 1].label, items[i + 1].run, { col: items[i + 1].col, variant: items[i + 1].variant, on: items[i + 1].on }); i++; } else button(bx, y, bw, bh, it.label, it.run, { col: it.col, variant: it.variant, on: it.on }); y += bh + 2; }
     if (BT.showDanger && (idle || m === 'move')) drawDangerLegend(bx, y + 2);
   }
   if (L.stack && BT.showDanger && (idle || m === 'move')) drawDangerLegend(4, L.top.y + L.top.h + 2);
@@ -746,7 +746,7 @@ function terrainCardBody(t, ref, x, y, w, tall) {
   const healText = property && property.owner !== (ref.team == null ? HT() : ref.team) ? ['NO HEAL', UI.muted] : ['HEALS 30%', UI.green];
   const extra = t.heal ? healText : t.burn ? ['BURNS', UI.red] : [moveCost(t, ref) >= 99 ? 'NO ENTRY' : 'MOVE ' + moveCost(t, ref), UI.muted];
   if (tall) { let name = t.name; while (textWidth(name) > w - 22 && name.length > 3) name = name.slice(0, -1); text(name, x + 20, y + 4, UI.gold); text('DEF ' + terrainDef(t, ref) + '%', x + 16, y + 13, UI.ink); text('AVO ' + terrainEva(t, ref), x + 4, y + 22, UI.ink); text(extra[0], x + 4, y + 31, extra[1]); }
-  else { text(t.name, x + 27, y + 4, UI.gold); text('DEF' + terrainDef(t, ref) + '% AVO' + terrainEva(t, ref), x + 27, y + 13, UI.ink); text(extra[0], x + 27, y + 22, extra[1]); }
+  else { text(t.name, x + 27, y + 4, UI.gold); text('DEF ' + terrainDef(t, ref) + '% AVO ' + terrainEva(t, ref), x + 27, y + 13, UI.ink); text(extra[0], x + 27, y + 22, extra[1]); }
 }
 // Menu geometry: a header band (the unit's name, BAG, BALLS or the menu title), one row per item and, when any item
 // carries a description, a footer strip that explains the highlighted one.
@@ -759,11 +759,14 @@ function menuRect() {
 }
 function menuHit(px2, py) { const r = menuRect(); if (px2 < r.x || px2 >= r.x + r.w || py < r.y || py >= r.y + r.h) return -1; return clamp(Math.floor((py - r.y - r.top) / rowH()), 0, BT.menu.items.length - 1); }
 function drawMenu() {
-  const m = BT.menu, r = menuRect(), rh = rowH(), ty = (rh - 7) >> 1; if (BT.mode === 'endmenu') dimScreen(.4);
+  const m = BT.menu, rh = rowH(), ty = (rh - 7) >> 1; if (BT.mode === 'endmenu') dimScreen(.4);
+  // a freshly opened menu rises and fades in over 120 ms
+  const key = BT.mode + ':' + menuTitle() + ':' + m.items.length; if (BT.menuKey !== key) { BT.menuKey = key; BT.menuT0 = BT.time; } const ko = REDUCED ? 1 : Math.min(1, (BT.time - BT.menuT0) / .12); const r = menuRect(); r.y += Math.round((1 - easeOut(ko)) * 6); ctx.globalAlpha = ko;
   hudPanel(r.x, r.y, r.w, r.h, { header: menuTitle(), headerRight: m.items.length > 4 ? (m.i + 1) + '/' + m.items.length : null });
   m.items.forEach((it, i) => { const y = r.y + r.top + i * rh; const hot = i === m.i; const ink = it.off ? UI.dim : hot ? UI.hi : UI.ink; if (hot) selRow(r.x + 4, y, r.w - 8, rh - 1);
     const lx = r.x + (it.icon ? 22 : 11); if (it.icon) iconAt(it.icon, r.x + 9, y + ty - 1, it.off ? UI.dim : hot ? '#ffffff' : '#c8cddc'); text(it.label, lx, y + ty, ink, hot ? { shadow: shade(UI.sel, -.6) } : {}); });
   if (r.foot) { const fy = r.y + r.h - 4 - r.foot; rect(r.x + 4, fy, r.w - 8, r.foot, UI.panelDark); hline(r.x + 4, fy, r.w - 8, UI.inset); const it = m.items[m.i]; const lines = it && it.sub ? wrap(it.sub, r.w - 14).slice(0, 2) : []; lines.forEach((l, i) => text(l, r.x + 7, fy + 4 + i * 9, it.off ? '#d8a0a0' : UI.muted)); }
+  ctx.globalAlpha = 1;
 }
 // The forecast sits on the side away from the cursor on wide screens and spans the bottom on portrait phones.
 function forecastRect() {

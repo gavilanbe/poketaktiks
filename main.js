@@ -127,6 +127,8 @@ function frame(t) {
     case 'territory': territorySetupDraw(); break; case 'territoryResults': territoryResultsDraw(); break; case 'title': titleDraw(); break; case 'starter': starterDraw(); break; case 'card': cardDraw(); break; case 'story': storyDraw(); break;
     case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break;
   }
+  // every scene change fades up from black (the story overlay excepted: it sits on the board it follows)
+  if (SC.t < .3 && SC.name !== 'story' && SC.name !== 'loading' && !REDUCED) { ctx.globalAlpha = 1 - easeOut(SC.t / .3); rect(0, 0, VIEW.w, VIEW.h, '#070a14'); ctx.globalAlpha = 1; }
 }
 // Deep links for testing: ?ch=3 jumps into chapter 3 with a loaner party; ?skirmish=42 a skirmish; ?silent mutes.
 function boot() {

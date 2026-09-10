@@ -588,19 +588,18 @@ function drawSkull(x, y) { stampAt(x, y, ST.skull, { O: '#3a1020', W: '#f0e8f0' 
 // ring, enemy trainers on a ring with four spikes, wild Pokémon on a dashed ring, allies on a ring with a bar.
 // `lit` brightens the rim (a unit that can still act); `dim` greys it (a unit that has acted).
 function drawStand(cx, by, team, a = 1, air = 0, o = {}) {
-  const sh = Math.max(.4, 1 - air / 18); const col = o.dim ? '#7a7f8c' : teamColor(team), colD = o.dim ? '#3a3e48' : teamColorD(team), colL = o.dim ? '#b8bcc8' : teamColorL(team);
-  ctx.globalAlpha = (o.dim ? .1 : .22) * a; ellipse(cx, by, 11, 3, col);
-  ctx.globalAlpha = .3 * a * sh; ellipse(cx, by, Math.round(8 * sh), Math.max(1, Math.round(2.5 * sh)), '#000000');
-  ctx.globalAlpha = a; ellipseRing(cx, by + 1, 13, 5, 1, '#0b1020'); ellipseRing(cx, by, 13, 5, 1, colD); ellipseRing(cx, by, 12, 4, 1, col);
+  // a soft ground shadow that shrinks when airborne, then a thin team ring whose shape tells the side apart
+  const sh = Math.max(.4, 1 - air / 18); const col = o.dim ? '#6a6f7c' : teamColor(team), colD = o.dim ? '#2e323c' : teamColorD(team), colL = o.dim ? '#b8bcc8' : teamColorL(team);
+  ctx.globalAlpha = .34 * a * sh; ellipse(cx, by, Math.round(9 * sh), Math.max(1, Math.round(3 * sh)), '#000000');
+  ctx.globalAlpha = a; ellipseRing(cx, by + 1, 12, 4, 1, '#0b1020'); ellipseRing(cx, by, 12, 4, 1, col);
   const shape = teamShape(team);
-  if (shape === 'spiked') { for (const [dx, dy, w, h] of [[-15, -1, 3, 3], [12, -1, 3, 3], [-1, -7, 3, 3], [-1, 4, 3, 3]]) { rect(cx + dx, by + dy, w, h, colD); px(cx + dx + 1, by + dy + 1, col); } }
-  else if (shape === 'dashed') { ctx.globalAlpha = .85 * a; for (const [dx, dy] of [[-9, -3], [-4, -4], [1, -4], [6, -3], [-9, 2], [-4, 3], [1, 3], [6, 2]]) rect(cx + dx, by + dy, 2, 1, '#0b1020'); ctx.globalAlpha = a; }
-  else if (shape === 'barred') { rect(cx - 6, by + 4, 12, 1, colL); rect(cx - 6, by + 5, 12, 1, colD); }
-  ctx.globalAlpha = .9 * a; hline(cx - 5, by - 4, 8, colL); px(cx - 8, by - 3, colL); px(cx - 10, by - 2, colL); px(cx + 4, by - 4, '#ffffff');
+  if (shape === 'spiked') { for (const [dx, dy] of [[-14, -1], [12, -1], [-1, -6], [-1, 4]]) { rect(cx + dx, by + dy, 3, 3, colD); px(cx + dx + 1, by + dy + 1, col); } }
+  else if (shape === 'dashed') { ctx.globalAlpha = .9 * a; for (const [dx, dy] of [[-9, -3], [-4, -4], [1, -4], [6, -3], [-9, 2], [-4, 3], [1, 3], [6, 2]]) rect(cx + dx, by + dy, 2, 1, '#0b1020'); ctx.globalAlpha = a; }
+  else if (shape === 'barred') { rect(cx - 5, by + 4, 10, 1, colL); rect(cx - 5, by + 5, 10, 1, colD); }
+  ctx.globalAlpha = .8 * a; hline(cx - 4, by - 4, 6, colL); px(cx + 3, by - 4, '#ffffff');
   if (o.lit) { ctx.globalAlpha = o.lit * a; ellipseRing(cx, by, 12, 4, 1, '#ffffff'); }
   ctx.globalAlpha = 1;
 }
-// Side of a team relative to whoever holds the controls: 'ring' (own), 'spiked' (hostile trainer), 'dashed' (wild), 'barred' (ally).
 function teamShape(team) { const me = typeof HT === 'function' && B ? HT() : 0; if (team === me) return 'ring'; if (team === 2) return 'dashed'; if (!hostile(team, me)) return 'barred'; return 'spiked'; }
 // 5×5 team glyph used on HP plates and cards: ● own, ▲ hostile trainer, ◇ wild, + ally.
 function teamGlyph(x, y, team, col) {
