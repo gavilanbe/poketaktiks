@@ -158,31 +158,32 @@ function closeTerritoryGuide() { BT.territoryGuide = false; setPref('territoryGu
 function territoryGuideRect() {
   const w = Math.min(VIEW.w - 16, 280), lines = [];
   ['1. Move onto a gold center. Choose Capture twice at full HP.', '2. Use RESERVE at an empty blue center. Arrivals act next turn.', '3. Take the enemy HQ, or hold two centers for three of your turn starts.'].forEach((s, i) => { if (i) lines.push(''); lines.push(...wrap(s, w - 16)); });
-  const h = 48 + lines.length * 10; return { x: (VIEW.w - w) / 2, y: (VIEW.h - h) / 2, w, h, lines };
+  const h = 60 + lines.length * 10; return { x: (VIEW.w - w) / 2, y: (VIEW.h - h) / 2, w, h, lines };
 }
 function drawTerritoryGuide() {
   const r = territoryGuideRect(); ctx.globalAlpha = .65; rect(0, 0, VIEW.w, VIEW.h, '#050915'); ctx.globalAlpha = 1;
-  hudPanel(r.x, r.y, r.w, r.h, { title: 'WIN WITH YOUR TEAM' });
-  r.lines.forEach((s, i) => text(s, r.x + 8, r.y + 10 + i * 10, UI.ink));
-  button(r.x + 8, r.y + r.h - 28, r.w - 16, 20, 'GOT IT · H FOR RULES', closeTerritoryGuide);
+  const p = hudPanel(r.x, r.y, r.w, r.h, { header: 'WIN WITH YOUR TEAM' });
+  r.lines.forEach((s, i) => text(s, r.x + 8, p.cy + i * 10, UI.ink));
+  button(r.x + 8, r.y + r.h - 28, r.w - 16, 20, 'GOT IT · H FOR RULES', closeTerritoryGuide, { variant: 'primary' });
 }
 function territorySetupDraw() {
   const W = VIEW.w, H = VIEW.h, S = SC.data, portrait = H > W; rect(0, 0, W, H, '#0d1526'); SC.hits = [];
-  bigC('TERRITORY', W / 2, 8, UI.gold); textC('THREE BRIDGES · Lv12', W / 2, 23, UI.ink);
+  screenTitle('TERRITORY', 'THREE BRIDGES  ·  Lv12', 6);
   const pw = portrait ? Math.min(W - 24, 220) : Math.min(W * .42, Math.max(50, (H - 100) * 15 / 11));
   const ph = Math.round(pw * 11 / 15), x = portrait ? (W - pw) / 2 : 10, y = 38;
-  ctx.drawImage(S.bd.canvas, x, y, pw, ph); outline(x - 1, y - 1, pw + 2, ph + 2, UI.border);
+  panel(x - 5, y - 5, pw + 10, ph + 10, { flat: true, fill: UI.panelDark }); ctx.drawImage(S.bd.canvas, x, y, pw, ph);
   const top = portrait ? y + ph + 23 : 38, cw = Math.min(150, (W - 16) / 2);
+  if (!portrait) { const rx = Math.round(W * .54) - 8, rw = Math.min(W - rx - 10, 170); panel(rx, top - 8, rw, 6 * 14 + 30, { header: 'YOUR TEAM', headerRight: '3 start · 6 total' }); }
   if (portrait) textC('3 start · 6 teammates · 5 on map', W / 2, y + ph + 8, UI.green);
   TERRITORY_ROSTER.forEach(([n, cost], i) => {
     const xx = portrait ? W / 2 - cw + (i % 2) * cw : W * .54, yy = top + (portrait ? Math.floor(i / 2) * 16 : i * 14);
-    ctx.drawImage(monIcon(n, false), xx, yy - 4, 24, 18); text(DEX[n].name, xx + 25, yy, UI.ink); text(i < 3 ? 'START' : cost + ' CP', xx + (portrait ? 25 : 100), yy + (portrait ? 8 : 0), UI.muted);
+    const yy2 = portrait ? yy : yy + 17; ctx.drawImage(monIcon(n, false), xx, yy2 - 4, 24, 18); text(DEX[n].name, xx + 25, yy2, UI.ink); if (portrait) text(i < 3 ? 'START' : cost + ' CP', xx + 25, yy2 + 8, UI.muted); else textR(i < 3 ? 'STARTS' : cost + ' CP', Math.round(W * .54) + Math.min(W - Math.round(W * .54) - 2, 162) - 8, yy2, i < 3 ? UI.green : UI.gold);
   });
   const info = ['Capture the enemy HQ, or hold', '2 of 3 centers for 3 own turns.', 'Centers earn 2 CP each turn.'];
-  const iy = portrait ? top + 54 : H - 61; info.forEach((s, i) => textC(s, W / 2, iy + i * 10, UI.muted));
+  const iy = portrait ? top + 54 : H - 76; if (portrait || iy >= top + 112) info.forEach((s, i) => textC(s, W / 2, iy + i * 10, UI.muted)); // short landscapes keep the rules in HELP
   const by = portrait ? Math.max(iy + 34, H - 30) : H - 29;
-  bigButton(W / 2 - 82, by, 108, 22, 'START', () => launchTerritory(S.seed), { hot: SC.i === 0 });
-  bigButton(W / 2 + 32, by, 50, 22, 'BACK', () => goScene('title'), { hot: SC.i === 1 });
+  footerBand(H - by + 6); bigButton(W / 2 - 82, by, 108, 22, 'START', () => launchTerritory(S.seed), { hot: SC.i === 0, variant: 'primary' });
+  bigButton(W / 2 + 32, by, 50, 22, 'BACK', () => goScene('title'), { hot: SC.i === 1, variant: 'ghost' });
 }
 
 function drawTerritoryProperties() {
@@ -227,8 +228,8 @@ function territoryResultsDraw() {
   textC('Turn ' + S.turn + ' · Centers ' + S.centers.join('-'), W / 2, y + 64, UI.muted);
   textC('Deployed ' + S.deployments.join(' / '), W / 2, y + 78, UI.muted);
   textC('Fixed level · campaign kept separate', W / 2, y + 100, UI.muted);
-  bigButton(W / 2 - 82, y + 136, 108, 22, 'REMATCH', () => launchTerritory(S.seed + 1), { hot: SC.i === 0 });
-  bigButton(W / 2 + 32, y + 136, 50, 22, 'TITLE', () => goScene('title'), { hot: SC.i === 1 });
+  bigButton(W / 2 - 82, y + 136, 108, 22, 'REMATCH', () => launchTerritory(S.seed + 1), { hot: SC.i === 0, variant: 'danger' });
+  bigButton(W / 2 + 32, y + 136, 50, 22, 'TITLE', () => goScene('title'), { hot: SC.i === 1, variant: 'ghost' });
 }
 // Deterministic model smoke. Real beginPhase/nextPhase is separately exercised by the UI-flow tests.
 function simTerritory(seed = 7, maxTurns = TERRITORY.turns + 1) {

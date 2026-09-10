@@ -118,28 +118,78 @@ function alpha(a, fn) { const o = ctx.globalAlpha; ctx.globalAlpha = a; fn(); ct
 function circle(cx, cy, r, c) { ctx.fillStyle = c; for (let y = -r; y <= r; y++) { const w = Math.floor(Math.sqrt(r * r - y * y) + .5); ctx.fillRect(cx - w, cy + y, 2 * w + 1, 1); } }
 function ellipse(cx, cy, rx, ry, c) { ctx.fillStyle = c; for (let y = -ry; y <= ry; y++) { const w = Math.floor(rx * Math.sqrt(1 - (y * y) / (ry * ry)) + .5); ctx.fillRect(cx - w, cy + y, 2 * w + 1, 1); } }
 
-// UI palette (FE/Pokémon-menu flavored)
+// ---------------------------------------------------------------- UI design system
+// One vocabulary for every screen: a bevelled cream frame on slate panels, gold for headings and the
+// selection, cyan-blue for informational values, green/red for outcomes. Everything is 1-px pixel art.
 const UI = {
-  panel: '#1c2a4a', panel2: '#25355c', panelDark: '#101a30', border: '#e8dfc2', border2: '#8c7e5a', ink: '#f6f2e6', muted: '#a6b0c8',
-  gold: '#ffd24a', red: '#ff5a5a', green: '#5ee06a', blue: '#5aa8ff', shadow: '#0b1020', hi: '#ffffff', menuSel: '#3a5088',
-  bg: '#0e0c10', hpGreen: '#48d05a', hpYellow: '#f4c430', hpRed: '#f04848', hpBack: '#2b2b33',
+  panel: '#1b2236', panel2: '#26304c', panelDark: '#111726', panelLight: '#2d3a5e',
+  border: '#e6dcc0', borderHi: '#fff8e2', borderLo: '#a4956e', border2: '#8c7e5a', inset: '#0a0e1a',
+  ink: '#f4f1e8', muted: '#9ea7bc', dim: '#6b7490', info: '#98d8f8',
+  gold: '#f7c94b', goldDark: '#3a2400', red: '#ff6262', green: '#5fe07a', blue: '#66a8ff', shadow: '#080b14', hi: '#ffffff',
+  menuSel: '#2f4a88', sel: '#2f4a88',
+  bg: '#0e0c10', hpGreen: '#48d05a', hpYellow: '#f4c430', hpRed: '#f04848', hpBack: '#22252f',
+  btn: { neutral: '#2b3656', primary: '#2c7a44', danger: '#8a2f2f', ghost: '#4a4034', gold: '#b8862a', dark: '#1a2238' },
 };
-// 9-slice-ish panel: dark fill, cream border, dark outer shadow line, inner highlight.
+// Panel: 1-px dark outline, 2-px cream frame with a light top-left / dark bottom-right bevel, 1-px inset, slate
+// fill with a soft top highlight. opt: fill, border (accent frame colour), flat (no fill bevel), title (a tab
+// riding the top edge, 9 px above y), header (a band inside the panel; content starts at the returned cy).
 function panel(x, y, w, h, opt = {}) {
   x |= 0; y |= 0; w |= 0; h |= 0;
-  const fill = opt.fill || UI.panel, border = opt.border || UI.border;
-  rrect(x + 1, y + 1, w, h, UI.shadow, 2);                 // drop shadow
-  rrect(x, y, w, h, border, 2);
-  rrect(x + 1, y + 1, w - 2, h - 2, opt.border2 || UI.border2, 1);
-  rrect(x + 2, y + 2, w - 4, h - 4, fill, 1);
-  if (!opt.flat) { hline(x + 3, y + 2, w - 6, shade(fill, .18)); vline(x + 2, y + 3, h - 6, shade(fill, .1)); hline(x + 3, y + h - 3, w - 6, shade(fill, -.3)); vline(x + w - 3, y + 3, h - 6, shade(fill, -.2)); }
-  // corner rivets on the cream frame
-  for (const [cx, cy] of [[x + 1, y + 1], [x + w - 2, y + 1], [x + 1, y + h - 2], [x + w - 2, y + h - 2]]) px(cx, cy, opt.border2 || UI.border2);
-  if (opt.title) { const tw = textWidth(opt.title) + 8; rrect(x + 6, y - 4, tw, 9, border, 1); rrect(x + 7, y - 3, tw - 2, 7, UI.panelDark, 0); text(opt.title, x + 10, y - 3, UI.gold); }
+  const fill = opt.fill || UI.panel, border = opt.border || UI.border, accent = !!opt.border && opt.border !== UI.border;
+  const hi = accent ? shade(border, .35) : UI.borderHi, lo = accent ? shade(border, -.35) : UI.borderLo;
+  rrect(x + 1, y + 2, w, h, UI.shadow, 2);                 // drop shadow
+  rrect(x, y, w, h, UI.inset, 2);                          // dark outline
+  rrect(x + 1, y + 1, w - 2, h - 2, border, 1);            // cream frame
+  hline(x + 2, y + 1, w - 4, hi); vline(x + 1, y + 2, h - 4, hi); hline(x + 2, y + h - 2, w - 4, lo); vline(x + w - 2, y + 2, h - 4, lo);
+  rect(x + 3, y + 3, w - 6, h - 6, UI.inset);              // inset line
+  rect(x + 4, y + 4, w - 8, h - 8, fill);
+  if (!opt.flat) { hline(x + 4, y + 4, w - 8, shade(fill, .16)); vline(x + 4, y + 5, h - 10, shade(fill, .07)); hline(x + 4, y + h - 5, w - 8, shade(fill, -.28)); }
+  let cy = y + 6;
+  if (opt.header) { const bh = 12; rect(x + 4, y + 4, w - 8, bh, opt.headerFill || UI.panelDark); hline(x + 4, y + 4 + bh, w - 8, UI.border2); hline(x + 4, y + 5 + bh, w - 8, shade(fill, -.3)); text(opt.header, x + 8, y + 7, opt.headerCol || UI.gold); if (opt.headerRight) textR(opt.headerRight, x + w - 8, y + 7, opt.headerRightCol || UI.muted); cy = y + 4 + bh + 5; }
+  if (opt.title) { const tw = textWidth(opt.title) + 10, tx = x + 5; rrect(tx, y - 9, tw, 12, UI.inset, 1); rect(tx + 1, y - 8, tw - 2, 10, border); hline(tx + 2, y - 8, tw - 4, hi); rect(tx + 2, y - 7, tw - 4, 8, UI.panelDark); hline(tx + 2, y - 7, tw - 4, shade(UI.panelDark, .3)); text(opt.title, tx + 5, y - 7, opt.titleCol || UI.gold); }
+  return { x, y, w, h, cx: x + 6, cy, cw: w - 12 };
 }
-function bar(x, y, w, h, ratio, col, back = UI.hpBack) { rect(x, y, w, h, back); const f = Math.round(clamp(ratio, 0, 1) * (w - 2)); if (f > 0) { rect(x + 1, y + 1, f, h - 2, col); hline(x + 1, y + 1, f, shade(col, .35)); } outline(x, y, w, h, UI.shadow); }
+// Filled progress bar with an inset frame; opt.notch draws quarter marks on wide bars.
+function bar(x, y, w, h, ratio, col, back = UI.hpBack, opt = {}) {
+  x |= 0; y |= 0; w |= 0; h |= 0; rect(x, y, w, h, back); const f = Math.round(clamp(ratio, 0, 1) * (w - 2));
+  if (f > 0) { rect(x + 1, y + 1, f, h - 2, col); hline(x + 1, y + 1, f, shade(col, .4)); if (h > 4) hline(x + 1, y + h - 2, f, shade(col, -.3)); }
+  if (opt.notch && w >= 40) for (let q = 1; q < 4; q++) { const nx = x + 1 + Math.round((w - 2) * q / 4); vline(nx, y + 1, h - 2, shade(back, .25)); if (nx < x + 1 + f) vline(nx, y + 1, h - 2, shade(col, -.35)); }
+  outline(x, y, w, h, UI.inset); hline(x + 1, y + h - 1, w - 2, shade(back, .35));
+}
 function hpColor(r) { return r > .5 ? UI.hpGreen : r > .2 ? UI.hpYellow : UI.hpRed; }
-function hpBar(x, y, w, cur, max) { bar(x, y, w, 5, cur / max, hpColor(cur / max)); }
+function hpBar(x, y, w, cur, max) { bar(x, y, w, 5, cur / max, hpColor(cur / max), UI.hpBack, { notch: true }); }
+// Button face (no hit registration): dark outline, bevelled face, label. opt: hot, variant (neutral | primary |
+// danger | ghost | gold | dark), big (headline font), ink, disabled, icon, col (explicit face colour).
+function uiButton(x, y, w, h, label, opt = {}) {
+  x |= 0; y |= 0; w |= 0; h |= 0; const dis = !!opt.disabled; let face = opt.col || UI.btn[opt.variant || 'neutral'] || UI.btn.neutral; if (dis) face = '#262a38'; else if (opt.hot) face = shade(face, .22);
+  rrect(x + 1, y + 2, w, h, UI.shadow, 1); rrect(x, y, w, h, opt.hot && !dis ? UI.gold : UI.inset, 1); rrect(x + 1, y + 1, w - 2, h - 2, face, 1);
+  hline(x + 2, y + 1, w - 4, shade(face, .42)); hline(x + 2, y + 2, w - 4, shade(face, .12)); hline(x + 2, y + h - 2, w - 4, shade(face, -.45)); vline(x + 1, y + 2, h - 4, shade(face, .15)); vline(x + w - 2, y + 2, h - 4, shade(face, -.25));
+  if (opt.hot && !dis) { hline(x + 2, y + h - 3, w - 4, shade(UI.gold, -.2)); }
+  const ink = dis ? UI.dim : opt.ink || (opt.hot ? UI.hi : UI.ink); const iw = opt.icon ? 12 : 0;
+  const big = opt.big && h >= 15; const lw = textWidth(big ? String(label).toUpperCase() : label, big ? BIG : FONT) + iw; let lx = x + Math.round((w - lw) / 2);
+  if (opt.icon) { iconAt(opt.icon, lx, y + Math.round((h - 9) / 2), dis ? UI.dim : ink); lx += iw; }
+  if (big) bigText(label, lx, y + Math.round((h - 9) / 2), ink, { shadow: shade(face, -.6) }); else text(label, lx, y + Math.round((h - 7) / 2), ink, { shadow: dis ? null : shade(face, -.55) });
+}
+// Menu row highlight: filled band with a gold marker at the left edge.
+function selRow(x, y, w, h, col = UI.sel) { rrect(x, y, w, h, col, 1); hline(x + 1, y, w - 2, shade(col, .28)); hline(x + 1, y + h - 1, w - 2, shade(col, -.3)); rect(x, y + 1, 2, h - 2, UI.gold); }
+// Keycap: cream cap with a dark letter; touch screens get a plain word instead.
+function keycap(k, x, y) { const w = textWidth(k) + 6; rrect(x, y - 1, w, 10, UI.inset, 1); rect(x + 1, y, w - 2, 8, UI.border); hline(x + 1, y, w - 2, UI.borderHi); hline(x + 1, y + 7, w - 2, UI.borderLo); text(k, x + 3, y, '#1a1f2e'); return w; }
+// Hint line: [['Z', 'attack'], ['X', 'back'], 'plain text'] centred at cx, on a dark pill so it reads over any board.
+// Returns the drawn width. opt: left (x is the left edge), pill=false (no background), col.
+function hintLine(items, cx, y, opt = {}) {
+  const parts = items.filter(Boolean).map(it => Array.isArray(it) ? { k: it[0], t: it[1] } : { t: it });
+  const kw = p => (p.k && !VIEW.touch ? textWidth(p.k) + 6 + 3 : 0) + textWidth(p.t);
+  const gap = 9; const tot = parts.reduce((s, p) => s + kw(p), 0) + gap * (parts.length - 1);
+  let x = opt.left ? cx : Math.round(cx - tot / 2); if (opt.pill !== false) { ctx.globalAlpha = .72; rrect(x - 5, y - 3, tot + 10, 13, UI.inset, 2); ctx.globalAlpha = 1; }
+  for (const p of parts) { if (p.k && !VIEW.touch) x += keycap(p.k, x, y) + 3; text(p.t, x, y, opt.col || UI.muted); x += textWidth(p.t) + gap; }
+  return tot;
+}
+// Small-caps section label with a rule running to the right edge.
+function sectionLabel(s, x, y, w, col = UI.muted) { const t = String(s).toUpperCase(); text(t, x, y, col); const rx = x + textWidth(t) + 5; if (w && rx < x + w) { hline(rx, y + 4, x + w - rx, UI.border2); hline(rx, y + 5, x + w - rx, UI.inset); } }
+function dimScreen(a = .55, col = '#050815') { ctx.globalAlpha = a; rect(0, 0, VIEW.w, VIEW.h, col); ctx.globalAlpha = 1; }
+// Screen chrome for setup / result scenes: a headline with a gold rule, and a footer band for buttons and hints.
+function screenTitle(title, sub, y = 6) { const W = VIEW.w; bigC(title, W / 2, y, UI.gold, { outline: UI.goldDark }); const tw = textWidth(String(title).toUpperCase(), BIG); rect(W / 2 - tw / 2 - 14, y + 11, tw + 28, 1, UI.gold); rect(W / 2 - tw / 2 - 14, y + 12, tw + 28, 1, UI.goldDark); if (sub) textC(sub, W / 2, y + 16, UI.muted, { outline: UI.shadow }); return y + (sub ? 27 : 15); }
+function footerBand(h) { const W = VIEW.w, H = VIEW.h; ctx.globalAlpha = .82; rect(0, H - h, W, h, '#070a14'); ctx.globalAlpha = 1; hline(0, H - h, W, UI.border2); hline(0, H - h + 1, W, UI.inset); return H - h; }
 
 // ---------------------------------------------------------------- sprite atlas (Showdown minis)
 // The Showdown icon sheet is 12 icons per row, 40×30 each, indexed by dex number.
@@ -206,9 +256,12 @@ function bigSprite(num, flip = false, tint = null) {
 function drawBig(num, cx, by, o = {}) {
   const img = bigSprite(num, !!o.flip, o.tint || null); const sx = o.sx || 1, sy = o.sy || 1;
   if (!img) { drawMon(num, cx, by, { flip: o.flip, tint: o.tint, alpha: o.alpha, sx: 2 * sx, sy: 2 * sy }); return; }
-  const w = 96 * sx, h = 96 * sy, bottom = (BIGSPR.bottom[num] || 90) * sy;
+  const w = 96 * sx, h = 96 * sy, bottom = (BIGSPR.bottom[num] || 90) * sy; const x = Math.round(cx - w / 2), y = Math.round(by - bottom), W = Math.round(w), H = Math.round(h);
   if (o.alpha != null) ctx.globalAlpha = o.alpha;
-  ctx.drawImage(img, Math.round(cx - w / 2), Math.round(by - bottom), Math.round(w), Math.round(h));
+  if (o.breath) { // idle breathing: the rows above the chest line rise one pixel, the rest stays planted
+    const split = Math.round(H * .55); ctx.drawImage(img, 0, Math.round(split / sy), 96, 96 - Math.round(split / sy), x, y + split, W, H - split);
+    ctx.drawImage(img, 0, 0, 96, Math.round(split / sy), x, y + split - split - o.breath, W, split);
+  } else ctx.drawImage(img, x, y, W, H);
   if (o.alpha != null) ctx.globalAlpha = 1;
 }
 
@@ -1216,14 +1269,14 @@ function spawnParts(x, y, n, col, opt = {}) {
 // Shaped effect sprite. kinds: burst flash slash flame drop bolt leaf bubble shard rock wisp psy poof spark heart wind star
 function spawnSprite(kind, x, y, o = {}) {
   if (REDUCED && FX.sprites.length > 12) return null;
-  const s = { kind, x, y, vx: o.vx || 0, vy: o.vy || 0, t: -(o.delay || 0), life: o.life || .5, col: o.col || '#ffffff', col2: o.col2 || '#ffffff', size: o.size || 6, grav: o.grav || 0, rot: o.rot || 0, spin: o.spin || 0, seed: Math.floor(vrnd() * 1e6), arc: o.arc || 0, x0: x, y0: y, tx: o.tx, ty: o.ty, trail: o.trail || null, len: o.len || 0 };
+  const s = { kind, x, y, vx: o.vx || 0, vy: o.vy || 0, t: -(o.delay || 0), life: o.life || .5, col: o.col || '#ffffff', col2: o.col2 || '#ffffff', size: o.size || 6, grav: o.grav || 0, rot: o.rot || 0, spin: o.spin || 0, seed: Math.floor(vrnd() * 1e6), arc: o.arc || 0, x0: x, y0: y, tx: o.tx, ty: o.ty, trail: o.trail || null, len: o.len || 0, orbit: o.orbit || null, dir: o.dir || 1 };
   FX.sprites.push(s); return s;
 }
 function floatText(x, y, s, col = '#ffffff', opt = {}) { FX.texts.push({ x, y, s, col, t: 0, life: opt.life || 1, big: !!opt.big, outline: opt.outline || UI.shadow, vy: opt.vy == null ? -26 : opt.vy, delay: opt.delay || 0, pop: opt.pop !== false }); }
 function updateFX(dt) {
   for (const p of FX.parts) { p.t += dt; p.vy += p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
   FX.parts = FX.parts.filter(p => p.t < p.life);
-  for (const s of FX.sprites) { s.t += dt; if (s.t < 0) continue; if (s.tx != null) { const k = Math.min(1, s.t / s.life); s.x = lerp(s.x0, s.tx, k); s.y = lerp(s.y0, s.ty, k) - Math.sin(k * Math.PI) * s.arc; } else { s.vy += s.grav * dt; s.x += s.vx * dt; s.y += s.vy * dt; } s.rot += s.spin * dt; if (s.trail && vrnd() < .6) spawnParts(s.x, s.y, 1, s.trail, { speed: 12, life: .25, grav: 0, size: 2 }); }
+  for (const s of FX.sprites) { s.t += dt; if (s.t < 0) continue; if (s.orbit) { const o = s.orbit, k = Math.min(1, s.t / s.life), a = o.a0 + s.t * o.speed, r = o.r * (o.shrink ? 1 - k * .8 : 1); s.x = s.x0 + Math.cos(a) * r; s.y = s.y0 + Math.sin(a) * r * (o.squash || .45); } else if (s.tx != null) { const k = Math.min(1, s.t / s.life); s.x = lerp(s.x0, s.tx, k); s.y = lerp(s.y0, s.ty, k) - Math.sin(k * Math.PI) * s.arc; } else { s.vy += s.grav * dt; s.x += s.vx * dt; s.y += s.vy * dt; } s.rot += s.spin * dt; if (s.trail && vrnd() < .6) spawnParts(s.x, s.y, 1, s.trail, { speed: 12, life: .25, grav: 0, size: 2 }); }
   FX.sprites = FX.sprites.filter(s => s.t < s.life);
   for (const f of FX.texts) { if (f.delay > 0) { f.delay -= dt; continue; } f.t += dt; f.y += f.vy * dt * (f.t < .25 ? 1 : .25); }
   FX.texts = FX.texts.filter(f => f.t < f.life);
@@ -1254,6 +1307,23 @@ function drawSprite(s, ox, oy) {
     case 'poof': { const r = Math.max(1, Math.round(s.size * (0.5 + k * .8))); ctx.globalAlpha = fade * .85; circle(x, y, r, s.col); circle(x - r, y + 1, Math.max(1, r - 2), s.col); circle(x + r, y + 1, Math.max(1, r - 2), s.col); circle(x - 1, y - 1, Math.max(0, r - 2), s.col2); break; }
     case 'heart': { const sc = k < .2 ? 1 : 1; ctx.fillStyle = s.col; const rows = ST.heart; for (let j = 0; j < rows.length; j++) for (let i = 0; i < rows[j].length; i++) if (rows[j][i] !== '.') { ctx.fillStyle = rows[j][i] === 'L' ? '#ffffff' : s.col; ctx.fillRect(x - 2 + i, y - 2 + j, 1, 1); } break; }
     case 'wind': { const L = s.size; ctx.fillStyle = s.col; for (let n = 0; n < 3; n++) { const o = (n - 1) * 3, len = L - n * 2; ctx.fillRect(x - len + Math.round(k * 6), y + o, len, 1); } ctx.fillStyle = '#ffffff'; ctx.fillRect(x - 2, y, 3, 1); break; }
+    // ---- scene-sized effects for the lateral battle
+    // fireball: a layered ball (dark rim, orange, yellow, white core) with a flickering tail behind its heading
+    case 'fireball': { const r = s.size, fl = (Math.floor(s.t * 24) + s.seed) % 2, d = -s.dir; circle(x, y, r + 1, '#7a1a08'); circle(x, y, r, s.col2); circle(x + d * -1, y - 1, Math.max(1, r - 2), s.col); circle(x + d * -1, y - 1, Math.max(0, r - 4), '#fff3a0'); for (let i = 1; i <= 3; i++) { const tr = Math.max(1, r - i - (fl ? 1 : 0)); circle(x + d * (r + i * 4), y + (i % 2 ? -1 : 1) * fl, tr, i === 1 ? s.col2 : '#c83a10'); if (i === 1) circle(x + d * (r + 4), y, Math.max(0, tr - 2), s.col); } break; }
+    // blast: a bright ball that bursts into a ring of flame tongues, then thins away
+    case 'blast': { const r = Math.round(s.size * easeOut(Math.min(1, k * 1.4))); if (k < .3) { circle(x, y, r, s.col2); circle(x, y, Math.max(0, r - 3), '#ffffff'); } else { for (let n = 0; n < 12; n++) { const a = n * Math.PI / 6 + s.seed, rr = r + ((n + Math.floor(s.t * 20)) % 3) * 2; const bx = x + Math.round(Math.cos(a) * rr), by2 = y + Math.round(Math.sin(a) * rr * .8); circle(bx, by2, Math.max(1, Math.round(s.size * .22 * (1 - k))), n % 2 ? s.col : s.col2); } ctx.globalAlpha = fade * .5; circle(x, y, Math.max(0, r - 4), s.col); ctx.globalAlpha = fade; } break; }
+    // ring: an expanding shock ellipse
+    case 'ring': { const r = Math.max(1, Math.round(s.size * easeOut(k))); ctx.fillStyle = s.col; for (let a = 0; a < 72; a++) { const px2 = x + Math.round(Math.cos(a * Math.PI / 36) * r), py2 = y + Math.round(Math.sin(a * Math.PI / 36) * r * .55); ctx.fillRect(px2 - 1, py2 - 1, 3, 2); } break; }
+    // impact: a twelve-point starburst that pops out then shrinks
+    case 'impact': { const R0 = s.size * (k < .25 ? easeOut(k / .25) : 1 - (k - .25) / .75 * .6), pts = []; for (let n = 0; n < 24; n++) { const a = n * Math.PI / 12 + s.rot; const rr = n % 2 ? R0 : R0 * .42; pts.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr]); } ctx.fillStyle = s.col; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(Math.round(p[0]), Math.round(p[1])) : ctx.moveTo(Math.round(p[0]), Math.round(p[1]))); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#ffffff'; ctx.beginPath(); pts.forEach((p, i) => { const qx = x + (p[0] - x) * .6, qy = y + (p[1] - y) * .6; i ? ctx.lineTo(Math.round(qx), Math.round(qy)) : ctx.moveTo(Math.round(qx), Math.round(qy)); }); ctx.closePath(); ctx.fill(); break; }
+    // lightning: a thick bolt striking down from `size` pixels above (x,y), with a branch, flickering
+    case 'lightning': { if ((Math.floor(s.t * 30) + s.seed) % 4 === 3) break; let px0 = x + Math.round((R() - .5) * 16), py0 = y - s.size; const segs = 7; for (let i = 0; i < segs; i++) { const last = i === segs - 1; const nx = last ? x : x + Math.round((R() - .5) * 22), ny = y - s.size + Math.round((i + 1) * s.size / segs); pline(px0, py0, nx, ny, shade(s.col, -.3), 5); pline(px0, py0, nx, ny, s.col, 3); pline(px0, py0, nx, ny, '#ffffff', 1); if (i === 2 || i === 4) { const bx = nx + Math.round((R() - .5) * 40), by2 = ny + 10 + Math.round(R() * 14); pline(nx, ny, bx, by2, s.col, 2); pline(nx, ny, bx, by2, '#ffffff', 1); } px0 = nx; py0 = ny; } circle(x, y, 6, '#ffffff'); break; }
+    // wave: a crest of water sweeping in `dir`, growing then breaking into foam
+    case 'wave': { const r = Math.max(2, Math.round(s.size * Math.min(1, k * 1.6))); const foam = k > .55; for (let i = -r; i <= r; i++) { const h = Math.round(Math.sqrt(Math.max(0, r * r - i * i)) * .9); const cx2 = x + i * -s.dir; ctx.fillStyle = s.col; ctx.fillRect(cx2, y - h, 1, Math.max(1, h)); if (h > 2) { ctx.fillStyle = s.col2; ctx.fillRect(cx2, y - h, 1, 2); } } if (foam) { ctx.fillStyle = '#ffffff'; for (let n = 0; n < 6; n++) ctx.fillRect(x + s.dir * (r - n * 3) + Math.round((R() - .5) * 4), y - r + Math.round(R() * 6), 2, 2); } break; }
+    // speed lines: streaks trailing behind a lunge
+    case 'speed': { ctx.fillStyle = s.col; for (let n = 0; n < 5; n++) { const len = Math.round((s.size - n * 3) * (1 - k * .5)); const oy2 = (n - 2) * 6 + Math.round((R() - .5) * 3); ctx.fillRect(s.dir > 0 ? x - len : x, y + oy2, len, 1); } break; }
+    // crystal: an ice shard that grows out of the ground and shatters
+    case 'crystal': { const h = Math.round(s.size * (k < .4 ? easeOut(k / .4) : 1)); if (k > .75 && (Math.floor(s.t * 30) + s.seed) % 2) break; for (let j = 0; j < h; j++) { const w = Math.max(1, Math.round((1 - j / h) * s.size * .4)); ctx.fillStyle = s.col; ctx.fillRect(x - (w >> 1), y - j, w, 1); ctx.fillStyle = s.col2; ctx.fillRect(x - (w >> 1), y - j, Math.max(1, w >> 2), 1); } ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y - h + 1, 1, 2); break; }
     // horizontal beam of signed length `len` from (x,y): grows out fast, holds, then thins away
     case 'beam': { const len = Math.round(s.len * Math.min(1, k * 2.5)); const th = Math.max(1, Math.round(s.size * (k < .25 ? k / .25 : k > .7 ? (1 - k) / .3 : 1))); const x0 = Math.min(x, x + len), w = Math.abs(len); const fl = (Math.floor(s.t * 40) + s.seed) % 2; ctx.fillStyle = s.col; ctx.fillRect(x0, y - th - fl, w, 2 * th + 1 + fl); ctx.fillStyle = s.col2; ctx.fillRect(x0, y - (th >> 1), w, (th >> 1) * 2 + 1); break; }
   }
@@ -2363,8 +2433,8 @@ const HUD = { hits: [], panels: [] };
 function hudHit(x, y) { for (const h of HUD.hits) if (x >= h.x && y >= h.y && x < h.x + h.w && y < h.y + h.h) { h.run(); return true; } return false; }
 // Is the point over a HUD panel or button drawn this frame (so the board under it is not being pointed at)?
 function hudCovers(x, y) { for (const r of HUD.hits.concat(HUD.panels)) if (x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h) return true; return false; }
-function hudPanel(x, y, w, h, opt) { panel(x, y, w, h, opt); HUD.panels.push({ x, y, w, h }); }
-function button(x, y, w, h, label, run, opt = {}) { const hot = INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h && !VIEW.touch; rrect(x + 1, y + 1, w, h, UI.shadow, 1); rrect(x, y, w, h, opt.col || (hot ? '#5a7ac0' : UI.panel2), 1); outline(x, y, w, h, UI.border); hline(x + 1, y + 1, w - 2, shade(opt.col || UI.panel2, .25)); textC(label, x + w / 2, y + (h - 7) / 2, opt.ink || UI.ink); HUD.hits.push({ x, y, w, h, run, label }); }
+function hudPanel(x, y, w, h, opt) { const p = panel(x, y, w, h, opt); HUD.panels.push({ x, y, w, h }); return p; }
+function button(x, y, w, h, label, run, opt = {}) { const hot = INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h && !VIEW.touch; uiButton(x, y, w, h, label, { hot, col: opt.col, variant: opt.variant, ink: opt.ink, icon: opt.icon, disabled: opt.disabled }); HUD.hits.push({ x, y, w, h, run, label }); }
 // Screen rectangle of the board (the map itself, not the void around it).
 function boardRect() { const z = BT.zoom; return { x: toScreenX(tileX(0) - FX.shakeX), y: toScreenY(tileY(0) - FX.shakeY), w: Math.round(B.map.w * TILE * z), h: Math.round(B.map.h * TILE * z) }; }
 // Where the HUD goes. Portrait phones stack everything under the board: context cards, then a two-row button bar.
@@ -2372,13 +2442,13 @@ function boardRect() { const z = BT.zoom; return { x: toScreenX(tileX(0) - FX.sh
 // side away from the cursor, hugging the board's lower edge when the board leaves room.
 function hudLayout() {
   const W = VIEW.w, H = VIEW.h, bh = btnH(), stack = narrowView() && portraitView(); const br = boardRect();
-  const L = { W, H, stack, bh, top: { x: 4, y: 4, w: stack ? W - 8 : Math.min(W - 8, B.versus ? 128 : 118), h: 24 } };
+  const L = { W, H, stack, bh, top: { x: 4, y: 4, w: stack ? W - 8 : W >= 320 ? Math.min(W - 8, 152) : Math.min(W - 8, B.versus ? 128 : 118), h: stack ? 26 : W < 320 ? 24 : 36 } };
   if (B.territory) { L.top.h = 46; if (!stack) L.top.w = Math.min(202, W - 72); }
   if (stack) {
     L.bar = { x: 4, y: H - 2 * bh - 8, w: W - 8, rows: 2 }; L.ctxY = L.bar.y - 52; L.ctxH = 48;
     L.ctx = { x: 4, y: L.ctxY, w: W - 8, h: L.ctxH, unit: true, terrain: true, combined: true };
   } else {
-    const cursorLeft = toScreenX(tileX(BT.cx) - FX.shakeX) + TILE * BT.zoom / 2 < W / 2; const ch = 42;
+    const cursorLeft = toScreenX(tileX(BT.cx) - FX.shakeX) + TILE * BT.zoom / 2 < W / 2; const ch = 46;
     const y = Math.min(H - ch - 4, Math.max(L.top.y + L.top.h + 4, br.y + br.h + 6)); // under the board when it fits, else at the bottom
     const uw = 136, tw = 96; const x = cursorLeft ? W - 4 - uw - 4 - tw : 4;
     L.ctx = { x, y, w: uw + 4 + tw, h: ch, unitX: x, terrX: x + uw + 4, unitW: uw, terrW: tw, combined: false };
@@ -2397,7 +2467,7 @@ function drawHUD() {
   if (boardModes.includes(BT.mode) && BT.mode !== 'target' && BT.mode !== 'catchTarget' && BT.mode !== 'skillTarget') {
     const ref = hov || BT.sel || { fly: false, swim: false }; const showUnit = hov && BT.mode !== 'menu';
     if (L.stack) { const c = L.ctx; hudPanel(c.x, c.y, c.w, c.h); if (showUnit) { unitCardBody(hov, c.x, c.y, c.w - 62); vline(c.x + c.w - 60, c.y + 4, c.h - 8, UI.border2); terrainCardBody(t, ref, c.x + c.w - 56, c.y, 54, true); } else terrainCardBody(t, ref, c.x, c.y, c.w, false); }
-    else { const c = L.ctx; hudPanel(c.terrX, c.y + 12, c.terrW, 30); terrainCardBody(t, ref, c.terrX, c.y + 12, c.terrW, false); if (showUnit) { hudPanel(c.unitX, c.y, c.unitW, c.h); unitCardBody(hov, c.unitX, c.y, c.unitW); } }
+    else { const c = L.ctx; hudPanel(c.terrX, c.y + 10, c.terrW, 36); terrainCardBody(t, ref, c.terrX, c.y + 12, c.terrW, false); if (showUnit) { hudPanel(c.unitX, c.y, c.unitW, c.h); unitCardBody(hov, c.unitX, c.y, c.unitW); } }
   }
   if (BT.mode === 'move' && BT.sel) { const c = BT.sel; textC(c.name + (BT.dart ? '  DART ' + dartMov(c) + ' · X: stay' : '  MOV ' + effMov(c)) + (BT.path.length > 1 ? '  →' + (BT.path.length - 1) : ''), W / 2, L.top.y + L.top.h + 4, BT.dart ? ROLES.scout.col : UI.ink, { outline: UI.shadow }); }
   if (BT.quip && BT.quip.unit.hp > 0) { const u = BT.quip.unit; const x = toScreenX(tileX(u.x) + TILE / 2) + 16, y = toScreenY(tileY(u.y)) - 12 - Math.min(6, BT.quip.t * 30); const tw = textWidth(BT.quip.text) + 8; rrect(x - 2, y - 2, tw, 11, UI.shadow, 1); rrect(x - 3, y - 3, tw, 11, '#ffffff', 1); text(BT.quip.text, x + 1, y - 1, '#202030'); px(x, y + 8, '#ffffff'); px(x - 1, y + 9, '#ffffff'); }
@@ -2405,8 +2475,8 @@ function drawHUD() {
   if (BT.mode === 'target') drawForecast();
   if (BT.mode === 'catchTarget') drawCatchCard();
   if (BT.mode === 'skillTarget') drawSkillCard();
-  if (BT.mode === 'itemTarget') { const w = Math.min(160, W - 12); hudPanel(W / 2 - w / 2, H / 2 - 16, w, 32); textC('Use ' + ITEMS[BT.item].name + ' on ' + BT.sel.name + '?', W / 2, H / 2 - 10, UI.ink); textC('OK: confirm · X: cancel', W / 2, H / 2 + 1, UI.muted); }
-  if (BT.mode === 'unitinfo' && BT.info) drawUnitSheet(BT.info);
+  if (BT.mode === 'itemTarget') { const w = Math.min(160, W - 12); hudPanel(W / 2 - w / 2, H / 2 - 16, w, 32); textC('Use ' + ITEMS[BT.item].name + ' on ' + BT.sel.name + '?', W / 2, H / 2 - 10, UI.ink); hintLine([['Z', 'confirm'], ['X', 'cancel']], W / 2, H / 2 + 2, { pill: false }); }
+  if (BT.mode === 'unitinfo' && BT.info) { dimScreen(.3); drawUnitSheet(BT.info); }
   if (BT.mode === 'help') drawHelp();
   if (BT.mode === 'territoryGuide') drawTerritoryGuide();
   if (BT.mode === 'handoff') drawHandoff();
@@ -2420,20 +2490,22 @@ function drawHUD() {
 function drawTurnCard(r) {
   if (B.territory) { drawTerritoryTurn(r); return; }
   const mine = alive(HT()), ready = mine.filter(u => !u.acted).length; const turn = 'TURN ' + B.turn + (B.map.turnLimit && B.map.objective.type !== 'survive' ? '/' + B.map.turnLimit : B.map.objective.type === 'survive' ? '/' + B.map.objective.turns : '');
-  hudPanel(r.x, r.y, r.w, r.h, { border: B.versus ? teamColor(HT()) : UI.border });
-  let x = r.x + 6; if (B.versus) { rrect(x, r.y + 4, 15, 8, teamColor(HT()), 1); textC('P' + (HT() + 1), x + 7, r.y + 4, '#ffffff'); x += 18; }
-  text(turn, x, r.y + 4, UI.gold); text(objectiveText(), r.x + 6, r.y + 13, UI.muted);
-  const readyCol = ready ? UI.green : UI.muted; const rs = 'READY ' + ready + '/' + mine.length; textR(rs, r.x + r.w - 6, r.y + 4, readyCol);
-  const pc = alive(0).length, ec = alive(1).length; const dot = (dx, dy, team) => { circle(dx, dy, 3, UI.shadow); circle(dx, dy, 2, teamColor(team)); };
-  dot(r.x + r.w - 10, r.y + 16, 1); textR(String(ec), r.x + r.w - 15, r.y + 13, UI.ink); dot(r.x + r.w - 28, r.y + 16, 0); textR(String(pc), r.x + r.w - 33, r.y + 13, UI.ink);
+  hudPanel(r.x, r.y, r.w, r.h, { border: B.versus ? teamColor(HT()) : UI.border }); const tall = r.h >= 32;
+  let x = r.x + 6; if (B.versus) { rrect(x, r.y + 5, 15, 8, teamColor(HT()), 1); textC('P' + (HT() + 1), x + 7, r.y + 5, '#ffffff'); x += 18; }
+  text(turn, x, r.y + 5, UI.gold); const readyCol = ready ? UI.green : UI.muted; const rs = 'READY ' + ready + '/' + mine.length; textR(rs, r.x + r.w - 6, r.y + 5, readyCol);
+  // head counts: a coloured dot per side (wild too when any is left), right-aligned on the last row
+  const counts = [[0, alive(0).length], [1, alive(1).length]]; if (alive(2).length) counts.push([2, alive(2).length]); if (alive(3).length) counts.push([3, alive(3).length]);
+  const cy = tall ? r.y + 24 : r.y + 14; let cx = r.x + r.w - 6; counts.reverse().forEach(([team, n]) => { cx -= textWidth(String(n)); text(String(n), cx, cy, UI.ink); cx -= 8; circle(cx + 2, cy + 3, 3, UI.inset); circle(cx + 2, cy + 3, 2, teamColor(team)); cx -= 8; });
+  let ob = objectiveText(); const avail = tall ? r.w - 12 : cx - r.x - 10; while (textWidth(ob) > avail && ob.length > 4) ob = ob.slice(0, -1); text(ob, r.x + 6, r.y + 14, UI.muted);
+  if (tall) { hline(r.x + 5, r.y + 22, r.w - 10, UI.inset); hline(r.x + 5, r.y + 23, r.w - 10, shade(UI.panel, .15)); text('ON THE FIELD', r.x + 6, r.y + 24, UI.dim); }
 }
 function drawButtons(L) {
   const W = VIEW.w, bh = L.bh, m = BT.mode;
   const idle = m === 'idle', acting = m === 'move' || m === 'target' || m === 'catchTarget' || m === 'skillTarget' || m === 'menu', enemyAnim = m === 'anim' && !isHuman(B.phase);
   if (enemyAnim) textC(phaseLabel(B.phase) + (BT.fast ? ' · FAST' : ''), W / 2, L.top.y + L.top.h + 4, UI.red, { outline: UI.shadow });
   const items = [];
-  if (idle) items.push({ label: 'END TURN', col: '#7a3030', run: () => { Audio.sfx('ok'); endTurn(); } }, { label: BT.showDanger ? 'DANGER ●' : 'DANGER ○', run: () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); } });
-  if (acting) items.push({ label: m === 'move' && BT.dart ? 'STAY' : 'BACK', col: '#5a4a30', run: () => cancel() });
+  if (idle) items.push({ label: 'END TURN', variant: 'danger', run: () => { Audio.sfx('ok'); endTurn(); } }, { label: BT.showDanger ? 'DANGER ●' : 'DANGER ○', run: () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); } });
+  if (acting) items.push({ label: m === 'move' && BT.dart ? 'STAY' : 'BACK', variant: 'ghost', run: () => cancel() });
   if (enemyAnim) items.push({ label: BT.fast ? 'FAST ●' : 'FAST ○', run: () => { BT.fast = !BT.fast; } });
   if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
   if (idle && B.territory) items.push({ label: 'RESERVE', run: () => openTerritoryReserves() });
@@ -2441,10 +2513,10 @@ function drawButtons(L) {
   if (B.territory && L.stack && idle) { const mute = items.findIndex(it => it.label.startsWith('♪')); if (mute >= 0) items.splice(mute, 1); }
   if (!items.length) return;
   if (L.stack) { // two rows across the bottom: row 1 = the two main actions, row 2 = the rest
-    const b = L.bar; const row1 = items.slice(0, 2), row2 = items.slice(2); const lay = (row, y) => { if (!row.length) return; const gap = 4, w = Math.floor((b.w - gap * (row.length - 1)) / row.length); row.forEach((it, i) => button(b.x + i * (w + gap), y, w, bh, it.label, it.run, { col: it.col })); };
+    const b = L.bar; const row1 = items.slice(0, 2), row2 = items.slice(2); const lay = (row, y) => { if (!row.length) return; const gap = 4, w = Math.floor((b.w - gap * (row.length - 1)) / row.length); row.forEach((it, i) => button(b.x + i * (w + gap), y, w, bh, it.label, it.run, { col: it.col, variant: it.variant })); };
     lay(row1, b.y); lay(row2, b.y + bh + 4);
   } else {
-    const bx = L.buttons.x, bw = L.buttons.w; let y = 4; for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.half && items[i + 1] && items[i + 1].half) { button(bx, y, bw / 2 - 1, bh, it.label, it.run, { col: it.col }); button(bx + bw / 2 + 1, y, bw / 2 - 1, bh, items[i + 1].label, items[i + 1].run, { col: items[i + 1].col }); i++; } else button(bx, y, bw, bh, it.label, it.run, { col: it.col }); y += bh + 2; }
+    const bx = L.buttons.x, bw = L.buttons.w; let y = 4; for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.half && items[i + 1] && items[i + 1].half) { button(bx, y, bw / 2 - 1, bh, it.label, it.run, { col: it.col, variant: it.variant }); button(bx + bw / 2 + 1, y, bw / 2 - 1, bh, items[i + 1].label, items[i + 1].run, { col: items[i + 1].col, variant: items[i + 1].variant }); i++; } else button(bx, y, bw, bh, it.label, it.run, { col: it.col, variant: it.variant }); y += bh + 2; }
     if (BT.showDanger && (idle || m === 'move')) drawDangerLegend(bx, y + 2);
   }
   if (L.stack && BT.showDanger && (idle || m === 'move')) drawDangerLegend(4, L.top.y + L.top.h + 2);
@@ -2480,19 +2552,29 @@ function terrainCardBody(t, ref, x, y, w, tall) {
   if (tall) { let name = t.name; while (textWidth(name) > w - 22 && name.length > 3) name = name.slice(0, -1); text(name, x + 20, y + 4, UI.gold); text('DEF ' + terrainDef(t, ref) + '%', x + 16, y + 13, UI.ink); text('AVO ' + terrainEva(t, ref), x + 4, y + 22, UI.ink); text(extra[0], x + 4, y + 31, extra[1]); }
   else { text(t.name, x + 27, y + 4, UI.gold); text('DEF' + terrainDef(t, ref) + '% AVO' + terrainEva(t, ref), x + 27, y + 13, UI.ink); text(extra[0], x + 27, y + 22, extra[1]); }
 }
-function menuRect() { const m = BT.menu, rh = rowH(); const w = m.items.some(it => it.icon) ? 122 : 108, h = m.items.length * rh + 8; const tx = toScreenX(tileX(BT.cx) - FX.shakeX), ty = toScreenY(tileY(BT.cy) - FX.shakeY), ts = TILE * BT.zoom; let x = tx + ts + 6, y = ty - 4; if (BT.mode === 'endmenu') { x = VIEW.w / 2 - w / 2; y = VIEW.h / 2 - h / 2; } if (x + w > VIEW.w - 4) x = tx - w - 6; if (x < 4) x = 4; y = clamp(y, 30, VIEW.h - h - 4); return { x, y, w, h }; }
-function menuHit(px2, py) { const r = menuRect(); if (px2 < r.x || px2 >= r.x + r.w || py < r.y || py >= r.y + r.h) return -1; return clamp(Math.floor((py - r.y - 4) / rowH()), 0, BT.menu.items.length - 1); }
+// Menu geometry: a header band (the unit's name, BAG, BALLS or the menu title), one row per item and, when any item
+// carries a description, a footer strip that explains the highlighted one.
+function menuTitle() { const m = BT.menu; return m.title || (BT.mode === 'item' ? 'BAG' : BT.mode === 'ballPick' ? 'BALLS' : BT.mode === 'endmenu' ? 'MENU' : BT.sel ? BT.sel.name.toUpperCase() : 'ACTION'); }
+function menuRect() {
+  const m = BT.menu, rh = rowH(); const w = Math.min(VIEW.w - 8, m.items.some(it => it.icon) ? 134 : 120), top = 21;
+  const subLines = m.items.reduce((n, it) => Math.max(n, it.sub ? Math.min(2, wrap(it.sub, w - 14).length) : 0), 0); const foot = subLines ? subLines * 9 + 6 : 0;
+  const h = top + m.items.length * rh + foot + 4; const tx = toScreenX(tileX(BT.cx) - FX.shakeX), ty = toScreenY(tileY(BT.cy) - FX.shakeY), ts = TILE * BT.zoom; let x = tx + ts + 6, y = ty - 4;
+  if (BT.mode === 'endmenu') { x = VIEW.w / 2 - w / 2; y = VIEW.h / 2 - h / 2; } if (x + w > VIEW.w - 4) x = tx - w - 6; if (x < 4) x = 4; y = clamp(y, 30, VIEW.h - h - 4); return { x, y, w, h, top, foot, subLines };
+}
+function menuHit(px2, py) { const r = menuRect(); if (px2 < r.x || px2 >= r.x + r.w || py < r.y || py >= r.y + r.h) return -1; return clamp(Math.floor((py - r.y - r.top) / rowH()), 0, BT.menu.items.length - 1); }
 function drawMenu() {
-  const m = BT.menu, r = menuRect(), rh = rowH(), ty = (rh - 7) >> 1; hudPanel(r.x, r.y, r.w, r.h, { title: m.title || (BT.mode === 'item' ? 'BAG' : BT.mode === 'ballPick' ? 'BALLS' : BT.mode === 'endmenu' ? 'MENU' : null) });
-  m.items.forEach((it, i) => { const y = r.y + 4 + i * rh; const hot = i === m.i; const ink = it.off ? UI.muted : hot ? UI.hi : UI.ink; if (hot) { rrect(r.x + 3, y, r.w - 6, rh - 1, UI.menuSel, 1); hline(r.x + 4, y, r.w - 8, shade(UI.menuSel, .3)); pointerHand(r.x + 5, y + ty, BT.time * 1000); } if (it.icon) { iconAt(it.icon, r.x + 15, y + ty - 1, it.off ? '#8a8e9a' : hot ? '#ffffff' : '#d8dce8'); text(it.label, r.x + 28, y + ty, ink); } else text(it.label, r.x + 16, y + ty, ink); });
-  const it = m.items[m.i]; if (it && it.sub) { const lines = wrap(it.sub, Math.min(VIEW.w - 14, 200)); const sw = Math.max(...lines.map(l => textWidth(l))) + 10, sh = lines.length * 9 + 5; const sx = clamp(r.x, 2, VIEW.w - sw - 2); const below = r.y + r.h + 3 + sh <= VIEW.h - 2; const sy = below ? r.y + r.h + 3 : r.y - sh - 3; hudPanel(sx, sy, sw, sh, { fill: UI.panelDark }); lines.forEach((l, i) => text(l, sx + 5, sy + 3 + i * 9, UI.muted)); }
+  const m = BT.menu, r = menuRect(), rh = rowH(), ty = (rh - 7) >> 1; if (BT.mode === 'endmenu') dimScreen(.4);
+  hudPanel(r.x, r.y, r.w, r.h, { header: menuTitle(), headerRight: m.items.length > 4 ? (m.i + 1) + '/' + m.items.length : null });
+  m.items.forEach((it, i) => { const y = r.y + r.top + i * rh; const hot = i === m.i; const ink = it.off ? UI.dim : hot ? UI.hi : UI.ink; if (hot) selRow(r.x + 4, y, r.w - 8, rh - 1);
+    const lx = r.x + (it.icon ? 22 : 11); if (it.icon) iconAt(it.icon, r.x + 9, y + ty - 1, it.off ? UI.dim : hot ? '#ffffff' : '#c8cddc'); text(it.label, lx, y + ty, ink, hot ? { shadow: shade(UI.sel, -.6) } : {}); });
+  if (r.foot) { const fy = r.y + r.h - 4 - r.foot; rect(r.x + 4, fy, r.w - 8, r.foot, UI.panelDark); hline(r.x + 4, fy, r.w - 8, UI.inset); const it = m.items[m.i]; const lines = it && it.sub ? wrap(it.sub, r.w - 14).slice(0, 2) : []; lines.forEach((l, i) => text(l, r.x + 7, fy + 4 + i * 9, it.off ? '#d8a0a0' : UI.muted)); }
 }
 // The forecast sits on the side away from the cursor on wide screens and spans the bottom on portrait phones.
 function forecastRect() {
   const W = VIEW.w, H = VIEW.h, L = hudLayout();
   if (L.stack) { const h = 118; return { x: 4, y: L.bar.y - h - 4, w: W - 8, h, stack: true }; }
   const w = Math.min(220, W - 12), h = 112; const left = toScreenX(tileX(BT.cx) - FX.shakeX) + TILE * BT.zoom / 2 > W / 2; const bb = 4 + (canZoom() ? 2 : 1) * (btnH() + 2); // under the BACK / ZOOM buttons on the right
-  return { x: left ? 6 : W - w - 6, y: Math.min(left ? 32 : bb + 4, Math.max(4, H - h - 24)), w, h, stack: false };
+  return { x: left ? 6 : W - w - 6, y: Math.min(Math.max(L.top.y + L.top.h + 14, left ? 0 : bb + 4), Math.max(4, H - h - 24)), w, h, stack: false };
 }
 function forecastHit(x, y) { const r = forecastRect(); return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h - 16; }
 // The move selector strip along the bottom of the forecast (and the hint line under it) switches moves.
@@ -2576,7 +2658,7 @@ function drawForecast() {
   const idx = (moves.indexOf(move) + 1) + '/' + moves.length; const tail = moves.length > 1 ? idx + ' ▸' : ''; const tw = textWidth(tail);
   let ms = move.name + '  ' + move.pow + 'pw · rng ' + move.rng[0] + (move.rng[1] > move.rng[0] ? '-' + move.rng[1] : ''); while (textWidth(ms) > r.x + r.w - 8 - tw - mx && ms.length > 6) ms = ms.slice(0, -1);
   text(ms, mx, sy + 3, UI.ink); if (tail) textR(tail, r.x + r.w - 6, sy + 3, UI.gold);
-  textC((VIEW.touch ? 'tap target: attack' : 'OK: attack') + '  ·  X: back' + (moves.length > 1 ? (VIEW.touch ? '  ·  tap bar: move' : '  ·  C: move') : ''), r.x + r.w / 2, r.y + r.h + 4, UI.muted, { outline: UI.shadow });
+  hintLine(VIEW.touch ? ['tap target: attack', 'X: back', moves.length > 1 ? 'tap bar: move' : null] : [['Z', 'attack'], ['X', 'back'], moves.length > 1 ? ['C', 'move'] : null], r.x + r.w / 2, r.y + r.h + 5);
 }
 // The skill card: what the chosen skill does to the highlighted target, with the exact numbers, and how to confirm or back out.
 function drawSkillCard() {
@@ -2586,7 +2668,7 @@ function drawSkillCard() {
   r.effect.forEach((l, i) => text(l, r.x + 46, r.y + 18 + i * 9, i === 0 ? UI.green : UI.ink));
   // the cost footer spans the full width under the portrait, wrapped, never truncated
   r.cost.forEach((l, i) => text(l, r.x + 6, r.y + 40 + i * 9, UI.muted));
-  textC((VIEW.touch ? 'tap target: confirm' : 'OK: confirm') + '  ·  X: back', r.x + r.w / 2, r.y + r.h + 4, UI.muted, { outline: UI.shadow });
+  hintLine(VIEW.touch ? ['tap target: confirm', 'X: back'] : [['Z', 'confirm'], ['X', 'back']], r.x + r.w / 2, r.y + r.h + 5);
 }
 // Skill card geometry: the forecast's slot, with the effect (two lines beside the portrait) and the wrapped cost footer
 // ("uses the action · +12 XP · every other turn") sized in, so nothing is clipped on a 172-px phone card.
@@ -2600,7 +2682,7 @@ function drawCatchCard() {
   const t = BT.targets[BT.tIdx]; if (!t) return; const r = forecastRect(); hudPanel(r.x, r.y, r.w, 50, { title: 'CATCH' });
   drawMon(t.num, r.x + 24, r.y + 36, { flip: true }); text(t.name + '  Lv' + t.level, r.x + 48, r.y + 8, UI.ink); hpBar(r.x + 48, r.y + 18, r.w - 56, t.hp, t.maxHp); text(t.hp + '/' + t.maxHp + ' HP', r.x + 48, r.y + 26, UI.ink);
   const p = clamp(.22 + .68 * (1 - t.hp / t.maxHp), .05, .97); text('Base chance ' + Math.round(p * 100) + '%', r.x + 48, r.y + 36, p > .6 ? UI.green : p > .35 ? UI.gold : UI.red);
-  textC('OK: pick a ball  ·  X: back', r.x + r.w / 2, r.y + 54, UI.muted, { outline: UI.shadow });
+  hintLine(VIEW.touch ? ['tap: pick a ball', 'X: back'] : [['Z', 'pick a ball'], ['X', 'back']], r.x + r.w / 2, r.y + 55);
 }
 function drawDuelCard(q) {
   // a compact "who is hitting whom" strip at the top
@@ -2628,7 +2710,7 @@ function drawBanner() {
   const list = alive(b.team).slice(0, 6); list.forEach((u, i) => { const ux = x - 60 + i * 24 + (b.team === 0 ? 1 : -1) * (1 - k) * 50; ctx.globalAlpha = k; drawMon(u.num, ux, H / 2 + 44 + Math.round(Math.sin(t * 12 + i) * 2), { flip: b.team !== 0 }); ctx.globalAlpha = 1; });
 }
 // The unit sheet: two columns on wide screens (stats + evolution | traits + moves), one taller column on narrow ones.
-function sheetRect() { const W = VIEW.w, H = VIEW.h; const narrow = W < 250; const w = narrow ? W - 12 : Math.min(260, W - 12), h = narrow ? 190 : 130; return { x: W / 2 - w / 2, y: Math.max(12, H / 2 - h / 2), w, h, narrow }; }
+function sheetRect() { const W = VIEW.w, H = VIEW.h; const narrow = W < 250; const w = narrow ? W - 12 : Math.min(260, W - 12), h = narrow ? 194 : 134; return { x: W / 2 - w / 2, y: Math.max(12, H / 2 - h / 2), w, h, narrow }; }
 function drawUnitSheet(u) {
   const W = VIEW.w; const r = sheetRect(), { x, y, w, h, narrow } = r; hudPanel(x, y, w, h, { title: B.versus ? (u.team === 2 ? 'WILD POKÉMON' : teamName(u.team)) : u.team === 0 ? 'YOUR POKÉMON' : u.team === 2 ? 'WILD POKÉMON' : u.team === 3 ? 'ALLY' : 'ENEMY' });
   portraitBg(x + 6, y + 8, 48, 40, u.team); drawMon(u.num, x + 30, y + 44, { flip: u.team !== 0, sy: 1 + Math.sin(BT.time * 4) * .03 }); teamGlyph(x + 9, y + 11, u.team, teamColorL(u.team));
@@ -2640,8 +2722,8 @@ function drawUnitSheet(u) {
   const R = ROLES[u.role]; const traits = [R.name.toUpperCase()]; if (u.fly) traits.push('FLIES'); if (u.swim) traits.push('SWIMS'); if (u.climb) traits.push('CLIMBS'); if (u.forester) traits.push('WOODS');
   const ev = u.dex.evos.length && isHuman(u.team) ? 'Evolves at Lv' + Math.min(...u.dex.evos.map(e => e[1])) : '';
   const mx = narrow ? x + 6 : x + 140, my = narrow ? y + 88 : y + 54; const tw = narrow ? (ev ? w - 12 - textWidth(ev) - 6 : w - 12) : w - 146;
-  let tr = traits.join(' · '); while (textWidth(tr) > tw && traits.length > 1) { traits.pop(); tr = traits.join(' · '); } miniBadge(R.abbr, R.col, mx, my - 1); text(tr, mx + 18, my, UI.green); if (narrow && ev) textR(ev, x + w - 6, my, '#98d8f8'); else if (ev) text(ev, x + 6, y + 76, '#98d8f8');
-  text('Moves', mx, my + 10, UI.muted); u.moves.slice(0, 4).forEach((m, i) => { typeBadge(m.type, mx, my + 19 + i * 10, 24); text(m.name + ' ' + m.pow + (m.rng[1] > 1 ? ' R' + m.rng[0] + '-' + m.rng[1] : ''), mx + 29, my + 20 + i * 10, UI.ink); });
+  let tr = traits.join(' · '); while (textWidth(tr) > tw && traits.length > 1) { traits.pop(); tr = traits.join(' · '); } miniBadge(R.abbr, R.col, mx, my - 1); text(tr, mx + 20, my, UI.green); if (narrow && ev) textR(ev, x + w - 6, my, '#98d8f8'); else if (ev) text(ev, x + 6, y + 76, '#98d8f8');
+  sectionLabel('Moves', mx, my + 10, narrow ? w - 12 : w - 146 - (x + 140 - mx)); u.moves.slice(0, 4).forEach((m, i) => { typeBadge(m.type, mx, my + 19 + i * 10, 24); text(m.name + ' ' + m.pow + (m.rng[1] > 1 ? ' R' + m.rng[0] + '-' + m.rng[1] : ''), mx + 29, my + 20 + i * 10, UI.ink); });
   if (u.recharge && !u.boss) text('RECHARGING', x + 60 + textWidth(u.name) + 6, y + 8, RECHARGE_COL);
   // type matchup hints
   const weak = TYPES.filter(t => effRaw(t, u.types) >= 2).slice(0, 4), res = TYPES.filter(t => effRaw(t, u.types) < 1).slice(0, 4);
@@ -2650,8 +2732,8 @@ function drawUnitSheet(u) {
   // the state (cooldown, braced, rooted) leads so it survives the truncation on narrow sheets
   const st = []; if (u.skill && !u.skill.passive && u.cd > 0) st.push('ready in ' + u.cd + (u.cd > 1 ? ' turns' : ' turn')); if (u.brace) st.push('BRACED'); if (u.root) st.push('ROOTED');
   let sk = (st.length ? st.join(' · ') + ' · ' : '') + (u.skill ? u.skill.blurb : 'Striker: plain attacker, strikes twice when 10+ SPE faster');
-  while (textWidth(sk) > w - 12 && sk.length > 8) sk = sk.slice(0, -1); text(sk, x + 6, y + h - 10, R.col);
-  textC('◂ ▸ browse  ·  X close', W / 2, y + h + 4, UI.muted, { outline: UI.shadow });
+  while (textWidth(sk) > w - 12 && sk.length > 8) sk = sk.slice(0, -1); hline(x + 5, y + h - 16, w - 10, UI.inset); text(sk, x + 6, y + h - 13, R.col);
+  hintLine([['◂▸', 'browse'], ['X', 'close']], W / 2, y + h + 5);
 }
 const HELP_PAGES = [
   ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back. Mouse: hover + click; right click or an empty tile opens the menu. Touch: tap to move the cursor, tap again to confirm.', 'Q/E: next unit · C: unit info / switch move · F: fast · +/-: zoom · M: mute · H: help. Drag or wheel to pan.', 'Attack scene: any key speeds it up, X skips. The menu switches between full, quick and map-only battles.'],
@@ -2661,12 +2743,13 @@ const HELP_PAGES = [
   ['TERRITORY', 'Take the enemy HQ, or own 2 of the 3 contested centers at the start of 3 of your turns. Losing the majority resets your hold counter. After 40 turns, more contested centers wins; a tie is a draw.', 'Any ready Pokemon on another center can Capture. Reach 20 points: a full-HP unit adds 10 per action, damaged units add less. Leaving or fainting resets progress; damage slows the next capture. Root does not stop capture.', 'Only owned centers heal and cure your team. Each owned center earns 2 command points at the start of your turn (bank limit 30).'],
   ['RESERVES', 'Tap RESERVE or an empty owned center to deploy a teammate. Choose the center and Pokemon. Costs are shown before spending. The arrival has already acted. Maximum 5 on the map, from your finite team of 6.', 'Fainted teammates recover after 2 of your turn starts. Pay their cost to send them out again. Occupied centers cannot deploy. With reserves left, an empty battlefield does not lose the match.', 'Both teams stay at Lv12 with equal stats and no XP in this mode. End your turn manually, after moving and deploying. Campaign progress is separate.'],
 ];
-function helpRect() { const W = VIEW.w, H = VIEW.h, w = Math.min(280, W - 12); const all = helpLines(BT.helpPage, w - 16), limit = Math.max(1, Math.floor((H - 48) / 10)), start = Math.min(BT.helpOffset || 0, Math.max(0, all.length - 1)); const lines = all.slice(start, start + limit), h = 34 + lines.length * 10; return { x: W / 2 - w / 2, y: Math.max(6, H / 2 - h / 2), w, h, lines, limit, next: start + limit < all.length ? start + limit : null }; }
+function helpRect() { const W = VIEW.w, H = VIEW.h, w = Math.min(280, W - 12); const all = helpLines(BT.helpPage, w - 16), limit = Math.max(1, Math.floor((H - 64) / 10)), start = Math.min(BT.helpOffset || 0, Math.max(0, all.length - 1)); const lines = all.slice(start, start + limit), h = 50 + lines.length * 10; return { x: W / 2 - w / 2, y: Math.max(6, H / 2 - h / 2), w, h, lines, limit, next: start + limit < all.length ? start + limit : null }; }
 function helpLines(page, width) { const p = HELP_PAGES[page]; const out = []; p.slice(1).forEach((para, i) => { if (i) out.push(''); out.push(...wrap(para, width)); }); return out; }
 function drawHelp() {
-  const W = VIEW.w; const r = helpRect(); hudPanel(r.x, r.y, r.w, r.h, { title: 'HELP ' + (BT.helpPage + 1) + '/' + HELP_PAGES.length + (BT.helpOffset ? ' · continued' : '') });
-  text(HELP_PAGES[BT.helpPage][0], r.x + 8, r.y + 8, UI.gold); r.lines.forEach((l, i) => { if (r.y + 20 + i * 10 < r.y + r.h - 14) text(l, r.x + 8, r.y + 20 + i * 10, UI.ink); });
-  textC((VIEW.touch ? 'tap' : 'click / OK') + ': next page  ·  X: close', W / 2, r.y + r.h - 11, UI.muted);
+  const W = VIEW.w; const r = helpRect(); dimScreen(.5); const p = hudPanel(r.x, r.y, r.w, r.h, { header: 'HELP' + (BT.helpOffset ? ' · CONTINUED' : ''), headerRight: (BT.helpPage + 1) + ' / ' + HELP_PAGES.length });
+  sectionLabel(HELP_PAGES[BT.helpPage][0], r.x + 8, p.cy, r.w - 16, UI.gold); r.lines.forEach((l, i) => text(l, r.x + 8, p.cy + 12 + i * 10, UI.ink));
+  rect(r.x + 4, r.y + r.h - 18, r.w - 8, 14, UI.panelDark); hline(r.x + 4, r.y + r.h - 18, r.w - 8, UI.inset);
+  hintLine(VIEW.touch ? ['tap: next page', 'X: close'] : [['Z', 'next page'], ['X', 'close']], W / 2, r.y + r.h - 14, { pill: false });
 }
 function drawHandoff() {
   const W = VIEW.w, H = VIEW.h, h = BT.handoff; const t = h.team; const k = Math.min(1, h.t / .3); ctx.globalAlpha = .78 * k; rect(0, 0, W, H, '#05070f'); ctx.globalAlpha = 1;
@@ -2675,18 +2758,18 @@ function drawHandoff() {
   ctx.save(); ctx.translate(W / 2, y + 12); ctx.scale(2, 2); bigC(teamName(t), 0, 0, teamColorL(t), { outline: '#000' }); ctx.restore();
   textC('Turn ' + B.turn + (B.map.turnLimit ? ' / ' + B.map.turnLimit : '') + '  ·  ' + alive(t).length + ' Pokémon ready', W / 2, y + 36, UI.ink);
   const list = alive(t).slice(0, 6); list.forEach((u, i) => drawMon(u.num, W / 2 - (list.length - 1) * 12 + i * 24, y + 78 + Math.round(Math.sin(BT.time * 8 + i) * 1), { flip: t === 1 }));
-  if (h.t > .4 && Math.floor(BT.time * 2) % 2) textC(VIEW.touch ? 'pass the device  ·  tap to start' : 'pass the controls  ·  OK to start', W / 2, y + 100, UI.gold, { outline: UI.shadow }); ctx.globalAlpha = 1;
+  if (h.t > .4 && Math.floor(BT.time * 2) % 2) hintLine(VIEW.touch ? ['pass the device', 'tap to start'] : ['pass the controls', ['Z', 'start']], W / 2, y + 102, { col: UI.gold }); ctx.globalAlpha = 1;
 }
 function drawEndScreen() {
-  if (B.territory) { const w = Math.min(VIEW.w - 16, 240), x = (VIEW.w - w) / 2, y = VIEW.h / 2 - 45; hudPanel(x, y, w, 90); bigC(B.result === 'win' ? 'VICTORY!' : B.result === 'draw' ? 'DRAW' : B.result === 'retreat' ? 'RETREAT' : 'DEFEAT', VIEW.w / 2, y + 10, UI.gold); wrap(B.territory.reason || 'Battle ended', w - 12).forEach((l, i) => textC(l, VIEW.w / 2, y + 32 + i * 10, UI.ink)); if (BT.endTimer > 1.2) textC(VIEW.touch ? 'tap to continue' : 'press OK', VIEW.w / 2, y + 72, UI.muted); return; }
+  if (B.territory) { const w = Math.min(VIEW.w - 16, 240), x = (VIEW.w - w) / 2, y = VIEW.h / 2 - 45; hudPanel(x, y, w, 90); bigC(B.result === 'win' ? 'VICTORY!' : B.result === 'draw' ? 'DRAW' : B.result === 'retreat' ? 'RETREAT' : 'DEFEAT', VIEW.w / 2, y + 10, UI.gold); wrap(B.territory.reason || 'Battle ended', w - 12).forEach((l, i) => textC(l, VIEW.w / 2, y + 32 + i * 10, UI.ink)); if (BT.endTimer > 1.2) hintLine(VIEW.touch ? ['tap to continue'] : [['Z', 'continue']], VIEW.w / 2, y + 72, { pill: false }); return; }
   const W = VIEW.w, H = VIEW.h; const k = Math.min(1, BT.endTimer / .6); const vs = B.versus; const vt = B.result === 'p1' ? 0 : B.result === 'p2' ? 1 : -1; const win = vs ? vt >= 0 : B.result === 'win';
   ctx.globalAlpha = .6 * k; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
   const w = Math.min(200, W - 12), x = W / 2 - w / 2; const y = H / 2 - 30 + (1 - easeOut(k)) * -30; panel(x, y, w, 60, { fill: vs ? (vt === 0 ? '#17264a' : vt === 1 ? '#3a1a22' : '#2a2a3a') : win ? '#1c3a2a' : '#3a1c1c', border: vs && vt >= 0 ? teamColor(vt) : UI.border });
-  if (vs) { bigC(vt < 0 ? 'DRAW' : teamName(vt) + ' WINS!', W / 2, y + 10, vt < 0 ? UI.muted : teamColorL(vt), { outline: '#000' }); textC('Turns: ' + B.turn + '   KOs: ' + B.kills, W / 2, y + 32, UI.ink); textC(vt < 0 ? 'Everyone fainted at once.' : 'The arena falls silent.', W / 2, y + 44, UI.muted); if (BT.endTimer > 1.2) textC(VIEW.touch ? 'tap to continue' : 'press OK', W / 2, y + 66, UI.muted, { outline: UI.shadow }); if (win && k >= 1 && Math.random() < .25) spawnParts(vrnd() * bvW() + CAM.x, CAM.y - 5, 1, [teamColor(vt), teamColorL(vt), '#ffd24a', '#ffffff'], { speed: 10, vy: 40, life: 2.5, grav: 20, size: 3 }); return; }
+  if (vs) { bigC(vt < 0 ? 'DRAW' : teamName(vt) + ' WINS!', W / 2, y + 10, vt < 0 ? UI.muted : teamColorL(vt), { outline: '#000' }); textC('Turns: ' + B.turn + '   KOs: ' + B.kills, W / 2, y + 32, UI.ink); textC(vt < 0 ? 'Everyone fainted at once.' : 'The arena falls silent.', W / 2, y + 44, UI.muted); if (BT.endTimer > 1.2) hintLine(VIEW.touch ? ['tap to continue'] : [['Z', 'continue']], W / 2, y + 68); if (win && k >= 1 && Math.random() < .25) spawnParts(vrnd() * bvW() + CAM.x, CAM.y - 5, 1, [teamColor(vt), teamColorL(vt), '#ffd24a', '#ffffff'], { speed: 10, vy: 40, life: 2.5, grav: 20, size: 3 }); return; }
   bigC(win ? 'VICTORY!' : B.result === 'retreat' ? 'RETREAT' : 'DEFEAT...', W / 2, y + 10, win ? UI.gold : '#ff8080', { outline: '#000' });
   if (win) { textC('Turns ' + B.turn + '  ·  KOs ' + B.kills + '  ·  Caught ' + B.captured.length, W / 2, y + 32, UI.ink); if (B.turn <= (B.map.par || 8)) textC('★ Speedy! Under par ' + (B.map.par || 8), W / 2, y + 44, UI.gold); else textC('Par: ' + (B.map.par || 8) + ' turns', W / 2, y + 44, UI.muted); }
   else wrap(B.result === 'retreat' ? 'Your team runs back to the Poké Center.' : 'Everyone fainted. Try a different plan!', w - 12).forEach((l, i) => textC(l, W / 2, y + 34 + i * 9, UI.ink));
-  if (BT.endTimer > 1.2) textC(VIEW.touch ? 'tap to continue' : 'press OK', W / 2, y + 66, UI.muted, { outline: UI.shadow });
+  if (BT.endTimer > 1.2) hintLine(VIEW.touch ? ['tap to continue'] : [['Z', 'continue']], W / 2, y + 68);
   if (win && k >= 1 && Math.random() < .25) spawnParts(vrnd() * bvW() + CAM.x, CAM.y - 5, 1, ['#ffd24a', '#5ee06a', '#3d7dff', '#ff5a5a', '#ffffff'], { speed: 10, vy: 40, life: 2.5, grav: 20, size: 3 });
 }
 // ============================================================================
@@ -2698,7 +2781,7 @@ function drawEndScreen() {
 // rerolled, the model is never touched, and skipping only moves the clock.
 // ============================================================================
 'use strict';
-const DUEL_T = { intro: .35, windup: .22, contact: .16, ranged: .3, hold: .4, drop: .35, gap: .2, miss: .45, ko: .75, thaw: .3, outro: .3 };
+const DUEL_T = { intro: .55, windup: .22, contact: .16, ranged: .3, hold: .4, drop: .35, gap: .2, miss: .45, ko: .75, thaw: .3, outro: .3 };
 const DUEL_FAMILIES = { Fire: 'fire', Water: 'water', Ice: 'water', Electric: 'electric', Grass: 'grass', Psychic: 'psychic', Ghost: 'psychic', Fairy: 'psychic', Poison: 'psychic', Dragon: 'psychic' };
 // Attack family: melee-only moves are contact whatever their type; ranged ones go by type, else a generic projectile or beam.
 function duelFamily(move) { if (move.rng[1] <= 1) return 'contact'; return DUEL_FAMILIES[move.type] || 'neutral'; }
@@ -2755,7 +2838,7 @@ function duelBiome(q) {
 }
 // Immutable presentation snapshot of each unit before the exchange: the resolver may level, evolve or inflict a
 // status before the scene starts, and the scene must show the old form and advance statuses on its own beats.
-function duelView(units) { const v = {}; for (const u of units) v[u.id] = { name: u.name, num: u.num, level: u.level, maxHp: u.maxHp, types: u.types.slice(), status: u.status, boss: u.boss, team: u.team, brace: !!u.brace, root: !!u.root }; return v; }
+function duelView(units) { const v = {}; for (const u of units) v[u.id] = { name: u.name, num: u.num, level: u.level, maxHp: u.maxHp, types: u.types.slice(), status: u.status, boss: u.boss, team: u.team, brace: !!u.brace, root: !!u.root, fly: !!u.fly }; return v; }
 // Status changes the scene shows: inflicted on the hit that caused them, cleared on a thaw.
 function duelApplyBeat(q, b) { if (b.kind === 'impact' && b.ev.status) q.view[b.def.id].status = b.ev.status; else if (b.kind === 'thaw') q.view[b.unit.id].status = null; }
 function duelActive() { return BT.mode === 'anim' && BT.anim && BT.anim.kind === 'duel' && BT.anim.started ? BT.anim : null; }
@@ -2764,7 +2847,7 @@ function duelActive() { return BT.mode === 'anim' && BT.anim && BT.anim.kind ===
 function startDuel(q) {
   q.script = duelScript(q.events, q.hp0); q.t = 0; q.i = 0; q.boost = false; q.skipped = false; q.done = false; q.started = true;
   q.view = JSON.parse(JSON.stringify(q.view || duelView([q.att, q.def]))); // a private copy: replaying the item starts from the snapshot again
-  q.sides = duelSides(q.att, q.def); q.pose = null; q.hitFx = null; q.missFx = null; q.koFx = null; q.banner = null; q.big = null;
+  q.sides = duelSides(q.att, q.def); q.pose = null; q.hitFx = null; q.missFx = null; q.koFx = null; q.banner = null; q.big = null; q.focus = null; q.entered = {};
   q.terr = { [q.att.id]: terrAt(q.att.x, q.att.y), [q.def.id]: terrAt(q.def.x, q.def.y) }; q.biome = duelBiome(q); q.seed = (q.att.id * 31 + q.def.id * 7 + B.turn * 3) | 0;
   for (const u of [q.att, q.def]) { requestBigSprite(q.view[u.id].num); BT.hpShow.set(u.id, { from: q.hp0[u.id], to: q.hp0[u.id], t: 0, hold: true }); }
   for (const e of q.events) if (e.type === 'ko') noteKo(e);
@@ -2790,15 +2873,15 @@ function duelInput(q, ev) {
   if (hard || q.boost) skipDuel(q); else q.boost = true;
 }
 function duelBeat(q, b) {
-  const L = duelLayout(q), P = id => L.pos[id]; duelApplyBeat(q, b);
+  const L = duelLayout(q), z = L.z, P = id => ({ x: L.pos[id].x / z, y: L.pos[id].y / z, dir: L.pos[id].dir }); duelApplyBeat(q, b);
   switch (b.kind) {
-    case 'windup': { q.pose = { unit: b.att, kind: 'windup', t0: q.t, fam: b.fam }; q.banner = { move: b.move, counter: b.counter, t0: q.t, until: q.t + DUEL_T.windup + duelLaunchTime(b.fam) + .5 }; if (b.fam === 'contact') Audio.sfx('swing'); break; }
+    case 'windup': { q.pose = { unit: b.att, kind: 'windup', t0: q.t, fam: b.fam }; q.banner = { move: b.move, counter: b.counter, t0: q.t, until: q.t + DUEL_T.windup + duelLaunchTime(b.fam) + .5 }; q.focus = { t0: q.t, until: q.t + DUEL_T.windup + duelLaunchTime(b.fam) + .45 }; if (b.fam === 'contact') Audio.sfx('swing'); break; }
     case 'launch': { q.pose = { unit: b.att, kind: b.fam === 'contact' ? 'lunge' : 'cast', t0: q.t, fam: b.fam, dur: duelLaunchTime(b.fam) }; duelLaunchFx(b, P(b.att.id), P(b.def.id)); break; }
     case 'impact': {
       const e = b.ev, d = P(b.def.id), a = P(b.att.id), cx = d.x, cy = d.y - 44; q.hitFx = { unit: b.def, t0: q.t };
-      hitEffect(b.move.type, cx, cy, e.crit, e.eff); Audio.sfx(e.dmg === 0 ? 'miss' : e.crit ? 'crit' : e.eff > 1 ? 'hit2' : 'hit');
-      if (e.dmg > 0) { shake(e.crit ? 7 : e.eff > 1 ? 5 : 3); if (!q.boost) FX.hitstop = e.crit ? .1 : .04; }
-      if (e.crit) { flashScreen('#ffffff', .5); spawnSprite('burst', cx, cy, { size: 26, life: .4, col: UI.gold, delay: .05 }); }
+      duelImpactFx(b.fam, b.move.type, cx, cy, d, e); hitEffect(b.move.type, cx, cy, e.crit, e.eff); Audio.sfx(e.dmg === 0 ? 'miss' : e.crit ? 'crit' : e.eff > 1 ? 'hit2' : 'hit');
+      if (e.dmg > 0) { shake(e.crit ? 7 : e.eff > 1 ? 5 : 3); if (!q.boost) FX.hitstop = e.crit ? .1 : .04; flashScreen(e.crit ? '#fff2c0' : '#ffffff', e.crit ? .5 : .22); }
+      if (e.crit) spawnSprite('burst', cx, cy, { size: 30, life: .4, col: UI.gold, delay: .05 });
       floatText(cx, cy - 18, String(e.dmg), e.crit ? UI.gold : '#ffffff', { big: true, life: 1 });
       floatText(cx, cy - 36, e.crit ? 'CRITICAL!' : MOVE_POP[b.move.type], e.crit ? UI.gold : TYPE_COL[b.move.type], { life: .9, delay: .05, outline: '#000', vy: -12 });
       if (e.eff > 1) floatText(cx, cy + 10, e.eff >= 2 ? 'SUPER EFFECTIVE!!' : 'Super effective!', '#ffd24a', { delay: .22, life: 1.1, outline: '#402000', vy: -8 });
@@ -2809,86 +2892,117 @@ function duelBeat(q, b) {
       break;
     }
     case 'miss': { const d = P(b.def.id); q.missFx = { unit: b.def, t0: q.t }; Audio.sfx('miss'); floatText(d.x, d.y - 70, 'MISS', '#c0c0c0', { big: true, life: .9 }); break; }
-    case 'ko': { const p = P(b.unit.id); q.koFx = { unit: b.unit, t0: q.t }; Audio.sfx('faint'); shake(4); spawnParts(p.x, p.y - 30, 18, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 90, life: .7, grav: 60 }); floatText(p.x, p.y - 84, isHuman(b.unit.team) ? 'FAINTED!' : 'KO!', isHuman(b.unit.team) ? UI.red : UI.gold, { big: true, life: 1.2 }); break; }
+    case 'ko': { const p = P(b.unit.id); q.koFx = { unit: b.unit, t0: q.t }; Audio.sfx('faint'); shake(4); spawnParts(p.x, p.y - 30, 18, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 90, life: .7, grav: 60 }); spawnSprite('ring', p.x, p.y - 30, { size: 40, life: .5, col: '#ffffff' }); q.focus = { t0: q.t, until: q.t + DUEL_T.ko }; floatText(p.x, p.y - 84, isHuman(b.unit.team) ? 'FAINTED!' : 'KO!', isHuman(b.unit.team) ? UI.red : UI.gold, { big: true, life: 1.2 }); break; }
     case 'thaw': { const p = P(b.unit.id); floatText(p.x, p.y - 70, 'Thawed!', '#98d8f8'); break; }
     case 'outro': { FX.parts = []; FX.sprites = []; FX.texts = []; FX.hitstop = 0; q.banner = null; for (const u of [q.att, q.def]) BT.hpShow.delete(u.id); Audio.sfx('wipe'); break; }
   }
 }
-// The travelling part of each family, from the attacker's front to the defender's chest.
+// The travelling part of each family, from the attacker's front to the defender's chest (field space).
 function duelLaunchFx(b, a, d) {
   const type = b.move.type, F = fxFor(type), c1 = F.parts[0], c2 = F.parts[1], dur = duelLaunchTime(b.fam);
-  const ax = a.x + a.dir * 26, ay = a.y - 44, tx = d.x + d.dir * 6, ty = d.y - 44;
+  const ax = a.x + a.dir * 26, ay = a.y - 44, tx = d.x + d.dir * 6, ty = d.y - 44, dir = a.dir;
   switch (b.fam) {
-    case 'contact': break;
-    case 'fire': Audio.sfx('fire'); for (let i = 0; i < 6; i++) spawnSprite('flame', ax, ay + (vrnd() - .5) * 8, { tx: tx + (vrnd() - .5) * 12, ty: ty + (vrnd() - .5) * 16, life: dur - i * .03, arc: 4 + i * 2, col: c1, col2: type === 'Fire' ? '#ff4a20' : '#4a3ad0', size: 4 + (i % 3), trail: [c1, c2], delay: i * .03 }); break;
-    case 'water': Audio.sfx('water'); for (let i = 0; i < 8; i++) spawnSprite(type === 'Ice' ? 'shard' : 'drop', ax, ay + (vrnd() - .5) * 10, { tx: tx + (vrnd() - .5) * 10, ty: ty + (vrnd() - .5) * 18, life: dur - i * .02, arc: 8 + i * 2, col: c1, col2: c2, trail: [c1], rot: i, spin: 8, delay: i * .02 }); for (let i = 0; i < 2; i++) spawnSprite('bubble', ax, ay, { tx, ty, life: dur, size: 3, col: c2, col2: c1, delay: i * .08 }); break;
-    case 'grass': Audio.sfx('grass'); for (let i = 0; i < 7; i++) spawnSprite('leaf', ax, ay + (vrnd() - .5) * 12, { tx: tx + (vrnd() - .5) * 12, ty: ty + (vrnd() - .5) * 20, life: dur - i * .02, arc: 6 + i * 3, col: '#2a6b38', col2: '#c8f0a0', rot: i, spin: 12, delay: i * .025 }); break;
-    case 'electric': Audio.sfx('elec'); spawnSprite('flash', ax - a.dir * 10, ay, { size: 10, life: .15, col: '#ffe94a' }); for (let i = 0; i < 5; i++) spawnSprite('bolt', ax + (tx - ax) * (i + 1) / 6, ay - 10, { size: 14, life: .14, col: c1, delay: i * dur / 5 }); break;
-    case 'psychic': Audio.sfx('psy'); for (let i = 0; i < 3; i++) spawnSprite('psy', tx, ty, { size: 14 + i * 5, life: .3, col: c1, col2: c2, delay: dur * .3 + i * .08 }); for (let i = 0; i < 3; i++) spawnSprite('wisp', ax, ay + (i - 1) * 8, { tx, ty: ty + (i - 1) * 6, life: dur, size: 4, col: c1, col2: c2, delay: i * .04 }); break;
-    default: if (type === 'Normal' || type === 'Steel') { Audio.sfx('beam'); spawnSprite('beam', ax, ay, { len: tx - ax, life: dur + .1, col: TYPE_COL[type], col2: '#ffffff', size: 5 }); } else { Audio.sfx('swing'); projectileFX(type, ax, ay, tx, ty, dur); }
+    case 'contact': for (let i = 0; i < 2; i++) spawnSprite('speed', a.x - dir * 20, ay + 6, { size: 26, life: dur + .1, col: '#ffffff', dir, delay: i * .05 }); spawnSprite('poof', a.x - dir * 10, a.y, { size: 5, life: .35, col: '#d8d0b8', col2: '#f4f0e0', vx: -dir * 20 }); break;
+    case 'fire': Audio.sfx('fire'); spawnSprite('fireball', ax, ay, { tx, ty, life: dur, arc: 6, size: type === 'Fire' ? 7 : 6, col: c1, col2: type === 'Fire' ? '#ff4a20' : '#4a3ad0', dir, trail: [c1, c2] }); for (let i = 0; i < 4; i++) spawnSprite('flame', ax, ay + (vrnd() - .5) * 10, { tx: tx + (vrnd() - .5) * 14, ty: ty + (vrnd() - .5) * 18, life: dur - i * .03, arc: 10 + i * 4, col: c1, col2: type === 'Fire' ? '#ff4a20' : '#4a3ad0', size: 2 + (i % 2), delay: .04 + i * .03 }); spawnSprite('flash', ax - dir * 8, ay, { size: 8, life: .12, col: '#ffe9a0' }); break;
+    case 'water': Audio.sfx('water'); for (let i = 0; i < 3; i++) spawnSprite('wave', ax, ay + 10 + i * 6, { tx: tx, ty: ty + 10 + i * 6, life: dur + .08, size: 16 - i * 3, col: c1, col2: c2, dir, delay: i * .05 }); for (let i = 0; i < 8; i++) spawnSprite(type === 'Ice' ? 'shard' : 'drop', ax, ay + (vrnd() - .5) * 10, { tx: tx + (vrnd() - .5) * 10, ty: ty + (vrnd() - .5) * 18, life: dur - i * .02, arc: 8 + i * 2, col: c1, col2: c2, trail: [c1], rot: i, spin: 8, delay: i * .02 }); break;
+    case 'grass': Audio.sfx('grass'); for (let i = 0; i < 8; i++) spawnSprite('leaf', tx, ty, { orbit: { r: 34, speed: 9 * (i % 2 ? 1 : -1), a0: i * Math.PI / 4, shrink: true }, life: dur + .25, col: '#2a6b38', col2: '#c8f0a0', rot: i, spin: 14, delay: i * .02 }); for (let i = 0; i < 5; i++) spawnSprite('leaf', ax, ay + (vrnd() - .5) * 12, { tx: tx + (vrnd() - .5) * 12, ty: ty + (vrnd() - .5) * 20, life: dur - i * .02, arc: 6 + i * 3, col: '#2a6b38', col2: '#c8f0a0', rot: i, spin: 12, delay: i * .025 }); break;
+    case 'electric': Audio.sfx('elec'); spawnSprite('flash', ax - dir * 10, ay, { size: 10, life: .15, col: '#ffe94a' }); for (let i = 0; i < 3; i++) spawnSprite('bolt', ax + (tx - ax) * (i + 1) / 4, ay - 6, { size: 12, life: .12, col: c1, delay: i * dur / 4 }); spawnSprite('lightning', tx, ty + 30, { size: ty + 30 + 60, life: .32, col: c1, delay: dur * .55 }); spawnSprite('lightning', tx + dir * 6, ty + 30, { size: ty + 30 + 60, life: .22, col: '#fff7b0', delay: dur * .55 + .12 }); break;
+    case 'psychic': Audio.sfx('psy'); for (let i = 0; i < 4; i++) spawnSprite('psy', tx, ty, { size: 16 + i * 6, life: .35, col: c1, col2: c2, delay: dur * .25 + i * .07 }); for (let i = 0; i < 3; i++) spawnSprite('wisp', ax, ay + (i - 1) * 8, { tx, ty: ty + (i - 1) * 6, life: dur, size: 4, col: c1, col2: c2, delay: i * .04 }); spawnSprite('ring', tx, ty, { size: 30, life: .4, col: c2, delay: dur * .3 }); break;
+    default: if (type === 'Normal' || type === 'Steel') { Audio.sfx('beam'); spawnSprite('beam', ax, ay, { len: tx - ax, life: dur + .1, col: TYPE_COL[type], col2: '#ffffff', size: 6 }); spawnSprite('flash', ax, ay, { size: 9, life: .15, col: '#ffffff' }); } else { Audio.sfx('swing'); projectileFX(type, ax, ay, tx, ty, dur); } if (type === 'Ice') for (let i = 0; i < 4; i++) spawnSprite('crystal', tx + (i - 1.5) * 12, d.y, { size: 22 + (i % 2) * 8, life: .55, col: '#bde4f8', col2: '#ffffff', delay: dur * .6 + i * .04 });
   }
+}
+// The impact: one large, family-flavoured burst on top of the regular hit effect (field space).
+function duelImpactFx(fam, type, cx, cy, d, e) {
+  const F = fxFor(type), c1 = F.parts[0], c2 = F.parts[1], big = e.crit ? 1.4 : e.eff > 1 ? 1.2 : 1;
+  switch (fam) {
+    case 'contact': spawnSprite('impact', cx + d.dir * 6, cy, { size: Math.round(20 * big), life: .3, col: TYPE_COL[type] || '#ffd24a', rot: vrnd() * 3 }); spawnSprite('poof', d.x, d.y, { size: 6, life: .4, col: '#d8d0b8', col2: '#f4f0e0', vx: -d.dir * 20 }); break;
+    case 'fire': spawnSprite('blast', cx, cy, { size: Math.round(28 * big), life: .5, col: type === 'Fire' ? '#ff4a20' : '#4a3ad0', col2: c1 }); break;
+    case 'water': spawnSprite('ring', cx, cy + 8, { size: Math.round(30 * big), life: .45, col: c2 }); for (let i = 0; i < 6; i++) spawnSprite('bubble', cx + (vrnd() - .5) * 20, cy + (vrnd() - .5) * 16, { size: 2 + (i % 3), life: .5, col: c2, col2: c1, vy: -20, delay: vrnd() * .1 }); break;
+    case 'electric': spawnSprite('ring', cx, cy, { size: Math.round(26 * big), life: .35, col: c1 }); break;
+    case 'grass': spawnSprite('ring', cx, cy, { size: Math.round(24 * big), life: .35, col: '#c8f0a0' }); break;
+    case 'psychic': spawnSprite('ring', cx, cy, { size: Math.round(36 * big), life: .5, col: c1 }); break;
+    default: spawnSprite('impact', cx, cy, { size: Math.round(16 * big), life: .28, col: TYPE_COL[type] || '#ffffff', rot: vrnd() * 3 });
+  }
+  if (e.eff > 1) spawnSprite('ring', cx, cy, { size: Math.round(40 * big), life: .5, col: '#ffd24a', delay: .06 });
 }
 
 // ---------------------------------------------------------------- layout & drawing
+// The field (backdrop, ground, sprites and effects) is drawn at an integer zoom on roomy screens so the 96-px
+// sprites fill the scene the way the handheld games frame them; the panels, banner and hints stay at 1×.
+// Layout values are screen pixels; drawing divides by L.z to get field space.
+function duelZoom() { return VIEW.w >= 560 && VIEW.h >= 320 ? 2 : 1; }
 // Two panels, each with its terrain strip below. Wide screens put both at the top, side by side, with the field
 // under them and the ground line low. Narrow portrait screens (too narrow for two panels) put the right-hand
 // side's panel at the top and the left-hand side's panel at the bottom, so the field sits between them and the
 // sprites stand in the middle of the screen instead of above a long empty ground band.
 function duelLayout(q) {
-  const W = VIEW.w, H = VIEW.h, PH = 36, TH = 11; const pw = Math.min(150, Math.floor((W - 18) / 2)); const stacked = pw < 136; const PW = stacked ? Math.min(230, W - 12) : pw;
-  const L = { W, H, stacked, PW, PH, TH, panels: {}, pos: {} }; const left = q.sides.left, right = q.sides.right; const block = PH + TH + 2;
+  const W = VIEW.w, H = VIEW.h, PH = 36, TH = 11, z = duelZoom(); const pw = Math.min(150, Math.floor((W - 18) / 2)); const stacked = pw < 136; const PW = stacked ? Math.min(230, W - 12) : pw;
+  const L = { W, H, z, stacked, PW, PH, TH, panels: {}, pos: {} }; const left = q.sides.left, right = q.sides.right; const block = PH + TH + 2;
   if (stacked) {
     L.panels[right.id] = { x: W - 6 - PW, y: 6, w: PW, h: PH, side: 1 }; L.top = 6 + block + 6;
     const by = H - 6 - block; L.panels[left.id] = { x: 6, y: by, w: PW, h: PH, side: -1 }; L.bottom = by - 4;
     L.gy = clamp(Math.round(L.top + (L.bottom - L.top) * .68), L.top + 108, L.bottom - 14); L.hintY = L.bottom - 11;
   } else {
     L.panels[left.id] = { x: 6, y: 6, w: PW, h: PH, side: -1 }; L.panels[right.id] = { x: W - 6 - PW, y: 6, w: PW, h: PH, side: 1 };
-    L.top = 6 + block + 5; L.bottom = H - 16; L.gy = Math.min(Math.max(L.top + 112, Math.round(H * .8)), L.top + 300, H - 24); L.hintY = H - 10;
+    L.top = 6 + block + 5; L.bottom = H - 16; const minGy = L.top + (z === 2 ? 200 : 112); L.gy = Math.min(Math.max(minGy, Math.round(H * .8)), L.top + 300, H - 24); L.hintY = H - 10;
   }
-  const half = Math.round(W / 2), spread = Math.min(clamp(Math.round(W * .23), 56, 110), Math.floor(W / 2) - 50);
+  if (z === 2) L.gy -= L.gy & 1;
+  const half = Math.round(W / 2), spread = z === 2 ? Math.min(clamp(Math.round(W * .22), 100, 150), Math.floor(W / 2) - 60) : Math.min(clamp(Math.round(W * .23), 56, 110), Math.floor(W / 2) - 50);
   L.pos[left.id] = { x: half - spread, y: L.gy, dir: 1 }; L.pos[right.id] = { x: half + spread, y: L.gy, dir: -1 };
   L.bannerY = L.top + 12; return L;
 }
 const DUEL_SKY = {
-  meadow: { sky: ['#4f6fa0', '#5f82b2', '#7398c2', '#8db0d0'], far: '#3a5f63', hill: '#3b6b45', near: '#2f5a3a', trees: 5 },
-  forest: { sky: ['#3f5f80', '#4a6d8e', '#557a9a', '#6a8aa6'], far: '#2c4f45', hill: '#2a5238', near: '#1f4530', trees: 12 },
-  cave: { sky: ['#17121c', '#1d1724', '#231c2b', '#2a2233'], far: '#2c2436', hill: '#332a3e', near: '#3a3046', stalactites: true },
-  interior: { sky: ['#20203a', '#26263f', '#2c2c46', '#33334e'], far: '#3c3b56', hill: '#44435e', near: '#4c4a66', pillars: true },
-  volcano: { sky: ['#1e0806', '#30100a', '#45170c', '#5e2210'], far: '#3a2020', hill: '#463030', near: '#2c1c1c', glow: true },
-  snow: { sky: ['#546a86', '#6d84a2', '#8ba0ba', '#a9bacd'], far: '#7d90a8', hill: '#93a6bc', near: '#a6b6c8', trees: 4 },
+  meadow: { sky: ['#3f5f96', '#4f6fa0', '#5f82b2', '#7398c2', '#8db0d0', '#a4c2da'], far: '#3a5f63', mid: '#3b6b45', near: '#2f5a3a', trees: 7, sun: '#fff3b0', clouds: true },
+  forest: { sky: ['#31506f', '#3f5f80', '#4a6d8e', '#557a9a', '#6a8aa6', '#7d9ab2'], far: '#2c4f45', mid: '#2a5238', near: '#1f4530', trees: 14, clouds: true },
+  cave: { sky: ['#120e17', '#17121c', '#1d1724', '#231c2b', '#2a2233', '#2f2738'], far: '#2c2436', mid: '#332a3e', near: '#3a3046', stalactites: true },
+  interior: { sky: ['#1a1a30', '#20203a', '#26263f', '#2c2c46', '#33334e', '#3a3a56'], far: '#3c3b56', mid: '#44435e', near: '#4c4a66', pillars: true },
+  volcano: { sky: ['#140404', '#1e0806', '#30100a', '#45170c', '#5e2210', '#7a3016'], far: '#3a2020', mid: '#463030', near: '#2c1c1c', glow: true, embers: true },
+  snow: { sky: ['#47617f', '#546a86', '#6d84a2', '#8ba0ba', '#a9bacd', '#c0cedc'], far: '#7d90a8', mid: '#93a6bc', near: '#a6b6c8', trees: 5, sun: '#ffffff', clouds: true },
 };
+// Layered backdrop in field space: a dithered sky, sun and drifting clouds, two mountain silhouettes, hills with
+// tree lines and a haze band on the horizon. Deterministic per exchange (seeded), animated only by the clock.
 function duelBackdrop(q, L) {
-  const K = DUEL_SKY[q.biome] || DUEL_SKY.meadow, W = L.W, hz = L.gy - 34, R = mulberry32(q.seed);
-  K.sky.forEach((c, i) => { const y0 = Math.round(hz * i / K.sky.length); rect(0, y0, W, Math.round(hz * (i + 1) / K.sky.length) - y0 + 1, c); });
-  rect(0, hz, W, L.H - hz, K.near);
-  if (K.glow) { ctx.globalAlpha = .35; ellipse(Math.round(W / 2), hz, Math.round(W / 2), 22, '#e04e1a'); ctx.globalAlpha = 1; }
-  if (K.pillars) for (let i = 0; i < 4; i++) { const x = Math.round(W * (i + .5) / 4); rect(x - 7, 0, 14, hz + 4, K.far); vline(x - 7, 0, hz + 4, K.near); vline(x + 6, 0, hz + 4, shade(K.far, -.35)); }
-  if (K.stalactites) for (let i = 0; i < 9; i++) { const x = Math.round(R() * W), h = 12 + Math.round(R() * 30); for (let j = 0; j < h; j++) { const w = Math.max(1, Math.round((1 - j / h) * 6)); rect(x - (w >> 1), j, w, 1, K.hill); } }
-  for (let i = 0; i < 6; i++) { const x = Math.round(W * (i + .5) / 6 + (R() - .5) * 40), r = 40 + Math.round(R() * 50); ellipse(x, hz + 6, r, Math.round(r * (K.stalactites ? .2 : .35)), K.far); }
-  if (K.trees) for (let i = 0; i < K.trees; i++) { const x = Math.round(R() * W), h = 14 + Math.round(R() * 14), w = 6 + Math.round(R() * 4); for (let j = 0; j < h; j++) { const ww = Math.max(1, Math.round(w * j / h)); rect(x - (ww >> 1), hz + 4 - h + j, ww, 1, j % 5 === 0 ? shade(K.far, -.15) : K.far); } }
-  for (let i = 0; i < 5; i++) { const x = Math.round(W * (i + .5) / 5 + (R() - .5) * 40), r = 36 + Math.round(R() * 40); ellipse(x, hz + 10, r, Math.round(r * .3), K.hill); }
-  hline(0, hz + 12, W, shade(K.near, .12));
+  const K = DUEL_SKY[q.biome] || DUEL_SKY.meadow, z = L.z, W = Math.ceil(L.W / z), H = Math.ceil(L.H / z), hz = Math.round(L.gy / z) - 34, R = mulberry32(q.seed), t = BT.time;
+  const n = K.sky.length; K.sky.forEach((c, i) => { const y0 = Math.round(hz * i / n), y1 = Math.round(hz * (i + 1) / n); rect(0, y0, W, y1 - y0 + 1, c); if (i) dither(0, y0 - 2, W, 3, K.sky[i - 1], i); });
+  rect(0, hz, W, H - hz, K.near);
+  if (K.sun) { const sx = Math.round(W * .78), sy = Math.round(hz * .32); ctx.globalAlpha = .25; circle(sx, sy, 16, K.sun); ctx.globalAlpha = 1; circle(sx, sy, 9, K.sun); circle(sx, sy, 7, '#ffffff'); }
+  if (K.clouds) for (let i = 0; i < 5; i++) { const cw = 26 + Math.round(R() * 30), cy = Math.round(hz * (.12 + R() * .5)), cx = ((R() * (W + cw * 2) + t * (3 + i)) % (W + cw * 2)) - cw; const col = shade(K.sky[Math.min(n - 1, Math.floor(cy / hz * n))], .18); ellipse(cx, cy, cw >> 1, 4, col); ellipse(cx - (cw >> 2), cy + 2, cw >> 2, 3, col); ellipse(cx + (cw >> 2), cy + 1, (cw * .3) | 0, 3, col); hline(cx - (cw >> 1), cy + 4, cw, shade(col, -.12)); }
+  if (K.glow) { ctx.globalAlpha = .4; ellipse(Math.round(W / 2), hz, Math.round(W / 2), 26, '#e04e1a'); ctx.globalAlpha = 1; }
+  if (K.embers) for (let i = 0; i < 14; i++) { const ex = Math.round(R() * W), ph = R() * 10; const ey = hz + 20 - ((t * (8 + R() * 10) + ph * 30) % (hz + 30)); px(ex + Math.round(Math.sin(t * 2 + ph) * 3), ey, i % 3 ? '#ff8a2c' : '#ffd25a'); }
+  if (K.pillars) for (let i = 0; i < 4; i++) { const x = Math.round(W * (i + .5) / 4); rect(x - 7, 0, 14, hz + 4, K.far); vline(x - 7, 0, hz + 4, K.near); vline(x + 6, 0, hz + 4, shade(K.far, -.35)); rect(x - 9, hz - 6, 18, 4, shade(K.far, -.2)); }
+  if (K.stalactites) for (let i = 0; i < 12; i++) { const x = Math.round(R() * W), h = 12 + Math.round(R() * 34); for (let j = 0; j < h; j++) { const w = Math.max(1, Math.round((1 - j / h) * 7)); rect(x - (w >> 1), j, w, 1, j % 6 ? K.mid : shade(K.mid, -.15)); } }
+  // far mountain range: a jagged silhouette, then a second, nearer and darker one
+  const range = (base, amp, col, step) => { let y = base + Math.round((R() - .5) * amp); for (let x = 0; x <= W; x += step) { const ny = base + Math.round((R() - .5) * amp); for (let i = 0; i < step && x + i <= W; i++) { const yy = Math.round(lerp(y, ny, i / step)); rect(x + i, yy, 1, hz + 6 - yy, col); } y = ny; } };
+  if (!K.stalactites && !K.pillars) { range(hz - 26, 22, shade(K.far, .12), 14); range(hz - 14, 14, K.far, 10); }
+  else range(hz - 10, 8, K.far, 12);
+  for (let i = 0; i < 6; i++) { const x = Math.round(W * (i + .5) / 6 + (R() - .5) * 40), r = 40 + Math.round(R() * 50); ellipse(x, hz + 6, r, Math.round(r * (K.stalactites ? .2 : .32)), K.mid); }
+  if (K.trees) for (let i = 0; i < K.trees; i++) { const x = Math.round(R() * W), h = 12 + Math.round(R() * 14), w = 6 + Math.round(R() * 4); for (let j = 0; j < h; j++) { const ww = Math.max(1, Math.round(w * j / h)); rect(x - (ww >> 1), hz + 4 - h + j, ww, 1, j % 5 === 0 ? shade(K.far, -.15) : K.far); } rect(x, hz + 4, 1, 2, shade(K.far, -.3)); }
+  for (let i = 0; i < 5; i++) { const x = Math.round(W * (i + .5) / 5 + (R() - .5) * 40), r = 36 + Math.round(R() * 40); ellipse(x, hz + 10, r, Math.round(r * .3), shade(K.near, .1)); }
+  ctx.globalAlpha = .12; rect(0, hz - 8, W, 10, '#ffffff'); ctx.globalAlpha = 1; hline(0, hz + 12, W, shade(K.near, .12));
 }
 // Each half of the ground is tiled with that side's own terrain; the near rows fall into shadow for depth.
 function duelGround(q, L) {
-  const W = L.W, H = L.H, gy = L.gy, half = Math.round(W / 2), f = Math.floor(BT.time * 3) % WATER_FRAMES, y0 = gy - 6;
+  const z = L.z, W = Math.ceil(L.W / z), H = Math.ceil(L.H / z), gy = Math.round(L.gy / z), half = Math.round(W / 2), f = Math.floor(BT.time * 3) % WATER_FRAMES, y0 = gy - 6;
   for (const u of [q.sides.left, q.sides.right]) {
-    const t = q.terr[u.id], p = L.pos[u.id], x0 = p.dir === 1 ? 0 : half, x1 = p.dir === 1 ? half : W;
+    const t = q.terr[u.id], p = L.pos[u.id], px0 = Math.round(p.x / z), x0 = p.dir === 1 ? 0 : half, x1 = p.dir === 1 ? half : W;
     ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, H - y0); ctx.clip();
-    const start = p.x - TILE / 2 - Math.ceil((p.x - x0) / TILE) * TILE; let i = 0;
-    for (let x = start; x < x1; x += TILE, i++) for (let row = 0; row < 2; row++) { const v = (B.map.variants[u.y] || [])[(u.x + i + row * 3) % B.map.w] || 0; ctx.drawImage(tileImg(t.ch, v, f), x, y0 + row * TILE); }
+    const start = px0 - TILE / 2 - Math.ceil((px0 - x0) / TILE) * TILE; let i = 0;
+    for (let x = start; x < x1; x += TILE, i++) for (let row = 0; row < 3; row++) { const v = (B.map.variants[u.y] || [])[(u.x + i + row * 3) % B.map.w] || 0; ctx.drawImage(tileImg(t.ch, v, f), x, y0 + row * TILE); }
     ctx.restore();
   }
-  ctx.globalAlpha = .18; hline(0, y0, W, '#ffffff'); ctx.globalAlpha = .25; rect(0, gy + 22, W, H - gy - 22, '#0b1020'); ctx.globalAlpha = .5; rect(0, gy + 44, W, Math.max(0, H - gy - 44), '#0b1020');
+  ctx.globalAlpha = .18; hline(0, y0, W, '#ffffff'); ctx.globalAlpha = .25; rect(0, gy + 22, W, Math.max(0, H - gy - 22), '#0b1020'); ctx.globalAlpha = .5; rect(0, gy + 44, W, Math.max(0, H - gy - 44), '#0b1020');
   ctx.globalAlpha = .5; dither(half - 3, y0, 6, H - y0, '#0b1020'); ctx.globalAlpha = 1; vline(half, y0, H - y0, '#0b1020');
 }
+// Entrance: each side dashes in from its own edge while the curtain opens, and lands with a puff of dust.
+function duelEntrance(q, u, L, t) { const k = clamp((t - .12) / .38, 0, 1); if (k >= 1 && !q.entered[u.id]) { q.entered[u.id] = true; const p = L.pos[u.id]; spawnSprite('poof', p.x / L.z, p.y / L.z, { size: 5, life: .35, col: '#d8d0b8', col2: '#f4f0e0' }); } return 1 - easeOut(k); }
 function duelDrawUnit(q, u, L, t) {
-  const p = L.pos[u.id]; let dx = 0, dy = 0, sx = 1, sy = 1, tint = null, alpha = 1; const flip = p.dir === 1; const soft = REDUCED ? .3 : 1;
-  const pose = q.pose && q.pose.unit === u ? q.pose : null;
+  const z = L.z, p = L.pos[u.id], px0 = p.x / z, py0 = p.y / z, v = q.view[u.id]; let dx = 0, dy = 0, sx = 1, sy = 1, tint = null, alpha = 1, breath = 0; const flip = p.dir === 1; const soft = REDUCED ? .3 : 1;
+  const pose = q.pose && q.pose.unit === u ? q.pose : null; const ghosts = [];
+  const enter = REDUCED ? 0 : duelEntrance(q, u, L, t); if (enter > 0) { dx -= p.dir * (Math.ceil(L.W / z) / 2 + 40) * enter; if (enter > .05) { ghosts.push([dx - p.dir * 10, .25], [dx - p.dir * 20, .12]); } }
   if (pose) {
     const k = t - pose.t0;
     if (pose.kind === 'windup') { const e = Math.min(1, k / DUEL_T.windup); dx = -p.dir * 6 * easeOut(e) * soft; if (pose.fam === 'contact') { sy = 1 - .08 * e; sx = 1 + .06 * e; } else { sy = 1 + .05 * e; sx = 1 - .03 * e; } }
-    else if (pose.kind === 'lunge') { const e = Math.min(1, k / pose.dur); if (e < 1) { dx = p.dir * lerp(-6, 30, easeIn(e)) * soft; sx = 1.1; sy = .95; } else dx = p.dir * lerp(30, 0, easeOut(Math.min(1, (k - pose.dur) / .35))) * soft; }
+    else if (pose.kind === 'lunge') { const e = Math.min(1, k / pose.dur); if (e < 1) { dx = p.dir * lerp(-6, 34, easeIn(e)) * soft; sx = 1.08; sy = .95; if (e > .3) ghosts.push([dx - p.dir * 8, .3], [dx - p.dir * 16, .15]); } else dx = p.dir * lerp(34, 0, easeOut(Math.min(1, (k - pose.dur) / .35))) * soft; }
     else if (pose.kind === 'cast') { const e = Math.min(1, k / pose.dur); dx = p.dir * (e < 1 ? lerp(-6, 8, e) : lerp(8, 0, Math.min(1, (k - pose.dur) / .3))) * soft; if (e < 1) sy = 1.04; }
   }
   const hit = q.hitFx && q.hitFx.unit === u ? t - q.hitFx.t0 : -1;
@@ -2897,44 +3011,48 @@ function duelDrawUnit(q, u, L, t) {
   if (miss >= 0 && miss < .4) { const h = Math.sin(miss / .4 * Math.PI); dx += -p.dir * 14 * h * soft; dy -= 10 * h * soft; }
   const ko = q.koFx && q.koFx.unit === u ? t - q.koFx.t0 : -1;
   if (ko >= DUEL_T.ko) return;
-  if (ko >= 0) { const e = ko / DUEL_T.ko; if (e < .35) tint = Math.floor(ko * 24) % 2 ? '#ffffff' : null; else { const r = (e - .35) / .65; alpha = 1 - r; dy += r * 30 * soft; } }
-  if (!REDUCED && !pose && hit < 0 && ko < 0) { const b = Math.sin(BT.time * 2.4 + u.id) * .5 + .5; sy *= 1 - b * .025; sx *= 1 + b * .012; }
-  ctx.globalAlpha = .3 * alpha; ellipse(Math.round(p.x + dx), p.y + 1, Math.round(30 * sx), 6, '#000000'); ctx.globalAlpha = 1;
-  const num = q.view[u.id].num, big = q.big ? q.big[u.id] : bigReady(num);
-  if (big) drawBig(num, p.x + dx, p.y + dy, { flip, tint, alpha, sx, sy }); else drawMon(num, p.x + dx, p.y + dy, { flip, tint, alpha, sx: 2 * sx, sy: 2 * sy });
+  if (ko >= 0) { const e = ko / DUEL_T.ko; if (e < .35) tint = Math.floor(ko * 24) % 2 ? '#ffffff' : null; else { const r = (e - .35) / .65; alpha = 1 - r; dy += r * 30 * soft; sy = 1 - r * .3; sx = 1 + r * .1; } }
+  const idle = !pose && hit < 0 && ko < 0 && enter <= 0;
+  if (!REDUCED && idle) { if (v.fly) dy -= 3 + Math.round(Math.sin(BT.time * 3 + u.id) * 3); else breath = Math.sin(BT.time * 2.2 + u.id) > 0 ? 1 : 0; }
+  const shadowW = Math.round(30 * sx * (1 - Math.max(0, -dy) / 40)); ctx.globalAlpha = .3 * alpha * (v.fly ? .7 : 1); ellipse(Math.round(px0 + dx), py0 + 1, Math.max(6, shadowW), 6, '#000000'); ctx.globalAlpha = 1;
+  const num = v.num, big = q.big ? q.big[u.id] : bigReady(num);
+  for (const [gx, ga] of ghosts) { if (big) drawBig(num, px0 + gx, py0 + dy, { flip, tint: '#ffffff', alpha: ga * alpha, sx, sy }); }
+  if (big) drawBig(num, px0 + dx, py0 + dy, { flip, tint, alpha, sx, sy, breath }); else drawMon(num, px0 + dx, py0 + dy, { flip, tint, alpha, sx: 2 * sx, sy: 2 * sy });
 }
 function duelPanel(q, u, L) {
   const P = L.panels[u.id], v = q.view[u.id], hp = duelHpAt(q.script, q.t, u.id), t = q.terr[u.id], col = teamColor(u.team);
   panel(P.x, P.y, P.w, P.h, { border: col });
-  const x = P.x + 6, y = P.y + 4; let name = v.name; while (textWidth(name) > P.w - 48 && name.length > 3) name = name.slice(0, -1);
+  const x = P.x + 6, y = P.y + 5; let name = v.name; while (textWidth(name) > P.w - 48 && name.length > 3) name = name.slice(0, -1);
   text(name, x, y, UI.ink); textR('Lv' + v.level, P.x + P.w - 6, y, UI.gold);
   // HP: the current value in the big face, the maximum small, the bar across the rest of the panel
   const ratio = clamp(hp / v.maxHp, 0, 1); const hs = String(Math.max(0, hp)), hw = textWidth(hs, BIG) + textWidth('/' + v.maxHp) + 3;
-  bar(x, y + 11, P.w - 14 - hw, 6, ratio, hpColor(ratio)); bigText(hs, P.x + P.w - 6 - hw, y + 9, hp <= 0 ? UI.red : UI.ink, { outline: '#000' }); textR('/' + v.maxHp, P.x + P.w - 6, y + 11, UI.muted);
-  miniBadge(duelTeamTag(u), col, x, y + 21); v.types.forEach((tp, i) => typeBadge(tp, x + 18 + i * 26, y + 20, 24)); let bx = P.x + P.w - 21; if (v.status) { statusBadge(v.status, bx, y + 21); bx -= 17; }
-  if (v.brace) miniBadge('BRC', BRACE_COL, bx, y + 21); else if (v.root) miniBadge('RT', ROOT_COL, bx, y + 21); // the braced numbers are already in the damage shown
-  const sy = P.y + P.h + 2; rrect(P.x + 1, sy + 1, P.w, L.TH, UI.shadow, 1); rrect(P.x, sy, P.w, L.TH, UI.panelDark, 1);
+  bar(x, y + 11, P.w - 14 - hw, 6, ratio, hpColor(ratio), UI.hpBack, { notch: true }); bigText(hs, P.x + P.w - 6 - hw, y + 9, hp <= 0 ? UI.red : UI.ink, { outline: '#000' }); textR('/' + v.maxHp, P.x + P.w - 6, y + 11, UI.muted);
+  miniBadge(duelTeamTag(u), col, x, y + 20); v.types.forEach((tp, i) => typeBadge(tp, x + 18 + i * 26, y + 19, 24)); let bx = P.x + P.w - 21; if (v.status) { statusBadge(v.status, bx, y + 20); bx -= 17; }
+  if (v.brace) miniBadge('BRC', BRACE_COL, bx, y + 20); else if (v.root) miniBadge('RT', ROOT_COL, bx, y + 20); // the braced numbers are already in the damage shown
+  const sy = P.y + P.h + 2; rrect(P.x + 1, sy + 1, P.w, L.TH, UI.shadow, 1); rrect(P.x, sy, P.w, L.TH, UI.panelDark, 1); outline(P.x, sy, P.w, L.TH, UI.inset);
   ctx.drawImage(tileImg(t.ch, 0, 0), 0, 0, 32, 32, P.x + 3, sy + 2, 7, 7);
   text(t.name.toUpperCase() + '  DEF ' + terrainDef(t, u) + '%  AVO ' + terrainEva(t, u), P.x + 13, sy + 2, UI.muted);
 }
 function drawDuel(q) {
-  const L = duelLayout(q), t = q.t, W = L.W, H = L.H;
-  duelBackdrop(q, L);
-  ctx.save(); ctx.translate(FX.shakeX, FX.shakeY);
+  const L = duelLayout(q), t = q.t, W = L.W, H = L.H, z = L.z;
+  ctx.save(); ctx.scale(z, z); duelBackdrop(q, L);
+  ctx.translate(FX.shakeX, FX.shakeY);
   duelGround(q, L);
+  // focus: the scenery dims while a strike is in the air (and while a KO plays) so the fighters carry the frame
+  if (q.focus && !REDUCED) { const f = q.focus, k = t < f.t0 + .15 ? (t - f.t0) / .15 : t > f.until - .25 ? Math.max(0, (f.until - t) / .25) : 1; if (k > 0) { ctx.globalAlpha = .32 * k; rect(-8, -8, Math.ceil(W / z) + 16, Math.ceil(H / z) + 16, '#050815'); ctx.globalAlpha = 1; } }
   const order = [q.sides.right, q.sides.left]; if (q.pose && q.pose.unit === q.sides.right) order.reverse();
   for (const u of order) duelDrawUnit(q, u, L, t);
-  drawFX(0, 0, false); ctx.restore();
+  drawFX(0, 0, false); drawFXTexts(0, 0); ctx.restore();
   if (FX.flash > 0) { ctx.globalAlpha = FX.flash * .7; rect(0, 0, W, H, FX.flashCol); ctx.globalAlpha = 1; }
   for (const u of [q.sides.left, q.sides.right]) duelPanel(q, u, L);
-  drawFXTexts(FX.shakeX, FX.shakeY);
   const b = q.banner;
   if (b && t < b.until) {
-    const k = Math.min(1, (t - b.t0) / .12), name = b.move.name.toUpperCase(), col = TYPE_COL[b.move.type] || UI.ink; const w = textWidth(name, BIG) + 40, x = Math.round(W / 2 - w / 2), y = Math.round(L.bannerY - (1 - easeOut(k)) * 6);
-    rrect(x + 1, y + 1, w, 15, UI.shadow, 1); rrect(x, y, w, 15, '#101a30', 1); outline(x, y, w, 15, col); typeBadge(b.move.type, x + 4, y + 3, 24); bigText(name, x + 32, y + 3, col, { outline: '#000' });
-    if (b.counter) { const cw = textWidth('COUNTER!') + 8; rrect(Math.round(W / 2 - cw / 2), y - 10, cw, 9, UI.red, 1); textC('COUNTER!', W / 2, y - 9, '#ffffff'); }
+    const k = Math.min(1, (t - b.t0) / .12), name = b.move.name.toUpperCase(), col = TYPE_COL[b.move.type] || UI.ink; const w = textWidth(name, BIG) + 44, x = Math.round(W / 2 - w / 2), y = Math.round(L.bannerY - (1 - easeOut(k)) * 6);
+    rrect(x + 1, y + 2, w, 17, UI.shadow, 2); rrect(x, y, w, 17, UI.inset, 2); rrect(x + 1, y + 1, w - 2, 15, '#101a30', 1); hline(x + 2, y + 1, w - 4, shade(col, -.2)); hline(x + 2, y + 15, w - 4, shade(col, -.5)); rect(x + 1, y + 2, 2, 13, col);
+    typeBadge(b.move.type, x + 7, y + 4, 24); bigText(name, x + 35, y + 4, col, { outline: '#000' });
+    if (b.counter) { const cw = textWidth('COUNTER!') + 10; rrect(Math.round(W / 2 - cw / 2), y - 11, cw, 10, UI.red, 1); textC('COUNTER!', W / 2, y - 10, '#ffffff'); }
   }
-  textC(q.boost ? (VIEW.touch ? 'tap again: skip' : 'X / any key: skip') : (VIEW.touch ? 'tap: faster  ·  tap twice: skip' : 'any key: faster  ·  X: skip'), W / 2, L.hintY, UI.muted, { outline: UI.shadow });
+  hintLine(q.boost ? (VIEW.touch ? ['tap again: skip'] : [['X', 'skip']]) : (VIEW.touch ? ['tap: faster', 'tap twice: skip'] : [['any key', 'faster'], ['X', 'skip']]), W / 2, L.hintY);
 }
 // The whole frame: a curtain wipe from the board into the scene, the scene, and the wipe back.
 function drawDuelFrame(q) {
@@ -3396,31 +3514,32 @@ function closeTerritoryGuide() { BT.territoryGuide = false; setPref('territoryGu
 function territoryGuideRect() {
   const w = Math.min(VIEW.w - 16, 280), lines = [];
   ['1. Move onto a gold center. Choose Capture twice at full HP.', '2. Use RESERVE at an empty blue center. Arrivals act next turn.', '3. Take the enemy HQ, or hold two centers for three of your turn starts.'].forEach((s, i) => { if (i) lines.push(''); lines.push(...wrap(s, w - 16)); });
-  const h = 48 + lines.length * 10; return { x: (VIEW.w - w) / 2, y: (VIEW.h - h) / 2, w, h, lines };
+  const h = 60 + lines.length * 10; return { x: (VIEW.w - w) / 2, y: (VIEW.h - h) / 2, w, h, lines };
 }
 function drawTerritoryGuide() {
   const r = territoryGuideRect(); ctx.globalAlpha = .65; rect(0, 0, VIEW.w, VIEW.h, '#050915'); ctx.globalAlpha = 1;
-  hudPanel(r.x, r.y, r.w, r.h, { title: 'WIN WITH YOUR TEAM' });
-  r.lines.forEach((s, i) => text(s, r.x + 8, r.y + 10 + i * 10, UI.ink));
-  button(r.x + 8, r.y + r.h - 28, r.w - 16, 20, 'GOT IT · H FOR RULES', closeTerritoryGuide);
+  const p = hudPanel(r.x, r.y, r.w, r.h, { header: 'WIN WITH YOUR TEAM' });
+  r.lines.forEach((s, i) => text(s, r.x + 8, p.cy + i * 10, UI.ink));
+  button(r.x + 8, r.y + r.h - 28, r.w - 16, 20, 'GOT IT · H FOR RULES', closeTerritoryGuide, { variant: 'primary' });
 }
 function territorySetupDraw() {
   const W = VIEW.w, H = VIEW.h, S = SC.data, portrait = H > W; rect(0, 0, W, H, '#0d1526'); SC.hits = [];
-  bigC('TERRITORY', W / 2, 8, UI.gold); textC('THREE BRIDGES · Lv12', W / 2, 23, UI.ink);
+  screenTitle('TERRITORY', 'THREE BRIDGES  ·  Lv12', 6);
   const pw = portrait ? Math.min(W - 24, 220) : Math.min(W * .42, Math.max(50, (H - 100) * 15 / 11));
   const ph = Math.round(pw * 11 / 15), x = portrait ? (W - pw) / 2 : 10, y = 38;
-  ctx.drawImage(S.bd.canvas, x, y, pw, ph); outline(x - 1, y - 1, pw + 2, ph + 2, UI.border);
+  panel(x - 5, y - 5, pw + 10, ph + 10, { flat: true, fill: UI.panelDark }); ctx.drawImage(S.bd.canvas, x, y, pw, ph);
   const top = portrait ? y + ph + 23 : 38, cw = Math.min(150, (W - 16) / 2);
+  if (!portrait) { const rx = Math.round(W * .54) - 8, rw = Math.min(W - rx - 10, 170); panel(rx, top - 8, rw, 6 * 14 + 30, { header: 'YOUR TEAM', headerRight: '3 start · 6 total' }); }
   if (portrait) textC('3 start · 6 teammates · 5 on map', W / 2, y + ph + 8, UI.green);
   TERRITORY_ROSTER.forEach(([n, cost], i) => {
     const xx = portrait ? W / 2 - cw + (i % 2) * cw : W * .54, yy = top + (portrait ? Math.floor(i / 2) * 16 : i * 14);
-    ctx.drawImage(monIcon(n, false), xx, yy - 4, 24, 18); text(DEX[n].name, xx + 25, yy, UI.ink); text(i < 3 ? 'START' : cost + ' CP', xx + (portrait ? 25 : 100), yy + (portrait ? 8 : 0), UI.muted);
+    const yy2 = portrait ? yy : yy + 17; ctx.drawImage(monIcon(n, false), xx, yy2 - 4, 24, 18); text(DEX[n].name, xx + 25, yy2, UI.ink); if (portrait) text(i < 3 ? 'START' : cost + ' CP', xx + 25, yy2 + 8, UI.muted); else textR(i < 3 ? 'STARTS' : cost + ' CP', Math.round(W * .54) + Math.min(W - Math.round(W * .54) - 2, 162) - 8, yy2, i < 3 ? UI.green : UI.gold);
   });
   const info = ['Capture the enemy HQ, or hold', '2 of 3 centers for 3 own turns.', 'Centers earn 2 CP each turn.'];
-  const iy = portrait ? top + 54 : H - 61; info.forEach((s, i) => textC(s, W / 2, iy + i * 10, UI.muted));
+  const iy = portrait ? top + 54 : H - 76; if (portrait || iy >= top + 112) info.forEach((s, i) => textC(s, W / 2, iy + i * 10, UI.muted)); // short landscapes keep the rules in HELP
   const by = portrait ? Math.max(iy + 34, H - 30) : H - 29;
-  bigButton(W / 2 - 82, by, 108, 22, 'START', () => launchTerritory(S.seed), { hot: SC.i === 0 });
-  bigButton(W / 2 + 32, by, 50, 22, 'BACK', () => goScene('title'), { hot: SC.i === 1 });
+  footerBand(H - by + 6); bigButton(W / 2 - 82, by, 108, 22, 'START', () => launchTerritory(S.seed), { hot: SC.i === 0, variant: 'primary' });
+  bigButton(W / 2 + 32, by, 50, 22, 'BACK', () => goScene('title'), { hot: SC.i === 1, variant: 'ghost' });
 }
 
 function drawTerritoryProperties() {
@@ -3465,8 +3584,8 @@ function territoryResultsDraw() {
   textC('Turn ' + S.turn + ' · Centers ' + S.centers.join('-'), W / 2, y + 64, UI.muted);
   textC('Deployed ' + S.deployments.join(' / '), W / 2, y + 78, UI.muted);
   textC('Fixed level · campaign kept separate', W / 2, y + 100, UI.muted);
-  bigButton(W / 2 - 82, y + 136, 108, 22, 'REMATCH', () => launchTerritory(S.seed + 1), { hot: SC.i === 0 });
-  bigButton(W / 2 + 32, y + 136, 50, 22, 'TITLE', () => goScene('title'), { hot: SC.i === 1 });
+  bigButton(W / 2 - 82, y + 136, 108, 22, 'REMATCH', () => launchTerritory(S.seed + 1), { hot: SC.i === 0, variant: 'danger' });
+  bigButton(W / 2 + 32, y + 136, 50, 22, 'TITLE', () => goScene('title'), { hot: SC.i === 1, variant: 'ghost' });
 }
 // Deterministic model smoke. Real beginPhase/nextPhase is separately exercised by the UI-flow tests.
 function simTerritory(seed = 7, maxTurns = TERRITORY.turns + 1) {
@@ -3504,11 +3623,8 @@ function goScene(name, data) { SC.name = name; SC.t = 0; SC.i = 0; SC.hits = [];
 function hit(x, y, w, h, run, label) { SC.hits.push({ x, y, w, h, run, label }); }
 function hitAt(px2, py) { for (const h of SC.hits) if (px2 >= h.x && py >= h.y && px2 < h.x + h.w && py < h.y + h.h) return h; return null; }
 function bigButton(x, y, w, h, label, run, opt = {}) {
-  const hot = (INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h && !VIEW.touch) || opt.hot; const col = opt.col || UI.panel2; const base = hot ? shade(col, .25) : col;
-  rrect(x + 1, y + 2, w, h, UI.shadow, 2); rrect(x, y, w, h, hot ? UI.gold : UI.border, 2); rrect(x + 1, y + 1, w - 2, h - 2, base, 1);
-  hline(x + 2, y + 1, w - 4, shade(base, .3)); hline(x + 2, y + h - 2, w - 4, shade(base, -.35)); vline(x + 1, y + 2, h - 4, shade(base, .12));
-  if (hot && !opt.small) pointerHand(x - 10, y + h / 2 - 3, SC.t * 1000);
-  if (opt.small) textC(label, x + w / 2, y + (h - 7) / 2, opt.ink || UI.ink, { shadow: UI.shadow }); else bigC(label, x + w / 2, y + (h - 9) / 2, opt.ink || UI.ink, { outline: UI.shadow });
+  const hot = (INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h && !VIEW.touch) || opt.hot;
+  uiButton(x, y, w, h, label, { hot, col: opt.col, variant: opt.variant, ink: opt.ink, big: !opt.small, disabled: opt.disabled, icon: opt.icon });
   hit(x, y, w, h, run, label); }
 
 // ---------------------------------------------------------------- shared: draw a map definition as a backdrop
@@ -3540,16 +3656,17 @@ function drawLogo(cx, y, t) {
   const sub = 'A PIXEL TACTICS ADVENTURE  ·  GEN I'; const sw = textWidth(sub) + 16; const sy = y + 31 + 9 * s + 12;
   rrect(cx - sw / 2 + 1, sy + 1, sw, 12, UI.shadow, 1); rrect(cx - sw / 2, sy, sw, 12, '#182640', 1); outline(cx - sw / 2, sy, sw, 12, UI.border2); textC(sub, cx, sy + 2, UI.border);
 }
-// Menu card: icon box, big label, small hint; the hot one lifts, glows gold and gets the pointer hand.
+// Menu card: an icon well, the headline label and a one-line hint. The selected card gets a gold frame, a
+// gold marker bar and a brighter fill; the others sit quietly on a dark translucent row.
 function menuCard(x, y, w, h, label, sub, icon, hot, run, opt = {}) {
-  const fill = hot ? '#2c4784' : (opt.fill || '#16223e'); const lift = hot ? 1 : 0; y -= lift;
-  rrect(x + 2, y + 2 + lift, w, h, UI.shadow, 2); rrect(x, y, w, h, hot ? UI.gold : UI.border2, 2); rrect(x + 1, y + 1, w - 2, h - 2, fill, 1);
-  hline(x + 2, y + 1, w - 4, shade(fill, .25)); hline(x + 2, y + h - 2, w - 4, shade(fill, -.3));
-  rrect(x + 4, y + 4, h - 8, h - 8, hot ? '#1a2a50' : '#0f1830', 1); outline(x + 4, y + 4, h - 8, h - 8, hot ? UI.gold : '#3a4a70'); if (icon) iconAt(icon, x + 4 + (h - 8 - 9) / 2, y + 4 + (h - 8 - 9) / 2, hot ? '#ffffff' : '#d8dce8');
-  bigText(label, x + h + 2, y + (h - 9) / 2 - (sub ? 3 : 0), hot ? '#ffffff' : UI.ink, { outline: hot ? '#1a2a50' : UI.shadow });
-  if (sub) { let s = sub; const avail = w - h - 6; while (textWidth(s) > avail && s.length > 4) s = s.slice(0, -1); if (s !== sub) s = s.replace(/[ ·]+$/, '') + '…'; text(s, x + h + 2, y + h / 2 + 2, hot ? '#ffe9a0' : UI.muted); }
-  if (hot) pointerHand(x - 11, y + h / 2 - 4, SC.t * 1000);
-  hit(x, y + lift, w, h, run, label);
+  const fill = hot ? UI.sel : (opt.fill || '#141a2c');
+  rrect(x + 1, y + 2, w, h, UI.shadow, 2); rrect(x, y, w, h, hot ? UI.gold : UI.inset, 2); rrect(x + 1, y + 1, w - 2, h - 2, hot ? shade(UI.gold, -.45) : '#2a3350', 1); rrect(x + 2, y + 2, w - 4, h - 4, fill, 1);
+  hline(x + 3, y + 2, w - 6, shade(fill, .22)); hline(x + 3, y + h - 3, w - 6, shade(fill, -.3)); if (hot) rect(x + 2, y + 3, 2, h - 6, UI.gold);
+  const iw = h - 8; rrect(x + 6, y + 4, iw, iw, hot ? '#1a2a50' : '#0d1222', 1); outline(x + 6, y + 4, iw, iw, hot ? shade(UI.gold, -.3) : '#3a4460'); if (icon) iconAt(icon, x + 6 + (iw - 9) / 2, y + 4 + (iw - 9) / 2, hot ? '#ffffff' : '#c8cddc');
+  const tx = x + iw + 12; bigText(label, tx, y + (h - 9) / 2 - (sub ? 3 : 0), hot ? '#ffffff' : UI.ink, { shadow: hot ? shade(UI.sel, -.6) : UI.shadow });
+  if (sub) { let s = sub; const avail = w - iw - 18; while (textWidth(s) > avail && s.length > 4) s = s.slice(0, -1); if (s !== sub) s = s.replace(/[ ·]+$/, '') + '…'; text(s, tx, y + h / 2 + 2, hot ? '#ffe9a0' : UI.muted); }
+  if (hot) text('▸', x + w - 10, y + (h - 5) / 2, UI.gold);
+  hit(x, y, w, h, run, label);
 }
 function titleDraw() {
   const W = VIEW.w, H = VIEW.h; if (!BACKDROP) BACKDROP = makeBackdrop(CHAPTERS[3].map);
@@ -3558,10 +3675,10 @@ function titleDraw() {
   // parade of mons walking along the road
   TITLE_MONS.forEach((n, i) => { const x = ((SC.t * 22 + i * 46) % (W + 60)) - 30, y = H * .8 + Math.round(Math.sin(SC.t * 8 + i) * 2); ellipse(x, y + 1, 10, 3, '#00000060'); drawMon(n, x, y, {}); });
   // top and bottom vignette bands so the UI sits on something calm
-  ctx.globalAlpha = .45; rect(0, 0, W, 8, '#05070f'); rect(0, H - 22, W, 22, '#05070f'); ctx.globalAlpha = 1;
+  ctx.globalAlpha = .45; rect(0, 0, W, 8, '#05070f'); ctx.globalAlpha = 1;
   const portrait = H > W, compact = !portrait && H < 260; const ly = (compact ? 4 : portrait ? Math.round(H * .17) : 22) + Math.round(Math.sin(SC.t * 2) * 1.5);
   if (compact) { ctx.save(); ctx.translate(W / 2, ly); ctx.scale(.65, .65); drawLogo(0, 0, SC.t); ctx.restore(); } else drawLogo(W / 2, ly, SC.t);
-  SC.hits = []; const bw = Math.min(196, compact && W >= 320 ? (W - 24) / 2 : W - 40), bh = 22, gap = 4; const bx = W / 2 - bw / 2; let by = ly + 31 + 27 + 30;
+  SC.hits = []; const bw = Math.min(200, compact && W >= 320 ? (W - 24) / 2 : W - 40), bh = compact ? 20 : 26, gap = compact ? 3 : 5; const bx = W / 2 - bw / 2; let by = ly + 31 + 27 + 30;
   const save = loadSave(), susp = !!loadSuspend();
   const items = [];
   if (susp) items.push(['RESUME BATTLE', 'Pick up the suspended fight', 'play', () => resumeSuspend()]);
@@ -3570,12 +3687,13 @@ function titleDraw() {
   items.push(['SKIRMISH', 'Random maps · catch wild Pokémon', 'dice', () => startSkirmishSetup()]);
   items.push(['TERRITORY', 'Centers · income · reserves', 'flag', () => startTerritorySetup()]);
   items.push(['VERSUS', 'Two trainers · one device', 'vs', () => startVersusSetup()]);
-  if (portrait) by = ly + 31 + 27 + 44; const total = items.length * (bh + gap); if (by + total > H - 26) by = Math.max(ly + 96, H - 26 - total);
+  if (portrait) by = ly + 31 + 27 + 44; const total = items.length * (bh + gap); if (by + total > H - 22) by = Math.max(ly + 96, H - 22 - total);
   const cols = !portrait && W >= 320 && (compact || items.length > 4) ? 2 : 1; if (compact) by = 75; const firstY = by;
+  { const rows = cols === 2 ? Math.ceil(items.length / 2) : items.length; const mw = cols === 2 ? bw * 2 + 8 : bw; ctx.globalAlpha = .55; rrect(W / 2 - mw / 2 - 8, by - 6, mw + 16, rows * (bh + gap) - gap + 12, '#060912', 2); ctx.globalAlpha = 1; }
   items.forEach((it, i) => { const xx = cols === 2 ? W / 2 - bw - 4 + (i % 2) * (bw + 8) : bx; const yy = cols === 2 ? firstY + Math.floor(i / 2) * (bh + gap) : by; menuCard(xx, yy, bw, bh, it[0], it[1], it[2], SC.i === i, () => { Audio.sfx('ok'); it[3](); }); by += bh + gap; });
   SC.menuLen = items.length;
-  text(Audio.muted ? '♪ off  (M)' : '♪ on  (M)', 6, H - 12, UI.muted); if (!narrowView()) textR('Sprites: Pokémon Showdown · PokeAPI', W - 6, H - 12, UI.muted);
-  if (Math.floor(SC.t * 2) % 2) textC(VIEW.touch ? 'tap a card' : 'arrows + Z  ·  or click', W / 2, H - (narrowView() ? 24 : 12), UI.muted, { outline: UI.shadow });
+  const fy = footerBand(16) + 4; hintLine([['M', Audio.muted ? 'music off' : 'music on']], 6, fy, { left: true, pill: false }); if (!narrowView()) textR('Sprites: Pokémon Showdown · PokeAPI', W - 6, fy, UI.dim);
+  if (!narrowView()) hintLine(VIEW.touch ? ['tap a card'] : [['▲▼', 'select'], ['Z', 'confirm']], W / 2, fy, { pill: false });
 }
 function titleInput(ev) {
   if (ev.type === 'key') { if (ev.key === 'up') { SC.i = (SC.i - 1 + SC.menuLen) % SC.menuLen; Audio.sfx('menu'); } else if (ev.key === 'down') { SC.i = (SC.i + 1) % SC.menuLen; Audio.sfx('menu'); } else if (ev.key === 'ok') { const h = SC.hits[SC.i]; if (h) h.run(); } else if (ev.key === 'mute') Audio.toggle(); return; }
@@ -3596,11 +3714,11 @@ function versusDraw() {
   if (!S.bd || S.bdSeed !== S.seed || S.bdWild !== S.wild) { S.map = versusMap(S.seed, 18, 11, { wild: S.wild, level: S.level }); S.bd = makeBackdrop(S.map); S.bdSeed = S.seed; S.bdWild = S.wild; }
   drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2, (H - S.bd.canvas.height) / 2, .8); SC.hits = [];
   const picks = S.teams[0].length + S.teams[1].length, full = picks >= S.size * 2; const cur = full ? -1 : S.order[picks]; S.cur = cur;
-  bigC('VERSUS', W / 2, 4, UI.gold, { outline: '#3a2000' });
-  textC(full ? 'Both teams are ready!' : 'PLAYER ' + (cur + 1) + ' picks  ·  ' + (picks + 1) + ' / ' + S.size * 2, W / 2, 16, full ? UI.green : cur === 0 ? '#8ab4ff' : '#ff9a9a', { outline: UI.shadow });
+  screenTitle('VERSUS', null, 3);
+  textC(full ? 'Both teams are ready!' : 'PLAYER ' + (cur + 1) + ' picks  ·  ' + (picks + 1) + ' / ' + S.size * 2, W / 2, 18, full ? UI.green : cur === 0 ? '#8ab4ff' : '#ff9a9a', { outline: UI.shadow });
   const narrow = narrowView(); const bh = btnH(), sbh = narrow ? 16 : 13; let gy;
   if (narrow) { // phones: two compact team strips, no arena preview, a four-column roster
-    const pw = Math.floor((W - 16) / 2), ph = 40, py = 28;
+    const pw = Math.floor((W - 16) / 2), ph = 40, py = 38;
     const strip = (t, x) => { panel(x, py, pw, ph, { title: 'P' + (t + 1), fill: t === 0 ? '#17264a' : '#3a1a22', border: cur === t ? UI.gold : UI.border });
       const sw = Math.floor((pw - 10) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 5 + i * sw; portraitBg(sx, py + 7, sw - 2, 22, t); const n = S.teams[t][i]; if (n != null) { ctx.drawImage(monIcon(n, t === 1), sx + Math.round((sw - 2 - 24) / 2), py + 10, 24, 18); hit(sx, py + 7, sw - 2, 22, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 7, sw - 2, 22, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 14, '#ffffff40'); }
       textC(S.teams[t].length >= S.size ? 'READY' : cur === t ? 'PICKING…' : S.teams[t].length + '/' + S.size, x + pw / 2, py + ph - 9, S.teams[t].length >= S.size ? UI.green : cur === t ? UI.gold : UI.muted); };
@@ -3632,13 +3750,13 @@ function versusDraw() {
   setting(6, 'Arena', S.seed, () => { S.seed = (S.seed + 999) % 1000; Audio.sfx('menu'); }, () => { S.seed = (S.seed + 1) % 1000; Audio.sfx('menu'); });
   setting(narrow ? Math.min(92, W - 88) : 112, 'Level', S.level, () => { S.level = Math.max(5, S.level - 5); Audio.sfx('menu'); }, () => { S.level = Math.min(50, S.level + 5); Audio.sfx('menu'); });
   const wildBtn = (x, y, w, h) => bigButton(x, y, w, h, S.wild ? 'WILD: ON' : 'WILD: OFF', () => { S.wild = !S.wild; Audio.sfx('menu'); }, { small: true, col: S.wild ? '#2a6a3a' : '#3a3a4a' });
-  if (!narrow) { wildBtn(216, sy, 70, sbh); if (W > 470) text('Snake draft · click a picked slot to drop it', 296, sy + 4, UI.muted, { outline: UI.shadow }); }
-  const go = () => { if (!full) { Audio.sfx('error'); return; } Audio.sfx('select'); S.go(); }; const goOpt = { col: full ? '#8a2c2c' : '#3a3a4a', ink: full ? '#ffffff' : UI.muted };
+  if (!narrow) { wildBtn(216, sy, 70, sbh); if (W > 470) hintLine(['Snake draft', 'click a picked slot to drop it'], 296, sy + 3, { left: true }); }
+  const go = () => { if (!full) { Audio.sfx('error'); return; } Audio.sfx('select'); S.go(); }; const goOpt = full ? { variant: 'danger' } : { disabled: true };
   if (narrow) { const r1 = H - 2 * (bh + 4), r2 = H - bh - 4, cw3 = Math.floor((W - 20) / 3);
-    bigButton(6, r1, cw3, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { col: '#5a4a30' }); bigButton(10 + cw3, r1, cw3, bh, 'RANDOM', () => vsRandom(S)); wildBtn(14 + 2 * cw3, r1, cw3, bh);
-    bigButton(6, r2, cw3, bh, 'CLEAR', () => { S.teams = [[], []]; Audio.sfx('cancel'); }, { col: '#3a3a4a' }); bigButton(10 + cw3, r2, W - 16 - cw3, bh, 'BATTLE!', go, goOpt);
-  } else { const by = H - 24;
-    bigButton(6, by, 60, 18, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { col: '#5a4a30' }); bigButton(72, by, 70, 18, 'RANDOM', () => vsRandom(S)); bigButton(148, by, 60, 18, 'CLEAR', () => { S.teams = [[], []]; Audio.sfx('cancel'); }, { col: '#3a3a4a' }); bigButton(W - 96, by, 90, 18, 'BATTLE!', go, goOpt); }
+    bigButton(6, r1, cw3, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' }); bigButton(10 + cw3, r1, cw3, bh, 'RANDOM', () => vsRandom(S)); wildBtn(14 + 2 * cw3, r1, cw3, bh);
+    bigButton(6, r2, cw3, bh, 'CLEAR', () => { S.teams = [[], []]; Audio.sfx('cancel'); }, { variant: 'dark' }); bigButton(10 + cw3, r2, W - 16 - cw3, bh, 'BATTLE!', go, goOpt);
+  } else { const by = footerBand(28) + 5;
+    bigButton(6, by, 60, 18, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' }); bigButton(72, by, 70, 18, 'RANDOM', () => vsRandom(S)); bigButton(148, by, 60, 18, 'CLEAR', () => { S.teams = [[], []]; Audio.sfx('cancel'); }, { variant: 'dark' }); bigButton(W - 96, by, 90, 18, 'BATTLE!', go, full ? { variant: 'danger' } : { disabled: true }); }
 }
 function vsCols() { return VIEW.w < 300 ? 4 : VIEW.w < 330 ? 6 : 7; }
 function versusInput(ev) {
@@ -3651,7 +3769,7 @@ function versusInput(ev) {
 // ---------------------------------------------------------------- starter pick
 function starterDraw() {
   const W = VIEW.w, H = VIEW.h; drawBackdrop(BACKDROP, 0, 0, .6);
-  const title = W < 200 ? 'YOUR PARTNER' : 'CHOOSE YOUR PARTNER'; bigC(title, W / 2, 14, UI.gold, { outline: '#3a2000' });
+  const title = W < 200 ? 'YOUR PARTNER' : 'CHOOSE YOUR PARTNER'; screenTitle(title, null, 12);
   const quote = wrap('Prof. Oak: "Take one. They are all good, I checked."', W - 12); quote.forEach((l, i) => textC(l, W / 2, 28 + i * 9, UI.ink, { outline: UI.shadow }));
   SC.hits = []; const cw = 96, gap = 10; const x0 = W / 2 - (cw * 3 + gap * 2) / 2; const top = 28 + quote.length * 9 + 7;
   if (W < cw * 3 + gap * 2 + 8) { // phones: three wide, short cards stacked down the screen; stats on two short rows
@@ -3666,7 +3784,7 @@ function starterDraw() {
       if (h >= 54) text(sel ? (VIEW.touch ? 'tap again to choose' : 'Z to choose') : '', tx, y + 47, UI.gold);
       hit(x, y, w, h, () => { if (SC.i === i) { Audio.sfx('select'); pickStarter(n); } else { SC.i = i; Audio.sfx('cursor'); } });
     });
-    textC(VIEW.touch ? 'tap twice to choose' : 'click / Z to choose', W / 2, H - 14, UI.muted, { outline: UI.shadow }); return;
+    hintLine(VIEW.touch ? ['tap twice to choose'] : [['◂▸', 'browse'], ['Z', 'choose']], W / 2, H - 14); return;
   }
   STARTERS.forEach((n, i) => {
     const d = DEX[n]; const x = x0 + i * (cw + gap), y = 44, h = 150; const sel = SC.i === i; panel(x, y, cw, h, { fill: sel ? '#2a3d6a' : UI.panel, border: sel ? UI.gold : UI.border });
@@ -3674,10 +3792,10 @@ function starterDraw() {
     textC(d.name, x + cw / 2, y + 48, sel ? UI.gold : UI.ink); d.types.forEach((t, j) => typeBadge(t, x + cw / 2 - (d.types.length * 26) / 2 + j * 26 + 1, y + 58, 24));
     const u = makeUnit(n, 5, 0, { hpBonus: BOND_HP }); const st = [['HP', u.maxHp, 40], ['ATK', u.atk, 20], ['DEF', u.def, 20], ['SPA', u.spa, 20], ['SPD', u.spd, 20], ['SPE', u.spe, 20]];
     st.forEach((s, j) => { const sy = y + 70 + j * 9; text(s[0], x + 8, sy, UI.muted); bar(x + 30, sy + 1, cw - 40, 5, s[1] / s[2], sel ? UI.gold : UI.blue); });
-    text('MOV ' + u.mov + ' · ' + u.moves.map(m => m.name).join('/'), x + 8, y + h - 10, UI.muted);
+    hline(x + 6, y + h - 24, cw - 12, UI.inset); text('MOV ' + u.mov + '  ·  ' + ROLES[u.role].name, x + 8, y + h - 21, UI.muted); { let mv = u.moves.map(m => m.name).join(' / '); while (textWidth(mv) > cw - 16 && mv.length > 4) mv = mv.slice(0, -1); text(mv, x + 8, y + h - 12, UI.info); }
     hit(x, y, cw, h, () => { if (SC.i === i) { Audio.sfx('select'); pickStarter(n); } else { SC.i = i; Audio.sfx('cursor'); } });
   });
-  textC(VIEW.touch ? 'tap twice to choose' : 'click / Z to choose', W / 2, H - 14, UI.muted, { outline: UI.shadow });
+  hintLine(VIEW.touch ? ['tap twice to choose'] : [['◂▸', 'browse'], ['Z', 'choose']], W / 2, H - 14);
 }
 function starterInput(ev) {
   if (ev.type === 'key') { if (ev.key === 'left') { SC.i = (SC.i + 2) % 3; Audio.sfx('cursor'); } else if (ev.key === 'right') { SC.i = (SC.i + 1) % 3; Audio.sfx('cursor'); } else if (ev.key === 'ok') { Audio.sfx('select'); pickStarter(STARTERS[SC.i]); } else if (ev.key === 'back') goScene('title'); return; }
@@ -3696,11 +3814,11 @@ function storyDraw() {
   battleDraw(); const d = SC.dialog; if (!d) return; const W = VIEW.w, H = VIEW.h; const line = d.lines[d.i];
   ctx.globalAlpha = .35; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
   const bh = 58, by = H - bh - 6, bx = 6, bw = W - 12; panel(bx, by, bw, bh, { fill: '#182640' });
-  if (line.mon) { rect(bx + 6, by + 8, 44, 40, '#0e1628'); outline(bx + 6, by + 8, 44, 40, UI.border2); drawMon(line.mon, bx + 28, by + 46 + Math.round(Math.sin(d.t * 6) * (d.chars < line.text.length ? 1 : 0)), { flip: false }); }
-  const tx = bx + (line.mon ? 58 : 10); rrect(tx - 2, by - 5, textWidth(line.who) + 10, 11, UI.gold, 1); text(line.who, tx + 3, by - 3, '#3a2000');
+  if (line.mon) { ctx.save(); ctx.beginPath(); ctx.rect(bx + 6, by + 8, 44, 40); ctx.clip(); portraitBg(bx + 6, by + 8, 44, 40, 0); ctx.restore(); drawMon(line.mon, bx + 28, by + 46 + Math.round(Math.sin(d.t * 6) * (d.chars < line.text.length ? 1 : 0)), { flip: false }); }
+  const tx = bx + (line.mon ? 58 : 10); { const tw = textWidth(line.who) + 12; rrect(tx - 4, by - 9, tw, 12, UI.inset, 1); rect(tx - 3, by - 8, tw - 2, 10, UI.gold); hline(tx - 2, by - 8, tw - 4, '#fff0b0'); text(line.who, tx + 2, by - 7, UI.goldDark); }
   const lines = wrap(line.text, bw - (line.mon ? 70 : 22)); let shown = Math.floor(d.chars); lines.forEach((l, i) => { if (shown <= 0) return; const s = l.slice(0, shown); shown -= l.length + 1; text(s, tx, by + 12 + i * 11, UI.ink); });
   if (d.chars >= line.text.length && Math.floor(d.t * 3) % 2) { const ax = bx + bw - 12, ay = by + bh - 9; rect(ax - 3, ay, 7, 1, UI.gold); rect(ax - 2, ay + 1, 5, 1, UI.gold); rect(ax - 1, ay + 2, 3, 1, UI.gold); px(ax, ay + 3, UI.gold); }
-  textR((d.i + 1) + '/' + d.lines.length + '  · X: skip', bx + bw - 4, by - 3, UI.muted, { outline: UI.shadow });
+  hintLine([(d.i + 1) + ' / ' + d.lines.length, ['X', 'skip']], bx + bw - 4 - 80, by - 12, { left: true });
   // focus the camera on the speaker's Pokémon if it is on the board
   const spk = B.units.find(u => u.num === line.mon && u.hp > 0); if (spk && !d.focused) { d.focused = true; centerCam(spk.x, spk.y); spk.fx.sy = .8; spk.fx.sx = 1.2; }
 }
@@ -3712,9 +3830,9 @@ function prepDraw() {
   const W = VIEW.w, H = VIEW.h; const P = SC.data; const ch = P.chapter; rect(0, 0, W, H, '#0e0c10'); if (!P.bd) P.bd = makeBackdrop(ch.map); drawBackdrop(P.bd, (W - P.bd.canvas.width) / 2, (H - P.bd.canvas.height) / 2, .75);
   SC.hits = [];
   const narrow = narrowView(), bh = btnH(); const foot = narrow ? 2 * (bh + 4) + 12 : 30;
-  bigC((ch.num ? 'CHAPTER ' + ch.num + ' · ' : '') + ch.title.toUpperCase(), W / 2, 6, UI.gold, { outline: '#3a2000' }); textC(narrow ? 'Deploy up to ' + ch.slots : objectiveTextFor(ch.map.objective) + ' · deploy up to ' + ch.slots, W / 2, 18, UI.ink, { outline: UI.shadow });
+  screenTitle((ch.num ? 'CHAPTER ' + ch.num + ' · ' : '') + ch.title.toUpperCase(), narrow ? 'Deploy up to ' + ch.slots : objectiveTextFor(ch.map.objective) + ' · deploy up to ' + ch.slots, 4);
   // party grid (left)
-  const cols = narrow ? 1 : W < 420 ? 2 : 3; const cw = narrow ? W - 12 : 118, chh = 30; const gx = 6, gy = 30; const rowsVisible = Math.floor((H - gy - foot) / (chh + 3));
+  const cols = narrow ? 1 : W < 420 ? 2 : 3; const cw = narrow ? W - 12 : 118, chh = 30; const gx = 6, gy = 38; const rowsVisible = Math.floor((H - gy - foot) / (chh + 3));
   const party = P.party; const total = Math.ceil(party.length / cols); SC.scroll = clamp(SC.scroll, 0, Math.max(0, total - rowsVisible));
   ctx.save(); ctx.beginPath(); ctx.rect(0, gy - 2, cols * (cw + 4) + 8, rowsVisible * (chh + 3) + 2); ctx.clip();
   party.forEach((p, i) => {
@@ -3734,18 +3852,18 @@ function prepDraw() {
   }
   const sel = party[SC.i]; if (sel && rx > gx + 200) { const u = restoreUnit(sel); panel(rx, ry + 68, rw, 48, { title: u.name.toUpperCase() }); const st = [['ATK', u.atk], ['DEF', u.def], ['SPA', u.spa], ['SPD', u.spd], ['SPE', u.spe], ['MOV', u.mov]]; st.forEach((s, j) => { const sx = rx + 6 + (j % 3) * 38, sy = ry + 74 + Math.floor(j / 3) * 10; text(s[0], sx, sy, UI.muted); textR(String(s[1]), sx + 34, sy, UI.ink); }); text(u.moves.map(m => m.name).join(', ').slice(0, 28), rx + 6, ry + 96, '#98d8f8'); const ev = u.dex.evos.length ? 'Evolves Lv' + Math.min(...u.dex.evos.map(e => e[1])) : 'Final form'; let rl = ROLES[u.role].name + ' · ' + ev; while (textWidth(rl) > rw - 12 && rl.length > 6) rl = rl.slice(0, -1); text(rl, rx + 6, ry + 106, UI.green); }
   const start = () => { if (!P.deploy.length) { Audio.sfx('error'); return; } Audio.sfx('select'); P.start(); }, auto = () => { Audio.sfx('ok'); autoDeploy(P); }, back = () => { Audio.sfx('cancel'); goScene('title'); };
-  if (narrow) { const r1 = H - 2 * (bh + 4), r2 = H - bh - 4; text('Deployed ' + P.deploy.length + '/' + ch.slots + ' · tap a card · first leads', 6, r1 - 10, UI.muted, { outline: UI.shadow });
-    bigButton(6, r1, 60, bh, 'BACK', back, { col: '#5a4a30' }); bigButton(72, r1, W - 78, bh, 'AUTO PICK', auto); bigButton(6, r2, W - 12, bh, 'START', start, { col: '#2a6a3a' }); return; }
-  const by = H - 24; bigButton(W - 96, by, 90, 18, 'START', start, { col: '#2a6a3a' });
+  if (narrow) { footerBand(foot); const r1 = H - 2 * (bh + 4), r2 = H - bh - 4; text('Deployed ' + P.deploy.length + '/' + ch.slots + ' · tap a card · first leads', 6, r1 - 10, UI.muted);
+    bigButton(6, r1, 60, bh, 'BACK', back, { variant: 'ghost' }); bigButton(72, r1, W - 78, bh, 'AUTO PICK', auto); bigButton(6, r2, W - 12, bh, 'START', start, P.deploy.length ? { variant: 'primary' } : { disabled: true }); return; }
+  const by = footerBand(28) + 5; bigButton(W - 96, by, 90, 18, 'START', start, P.deploy.length ? { variant: 'primary' } : { disabled: true });
   bigButton(W - 190, by, 88, 18, 'AUTO PICK', auto);
-  bigButton(6, by, 70, 18, 'BACK', back, { col: '#5a4a30' });
-  text('Deployed ' + P.deploy.length + '/' + ch.slots + '  ·  click a card to toggle  ·  first slot leads', 82, by + 5, UI.muted, { outline: UI.shadow });
+  bigButton(6, by, 70, 18, 'BACK', back, { variant: 'ghost' });
+  hintLine(['Deployed ' + P.deploy.length + '/' + ch.slots, VIEW.touch ? 'tap a card to toggle' : ['Z', 'toggle a card'], 'first slot leads'], 82, by + 5, { left: true, pill: false });
 }
 function toggleDeploy(P, i) { const k = P.deploy.indexOf(i); if (k >= 0) { P.deploy.splice(k, 1); Audio.sfx('cancel'); } else if (P.deploy.length < P.chapter.slots) { P.deploy.push(i); Audio.sfx('ok'); } else Audio.sfx('error'); }
 function autoDeploy(P) { const idx = P.party.map((p, i) => i).sort((a, b) => P.party[b].level - P.party[a].level); P.deploy = idx.slice(0, P.chapter.slots); }
 function prepInput(ev) {
   const P = SC.data; const cols = narrowView() ? 1 : VIEW.w < 420 ? 2 : 3;
-  if (ev.type === 'key') { if (ev.key === 'left') SC.i = Math.max(0, SC.i - 1); else if (ev.key === 'right') SC.i = Math.min(P.party.length - 1, SC.i + 1); else if (ev.key === 'up') SC.i = Math.max(0, SC.i - cols); else if (ev.key === 'down') SC.i = Math.min(P.party.length - 1, SC.i + cols); else if (ev.key === 'ok') toggleDeploy(P, SC.i); else if (ev.key === 'next') { if (P.deploy.length) P.start(); } else if (ev.key === 'back') goScene('title'); else if (ev.key === 'mute') Audio.toggle(); if (['left', 'right', 'up', 'down'].includes(ev.key)) { Audio.sfx('cursor'); const r = Math.floor(SC.i / cols); if (r < SC.scroll) SC.scroll = r; const rowsVisible = Math.floor((VIEW.h - 30 - (narrowView() ? 2 * (btnH() + 4) + 12 : 30)) / 33); if (r >= SC.scroll + rowsVisible) SC.scroll = r - rowsVisible + 1; } return; }
+  if (ev.type === 'key') { if (ev.key === 'left') SC.i = Math.max(0, SC.i - 1); else if (ev.key === 'right') SC.i = Math.min(P.party.length - 1, SC.i + 1); else if (ev.key === 'up') SC.i = Math.max(0, SC.i - cols); else if (ev.key === 'down') SC.i = Math.min(P.party.length - 1, SC.i + cols); else if (ev.key === 'ok') toggleDeploy(P, SC.i); else if (ev.key === 'next') { if (P.deploy.length) P.start(); } else if (ev.key === 'back') goScene('title'); else if (ev.key === 'mute') Audio.toggle(); if (['left', 'right', 'up', 'down'].includes(ev.key)) { Audio.sfx('cursor'); const r = Math.floor(SC.i / cols); if (r < SC.scroll) SC.scroll = r; const rowsVisible = Math.floor((VIEW.h - 38 - (narrowView() ? 2 * (btnH() + 4) + 12 : 30)) / 33); if (r >= SC.scroll + rowsVisible) SC.scroll = r - rowsVisible + 1; } return; }
   if (ev.type === 'wheel') { SC.scroll += ev.dy > 0 ? 1 : -1; return; }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
@@ -3761,24 +3879,25 @@ function resultsDraw() {
     text('Turns ' + R.turns + '   ·   KOs ' + R.kills, x + 8, y + 44, UI.ink);
     [0, 1].forEach(tm => { const yy = y + 58 + tm * 32; rrect(x + 6, yy, w - 12, 28, teamColorD(tm), 1); text('P' + (tm + 1), x + 10, yy + 3, teamColorL(tm)); R.rosters[tm].forEach((n, i) => { const cx = x + 40 + i * 34; const alive = R.teams[tm].includes(n); if (!alive) ctx.globalAlpha = .3; drawMon(n, cx, yy + 27, { flip: tm === 1 }); ctx.globalAlpha = 1; if (!alive) text('KO', cx - 5, yy + 4, UI.red, { shadow: '#000' }); }); textR(R.teams[tm].length + ' left', x + w - 10, yy + 3, UI.ink); });
     const bh = btnH();
-    if (W < 280) { bigButton(6, H - 2 * (bh + 4), (W - 16) / 2, bh, 'REMATCH', () => { Audio.sfx('select'); R.rematch(); }, { col: '#8a2c2c' }); bigButton(10 + (W - 16) / 2, H - 2 * (bh + 4), (W - 16) / 2, bh, 'NEW TEAMS', () => { Audio.sfx('ok'); R.setup(); }); bigButton(6, H - bh - 4, W - 12, bh, 'TITLE', () => { Audio.sfx('cancel'); R.next(); }, { col: '#5a4a30' }); return; }
-    bigButton(W / 2 - 132, H - 28, 80, 18, 'REMATCH', () => { Audio.sfx('select'); R.rematch(); }, { col: '#8a2c2c' });
-    bigButton(W / 2 - 44, H - 28, 88, 18, 'NEW TEAMS', () => { Audio.sfx('ok'); R.setup(); });
-    bigButton(W / 2 + 52, H - 28, 80, 18, 'TITLE', () => { Audio.sfx('cancel'); R.next(); }, { col: '#5a4a30' });
+    if (W < 280) { footerBand(2 * (bh + 4) + 4); bigButton(6, H - 2 * (bh + 4), (W - 16) / 2, bh, 'REMATCH', () => { Audio.sfx('select'); R.rematch(); }, { variant: 'danger' }); bigButton(10 + (W - 16) / 2, H - 2 * (bh + 4), (W - 16) / 2, bh, 'NEW TEAMS', () => { Audio.sfx('ok'); R.setup(); }); bigButton(6, H - bh - 4, W - 12, bh, 'TITLE', () => { Audio.sfx('cancel'); R.next(); }, { variant: 'ghost' }); return; }
+    const fy = footerBand(30) + 6; bigButton(W / 2 - 132, fy, 80, 18, 'REMATCH', () => { Audio.sfx('select'); R.rematch(); }, { variant: 'danger' });
+    bigButton(W / 2 - 44, fy, 88, 18, 'NEW TEAMS', () => { Audio.sfx('ok'); R.setup(); });
+    bigButton(W / 2 + 52, fy, 80, 18, 'TITLE', () => { Audio.sfx('cancel'); R.next(); }, { variant: 'ghost' });
     return;
   }
   const rc = Math.max(1, Math.floor((w - 16) / 96)), cc = Math.max(1, Math.floor((w - 16) / 70)); // rewards / catches per row
   const nRew = R.rewards ? Object.keys(R.rewards).length : 0, nC = R.caught ? R.caught.length : 0, nT = R.trained ? Math.min(6, R.trained.length) : 0, nE = R.evolved ? R.evolved.length : 0;
   const lose = wrap('The team limps back to the Poké Center. Everyone is fine. Mostly.', w - 16);
-  const ph = 24 + (win ? 0 : (lose.length - 1) * 9) + (nRew ? 14 + Math.ceil(nRew / rc) * 10 : 0) + (nC ? 14 + Math.ceil(nC / cc) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + 8;
-  panel(x, y, w, Math.min(H - 44, Math.max(60, ph)), { title: win ? (R.skirmish ? 'SKIRMISH WON' : 'CHAPTER CLEAR') : 'RETREAT' });
-  y += 8; if (win) { text('Turns ' + R.turns + (R.par ? ' (par ' + R.par + ')' : '') + '   KOs ' + R.kills, x + 8, y, UI.ink); if (R.par && R.turns <= R.par) textR('★ UNDER PAR', x + w - 8, y, UI.gold); y += 12; }
+  const ph = 36 + (win ? 0 : (lose.length - 1) * 9) + (nRew ? 14 + Math.ceil(nRew / rc) * 10 : 0) + (nC ? 14 + Math.ceil(nC / cc) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + 8;
+  const phh = Math.min(H - 44, Math.max(60, ph)); y = Math.max(8, Math.round((H - 30 - phh) / 2));
+  const p = panel(x, y, w, phh, { header: win ? (R.skirmish ? 'SKIRMISH WON' : 'CHAPTER CLEAR') : 'RETREAT', headerRight: win && R.par && R.turns <= R.par ? '★ UNDER PAR' : null, headerRightCol: UI.gold });
+  y = p.cy; if (win) { text('Turns ' + R.turns + (R.par ? ' (par ' + R.par + ')' : '') + '   ·   KOs ' + R.kills, x + 8, y, UI.ink); y += 12; }
   else { lose.forEach(l => { text(l, x + 8, y, UI.ink); y += 9; }); y += 3; }
-  if (R.rewards && Object.keys(R.rewards).length) { text('Rewards', x + 8, y, UI.gold); y += 10; let i = 0; for (const k in R.rewards) { const cx = x + 10 + (i % rc) * 96; const cy = y + Math.floor(i / rc) * 10; drawBall(cx + 4, cy + 4, ITEMS[k].col, 3); text(ITEMS[k].name + ' ×' + R.rewards[k], cx + 12, cy + 1, UI.ink); i++; } y += Math.ceil(i / rc) * 10 + 4; }
-  if (R.caught && R.caught.length) { text('New team members', x + 8, y, UI.gold); y += 10; R.caught.forEach((c, i) => { const cx = x + 10 + (i % cc) * 70; const cy = y + Math.floor(i / cc) * 26; drawMon(c.num, cx + 16, cy + 22 + Math.round(Math.sin(SC.t * 6 + i) * 2), {}); text(DEX[c.num].name, cx + 32, cy + 6, UI.ink); text('Lv' + c.level, cx + 32, cy + 14, UI.gold); }); y += Math.ceil(R.caught.length / cc) * 26 + 4; }
-  if (R.trained && R.trained.length) { text('Training at the Center', x + 8, y, UI.gold); y += 10; R.trained.forEach((t, i) => { if (i > 5) return; let s = t; while (textWidth(s) > w - 20 && s.length > 8) s = s.slice(0, -1); text(s, x + 10, y, '#98d8f8'); y += 9; }); y += 2; }
+  if (R.rewards && Object.keys(R.rewards).length) { sectionLabel('Rewards', x + 8, y, w - 16, UI.gold); y += 10; let i = 0; for (const k in R.rewards) { const cx = x + 10 + (i % rc) * 96; const cy = y + Math.floor(i / rc) * 10; drawBall(cx + 4, cy + 4, ITEMS[k].col, 3); text(ITEMS[k].name + ' ×' + R.rewards[k], cx + 12, cy + 1, UI.ink); i++; } y += Math.ceil(i / rc) * 10 + 4; }
+  if (R.caught && R.caught.length) { sectionLabel('New team members', x + 8, y, w - 16, UI.gold); y += 10; R.caught.forEach((c, i) => { const cx = x + 10 + (i % cc) * 70; const cy = y + Math.floor(i / cc) * 26; drawMon(c.num, cx + 16, cy + 22 + Math.round(Math.sin(SC.t * 6 + i) * 2), {}); text(DEX[c.num].name, cx + 32, cy + 6, UI.ink); text('Lv' + c.level, cx + 32, cy + 14, UI.gold); }); y += Math.ceil(R.caught.length / cc) * 26 + 4; }
+  if (R.trained && R.trained.length) { sectionLabel('Training at the Center', x + 8, y, w - 16, UI.gold); y += 10; R.trained.forEach((t, i) => { if (i > 5) return; let s = t; while (textWidth(s) > w - 20 && s.length > 8) s = s.slice(0, -1); text(s, x + 10, y, '#98d8f8'); y += 9; }); y += 2; }
   if (R.evolved && R.evolved.length) { R.evolved.forEach(e => { let s = e; while (textWidth(s) > w - 20 && s.length > 8) s = s.slice(0, -1); text(s, x + 10, y, UI.gold); y += 9; }); }
-  bigButton(W / 2 - 50, H - 28, 100, btnH(), R.nextLabel || 'CONTINUE', () => { Audio.sfx('ok'); R.next(); }, { col: '#2a6a3a' });
+  { const fy = footerBand(30) + 6; bigButton(W / 2 - 50, fy, 100, 18, R.nextLabel || 'CONTINUE', () => { Audio.sfx('ok'); R.next(); }, { variant: 'primary' }); }
 }
 function resultsInput(ev) { if (ev.type === 'key' && (ev.key === 'ok' || ev.key === 'back')) { Audio.sfx('ok'); SC.data.next(); return; } if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); } }
 
@@ -3798,15 +3917,15 @@ function skirmishDraw() {
   const W = VIEW.w, H = VIEW.h; const S = SC.data; rect(0, 0, W, H, '#0e0c10'); if (!S.bd || S.bdSeed !== S.seed) { S.map = skirmishMap(S.seed, 16, 11, S.level); S.bd = makeBackdrop(S.map); S.bdSeed = S.seed; }
   drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 + 40, (H - S.bd.canvas.height) / 2 + 30, .82); drawCloudShadows(SC.t);
   const narrow = narrowView(), bh = btnH(), sbh = narrow ? 16 : 13;
-  SC.hits = []; bigC('SKIRMISH', W / 2, 6, UI.gold, { outline: '#3a2000' }); textC(narrow ? S.map.name : S.map.name + '  ·  random map, wild Pokémon to catch, a Rival to beat', W / 2, 18, UI.muted, { outline: UI.shadow });
-  const sc = Math.max(.25, Math.min(1, Math.floor(Math.min((W - 20) / S.bd.canvas.width, (H - (narrow ? 150 : 110)) / S.bd.canvas.height) * 4) / 4)); const pw = S.bd.canvas.width * sc, ph = S.bd.canvas.height * sc; const px0 = W / 2 - pw / 2, py0 = 30; rrect(px0 - 4, py0 - 4, pw + 8, ph + 8, '#0b1020', 2); ctx.drawImage(S.bd.canvas, px0, py0, pw, ph); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border); outline(px0 - 3, py0 - 3, pw + 6, ph + 6, UI.border2);
+  SC.hits = []; screenTitle('SKIRMISH', narrow ? S.map.name : S.map.name + '  ·  random map, wild Pokémon to catch, a Rival to beat', 4);
+  const sc = Math.max(.25, Math.min(1, Math.floor(Math.min((W - 20) / S.bd.canvas.width, (H - (narrow ? 156 : 116)) / S.bd.canvas.height) * 4) / 4)); const pw = S.bd.canvas.width * sc, ph = S.bd.canvas.height * sc; const px0 = W / 2 - pw / 2, py0 = 36; rrect(px0 - 4, py0 - 4, pw + 8, ph + 8, '#0b1020', 2); ctx.drawImage(S.bd.canvas, px0, py0, pw, ph); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border); outline(px0 - 3, py0 - 3, pw + 6, ph + 6, UI.border2);
   for (const u of S.map.units) { const d = DEX[u.mon]; const ux = px0 + (u.x + .5) * TILE * sc, uy = py0 + (u.y + 1) * TILE * sc; ellipse(ux, uy, 6, 2, teamColor(u.team == null ? 1 : u.team)); ctx.drawImage(monIcon(d.num, true), Math.round(ux - 10), Math.round(uy - 15), 20, 15); }
   for (const d of S.map.deploy) { const ux = px0 + d.x * TILE * sc, uy = py0 + d.y * TILE * sc; outline(ux, uy, TILE * sc, TILE * sc, teamColor(0)); }
   const by = py0 + ph + 10; const setting = (x, y, label, val, dec, inc) => { text(label, x, y + (sbh - 7) / 2, UI.muted, { outline: UI.shadow }); bigButton(x + 58, y, 18, sbh, '-', dec, { small: true }); textC(String(val), x + 88, y + (sbh - 7) / 2, UI.gold, { outline: UI.shadow }); bigButton(x + 100, y, 18, sbh, '+', inc, { small: true }); };
   setting(10, by, 'Map seed', S.seed, () => { S.seed = (S.seed + 999) % 1000; Audio.sfx('menu'); }, () => { S.seed = (S.seed + 1) % 1000; Audio.sfx('menu'); });
   setting(10, by + sbh + 5, 'Enemy level', S.level, () => { S.level = Math.max(3, S.level - 2); Audio.sfx('menu'); }, () => { S.level = Math.min(48, S.level + 2); Audio.sfx('menu'); });
   const px1 = narrow ? 10 : 150, py1 = narrow ? by + 2 * (sbh + 5) + 2 : by; text('Party: ' + S.party.length + ' Pokémon' + (S.preset ? ' (loaner team)' : ' (campaign save)'), px1, py1 + 4, UI.ink, { outline: UI.shadow }); if (S.party.length) S.party.slice(0, 8).forEach((p, i) => { ctx.drawImage(monIcon(p.num), Math.round(px1 + i * 22), py1 + 12, 24, 18); });
-  bigButton(W - 96, H - bh - 6, 90, bh, 'PREPARE', () => { Audio.sfx('select'); S.go(); }, { col: '#2a6a3a' }); bigButton(6, H - bh - 6, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { col: '#5a4a30' });
+  { const fy = footerBand(bh + 12) + 6; bigButton(W - 96, fy, 90, bh, 'PREPARE', () => { Audio.sfx('select'); S.go(); }, { variant: 'primary' }); bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' }); if (!narrow) hintLine([['◂▸', 'seed'], ['▲▼', 'level'], ['Z', 'prepare']], W / 2, fy + (bh - 7) / 2, { pill: false }); }
 }
 function skirmishInput(ev) { const S = SC.data; if (ev.type === 'key') { if (ev.key === 'left') S.seed = (S.seed + 999) % 1000; else if (ev.key === 'right') S.seed = (S.seed + 1) % 1000; else if (ev.key === 'up') S.level = Math.min(48, S.level + 2); else if (ev.key === 'down') S.level = Math.max(3, S.level - 2); else if (ev.key === 'ok') S.go(); else if (ev.key === 'back') goScene('title'); return; } if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); } }
 // ============================================================================
@@ -3976,7 +4095,7 @@ function simBattle(maxTurns = 30, cautious = true) {
   }
   return { result: B.result, turn: B.turn, p: alive(0).length, e: alive(1).length };
 }
-window.__pk = { autoTurn, simBattle, startVersusSetup, launchVersus, get B() { return B; }, BT, SC, VIEW, CAM, INPUT, Audio, get SAVE() { return SAVE; }, HUD, goScene, startBattle, CHAPTERS, DEX, makeUnit, tileAction, endTurn };
+window.__pk = { autoTurn, simBattle, startVersusSetup, launchVersus, startSkirmishSetup, startTerritorySetup, startNewGame, get B() { return B; }, BT, SC, VIEW, CAM, INPUT, Audio, get SAVE() { return SAVE; }, HUD, goScene, startBattle, CHAPTERS, DEX, makeUnit, tileAction, endTurn };
 </script>
 </body>
 </html>

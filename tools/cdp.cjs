@@ -171,6 +171,28 @@ async function main() {
       await tapTile(7, 3); await waitMode('move', 3000); await tapTile(7, 3); await waitMode('menu', 4000); await sleep(200); { const [cx, cy] = await tileCenter(7, 3); await clip('ui-menu-zoom', cx - 60, cy - 80, 320, 200); }
       await key('x', 'KeyX'); await waitMode('move', 3000); await key('x', 'KeyX'); await waitMode('idle', 3000); await clip('ui-terrain-zoom', 1000, 620, 280, 100); await key('x', 'KeyX'); await waitMode('endmenu', 3000); await sleep(200); await shot('ui-endmenu'); { const [cx, cy] = await tileCenter(7, 3); await clip('ui-endmenu-zoom', cx - 40, cy - 60, 320, 200); }
     }
+    if (script === 'ui2') {
+      // every non-battle screen plus the modal cards, for design review
+      await nav('silent&nosave'); await sleep(500); await ev('__pk.startNewGame()'); await waitScene('starter', 5000); await sleep(300); await shot('ui2-starter');
+      await nav('ch=1&prep&silent&nosave'); await waitScene('prep', 5000); await sleep(300); await shot('ui2-prep');
+      await nav('silent&nosave'); await sleep(500); await ev('__pk.startSkirmishSetup()'); await waitScene('skirmish', 5000); await sleep(300); await shot('ui2-skirmish');
+      await nav('territory=3&silent&nosave&noguide'); await sleep(500); await shot('ui2-territory-setup');
+      await nav('territory=3&auto&silent&nosave'); await waitMode('territoryGuide', 8000); await sleep(300); await shot('ui2-territory-guide'); await key('z', 'KeyZ'); await waitMode('idle', 5000); await sleep(200); await shot('ui2-territory-idle');
+      await nav('ch=1&silent&nosave&seed=3'); await waitMode('idle', 6000);
+      await key('h', 'KeyH'); await sleep(200); await shot('ui2-help'); await key('z', 'KeyZ'); await sleep(200); await shot('ui2-help-2'); await key('x', 'KeyX'); await sleep(200);
+      await ev('__pk.BT.cx=8; __pk.BT.cy=3'); await key('c', 'KeyC'); await sleep(200); await shot('ui2-unitsheet'); await key('x', 'KeyX'); await sleep(200);
+      await ev('(function(){const c=__pk.B.units.find(u=>u.name==="Charmander"); c.x=7; c.y=3; __pk.BT.cx=7; __pk.BT.cy=3;})()'); await sleep(200); await shot('ui2-hover');
+      await tapTile(7, 3); await waitMode('move', 3000); await tapTile(7, 3); await waitMode('menu', 4000); await key('ArrowDown'); await key('ArrowDown'); await key('z', 'KeyZ'); await sleep(200); await shot('ui2-bag'); await key('x', 'KeyX'); await sleep(100); await key('x', 'KeyX'); await sleep(100); await key('x', 'KeyX'); await waitMode('idle', 3000);
+      await ev('__pk.B.units.filter(u=>u.team!==0).forEach(u=>u.hp=0); __pk.endTurn()'); await waitMode('end', 8000); await sleep(1000); await shot('ui2-victory'); await key('z', 'KeyZ'); await waitScene('story', 8000); await sleep(1200); await shot('ui2-story'); await key('x', 'KeyX'); await waitScene('results', 8000); await sleep(300); await shot('ui2-results');
+    }
+    if (script === 'duel') {
+      // the lateral attack scene, frame by frame
+      await nav('ch=1&silent&nosave&seed=3'); await waitMode('idle', 6000); await ev("setPref('battle','full')");
+      await ev('(function(){const c=__pk.B.units.find(u=>u.name==="Charmander"); c.x=7; c.y=3; __pk.BT.cx=7; __pk.BT.cy=3;})()');
+      await tapTile(7, 3); await waitMode('move', 3000); await tapTile(8, 3); await waitMode('target', 3000); await key('z', 'KeyZ');
+      const t0 = Date.now(); let i = 0; while (Date.now() - t0 < 4200) { await shot('duel-' + String(i).padStart(2, '0')); i++; await sleep(60); }
+      out.push('mode after: ' + await ev('__pk.BT.mode'));
+    }
     out.push('--- console ---'); out.push(...logs.slice(0, 40));
   } finally { chrome.kill(); }
   console.log(out.join('\n'));

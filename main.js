@@ -165,4 +165,4 @@ function simBattle(maxTurns = 30, cautious = true) {
   }
   return { result: B.result, turn: B.turn, p: alive(0).length, e: alive(1).length };
 }
-window.__pk = { autoTurn, simBattle, startVersusSetup, launchVersus, get B() { return B; }, BT, SC, VIEW, CAM, INPUT, Audio, get SAVE() { return SAVE; }, HUD, goScene, startBattle, CHAPTERS, DEX, makeUnit, tileAction, endTurn };
+window.__pk = { autoTurn, simBattle, startVersusSetup, launchVersus, startSkirmishSetup, startTerritorySetup, startNewGame, get B() { return B; }, BT, SC, VIEW, CAM, INPUT, Audio, get SAVE() { return SAVE; }, HUD, goScene, startBattle, CHAPTERS, DEX, makeUnit, tileAction, endTurn };
