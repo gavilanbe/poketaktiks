@@ -3735,7 +3735,8 @@ function menuCard(x, y, w, h, label, sub, icon, hot, run, opt = {}) {
   hline(x + 3, y + 2, w - 6, shade(fill, .22)); hline(x + 3, y + h - 3, w - 6, shade(fill, -.3)); if (hot) rect(x + 2, y + 3, 2, h - 6, UI.gold);
   const iw = h - 8; rrect(x + 6, y + 4, iw, iw, hot ? '#1a2a50' : '#0d1222', 1); outline(x + 6, y + 4, iw, iw, hot ? shade(UI.gold, -.3) : '#3a4460'); if (icon) iconAt(icon, x + 6 + (iw - 9) / 2, y + 4 + (iw - 9) / 2, hot ? '#ffffff' : '#c8cddc');
   const tx = x + iw + 12; bigText(label, tx, y + (h - 9) / 2 - (sub ? 3 : 0), hot ? '#ffffff' : UI.ink, { shadow: hot ? shade(UI.sel, -.6) : UI.shadow });
-  if (sub) { let s = sub; const avail = w - iw - 18; while (textWidth(s) > avail && s.length > 4) s = s.slice(0, -1); if (s !== sub) s = s.replace(/[ ·]+$/, '') + '…'; text(s, tx, y + h / 2 + 2, hot ? '#ffe9a0' : UI.muted); }
+  if (sub) { let s = sub; const avail = w - iw - 18 - (opt.mons && opt.mons.length && w >= 150 ? Math.min(4, opt.mons.length) * 15 + 6 : 0); while (textWidth(s) > avail && s.length > 4) s = s.slice(0, -1); if (s !== sub) s = s.replace(/[ ·]+$/, '') + '…'; text(s, tx, y + h / 2 + 2, hot ? '#ffe9a0' : UI.muted); }
+  if (opt.mons && opt.mons.length && w >= 150) { const n = Math.min(4, opt.mons.length); for (let i = 0; i < n; i++) { const mx = x + w - 14 - (n - i) * 15; ctx.globalAlpha = hot ? 1 : .75; ctx.drawImage(monIcon(opt.mons[i]), mx, y + h / 2 - 8 + (hot ? Math.round(Math.sin(SC.t * 6 + i) * 1) : 0), 20, 15); ctx.globalAlpha = 1; } }
   if (hot) text('▸', x + w - 10, y + (h - 5) / 2, UI.gold);
   hit(x, y, w, h, run, label);
 }
@@ -3753,7 +3754,7 @@ function titleDraw() {
   const save = loadSave(), susp = !!loadSuspend();
   const items = [];
   if (susp) items.push(['RESUME BATTLE', 'Pick up the suspended fight', 'play', () => resumeSuspend()]);
-  if (save) items.push(['CONTINUE', save.beaten ? 'Campaign complete · replay' : 'Chapter ' + (Math.min(save.chapter, CHAPTERS.length - 1) + 1) + ' · ' + CHAPTERS[Math.min(save.chapter, CHAPTERS.length - 1)].title, 'flag', () => continueCampaign()]);
+  if (save) items.push(['CONTINUE', save.beaten ? 'Campaign complete · replay' : 'Chapter ' + (Math.min(save.chapter, CHAPTERS.length - 1) + 1) + ' · ' + CHAPTERS[Math.min(save.chapter, CHAPTERS.length - 1)].title, 'flag', () => continueCampaign(), (save.party || []).map(p => p.num)]);
   items.push(['NEW GAME', 'Campaign · eight chapters', 'map', () => { if (save && !confirm('Start a new game? Your campaign save will be replaced.')) return; startNewGame(); }]);
   items.push(['SKIRMISH', 'Random maps · catch wild Pokémon', 'dice', () => startSkirmishSetup()]);
   items.push(['TERRITORY', 'Centers · income · reserves', 'flag', () => startTerritorySetup()]);
@@ -3761,7 +3762,7 @@ function titleDraw() {
   if (portrait) by = ly + 31 + 27 + 44; const total = items.length * (bh + gap); if (by + total > H - 22) by = Math.max(ly + 96, H - 22 - total);
   const cols = !portrait && W >= 320 && (compact || items.length > 4) ? 2 : 1; if (compact) by = 75; const firstY = by;
   { const rows = cols === 2 ? Math.ceil(items.length / 2) : items.length; const mw = cols === 2 ? bw * 2 + 8 : bw; ctx.globalAlpha = .55; rrect(W / 2 - mw / 2 - 8, by - 6, mw + 16, rows * (bh + gap) - gap + 12, '#060912', 2); ctx.globalAlpha = 1; }
-  items.forEach((it, i) => { const xx = cols === 2 ? W / 2 - bw - 4 + (i % 2) * (bw + 8) : bx; const yy = cols === 2 ? firstY + Math.floor(i / 2) * (bh + gap) : by; menuCard(xx, yy, bw, bh, it[0], it[1], it[2], SC.i === i, () => { Audio.sfx('ok'); it[3](); }); by += bh + gap; });
+  items.forEach((it, i) => { const xx = cols === 2 ? W / 2 - bw - 4 + (i % 2) * (bw + 8) : bx; const yy = cols === 2 ? firstY + Math.floor(i / 2) * (bh + gap) : by; menuCard(xx, yy, bw, bh, it[0], it[1], it[2], SC.i === i, () => { Audio.sfx('ok'); it[3](); }, { mons: it[4] }); by += bh + gap; });
   SC.menuLen = items.length;
   const fy = footerBand(16) + 4; hintLine([['M', Audio.muted ? 'music off' : 'music on']], 6, fy, { left: true, pill: false }); if (!narrowView()) textR('Sprites: Pokémon Showdown · PokeAPI', W - 6, fy, UI.dim);
   if (!narrowView()) hintLine(VIEW.touch ? ['tap a card'] : [['▲▼', 'select'], ['Z', 'confirm']], W / 2, fy, { pill: false });
@@ -3934,6 +3935,15 @@ function prepDraw() {
     if (!i) text('empty', rx + 8, ry + 8, UI.muted);
   }
   const sel = party[SC.i]; if (sel && rx > gx + 200) { const u = restoreUnit(sel); panel(rx, ry + 68, rw, 48, { title: u.name.toUpperCase() }); const st = [['ATK', u.atk], ['DEF', u.def], ['SPA', u.spa], ['SPD', u.spd], ['SPE', u.spe], ['MOV', u.mov]]; st.forEach((s, j) => { const sx = rx + 6 + (j % 3) * 38, sy = ry + 74 + Math.floor(j / 3) * 10; text(s[0], sx, sy, UI.muted); textR(String(s[1]), sx + 34, sy, UI.ink); }); text(u.moves.map(m => m.name).join(', ').slice(0, 28), rx + 6, ry + 96, '#98d8f8'); const ev = u.dex.evos.length ? 'Evolves Lv' + Math.min(...u.dex.evos.map(e => e[1])) : 'Final form'; let rl = ROLES[u.role].name + ' · ' + ev; while (textWidth(rl) > rw - 12 && rl.length > 6) rl = rl.slice(0, -1); text(rl, rx + 6, ry + 106, UI.green); }
+  // battlefield preview under the stats: deploy slots, every foe (and the boss) where it starts, the seize target
+  if (rx > gx + 200) { const py = ry + 122, avail = H - foot - py - 4; const bd = P.bd; const sc = Math.min((rw - 12) / bd.canvas.width, (avail - 27) / bd.canvas.height);
+    if (sc >= .22) { const pw2 = Math.round(bd.canvas.width * sc), ph2 = Math.round(bd.canvas.height * sc); const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2); const lv = foes.map(u => u.level);
+      const p = panel(rx, py, rw, ph2 + 27, { header: 'BATTLEFIELD', headerRight: foes.length + ' foe' + (foes.length === 1 ? '' : 's') + (lv.length ? ' · Lv ' + Math.min(...lv) + (Math.max(...lv) > Math.min(...lv) ? '-' + Math.max(...lv) : '') : '') + (wild.length ? ' · ' + wild.length + ' wild' : '') });
+      const px0 = rx + Math.round((rw - pw2) / 2), py0 = p.cy; ctx.drawImage(bd.canvas, px0, py0, pw2, ph2); outline(px0 - 1, py0 - 1, pw2 + 2, ph2 + 2, UI.border2);
+      for (const d of bd.map.deploy) { const X = px0 + d.x * TILE * sc, Y = py0 + d.y * TILE * sc; rect(X, Y, Math.ceil(TILE * sc), Math.ceil(TILE * sc), '#3d7dff70'); outline(X, Y, Math.ceil(TILE * sc), Math.ceil(TILE * sc), teamColor(0)); }
+      if (bd.map.seize) { const X = px0 + bd.map.seize.x * TILE * sc, Y = py0 + bd.map.seize.y * TILE * sc; outline(X, Y, Math.ceil(TILE * sc), Math.ceil(TILE * sc), UI.gold); }
+      for (const u of ch.map.units || []) { const team = u.team == null ? 1 : u.team; const ux = px0 + (u.x + .5) * TILE * sc, uy = py0 + (u.y + 1) * TILE * sc; ellipse(ux, uy, 5, 2, teamColor(team)); ctx.drawImage(monIcon(u.mon, true), Math.round(ux - 8), Math.round(uy - 13), 16, 12); if (u.boss) drawSkull(Math.round(ux - 2), Math.round(uy - 19)); }
+    } }
   const start = () => { if (!P.deploy.length) { Audio.sfx('error'); return; } Audio.sfx('select'); P.start(); }, auto = () => { Audio.sfx('ok'); autoDeploy(P); }, back = () => { Audio.sfx('cancel'); goScene('title'); };
   if (narrow) { footerBand(foot); const r1 = H - 2 * (bh + 4), r2 = H - bh - 4; text('Deployed ' + P.deploy.length + '/' + ch.slots + ' · tap a card · first leads', 6, r1 - 10, UI.muted);
     bigButton(6, r1, 60, bh, 'BACK', back, { variant: 'ghost' }); bigButton(72, r1, W - 78, bh, 'AUTO PICK', auto); bigButton(6, r2, W - 12, bh, 'START', start, P.deploy.length ? { variant: 'primary' } : { disabled: true }); return; }
