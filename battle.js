@@ -690,6 +690,8 @@ function drawHUD() {
   if (BT.mode === 'anim' && BT.anim && BT.anim.kind === 'strike') drawDuelCard(BT.anim);
   if (BT.mode === 'anim' && BT.anim && BT.anim.kind === 'msg') { const w = Math.min(160, W - 12); hudPanel(W / 2 - w / 2, 30, w, 20); textC(BT.anim.text, W / 2, 36, UI.ink); }
   drawButtons(L);
+  // the auto-save at the start of each turn is acknowledged with a short pill once the phase banner has passed
+  if (BT.savedAt != null && BT.mode !== 'banner' && BT.mode !== 'end') { const k = BT.time - BT.savedAt; if (k > .6 && k < 2.8) { ctx.globalAlpha = k > 2.3 ? (2.8 - k) / .5 : Math.min(1, (k - .6) / .2); const s = 'Saved'; const w = textWidth(s) + 18; const x = Math.round(W / 2 - w / 2), y = L.top.y + (L.stack ? L.top.h + 4 : 2); rrect(x, y, w, 12, UI.inset, 2); rrect(x + 1, y + 1, w - 2, 10, UI.panelDark, 1); circle(x + 6, y + 6, 2, UI.green); text(s, x + 11, y + 3, UI.ink); ctx.globalAlpha = 1; } }
 }
 // TURN n · objective · READY x/y, with the two teams' head counts.
 function drawTurnCard(r) {
@@ -742,6 +744,7 @@ function unitCardBody(u, x, y, w) {
   teamGlyph(x + 5, y + 5, u.team, teamColorL(u.team));
   text(u.name, x + 46, y + 5, UI.ink); textR('Lv' + u.level, x + w - 5, y + 5, UI.gold);
   hpBar(x + 46, y + 15, w - 52, u.hp, u.maxHp); text(u.hp + '/' + u.maxHp, x + 46, y + 22, UI.ink);
+  if (u.team === HT() && isHuman(u.team) && !B.territory && u.xp != null) { const xw = w - 52; rect(x + 46, y + 20, xw, 1, '#1b2236'); rect(x + 46, y + 20, Math.round(xw * clamp(u.xp / 100, 0, 1)), 1, '#6ad0ff'); } // XP to the next level
   u.types.forEach((t, i) => typeBadge(t, x + 46 + i * 26, y + 31, 24)); if (u.status) statusBadge(u.status, x + w - 20, y + 22);
   // role badge (SCT/DEF/AMP/CTL/RNG/SUP/STK), then whichever of brace/root is on the unit
   const R = ROLES[u.role]; miniBadge(R.abbr, R.col, x + w - (u.status ? 38 : 20), y + 22); if (u.brace) miniBadge('BRC', BRACE_COL, x + w - 56, y + 22); else if (u.root) miniBadge('RT', ROOT_COL, x + w - 56, y + 22);

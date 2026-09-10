@@ -67,7 +67,7 @@ function applyBattleToParty() {
 function saveSuspend() {
   if (!B || PARAMS.has('nosave')) return;
   const s = { rng: typeof rnd.state === 'function' ? rnd.state() : null, territory: B.territory || null, chapter: B.chapter, skirmish: B.skirmish, skirmishMap: B.skirmish ? B.map.def : null, turn: B.turn, bag: B.bag, captured: B.captured, kills: B.kills, seed: B.seed, items: B.map.items.map(i => !!i.taken), reinforce: B.map.reinforce.map(r => !!r.done), units: B.units.map(u => Object.assign(serializeUnit(u), { pid: u.pid, leader: !!u.leader, provoked: !!u.provoked, maxHpNow: u.maxHp })), cx: BT.cx, cy: BT.cy, party: SAVE ? SAVE.party : null, preset: SC.data && SC.data.preset };
-  try { localStorage.setItem('pk_suspend', JSON.stringify(s)); } catch (e) { }
+  try { localStorage.setItem('pk_suspend', JSON.stringify(s)); BT.savedAt = BT.time; } catch (e) { }
 }
 function resumeSuspend() {
   const s = loadSuspend(); if (!s) { goScene('title'); return; }
