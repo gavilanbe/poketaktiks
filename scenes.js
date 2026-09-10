@@ -191,10 +191,10 @@ function starterDraw() {
       const d = DEX[n]; const x = 6, y = top + i * (h + 6); const sel = SC.i === i; panel(x, y, w, h, { fill: sel ? '#2a3d6a' : UI.panel, border: sel ? UI.gold : UI.border });
       const bob = sel ? Math.round(Math.abs(Math.sin(SC.t * 6)) * -3) : 0; rect(x + 6, y + 6, 40, h - 12, teamColorD(0)); drawMon(n, x + 26, y + h - 8 + bob, {});
       const tx = x + 52, tw = w - 58; text(d.name, tx, y + 6, sel ? UI.gold : UI.ink); d.types.forEach((t, j) => typeBadge(t, tx + textWidth(d.name) + 6 + j * 26, y + 5, 24));
-      const u = makeUnit(n, 5, 0, { hpBonus: BOND_HP }); const fit = s => { while (textWidth(s) > tw && s.length > 4) s = s.slice(0, -1); return s; };
-      text(fit('HP ' + u.maxHp + ' · ATK ' + u.atk + ' · DEF ' + u.def), tx, y + 17, UI.muted); text(fit('SPA ' + u.spa + ' · SPD ' + u.spd + ' · SPE ' + u.spe + ' · MOV ' + u.mov), tx, y + 27, UI.muted);
-      text(fit(u.moves.map(m => m.name).join(' / ')), tx, y + 37, '#98d8f8');
-      if (h >= 54) text(sel ? (VIEW.touch ? 'tap again to choose' : 'Z to choose') : '', tx, y + 47, UI.gold);
+      const u = makeUnit(n, 5, 0, { hpBonus: BOND_HP }); const fit = s => { if (textWidth(s) <= tw) return s; while (textWidth(s + '…') > tw && s.length > 4) s = s.slice(0, -1); return s.replace(/[ ·/]+$/, '') + '…'; };
+      text(fit('HP ' + u.maxHp + ' · ATK ' + u.atk + ' · DEF ' + u.def + ' · SPA ' + u.spa), tx, y + 17, UI.muted); text(fit('SPD ' + u.spd + ' · SPE ' + u.spe + ' · MOV ' + u.mov + ' · ' + ROLES[u.role].name), tx, y + 27, UI.muted);
+      text(fit(u.moves.map(m => m.name).join(' / ')), tx, y + 37, UI.info);
+      if (h >= 54) text(sel ? (VIEW.touch ? 'Tap again to choose' : 'Selected') : '', tx, y + 47, UI.gold);
       hit(x, y, w, h, () => { if (SC.i === i) { Audio.sfx('select'); pickStarter(n); } else { SC.i = i; Audio.sfx('cursor'); } });
     });
     hintLine(VIEW.touch ? ['tap twice to choose'] : [['◂▸', 'browse'], ['Z', 'choose']], W / 2, H - 14); return;
@@ -243,7 +243,7 @@ function storyDraw() {
   const tx = bx + (line.mon ? 58 : 10); { const tw = textWidth(line.who) + 12; rrect(tx - 4, by - 9, tw, 12, UI.inset, 1); rect(tx - 3, by - 8, tw - 2, 10, UI.gold); hline(tx - 2, by - 8, tw - 4, '#fff0b0'); text(line.who, tx + 2, by - 7, UI.goldDark); }
   const lines = wrap(line.text, bw - (line.mon ? 70 : 22)); let shown = Math.floor(d.chars); lines.forEach((l, i) => { if (shown <= 0) return; const s = l.slice(0, shown); shown -= l.length + 1; text(s, tx, by + 12 + i * 11, UI.ink); });
   if (d.chars >= line.text.length && Math.floor(d.t * 3) % 2) { const ax = bx + bw - 12, ay = by + bh - 9; rect(ax - 3, ay, 7, 1, UI.gold); rect(ax - 2, ay + 1, 5, 1, UI.gold); rect(ax - 1, ay + 2, 3, 1, UI.gold); px(ax, ay + 3, UI.gold); }
-  hintLine([(d.i + 1) + ' / ' + d.lines.length, ['X', 'skip']], bx + bw - 4 - 80, by - 12, { left: true });
+  hintLine([(d.i + 1) + ' / ' + d.lines.length, ['X', 'skip']], bx + bw - 4, by - 12, { right: true });
   // focus the camera on the speaker's Pokémon if it is on the board
   const spk = B.units.find(u => u.num === line.mon && u.hp > 0); if (spk && !d.focused) { d.focused = true; centerCam(spk.x, spk.y); spk.fx.sy = .8; spk.fx.sx = 1.2; }
 }
@@ -310,7 +310,7 @@ function resultsDraw() {
     const t = R.result === 'p1' ? 0 : R.result === 'p2' ? 1 : -1; const ph2 = 128; y = Math.max(10, H / 2 - ph2 / 2 - 16);
     panel(x, y, w, ph2, { title: t < 0 ? 'DRAW' : 'PLAYER ' + (t + 1) + ' WINS!', fill: t === 0 ? '#17264a' : t === 1 ? '#3a1a22' : UI.panel, border: t >= 0 ? teamColor(t) : UI.border });
     if (t >= 0) { ctx.save(); ctx.translate(x + w / 2, y + 10); ctx.scale(2, 2); bigC('PLAYER ' + (t + 1), 0, 0, teamColorL(t), { outline: '#000' }); ctx.restore(); bigC('WINS THE ARENA!', x + w / 2, y + 30, UI.gold, { outline: '#3a2000' }); } else bigC('NOBODY IS LEFT STANDING', x + w / 2, y + 16, UI.muted, { outline: UI.shadow });
-    text('Turns ' + R.turns + '   ·   KOs ' + R.kills, x + 8, y + 44, UI.ink); if (R.reason) textR(R.reason, x + w - 8, y + 44, UI.muted);
+    const tl = 'Turns ' + R.turns + '   ·   KOs ' + R.kills; text(tl, x + 8, y + 44, UI.ink); if (R.reason) { let rs = R.reason; const avail = w - 24 - textWidth(tl); while (textWidth(rs) > avail && rs.length > 4) rs = rs.slice(0, -1); if (rs.length > 8) textR(rs, x + w - 8, y + 44, UI.muted); }
     [0, 1].forEach(tm => { const yy = y + 58 + tm * 32; rrect(x + 6, yy, w - 12, 28, teamColorD(tm), 1); text('P' + (tm + 1), x + 10, yy + 3, teamColorL(tm)); R.rosters[tm].forEach((n, i) => { const cx = x + 40 + i * 34; const alive = R.teams[tm].includes(n); if (!alive) ctx.globalAlpha = .3; drawMon(n, cx, yy + 27, { flip: tm === 1 }); ctx.globalAlpha = 1; if (!alive) text('KO', cx - 5, yy + 4, UI.red, { shadow: '#000' }); }); textR(R.teams[tm].length + ' left', x + w - 10, yy + 3, UI.ink); });
     const bh = btnH();
     if (W < 280) { footerBand(2 * (bh + 4) + 4); bigButton(6, H - 2 * (bh + 4), (W - 16) / 2, bh, 'REMATCH', () => { Audio.sfx('select'); R.rematch(); }, { variant: 'danger' }); bigButton(10 + (W - 16) / 2, H - 2 * (bh + 4), (W - 16) / 2, bh, 'NEW TEAMS', () => { Audio.sfx('ok'); R.setup(); }); bigButton(6, H - bh - 4, W - 12, bh, 'TITLE', () => { Audio.sfx('cancel'); R.next(); }, { variant: 'ghost' }); return; }

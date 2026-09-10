@@ -20,7 +20,7 @@ async function main() {
     ws.on('message', m => { const d = JSON.parse(m); if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); } else if (d.method === 'Runtime.consoleAPICalled') logs.push(d.params.args.map(a => a.value || a.description).join(' ')); else if (d.method === 'Runtime.exceptionThrown') logs.push('EXC ' + JSON.stringify(d.params.exceptionDetails.exception && d.params.exceptionDetails.exception.description || d.params.exceptionDetails.text)); });
     const send = (method, params = {}) => new Promise(res => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); setTimeout(() => { if (pending.has(i)) { pending.delete(i); res({ result: {} }); } }, 8000); });
     const ev = async expr => { const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }); if (r.result.exceptionDetails) return 'EXC ' + JSON.stringify(r.result.exceptionDetails.exception.description); return r.result.result ? r.result.result.value : undefined; };
-    const shot = async name => { const r = await send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(ROOT, 'artifacts', name + '.png'), Buffer.from(r.result.data, 'base64')); };
+    const shot = async name => { const r = await send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(ROOT, 'artifacts', (mobile && script !== 'mobile' && !name.startsWith('duelm') ? 'm-' : '') + name + '.png'), Buffer.from(r.result.data, 'base64')); };
     const key = async (k, code) => { await send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code: code || k, windowsVirtualKeyCode: k.length === 1 ? k.toUpperCase().charCodeAt(0) : 0 }); await sleep(30); await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code: code || k }); await sleep(80); };
     const tap = async (x, y) => { if (mobile) { await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await sleep(40); await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); } else { await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }); await sleep(30); await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }); await sleep(40); await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }); } await sleep(150); };
     const move = async (x, y) => { await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }); await sleep(60); };
@@ -146,7 +146,7 @@ async function main() {
       for (const c of [2, 3, 4, 5, 6, 7, 8]) { await nav('ch=' + c + '&silent&nosave&seed=3'); await waitMode('idle', 9000); await sleep(200); await shot('art-ch' + c); const r = await send('Page.captureScreenshot', { format: 'png', clip: { x: 80, y: 60, width: 420, height: 300, scale: 3 } }); fs.writeFileSync(path.join(ROOT, 'artifacts', 'art-ch' + c + '-zoom.png'), Buffer.from(r.result.data, 'base64')); }
       await nav('skirmish=7&silent&nosave'); await waitMode('idle', 9000); await sleep(200); await shot('art-skirmish');
     }
-    if (script === 'ui') {
+    if (script === 'ui' || script === 'ui-m') {
       const clip = async (name, x, y, w, h, sc = 3) => { const r = await send('Page.captureScreenshot', { format: 'png', clip: { x, y, width: w, height: h, scale: sc } }); fs.writeFileSync(path.join(ROOT, 'artifacts', name + '.png'), Buffer.from(r.result.data, 'base64')); };
       await nav('silent&nosave'); await sleep(600); await shot('ui-title'); await key('ArrowDown', 'ArrowDown'); await sleep(200); await shot('ui-title-2');
       // versus setup: draft with keys, then start
@@ -171,7 +171,7 @@ async function main() {
       await tapTile(7, 3); await waitMode('move', 3000); await tapTile(7, 3); await waitMode('menu', 4000); await sleep(200); { const [cx, cy] = await tileCenter(7, 3); await clip('ui-menu-zoom', cx - 60, cy - 80, 320, 200); }
       await key('x', 'KeyX'); await waitMode('move', 3000); await key('x', 'KeyX'); await waitMode('idle', 3000); await clip('ui-terrain-zoom', 1000, 620, 280, 100); await key('x', 'KeyX'); await waitMode('endmenu', 3000); await sleep(200); await shot('ui-endmenu'); { const [cx, cy] = await tileCenter(7, 3); await clip('ui-endmenu-zoom', cx - 40, cy - 60, 320, 200); }
     }
-    if (script === 'ui2') {
+    if (script === 'ui2' || script === 'ui2-m') {
       // every non-battle screen plus the modal cards, for design review
       await nav('silent&nosave'); await sleep(500); await ev('__pk.startNewGame()'); await waitScene('starter', 5000); await sleep(300); await shot('ui2-starter');
       await nav('ch=1&prep&silent&nosave'); await waitScene('prep', 5000); await sleep(300); await shot('ui2-prep');

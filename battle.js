@@ -992,7 +992,7 @@ function drawUnitSheet(u) {
   // the state (cooldown, braced, rooted) leads so it survives the truncation on narrow sheets
   const st = []; if (u.skill && !u.skill.passive && u.cd > 0) st.push('ready in ' + u.cd + (u.cd > 1 ? ' turns' : ' turn')); if (u.brace) st.push('BRACED'); if (u.root) st.push('ROOTED');
   let sk = (st.length ? st.join(' · ') + ' · ' : '') + (u.skill ? u.skill.blurb : 'Striker: plain attacker, strikes twice when 10+ SPE faster');
-  while (textWidth(sk) > w - 12 && sk.length > 8) sk = sk.slice(0, -1); hline(x + 5, y + h - 16, w - 10, UI.inset); text(sk, x + 6, y + h - 13, R.col);
+  if (textWidth(sk) > w - 12) { while (textWidth(sk + '…') > w - 12 && sk.length > 8) sk = sk.slice(0, -1); sk = sk.replace(/ +$/, '') + '…'; } hline(x + 5, y + h - 16, w - 10, UI.inset); text(sk, x + 6, y + h - 13, R.col);
   hintLine([['◂▸', 'browse'], ['X', 'close']], W / 2, y + h + 5);
 }
 const HELP_PAGES = [

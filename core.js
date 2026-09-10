@@ -158,7 +158,7 @@ function hintLine(items, cx, y, opt = {}) {
   const parts = items.filter(Boolean).map(it => Array.isArray(it) ? { k: it[0], t: it[1] } : { t: it });
   const kw = p => (p.k && !VIEW.touch ? textWidth(p.k) + 6 + 3 : 0) + textWidth(p.t);
   const gap = 9; const tot = parts.reduce((s, p) => s + kw(p), 0) + gap * (parts.length - 1);
-  let x = opt.left ? cx : Math.round(cx - tot / 2); if (opt.pill !== false) { ctx.globalAlpha = .72; rrect(x - 5, y - 3, tot + 10, 13, UI.inset, 2); ctx.globalAlpha = 1; }
+  let x = opt.left ? cx : opt.right ? Math.round(cx - tot) : Math.round(cx - tot / 2); if (opt.pill !== false) { ctx.globalAlpha = .72; rrect(x - 5, y - 3, tot + 10, 13, UI.inset, 2); ctx.globalAlpha = 1; }
   for (const p of parts) { if (p.k && !VIEW.touch) x += keycap(p.k, x, y) + 3; text(p.t, x, y, opt.col || UI.muted); x += textWidth(p.t) + gap; }
   return tot;
 }
