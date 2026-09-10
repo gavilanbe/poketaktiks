@@ -279,10 +279,13 @@ function versusMap(seed, w = 18, h = 11, opt = {}) {
   const order = []; for (let y = 0; y < h; y++) for (let x = 0; x < 2; x++) order.push({ x, y }); order.sort((a, b) => Math.abs(a.y - ry) - Math.abs(b.y - ry) || a.x - b.x);
   const deploy = []; for (const c of order) { if (deploy.length >= 6) break; if (!'.,t#'.includes(rows[c.y][c.x])) { put(c.x, c.y, '.'); put(w - 1 - c.x, c.y, '.'); } deploy.push(c); }
   const deploy2 = deploy.map(c => ({ x: w - 1 - c.x, y: c.y }));
-  const units = [], items = []; const taken = new Set([...deploy, ...deploy2].map(d => key(d.x, d.y)));
+  // mode furniture: flag bases at each end of the middle road, or a 3×3 hill of open ground in the centre
+  const flags = opt.mode === 'ctf' ? [{ team: 0, x: 1, y: ry }, { team: 1, x: w - 2, y: ry }] : null; if (flags) for (const f of flags) put(f.x, f.y, '.');
+  const hill = opt.mode === 'hill' ? { x: Math.floor(w / 2), y: ry, r: 1 } : null; if (hill) for (let y = ry - 1; y <= ry + 1; y++) for (let x = hill.x - 1; x <= hill.x + 1; x++) if (y >= 0 && y < h && x >= 0 && x < w) put(x, y, y === ry ? '#' : '.');
+  const units = [], items = []; const taken = new Set([...deploy, ...deploy2].map(d => key(d.x, d.y))); if (flags) for (const f of flags) taken.add(key(f.x, f.y)); if (hill) for (let y = ry - 1; y <= ry + 1; y++) for (let x = hill.x - 1; x <= hill.x + 1; x++) taken.add(key(x, y));
   const pool = DEX_LIST.filter(d => d.num < 144 && d.num !== 132 && d.num !== 143);
   const spot = () => { for (let i = 0; i < 200; i++) { const x = 3 + Math.floor(r() * (half - 3)), y = Math.floor(r() * h); if ('.,t#TsM'.includes(rows[y][x]) && !taken.has(key(x, y)) && !taken.has(key(w - 1 - x, y))) { taken.add(key(x, y)); taken.add(key(w - 1 - x, y)); return { x, y }; } } return null; };
   if (opt.wild !== false) for (let i = 0; i < 2; i++) { const s = spot(); if (!s) break; const d = pool[Math.floor(r() * pool.length)]; const lvl = Math.max(2, (opt.level || 20) - 3); units.push({ mon: d.num, level: lvl, x: s.x, y: s.y, team: 2, ai: 'aggro' }); if (s.x !== w - 1 - s.x) units.push({ mon: d.num, level: lvl, x: w - 1 - s.x, y: s.y, team: 2, ai: 'aggro' }); }
   for (let i = 0; i < 2; i++) { const s = spot(); if (!s) break; const it = ['potion', 'pokeball', 'superpotion', 'greatball'][Math.floor(r() * 4)]; items.push({ x: s.x, y: s.y, item: it }); if (s.x !== w - 1 - s.x) items.push({ x: w - 1 - s.x, y: s.y, item: it }); }
-  return { name: 'Arena #' + (seed % 1000), seed, objective: { type: 'versus' }, rows, deploy, deploy2, units, items, par: 0, music: 'player', turnLimit: 30 };
+  return { name: 'Arena #' + (seed % 1000), seed, objective: { type: 'versus', mode: opt.mode || 'elim' }, rows, deploy, deploy2, units, items, par: 0, music: 'player', turnLimit: opt.turns == null ? 30 : opt.turns, flags, hill, fog: !!opt.fog };
 }

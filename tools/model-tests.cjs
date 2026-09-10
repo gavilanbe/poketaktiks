@@ -555,7 +555,7 @@ test('narrow screens: every rendered string and every control stays inside the v
 test('phone keyboard and touch access: Versus draft, prep toggles and starter pick work through keys and their on-screen controls', T => {
   const { g, G } = T; G('VIEW.w = 180; VIEW.h = 390');
   g.startVersusSetup(5); const S = G('SC.data'); g.versusDraw(); const hits = G('SC.hits');
-  const plus = hits.filter(h => h.label === '+'); assert.strictEqual(plus.length, 2, 'both [+] controls are on screen'); const lvl = S.level; plus[1].run(); assert.strictEqual(S.level, lvl + 5, 'the level [+] is usable'); const seed = S.seed; plus[0].run(); assert.strictEqual(S.seed, (seed + 1) % 1000, 'the arena [+] is usable');
+  const plus = k => hits.find(h => h.label === k + '+'); assert(plus('SEED') && plus('LEVEL'), 'the seed and level [+] controls are on screen'); const lvl = S.level; plus('LEVEL').run(); assert.strictEqual(S.level, lvl + 5, 'the level [+] is usable'); const seed = S.seed; plus('SEED').run(); assert.strictEqual(S.seed, (seed + 1) % 1000, 'the arena [+] is usable');
   for (const k of ['right', 'down', 'ok']) g.versusInput({ type: 'key', key: k }); assert.strictEqual(S.teams[0].length + S.teams[1].length, 1, 'keys draft a Pokémon'); assert.strictEqual(G('SC.i'), 1 + g.vsCols(), 'down moves one roster row (four columns on phones)');
   g.versusDraw(); for (const l of ['BACK', 'RANDOM', 'CLEAR', 'BATTLE!']) assert(G('SC.hits').some(h => h.label === l), l + ' button present'); assert(G('SC.hits').some(h => h.label && h.label.startsWith('WILD')), 'WILD toggle present');
   g.goScene('title'); g.titleDraw(); G('SAVE = { chapter: 0, party: [], bag: {}, stars: {}, beaten: false }'); g.goScene('starter'); g.starterDraw(); assert.strictEqual(G('SC.hits').length, 3, 'three starter cards'); g.starterInput({ type: 'key', key: 'right' }); assert.strictEqual(G('SC.i'), 1);
@@ -830,6 +830,29 @@ test('skill card: Root/Mend/Brace text, panel and hint stay inside 180/195/512 w
 });
 
 // ---------------------------------------------------------------- runner
+// Versus rules: flag pick-up, drop and capture; hill scoring; fog vision, hidden foes and the ambush stop.
+test('versus rules: capture the flag, king of the hill, fog of war vision and ambushes', T => {
+  const { g, G } = T;
+  // capture the flag on a small arena
+  g.launchVersus({ seed: 5, level: 20, wild: false, mode: 'ctf', arena: 's', fog: false, turns: 30, teams: [[25, 5], [4, 7]], order: [0, 1, 1, 0], size: 2, cur: 0 });
+  let B = T.B(); assert.strictEqual(B.map.objective.mode, 'ctf'); assert(B.flags && B.flags.length === 2, 'two flags'); const f0 = B.flags.find(f => f.team === 0), f1 = B.flags.find(f => f.team === 1);
+  const me = B.units.find(u => u.team === 0); me.x = f1.home.x; me.y = f1.home.y; let ev = g.versusAfterAction(me); assert(ev && ev.what === 'taken', 'stepping on the enemy flag takes it'); assert.strictEqual(f1.carrier, me.id);
+  me.x = 5; me.y = 5; g.syncFlags(); assert(f1.x === 5 && f1.y === 5, 'the flag follows its carrier');
+  me.hp = 0; g.syncFlags(); assert.strictEqual(f1.carrier, null, 'a fainted carrier drops the flag'); assert(f1.x === 5 && f1.y === 5, 'dropped where it fell');
+  const foe = B.units.find(u => u.team === 1); foe.x = 5; foe.y = 5; ev = g.versusAfterAction(foe); assert(ev && ev.what === 'returned' && f1.x === f1.home.x && f1.y === f1.home.y, 'its owner sends a dropped flag home');
+  const me2 = B.units.filter(u => u.team === 0 && u.hp > 0)[0]; me2.x = f1.home.x; me2.y = f1.home.y; g.versusAfterAction(me2); me2.x = f0.home.x; me2.y = f0.home.y; ev = g.versusAfterAction(me2); assert(ev && ev.what === 'captured', 'carrying it home captures'); assert.strictEqual(g.checkObjective(), 'p1'); assert(/captured/.test(B.endReason));
+  // king of the hill
+  g.launchVersus({ seed: 5, level: 20, wild: false, mode: 'hill', arena: 'm', fog: false, turns: 30, teams: [[25, 5], [4, 7]], order: [0, 1, 1, 0], size: 2, cur: 0 });
+  B = T.B(); assert(B.hill && B.hill.need === 3, 'hill needs three turns'); const h = B.hill; for (const u of B.units.filter(u => u.team === 0)) { u.x = h.x; u.y = h.y; } B.units.filter(u => u.team === 0)[1].x = h.x + 1;
+  assert.strictEqual(g.versusPhaseStart(1), null, 'the other team scores nothing'); for (let i = 0; i < 3; i++) assert(g.versusPhaseStart(0), 'out-numbering on the hill scores'); assert.strictEqual(h.score[0], 3); assert.strictEqual(g.checkObjective(), 'p1');
+  // fog of war
+  g.launchVersus({ seed: 5, level: 20, wild: false, mode: 'elim', arena: 'm', fog: true, turns: 30, teams: [[25, 5], [4, 7]], order: [0, 1, 1, 0], size: 2, cur: 0 });
+  B = T.B(); assert(B.fog, 'fog on'); const p1 = B.units.find(u => u.team === 0), p2 = B.units.find(u => u.team === 1); p1.x = 4; p1.y = 5; p2.x = 12; p2.y = 5;
+  g.refreshVision(0); assert(g.fogHides(p2, 0), 'a far foe is hidden'); assert(!g.fogHides(p1, 0), 'own units are never hidden'); p2.x = 6; g.refreshVision(0); assert(!g.fogHides(p2, 0), 'a foe within 3 tiles is seen');
+  p2.x = 12; g.refreshVision(0); const seen = g.reachable(p1, p1.x, p1.y, 40, { through: o => g.fogHides(o, 0) }), plain = g.reachable(p1, p1.x, p1.y, 40); assert(seen.has('12,5') && !plain.has('12,5'), 'a hidden foe does not block planning, a seen one does');
+  const path = [{ x: 8, y: 5 }, { x: 9, y: 5 }, { x: 10, y: 5 }, { x: 11, y: 5 }, { x: 12, y: 5 }, { x: 13, y: 5 }]; const fp = g.fogPath(p1, path); assert.strictEqual(fp.ambush, p2, 'the hidden foe on the path springs an ambush'); assert.strictEqual(fp.path.length, 4, 'the move stops on the tile before it');
+  assert.strictEqual(g.fogPath(p1, path.slice(0, 3)).ambush, null, 'a clear path is unchanged');
+});
 function run() {
   let failed = 0;
   for (const t of tests) {

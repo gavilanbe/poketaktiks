@@ -10,7 +10,7 @@ function parseMap(def) {
   const rows = def.rows.map(r => r.replace(/\s+$/, '')); const h = rows.length, w = Math.max(...rows.map(r => r.length));
   const tiles = []; for (let y = 0; y < h; y++) { tiles.push([]); for (let x = 0; x < w; x++) { const ch = rows[y][x] || '.'; tiles[y].push(TERRAIN[ch] || TERRAIN['.']); } }
   const variants = []; const vr = mulberry32((def.seed || 1) * 7919); for (let y = 0; y < h; y++) { variants.push([]); for (let x = 0; x < w; x++) variants[y].push(Math.floor(vr() * VARIANTS)); }
-  return { w, h, tiles, variants, name: def.name || 'Map', objective: def.objective || { type: 'rout' }, deploy: def.deploy || [], deploy2: def.deploy2 || [], items: (def.items || []).map(i => Object.assign({}, i)), seize: def.seize || null, turnLimit: def.turnLimit || 0, reinforce: def.reinforce || [], music: def.music || 'player' };
+  return { w, h, tiles, variants, name: def.name || 'Map', objective: def.objective || { type: 'rout' }, deploy: def.deploy || [], deploy2: def.deploy2 || [], items: (def.items || []).map(i => Object.assign({}, i)), seize: def.seize || null, turnLimit: def.turnLimit || 0, reinforce: def.reinforce || [], music: def.music || 'player', flags: def.flags || null, hill: def.hill || null, fog: !!def.fog };
 }
 function inMap(x, y) { return x >= 0 && y >= 0 && x < B.map.w && y < B.map.h; }
 function terrAt(x, y) { return inMap(x, y) ? B.map.tiles[y][x] : TERRAIN['^']; }
@@ -20,14 +20,14 @@ function dist(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
 // Paralysis cuts two tiles (never below one); a rooted unit cannot move at all.
 function effMov(u, status = u.status, root = u.root) { if (root > 0) return 0; let m = u.mov; if (status === 'par') m = Math.max(1, m - 2); return m; }
 // Dijkstra movement: returns Map key→{x,y,cost,prev}. Passing through friends allowed; ending on anyone not allowed.
-function reachable(u, fromX = u.x, fromY = u.y, mov = effMov(u)) {
+function reachable(u, fromX = u.x, fromY = u.y, mov = effMov(u), opt = {}) {
   const out = new Map(); const open = [{ x: fromX, y: fromY, cost: 0, prev: null }]; out.set(key(fromX, fromY), open[0]);
   while (open.length) {
     open.sort((a, b) => a.cost - b.cost); const c = open.shift();
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = c.x + dx, ny = c.y + dy; if (!inMap(nx, ny)) continue;
       const t = terrAt(nx, ny); const mc = moveCost(t, u); if (mc >= 99) continue;
-      const occ = unitAt(nx, ny); if (occ && hostile(occ.team, u.team)) continue;
+      const occ = unitAt(nx, ny); if (occ && hostile(occ.team, u.team) && !(opt.through && opt.through(occ))) continue; // fog: hidden foes do not block planning
       const nc = c.cost + mc; if (nc > mov) continue;
       const k = key(nx, ny); const ex = out.get(k); if (ex && ex.cost <= nc) continue;
       const node = { x: nx, y: ny, cost: nc, prev: c }; out.set(k, node); open.push(node);
@@ -56,10 +56,10 @@ function rootAfterUpkeep(u) { if (!u.root || terrAt(u.x, u.y).heal && territoryH
 // (enemy or rival trainer) and wild Pokémon. A unit that must recharge skips its next phase, so it
 // threatens nothing; a unit whose upkeep is sure to cure it moves at full speed; frozen units that
 // may thaw stay in.
-function dangerZones(team) {
+function dangerZones(team, vis = null) {
   const zones = { trainer: new Set(), wild: new Set() };
   for (const e of B.units) {
-    if (e.hp <= 0 || !hostile(e.team, team) || e.recharge) continue;
+    if (e.hp <= 0 || !hostile(e.team, team) || e.recharge) continue; if (vis && !vis.has(key(e.x, e.y))) continue; // fog: unseen foes are not on the map yet
     const set = e.team === 2 ? zones.wild : zones.trainer; const r = reachable(e, e.x, e.y, effMov(e, statusAfterUpkeep(e), rootAfterUpkeep(e)));
     for (const n of r.values()) { if (unitAt(n.x, n.y) && unitAt(n.x, n.y) !== e) continue; for (const c of ring(n.x, n.y, e.rngMin, e.rngMax)) set.add(key(c.x, c.y)); }
   }
@@ -266,7 +266,17 @@ function aiDart(u) {
 function checkObjective() {
   if (B.territory) return territoryObjective();
   const o = B.map.objective; if (B.result) return B.result;
-  if (B.versus) { const a = alive(0).length, b = alive(1).length; if (!a && !b) return B.result = 'draw'; if (!a) return B.result = 'p2'; if (!b) return B.result = 'p1'; if (B.map.turnLimit && B.turn > B.map.turnLimit) return B.result = a > b ? 'p1' : b > a ? 'p2' : 'draw'; return null; }
+  if (B.versus) {
+    syncFlags(); const a = alive(0).length, b = alive(1).length; const win = (t, why) => { B.endReason = why; return B.result = t; };
+    if (!a && !b) return win('draw', 'Everyone fainted at once.'); if (!a) return win('p2', 'Player 1 has no Pokémon left.'); if (!b) return win('p1', 'Player 2 has no Pokémon left.');
+    if (B.captureBy != null) return win(B.captureBy === 0 ? 'p1' : 'p2', 'Player ' + (B.captureBy + 1) + ' captured the flag!');
+    if (B.hill) for (const t of [0, 1]) if (B.hill.score[t] >= B.hill.need) return win(t === 0 ? 'p1' : 'p2', 'Player ' + (t + 1) + ' held the hill.');
+    if (B.map.turnLimit && B.turn > B.map.turnLimit) {
+      if (B.hill && B.hill.score[0] !== B.hill.score[1]) return win(B.hill.score[0] > B.hill.score[1] ? 'p1' : 'p2', 'More hill points at the turn limit.');
+      return win(a > b ? 'p1' : b > a ? 'p2' : 'draw', a === b ? 'Equal teams at the turn limit.' : 'The larger team at the turn limit.');
+    }
+    return null;
+  }
   if (!alive(0).length) return B.result = 'lose';
   if (o.type === 'rout' && !alive(1).length) return B.result = 'win';
   if (o.type === 'boss' && !B.units.some(u => u.boss && u.hp > 0 && u.team === 1)) return B.result = 'win';
@@ -275,7 +285,43 @@ function checkObjective() {
   if (B.map.turnLimit && o.type !== 'survive' && B.turn > B.map.turnLimit) return B.result = 'lose';
   return null;
 }
-function objectiveText() { const o = B.map.objective; switch (o.type) { case 'rout': return 'Defeat all enemies'; case 'boss': return 'Defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Survive ' + o.turns + ' turns'; case 'seize': return 'Seize the ' + (o.what || 'gym'); case 'versus': return 'Beat the other team'; } return ''; }
+function objectiveText() { const o = B.map.objective; switch (o.type) { case 'rout': return 'Defeat all enemies'; case 'boss': return 'Defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Survive ' + o.turns + ' turns'; case 'seize': return 'Seize the ' + (o.what || 'gym'); case 'versus': return versusObjectiveText(); } return ''; }
+
+// ---------------------------------------------------------------- versus rules: modes, flags, the hill, fog of war
+const VS_MODES = {
+  elim: { name: 'Elimination', short: 'ELIM', blurb: 'Knock out every Pokémon on the other team. At the turn limit the larger team wins.' },
+  ctf: { name: 'Capture the Flag', short: 'CTF', blurb: 'Take the flag from the enemy base and carry it back to your own flag. A fainted carrier drops it; step on your own dropped flag to send it home.' },
+  hill: { name: 'King of the Hill', short: 'HILL', blurb: 'Start three of your turns with more Pokémon than the other team on the hill, the 3×3 zone in the middle of the arena.' },
+};
+const VS_ARENAS = { s: { name: 'Small', w: 14, h: 9 }, m: { name: 'Medium', w: 18, h: 11 }, l: { name: 'Large', w: 22, h: 13 } };
+function fogVision(u) { return 3 + (u.fly ? 1 : 0); }
+// Tiles a team can see under fog: within each of its units' vision, except tall grass and forest, which need an adjacent unit.
+function computeVision(team) {
+  const vis = new Set();
+  for (const u of B.units) { if (u.hp <= 0 || hostile(u.team, team)) continue; const r = fogVision(u);
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const d = Math.abs(dx) + Math.abs(dy); if (d > r) continue; const x = u.x + dx, y = u.y + dy; if (!inMap(x, y)) continue; const t = terrAt(x, y); if (d > 1 && (t.id === 'tall' || t.id === 'forest')) continue; vis.add(key(x, y)); } }
+  return vis;
+}
+function refreshVision(team) { B.vis = B.fog ? computeVision(team) : null; return B.vis; }
+function fogHides(u, team) { return !!(u && B.fog && B.vis && u.hp > 0 && hostile(u.team, team) && !B.vis.has(key(u.x, u.y))); }
+function flagLying(x, y) { return B.flags ? B.flags.find(f => f.carrier == null && f.x === x && f.y === y) : null; }
+function flagCarriedBy(u) { return B.flags ? B.flags.find(f => f.carrier === u.id) : null; }
+// Flags follow their carrier; a fainted carrier drops the flag where it fell.
+function syncFlags() { if (!B.flags) return; for (const f of B.flags) { if (f.carrier == null) continue; const c = B.units.find(u => u.id === f.carrier); if (!c || c.hp <= 0) { f.carrier = null; if (c) { f.x = c.x; f.y = c.y; } } else { f.x = c.x; f.y = c.y; } } }
+// A trainer's Pokémon ending its action on a flag: takes the enemy flag, returns its own, or scores by bringing the enemy flag home.
+function versusAfterAction(u) {
+  if (!B.versus || u.team > 1 || u.hp <= 0) return null; syncFlags(); if (!B.flags) return null; let ev = null;
+  const lying = flagLying(u.x, u.y);
+  if (lying && lying.team !== u.team && !flagCarriedBy(u)) { lying.carrier = u.id; lying.x = u.x; lying.y = u.y; ev = { type: 'flag', what: 'taken', unit: u, flag: lying }; }
+  else if (lying && lying.team === u.team && (lying.x !== lying.home.x || lying.y !== lying.home.y)) { lying.x = lying.home.x; lying.y = lying.home.y; ev = { type: 'flag', what: 'returned', unit: u, flag: lying }; }
+  const carried = flagCarriedBy(u); const own = B.flags.find(f => f.team === u.team);
+  if (carried && own && u.x === own.home.x && u.y === own.home.y) { B.captureBy = u.team; ev = { type: 'flag', what: 'captured', unit: u, flag: carried }; }
+  return ev;
+}
+function hillCount(team) { const h = B.hill; return B.units.filter(u => u.hp > 0 && u.team === team && Math.abs(u.x - h.x) <= h.r && Math.abs(u.y - h.y) <= h.r).length; }
+// King of the Hill: starting a turn with more Pokémon on the hill than the other team scores a point.
+function versusPhaseStart(team) { if (!B.versus) return null; syncFlags(); if (B.hill && team <= 1) { const mine = hillCount(team), theirs = hillCount(1 - team); if (mine > theirs) { B.hill.score[team]++; return { type: 'hill', team, score: B.hill.score[team] }; } } return null; }
+function versusObjectiveText() { const m = B.map.objective.mode || 'elim'; return m === 'ctf' ? 'Capture the enemy flag' : m === 'hill' ? 'Hold the hill ' + (B.hill ? B.hill.need : 3) + ' turns' : 'Beat the other team'; }
 
 // ---------------------------------------------------------------- AI
 // BFS distance field over terrain the unit can enter (ignores units) from a set of goal cells.

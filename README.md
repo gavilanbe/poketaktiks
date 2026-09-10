@@ -86,6 +86,27 @@ phase check, and curing a unit does not refund an already spent action.
 
 ## Other modes and presentation
 
+## Versus: match rules
+
+Local Versus drafts two teams on one device (snake draft) and then plays with
+the rules chosen on the setup screen:
+
+- **Mode.** *Elimination*: knock out the other team; at the turn limit the
+  larger team wins. *Capture the Flag*: each base holds a flag at the end of
+  the middle road; end a move on the enemy flag to take it, carry it back onto
+  your own flag to win. A fainted carrier drops the flag where it fell; the
+  other team picks it up from there, its owners send it home by stepping on
+  it. *King of the Hill*: a 3×3 hill in the centre; start three of your turns
+  with more Pokémon on it than the other team.
+- **Arena** size (Small 14×9, Medium 18×11, Large 22×13), **Fog of war**,
+  **Wild** Pokémon, **Level**, **Turns** (20/30/40/no limit) and the arena
+  **Seed**. The preview shows deploy zones, flag bases and the hill.
+- **Fog of war.** Each trainer sees tiles within 3 of their Pokémon (4 for
+  fliers); tall grass and forest hide anything not adjacent. Unseen foes do
+  not block planning, but a move that runs into one stops on the tile before
+  it (an ambush) and that Pokémon's action ends. The hand-off screen switches
+  the view between trainers.
+
 Campaign and skirmish retain catches, leveling and evolution. Trainer Pokémon
 cannot be caught; weakened wild Pokémon can be caught from an adjacent tile.
 The campaign party has an explicit 20% HP bonus. Local Versus uses equal stats,

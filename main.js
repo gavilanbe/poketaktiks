@@ -34,7 +34,7 @@ function onBattleEnd(result) {
   if (B.territory) { const S = B.territory; clearSuspend(); goScene('territoryResults', { result, reason: S.reason || 'Retreated', turn: B.turn, centers: [territoryControl(0), territoryControl(1)], deployments: S.deployments.slice(), seed: B.seed }); return; }
   if (B.versus) {
     const S = B.setup; const survivors = t => alive(t).map(u => u.num); const again = teams => { const S2 = Object.assign({}, S, { teams }); S2.go = () => launchVersus(S2); return S2; };
-    goScene('results', { versus: true, result: B.result, turns: B.turn, kills: B.kills, teams: [survivors(0), survivors(1)], rosters: [S.teams[0].slice(), S.teams[1].slice()], next: () => goScene('title'), rematch: () => { const S2 = again([S.teams[0].slice(), S.teams[1].slice()]); S2.seed = (S.seed + 1) % 1000; launchVersus(S2); }, setup: () => goScene('versus', again([[], []])) });
+    goScene('results', { versus: true, result: B.result, reason: B.endReason, mode: B.map.objective.mode || 'elim', turns: B.turn, kills: B.kills, teams: [survivors(0), survivors(1)], rosters: [S.teams[0].slice(), S.teams[1].slice()], next: () => goScene('title'), rematch: () => { const S2 = again([S.teams[0].slice(), S.teams[1].slice()]); S2.seed = (S.seed + 1) % 1000; launchVersus(S2); }, setup: () => goScene('versus', again([[], []])) });
     return;
   }
   const win = result === 'win'; const idx = B.chapter; const skirmish = B.skirmish;
@@ -97,9 +97,10 @@ function startSkirmishSetup() {
 
 // ---------------------------------------------------------------- versus (two trainers, one device)
 const VS_ROSTER = [5, 8, 2, 25, 17, 33, 12, 15, 28, 37, 39, 42, 44, 54, 58, 61, 64, 67, 75, 93, 95, 123, 125, 126, 111, 104, 133, 116];
-function startVersusSetup(seed) { const S = { seed: seed != null ? seed : Math.floor(Math.random() * 1000), level: 20, wild: true, teams: [[], []], order: [0, 1, 1, 0, 0, 1, 1, 0], size: 4, cur: 0, go: null }; S.go = () => launchVersus(S); goScene('versus', S); }
+function startVersusSetup(seed) { const S = { seed: seed != null ? seed : Math.floor(Math.random() * 1000), level: 20, wild: true, mode: 'elim', arena: 'm', fog: false, turns: 30, teams: [[], []], order: [0, 1, 1, 0, 0, 1, 1, 0], size: 4, cur: 0, go: null }; S.go = () => launchVersus(S); goScene('versus', S); }
+function vsMapFor(S) { const A = VS_ARENAS[S.arena] || VS_ARENAS.m; return versusMap(S.seed, A.w, A.h, { wild: S.wild, level: S.level, mode: S.mode || 'elim', fog: !!S.fog, turns: S.turns == null ? 30 : S.turns }); }
 function launchVersus(S) {
-  const map = versusMap(S.seed, 18, 11, { wild: S.wild, level: S.level }); const mk = list => list.map(n => partyUnit(n, S.level, 1)); // both trainers: plain stats
+  const map = vsMapFor(S); const mk = list => list.map(n => partyUnit(n, S.level, 1)); // both trainers: plain stats
   const p1 = mk(S.teams[0]), p2 = mk(S.teams[1]); BACKDROP = makeBackdrop(map);
   startBattle(map, p1, { pokeball: 2, potion: 1 }, { versus: true, humans: [0, 1], party2: p2, bag2: { pokeball: 2, potion: 1 }, seed: (S.seed * 131 + 7) | 1, defer: true, setup: S });
   goScene('battle'); beginPhase(0, true);

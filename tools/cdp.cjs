@@ -196,6 +196,15 @@ async function main() {
       const t0 = Date.now(); let i = 0; while (Date.now() - t0 < 4200) { await shot((mobile ? 'duelm-' : 'duel-') + String(i).padStart(2, '0')); i++; await sleep(60); }
       out.push('mode after: ' + await ev('__pk.BT.mode'));
     }
+    if (script === 'vs' || script === 'vs-m') {
+      // the versus setup with its match rules, then a capture-the-flag arena with fog and a king-of-the-hill arena
+      await nav('versus=5&silent&nosave'); await sleep(500); await shot('vs-setup');
+      await ev('(function(){const S=__pk.SC.data; S.mode="ctf"; S.fog=true; S.arena="l";})()'); await sleep(300); await shot('vs-setup-ctf');
+      await ev('(function(){const S=__pk.SC.data; S.teams=[[25,5,8,2],[4,7,1,133]]; S.go();})()'); await waitMode('handoff', 8000); await sleep(900); await key('z', 'KeyZ'); await waitMode('idle', 8000); await sleep(300); await shot('vs-ctf-fog');
+      await ev('__pk.BT.cx=1; __pk.BT.cy=' + await ev('__pk.B.flags[0].home.y')); await sleep(200); await shot('vs-ctf-fog-2');
+      await nav('versus=5&silent&nosave'); await sleep(400); await ev('(function(){const S=__pk.SC.data; S.mode="hill"; S.arena="s"; S.teams=[[25,5],[4,7]]; S.size=2; S.go();})()'); await waitMode('handoff', 8000); await sleep(900); await key('z', 'KeyZ'); await waitMode('idle', 8000); await sleep(300); await shot('vs-hill');
+      out.push('objective: ' + await ev('JSON.stringify(__pk.B.map.objective)') + ' hill=' + await ev('JSON.stringify(__pk.B.hill)'));
+    }
     out.push('--- console ---'); out.push(...logs.slice(0, 40));
   } finally { chrome.kill(); }
   console.log(out.join('\n'));

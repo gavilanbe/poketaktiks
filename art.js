@@ -581,6 +581,8 @@ function teamColorD(team) { return team === 0 ? '#1c3a8a' : team === 1 ? '#8a1c1
 function teamColorL(team) { return team === 0 ? '#8ab4ff' : team === 1 ? '#ff9a9a' : team === 2 ? '#fff0a0' : '#a0f0b0'; }
 function stampAt(x, y, rows, pal) { for (let j = 0; j < rows.length; j++) for (let i = 0; i < rows[j].length; i++) { const ch = rows[j][i]; if (ch === '.') continue; const c = pal[ch]; if (!c) continue; ctx.fillStyle = c; ctx.fillRect(x + i, y + j, 1, 1); } }
 function pointerHand(x, y, t) { const b = Math.round(Math.sin(t / 120)); x += b; stampAt(x, y - 1, ST.hand, { O: UI.shadow, W: '#ffffff' }); px(x + 2, y + 3, '#e0d8c8'); px(x + 3, y + 5, '#e0d8c8'); }
+// Team flag: a pale pole with a waving two-tone banner.
+function drawFlag(x, y, team, wave = 0) { rect(x, y, 1, 11, '#e8e0d0'); px(x, y, '#ffffff'); const c = teamColor(team), d = teamColorD(team); const w = 6 + wave; rect(x + 1, y + 1, w, 5, c); rect(x + 1, y + 6, w - 2, 1, d); px(x + w, y + 2 + wave, d); px(x + 1, y + 1, teamColorL(team)); }
 function drawCrown(x, y) { stampAt(x, y, ST.crownGold, { O: '#5a3a00', Y: UI.gold }); px(x + 2, y + 2, '#ff5a5a'); px(x + 1, y + 1, '#fff0a0'); }
 function drawSkull(x, y) { stampAt(x, y, ST.skull, { O: '#3a1020', W: '#f0e8f0' }); px(x + 1, y + 2, '#ff5a5a'); px(x + 3, y + 2, '#ff5a5a'); }
 // Unit base: a translucent team plate with a glossy rim, and a soft ground shadow that shrinks while the unit is airborne.
