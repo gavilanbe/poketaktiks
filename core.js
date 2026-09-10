@@ -230,6 +230,38 @@ function bigSprite(num, flip = false, tint = null) {
   BIGSPR.cache[key] = c; return c;
 }
 // Draw a battle sprite standing on baseline `by`, centred on cx. Falls back to the mini icon at 2×.
+// ---------------------------------------------------------------- animated battle sprites (assets/battle/anim/<num>.png + ANIM_META)
+// Frame sheets packed from the Black/White animated GIFs; loaded lazily like the static sprites. Frames are cut
+// into small cached canvases (per frame, flip and tint) so drawing is one drawImage.
+const ANIM = { img: {}, state: {}, cache: {}, cum: {} };
+function requestAnim(num) {
+  if (ANIM.state[num] || typeof Image === 'undefined' || typeof ANIM_META === 'undefined' || !ANIM_META[num]) return;
+  ANIM.state[num] = 'loading'; const img = new Image();
+  img.onload = () => { ANIM.img[num] = img; ANIM.state[num] = 'ok'; };
+  img.onerror = () => { ANIM.state[num] = 'fail'; };
+  img.src = 'assets/battle/anim/' + num + '.png';
+}
+function animReady(num) { return ANIM.state[num] === 'ok'; }
+// Frame index at time t (seconds) through the loop; opt.speed scales the playback rate.
+function animFrame(num, t, speed = 1) {
+  const m = ANIM_META[num]; let cum = ANIM.cum[num]; if (!cum) { cum = ANIM.cum[num] = []; let a = 0; for (const d of m.d) { a += d; cum.push(a); } }
+  const total = cum[cum.length - 1]; let ms = ((t * 1000 * speed) % total + total) % total; let i = 0; while (i < cum.length - 1 && ms >= cum[i]) i++; return i;
+}
+function animFrameCanvas(num, i, flip, tint) {
+  const key = num + ':' + i + (flip ? 'f' : '') + (tint || ''); let c = ANIM.cache[key]; if (c) return c;
+  const m = ANIM_META[num]; c = document.createElement('canvas'); c.width = m.w; c.height = m.h; const g = c.getContext('2d');
+  if (flip) { g.translate(m.w, 0); g.scale(-1, 1); } g.drawImage(ANIM.img[num], (i % m.cols) * m.w, Math.floor(i / m.cols) * m.h, m.w, m.h, 0, 0, m.w, m.h);
+  if (tint) { g.globalCompositeOperation = 'source-atop'; g.fillStyle = tint; g.fillRect(-m.w, 0, 2 * m.w, m.h); }
+  ANIM.cache[key] = c; return c;
+}
+// Draw the animated sprite standing on baseline `by`, centred on cx, at time t. o: flip, tint, alpha, sx, sy, speed.
+function drawAnim(num, cx, by, t, o = {}) {
+  const m = ANIM_META[num], i = animFrame(num, t, o.speed || 1), img = animFrameCanvas(num, i, !!o.flip, o.tint || null); const sx = o.sx || 1, sy = o.sy || 1;
+  const w = m.w * sx, h = m.h * sy, bottom = m.b * sy;
+  if (o.alpha != null) ctx.globalAlpha = o.alpha;
+  ctx.drawImage(img, Math.round(cx - w / 2), Math.round(by - bottom), Math.round(w), Math.round(h));
+  if (o.alpha != null) ctx.globalAlpha = 1;
+}
 function drawBig(num, cx, by, o = {}) {
   const img = bigSprite(num, !!o.flip, o.tint || null); const sx = o.sx || 1, sy = o.sy || 1;
   if (!img) { drawMon(num, cx, by, { flip: o.flip, tint: o.tint, alpha: o.alpha, sx: 2 * sx, sy: 2 * sy }); return; }

@@ -92,8 +92,12 @@ The campaign party has an explicit 20% HP bonus. Local Versus uses equal stats,
 a shared-device draft, and a hand-off screen between players. Territory does
 not change campaign progression.
 
-An attack opens a lateral battle scene with larger Pokémon, terrain, ordered
-HP changes, counters and KOs. Any key/tap speeds it up; X skips. The empty-tile
+An attack opens a lateral battle scene framed like Advance Wars: the screen
+splits on a diagonal, each side's terrain slides in as a diorama, header panels
+show a big HP counter and terrain defence stars, the Black/White animated
+sprites play their idle loops, and each strike has its own charge, projectile,
+impact and KO choreography with a light camera push. HP changes, counters and
+KOs play in order. Any key/tap speeds it up; X skips. The empty-tile
 menu (also opened with Escape) offers **Full duel / Quick duel / Map only**. All modes replay
 the same combat result; skipping cannot change it. Reduced-motion settings
 reduce movement and effects. A missing large sprite falls back to its mini icon.
@@ -144,9 +148,11 @@ Deep links: `?ch=N`, `?ch=N&prep`, `?skirmish=SEED`, `?versus=SEED`,
 `&noguide` bypasses the territory guide. Presentation preferences are independent.
 
 Source modules: `core.js` (canvas/input/audio/RNG), `font.js`, `dex.js`, `data.js`,
-`art.js`, `model.js`, `battle.js`, `duel.js`, `campaign.js`, `territory.js`,
+`animmeta.js` (generated), `art.js`, `model.js`, `battle.js`, `duel.js`, `campaign.js`, `territory.js`,
 `scenes.js`, and `main.js`. `build.sh` regenerates the tracked `index.html`.
 
-Sprites: Pokémon Showdown mini icons and PokeAPI Black/White battle sprites.
+Sprites: Pokémon Showdown mini icons and PokeAPI Black/White battle sprites
+(static and animated; `tools/pack-anim.py` repacks the animated GIFs into the
+frame sheets in `assets/battle/anim/` and `animmeta.js`).
 See `assets/battle/ATTRIBUTION.md` for source provenance. Pokémon © Nintendo /
 Game Freak / Creatures.

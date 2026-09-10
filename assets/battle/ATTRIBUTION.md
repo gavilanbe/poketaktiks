@@ -15,3 +15,18 @@ to load, the scene falls back to the Showdown mini icon from
 - The PokeAPI/sprites repository states no licence of its own for the images.
   The artwork is © Nintendo / Creatures Inc. / GAME FREAK inc. and is used here
   for a non-commercial fan project.
+
+## Animated sprites
+
+`anim/1.png` … `anim/151.png` are the animated Generation V (Black / White)
+front sprites, repacked from PokeAPI's GIFs into PNG frame sheets by
+`tools/pack-anim.py` (frames trimmed to their common bounding box, identical
+consecutive frames merged; the frame layout and durations are in
+`animmeta.js`). The lateral battle scene plays them as the Pokémon's idle
+loop and falls back to the static sprite above when a sheet is missing.
+
+- Source: https://github.com/PokeAPI/sprites
+  path `sprites/pokemon/versions/generation-v/black-white/animated/<num>.gif`
+- Fetched 2026-09-10 from the `master` branch.
+- Same ownership and use as above: © Nintendo / Creatures Inc. / GAME FREAK inc.,
+  used for a non-commercial fan project.

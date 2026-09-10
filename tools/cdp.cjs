@@ -9,7 +9,7 @@ const CHROME = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Conten
 const PORT = parseInt(process.env.PK_PORT || '9337'); const ROOT = path.join(__dirname, '..');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function main() {
-  const script = process.argv[2] || 'smoke'; const mobile = script === 'mobile';
+  const script = process.argv[2] || 'smoke'; const mobile = script === 'mobile' || script.endsWith('-m');
   const W = mobile ? 390 : 1280, H = mobile ? 844 : 720;
   const chrome = spawn(CHROME, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', `--remote-debugging-port=${PORT}`, `--window-size=${W},${H}`, '--user-data-dir=/tmp/pk-cdp-profile-' + PORT, 'about:blank'], { stdio: 'ignore' });
   const out = [];
@@ -185,12 +185,13 @@ async function main() {
       await tapTile(7, 3); await waitMode('move', 3000); await tapTile(7, 3); await waitMode('menu', 4000); await key('ArrowDown'); await key('ArrowDown'); await key('z', 'KeyZ'); await sleep(200); await shot('ui2-bag'); await key('x', 'KeyX'); await sleep(100); await key('x', 'KeyX'); await sleep(100); await key('x', 'KeyX'); await waitMode('idle', 3000);
       await ev('__pk.B.units.filter(u=>u.team!==0).forEach(u=>u.hp=0); __pk.endTurn()'); await waitMode('end', 8000); await sleep(1000); await shot('ui2-victory'); await key('z', 'KeyZ'); await waitScene('story', 8000); await sleep(1200); await shot('ui2-story'); await key('x', 'KeyX'); await waitScene('results', 8000); await sleep(300); await shot('ui2-results');
     }
-    if (script === 'duel') {
+    if (script === 'duel' || script === 'duel-m') {
       // the lateral attack scene, frame by frame
       await nav('ch=1&silent&nosave&seed=3'); await waitMode('idle', 6000); await ev("setPref('battle','full')");
       await ev('(function(){const c=__pk.B.units.find(u=>u.name==="Charmander"); c.x=7; c.y=3; __pk.BT.cx=7; __pk.BT.cy=3;})()');
+      if (process.env.PK_KO) await ev('__pk.B.units.find(u=>u.x===8&&u.y===3).hp=1');
       await tapTile(7, 3); await waitMode('move', 3000); await tapTile(8, 3); await waitMode('target', 3000); await key('z', 'KeyZ');
-      const t0 = Date.now(); let i = 0; while (Date.now() - t0 < 4200) { await shot('duel-' + String(i).padStart(2, '0')); i++; await sleep(60); }
+      const t0 = Date.now(); let i = 0; while (Date.now() - t0 < 4200) { await shot((mobile ? 'duelm-' : 'duel-') + String(i).padStart(2, '0')); i++; await sleep(60); }
       out.push('mode after: ' + await ev('__pk.BT.mode'));
     }
     out.push('--- console ---'); out.push(...logs.slice(0, 40));

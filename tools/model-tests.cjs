@@ -6,7 +6,7 @@
 'use strict';
 const vm = require('vm'), fs = require('fs'), path = require('path'), assert = require('assert');
 const ROOT = path.join(__dirname, '..');
-const FILES = ['core.js', 'font.js', 'dex.js', 'data.js', 'art.js', 'model.js', 'battle.js', 'duel.js', 'campaign.js', 'territory.js', 'scenes.js', 'main.js'];
+const FILES = ['core.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'model.js', 'battle.js', 'duel.js', 'campaign.js', 'territory.js', 'scenes.js', 'main.js'];
 
 // ---------------------------------------------------------------- harness
 function loadGame() {
