@@ -2374,6 +2374,10 @@ function drawBoardLayer() {
     rangeOverlay(cells, (x, y) => BT.reach.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#3060e0', '#a0c0ff', Math.floor(BT.time * 6));
     rangeOverlay(BT.atk, (x, y) => BT.reach.has(key(x, y)) || BT.atk.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6));
   }
+  // resting the cursor on a foe shows how far it can move and strike, faintly, without switching DANGER on
+  if (BT.mode === 'idle' && !BT.showDanger && !REDUCED) { const hov = unitAt(BT.cx, BT.cy); if (hov && hov.hp > 0 && hostile(hov.team, HT())) {
+    let c = BT.hoverRange; if (!c || c.id !== hov.id || c.turn !== B.turn || c.x !== hov.x || c.y !== hov.y) { const r = reachable(hov); c = BT.hoverRange = { id: hov.id, turn: B.turn, x: hov.x, y: hov.y, t0: BT.time, cells: [...r.values()].filter(n => canStand(hov, n.x, n.y)), r, ac: attackCells(hov, r) }; }
+    const k = Math.min(1, (BT.time - c.t0) / .25); ctx.globalAlpha = .55 * k; rangeOverlay(c.cells, (x, y) => c.r.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6)); rangeOverlay(c.ac, (x, y) => c.r.has(key(x, y)) || c.ac.some(q => q.x === x && q.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e07030', '#ffc0a0', Math.floor(BT.time * 6)); ctx.globalAlpha = 1; } }
   if (BT.mode === 'unitinfo' && BT.info && BT.info.team !== HT()) { const r = reachable(BT.info); const cells = [...r.values()].filter(n => canStand(BT.info, n.x, n.y)); rangeOverlay(cells, (x, y) => r.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6)); const ac = attackCells(BT.info, r); rangeOverlay(ac, (x, y) => r.has(key(x, y)) || ac.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e07030', '#ffc0a0', Math.floor(BT.time * 6)); }
   if (B.territory) drawTerritoryProperties();
   // target highlights: red for foes, green for allies and self (skills), the chosen one white
@@ -2547,6 +2551,7 @@ function drawButtons(L) {
   if (idle) items.push({ label: 'END TURN', variant: 'danger', run: () => { Audio.sfx('ok'); confirmEndTurn(); } }, { label: 'DANGER', on: BT.showDanger, run: () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); } });
   if (acting) items.push({ label: m === 'move' && BT.dart ? 'STAY' : 'BACK', variant: 'ghost', run: () => cancel() });
   if (enemyAnim) items.push({ label: 'FAST', on: BT.fast, run: () => { BT.fast = !BT.fast; } });
+  if (idle && VIEW.touch && alive(HT()).some(u => !u.acted)) items.push({ label: 'NEXT', run: () => keyInput('next') });
   if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
   if (idle && B.territory) items.push({ label: 'RESERVE', run: () => openTerritoryReserves() });
   if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; Audio.sfx('menu'); } }, { label: '♪', on: !Audio.muted, half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });

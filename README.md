@@ -112,7 +112,10 @@ On phones the board opens zoomed out; drag to pan and use ZOOM for a closer view
 - Q/E: cycle units. C: unit information or switch the forecast move.
 - F: fast playback. `+` / `-`: zoom. H: help. M: mute.
 - Mouse: point and click; right-click to cancel/open the menu; drag/wheel to pan.
-- Touch: tap to select/confirm, drag to pan; use the on-screen buttons.
+- Touch: tap to select/confirm, drag to pan; use the on-screen buttons (NEXT
+  jumps to the next ready Pokémon).
+- Resting the cursor on a foe shows its move and attack reach; DANGER shows
+  every foe's reach at once. END TURN asks first while Pokémon can still act.
 
 Campaign progression saves between chapters. A **shared suspend slot** is
 written at the start of each player turn in campaign, skirmish and Territory;
