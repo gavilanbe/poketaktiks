@@ -57,6 +57,69 @@ test('all help lines can be read on short screens and the full title menu fits',
     assert.equal(G('SC.hits.length'), 6); for (const b of G('SC.hits')) assert(b.x >= 0 && b.y >= 0 && b.x + b.w <= w && b.y + b.h <= h);
   }
 });
+test('title routes work before artwork loads; sound, pointer and keyboard controls stay independent', () => {
+  const T = loadGame(), { g, G } = T;
+  for (const [label, scene, draw] of [['NEW GAME', 'starter', 'starterDraw'], ['SKIRMISH', 'skirmish', 'skirmishDraw'], ['TERRITORY', 'territory', 'territorySetupDraw'], ['VERSUS', 'versus', 'versusDraw']]) {
+    g.goScene('title'); g.titleDraw();
+    const h = G('SC.hits').find(h => h.label === label);
+    g.titleInput({ type: 'up', x: h.x + h.w / 2, y: h.y + h.h / 2, touch: true });
+    g.titleUpdate(.21);
+    assert.equal(G('SC.name'), scene); assert.doesNotThrow(() => g[draw]());
+  }
+  g.goScene('title'); g.titleDraw();
+  const sound = G('SC.titleSound'), muted = G('Audio.muted');
+  g.titleInput({ type: 'up', x: sound.x + 4, y: sound.y + 4, touch: true });
+  assert.equal(G('Audio.muted'), !muted); assert.equal(G('SC.name'), 'title'); assert.equal(G('SC.i'), 0);
+  const second = G('SC.hits[1]');
+  g.titleInput({ type: 'move', x: second.x + 4, y: second.y + 4 }); assert.equal(G('SC.i'), 1);
+  g.titleInput({ type: 'key', key: 'down' }); assert.equal(G('SC.i'), 2);
+  g.titleInput({ type: 'key', key: 'ok' }); g.titleUpdate(.21); assert.equal(G('SC.name'), 'territory');
+});
+test('all title save states fit small screens; new-game cancellation preserves the save', () => {
+  for (const [w, h] of [[176, 288], [180, 320], [195, 422], [422, 195], [512, 180], [480, 300], [307, 409]]) {
+    const T = loadGame(), { g, G, store } = T;
+    G(`VIEW.w=${w};VIEW.h=${h};`);
+    for (const state of [0, 1, 2]) {
+      if (state >= 1) store.set('pk_save', JSON.stringify({ chapter: 1, party: [], stars: {} }));
+      if (state === 2) store.set('pk_suspend', '{}');
+      g.goScene('title'); const boxes = textHook(T); g.titleDraw();
+      assert.equal(G('SC.hits.length'), 4 + state);
+      for (const b of boxes()) assert(b.x >= -1 && b.x + b.w <= w + 1 && b.y >= 0 && b.y + 7 <= h, `${w}x${h}: ${JSON.stringify(b)}`);
+      const hits = G('SC.hits');
+      for (const b of hits) {
+        assert(b.x >= 0 && b.y >= 0 && b.x + b.w <= w && b.y + b.h <= h - 27);
+        for (const other of hits) if (b !== other) assert(b.x + b.w <= other.x || other.x + other.w <= b.x || b.y + b.h <= other.y || other.y + other.h <= b.y);
+      }
+    }
+    const before = store.get('pk_save'); g.confirm = () => false;
+    G("SC.hits.find(h=>h.label==='NEW GAME').run()");
+    g.titleUpdate(.21);
+    assert.equal(store.get('pk_save'), before); assert.equal(G('SC.name'), 'title');
+  }
+});
+test('title confirmation fires once after its press effect; dragging to another button cancels', () => {
+  const T = loadGame(), { g, G } = T;
+  g.goScene('title'); g.titleDraw();
+  let activated = 0; G('SC.titleItems')[0].run = () => activated++;
+  const [a, b] = G('SC.hits');
+  g.titleInput({ type: 'down', x: a.x + 5, y: a.y + 5, btn: 0 });
+  g.titleInput({ type: 'up', x: b.x + 5, y: b.y + 5, btn: 0 });
+  assert.equal(G('SC.titleFx.action'), null);
+  g.titleInput({ type: 'key', key: 'ok' });
+  g.titleInput({ type: 'key', key: 'ok' });
+  g.titleInput({ type: 'key', key: 'down' });
+  assert.equal(G('SC.i'), 0); assert.equal(activated, 0);
+  g.titleUpdate(.12); assert.equal(activated, 0);
+  g.titleUpdate(.09); assert.equal(activated, 1);
+  g.titleUpdate(1); assert.equal(activated, 1); assert.equal(G('SC.titleFx.action'), null);
+  // A cancelled new-game dialog must clear the transition and allow further input.
+  T.store.set('pk_save', JSON.stringify({ chapter: 1, party: [], stars: {} }));
+  g.confirm = () => false; g.goScene('title'); g.titleDraw();
+  const i = G("SC.titleItems.findIndex(x=>x.label==='NEW GAME')");
+  g.titleActivate(i); g.titleUpdate(.21);
+  assert.equal(G('SC.name'), 'title'); assert.equal(G('SC.titleFx.action'), null);
+  g.titleInput({ type: 'key', key: 'down' }); assert.equal(G('SC.i'), i + 1);
+});
 test('territory runs through the real enemy animation queue to results and rematch', () => {
   const T = loadGame(), { g, G } = T; G("PREF.territoryGuide='hide';PREF.battle='map';BT.fast=true;"); g.launchTerritory(7);
   let frames = 0;

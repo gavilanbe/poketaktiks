@@ -6,7 +6,7 @@
 'use strict';
 const vm = require('vm'), fs = require('fs'), path = require('path'), assert = require('assert');
 const ROOT = path.join(__dirname, '..');
-const FILES = ['core.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'model.js', 'battle.js', 'duel.js', 'campaign.js', 'territory.js', 'scenes.js', 'main.js'];
+const FILES = ['core.js', 'font.js', 'titlemeta.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'mapart.js', 'model.js', 'battle.js', 'duel.js', 'campaign.js', 'territory.js', 'scenes.js', 'main.js'];
 
 // ---------------------------------------------------------------- harness
 function loadGame() {
@@ -364,7 +364,7 @@ test('camera: fits the board between the HUD bands, clamps big maps, keeps the c
     const check = () => { const r = g.camRange(); assert(CAM.tx >= r.x[0] - 1e-9 && CAM.tx <= r.x[1] + 1e-9 && CAM.ty >= r.y[0] - 1e-9 && CAM.ty <= r.y[1] + 1e-9, tag + 'camera inside its range'); const R = g.hudReserve(); const bw = g.bvW(), bh = g.bvH();
       if (mw <= bw) assert(Math.abs(CAM.tx - (mw - bw) / 2) < 1, tag + 'a board narrower than the view is centred'); else assert(CAM.tx >= 0 && CAM.tx <= mw - bw, tag + 'no void shown beside a wide board');
       if (mh <= bh - R.top - R.bottom) { assert(-CAM.ty >= R.top - 1e-9, tag + 'board top clear of the turn card'); assert(-CAM.ty + mh <= bh - R.bottom + 1e-9, tag + 'board bottom clear of the bottom band'); } else assert(CAM.ty >= -R.top - 1e-9 && CAM.ty <= mh - bh + R.bottom + 1e-9, tag + 'a tall board pans at most to the HUD bands'); };
-    check(); const z0 = BT.zoom; if (w < 300) assert(z0 === .5 || g.boardFits(1), tag + 'phones start zoomed to fit'); else assert.strictEqual(z0, 1, tag + 'wide screens start at ×1');
+    check(); const z0 = BT.zoom; if (w < 300) assert(z0 === .5 || z0 === .75 || g.boardFits(1), tag + 'phones start zoomed to fit'); if (w < 300 && !g.boardFits(1)) assert(g.boardHeightFits(z0) || z0 === .5, tag + 'the opening zoom shows every row when a reduced zoom can'); else assert.strictEqual(z0, 1, tag + 'wide screens start at ×1');
     // zoom out and back keeps the camera valid; zooming in is only offered when the board does not fit
     if (g.canZoom()) { BT.zoom = 1; g.clampCam(); assert(g.setZoom(.5)); check(); assert(!g.setZoom(.5), 'already zoomed out'); assert(g.setZoom(1)); check(); } else assert(!g.setZoom(.5), tag + 'no zoom-out when the board fits');
     BT.zoom = 1; g.clampCam(); CAM.x = CAM.tx; CAM.y = CAM.ty;
@@ -615,7 +615,7 @@ test('speed rules: crits are flat (4 / 24 / 100 on frozen), hit bonus capped at 
   let L = g.forecastLines(fc, a, d); assert.strictEqual(L[0].crit, 4); assert.strictEqual(L[0].critKo, true, 'crit would KO'); assert.strictEqual(L[0].ko, false); assert.strictEqual(fc.hpD, 1, 'HP after is the normal-hit number');
   d.hp = fc.a.dmg; fc = g.forecast(a, d, mv, a); L = g.forecastLines(fc, a, d); assert.strictEqual(L[0].ko, true); assert.strictEqual(L[0].critKo, false, 'no crit flag when the normal hit already KOs');
   d.hp = 500; fc = g.forecast(a, d, mv, a); L = g.forecastLines(fc, a, d); assert.strictEqual(L[0].critKo, false); assert.strictEqual(L[0].crit, 4);
-  const G = T.G; G('VIEW.w = 480; VIEW.h = 270'); const BT = G('BT'); BT.sel = a; BT.targets = [d]; BT.tIdx = 0; BT.moveIdx = a.moves.indexOf(mv); BT.mode = 'target'; d.hp = fc.a.dmg + 1; const boxes = textHook(T); g.drawHUD(); const strs = boxes().map(b => b.text);
+  const G = T.G; G('VIEW.w = 480; VIEW.h = 270'); const BT = G('BT'); BT.sel = a; BT.targets = [d]; BT.tIdx = 0; BT.moveIdx = a.moves.indexOf(mv); BT.mode = 'target'; d.hp = fc.a.dmg + 1; BT.forecastDetail = true; const boxes = textHook(T); g.drawHUD(); const strs = boxes().map(b => b.text);
   assert(strs.some(s => s.includes('NORMAL HITS')), 'the forecast title says the numbers are for normal hits');
   { const all = boxes.__last || []; const crit = all.find(b => b.text === '4%'); assert(crit && all.some(b => b.text === 'KO' && b.y === crit.y && b.x > crit.x), 'the crit KO risk is spelled out next to the crit odds: ' + strs.join(' | ')); }
 });
@@ -717,7 +717,7 @@ test('player flow: the skill sits in the action menu with its reason when unusab
   // the unit sheet and card mention the role and the state; the HUD stays inside every size in skillTarget mode
   for (const [w, h] of SIZES) { G('VIEW.w = ' + w + '; VIEW.h = ' + h); const HUD = G('HUD'); BT.sel = cle; cle.acted = false; cle.cd = 0; hurt.hp = 10; g.openActionMenu(cle); g.menuChoose('skill'); assert.strictEqual(BT.mode, 'skillTarget'); g.battleDraw(); for (const p of HUD.panels) assert(inside(p, w, h), w + 'x' + h + ': skill card inside'); for (const b of HUD.hits) assert(inside(b, w, h)); g.cancel(); g.cancel(); g.cancel(); BT.mode = 'idle'; }
   G('VIEW.w = 480; VIEW.h = 270'); BT.info = geo; BT.mode = 'unitinfo'; const bx = textHook(T); g.battleDraw(); const sheet = bx().map(b => b.text); assert(sheet.some(s => s.startsWith('DEFENDER')), 'role on the sheet'); assert(sheet.some(s => /BRACED.*Brace:/.test(s)), 'skill line with the state: ' + sheet.filter(s => /Brace/.test(s)).join(' | ')); BT.mode = 'idle';
-  BT.cx = geo.x; BT.cy = geo.y; const bx2 = textHook(T); g.battleDraw(); assert(bx2().some(b => b.text === 'DEF'), 'role badge on the unit card');
+  BT.cx = geo.x; BT.cy = geo.y; const bx2 = textHook(T); g.battleDraw(); assert(bx2().some(b => b.text === 'Defender'), 'role name on the unit card');
   // dart: after a player attack the scout gets a 2-tile move, no undo, and ends spent; X stays put and ends the turn too
   fixedRoll(T, .5); const pid = place(T, 16, 20, 0, 6, 6), cat = place(T, 10, 5, 1, 7, 6); cat.hp = cat.maxHp = 500; pid.hp = pid.maxHp = 500;
   BT.sel = pid; BT.targets = [cat]; BT.tIdx = 0; BT.moveIdx = pid.moves.indexOf(move(pid, 'Wing Attack')); BT.mode = 'target'; g.confirmAttack(); n = 0; while (BT.mode === 'anim' && n++ < 3000) { g.battleUpdate(1 / 60); g.battleDraw(); }
@@ -788,6 +788,8 @@ test('review: Brace earns no XP, useSkill refuses illegal calls without mutating
   for (const [w, h] of [[180, 390], [195, 422], [207, 448], [480, 270]]) {
     const T2 = loadGame(); const g2 = T2.g, G2 = T2.G; G2('VIEW.w = ' + w + '; VIEW.h = ' + h); arena(T2); G2('rnd = () => .5'); const BT2 = G2('BT');
     const a = place(T2, 6, 30, 0, 1, 1), d = place(T2, 10, 3, 1, 2, 1); const mv = a.moves.find(m => m.name === 'Flamethrower'); BT2.sel = a; BT2.targets = [d]; BT2.tIdx = 0; BT2.moveIdx = a.moves.indexOf(mv); BT2.mode = 'target';
+    // the summary view answers the three questions on three lines (deal / answer / risk) and marks the KO; the detailed table is one toggle away
+    { const bx0 = textHook(T2); g2.drawHUD(); const all0 = bx0(); const fr0 = g2.forecastRect(); const inCard = all0.filter(b => b.y >= fr0.y + 55 && b.y < fr0.y + fr0.h - 16).map(b => b.text); assert(inCard.some(t => /^▸ FLAMETHROWER 555/.test(t)) && inCard.some(t => /^◂ TACKLE 2 · only if it survives/.test(t)) && inCard.some(t => /^Risk: /.test(t)) && inCard.includes('KO'), w + 'x' + h + ': summary lines: ' + inCard.join(' | ')); for (const b of all0) assert(b.x >= fr0.x - 1 && b.x + b.w <= fr0.x + fr0.w + 1 || b.y < fr0.y || b.y > fr0.y + fr0.h + 12, w + 'x' + h + ': summary text inside its card: ' + b.text); assert(g2.detailHit(fr0.x + 5, fr0.y + 60) && !g2.forecastHit(fr0.x + 5, fr0.y + 60) && !g2.moveSwitchHit(fr0.x + 5, fr0.y + 60), 'the lines are their own hit area'); g2.keyInput('detail'); assert.strictEqual(BT2.forecastDetail, true, 'V opens the details'); }
     const rows = () => { const bx = textHook(T2); g2.drawHUD(); const all = bx(); const fr = g2.forecastRect(); for (const b of all) assert(b.x >= fr.x - 1 && b.x + b.w <= fr.x + fr.w + 1 || b.y < fr.y || b.y > fr.y + fr.h + 12, w + 'x' + h + ': forecast text inside its card: ' + b.text); const rb = all.filter(b => /^[▸◂] /.test(b.text)); return { rows: rb.map(b => b.text), cells: rb.map(r => all.filter(b => b.y === r.y && b.x > r.x).map(b => b.text)), ko: all.filter(b => b.text === 'KO').map(b => b.x), fr, table: fr.w >= 200 }; };
     let R = rows(); const tag = w + 'x' + h + ': '; assert.strictEqual(R.rows.length, 3, tag + 'three strike rows');
     if (R.table) { // wide cards lay the strikes out as a table: the name and condition in the first column, DMG / HIT / CRIT as cells

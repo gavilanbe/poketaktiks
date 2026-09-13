@@ -97,6 +97,7 @@ const TERRAIN = {
   's': { id: 'sand', name: 'Sand', cost: { walk: 2, fly: 1, desert: 1 }, def: 0, eva: 0 },
   'C': { id: 'center', name: 'Poké Center', cost: { walk: 1 }, def: 10, eva: 0, heal: .3 },
   'G': { id: 'gym', name: 'Gym', cost: { walk: 1 }, def: 20, eva: 0 },
+  'Q': { id: 'hq', name: 'HQ', cost: { walk: 1 }, def: 20, eva: 0, heal: .3 },
   'H': { id: 'house', name: 'House', cost: { walk: 99, fly: 99 }, def: 0, eva: 0 },
   'c': { id: 'cave', name: 'Cave Floor', cost: { walk: 1 }, def: 0, eva: 0 },
   'r': { id: 'rubble', name: 'Rubble', cost: { walk: 2, fly: 1, climb: 1 }, def: 15, eva: 5 },
@@ -121,7 +122,7 @@ function moveCost(terr, unit) {
 }
 // Water: an amphibious unit is at home there (Tide: DEF 20 / AVO 20); other swimmers get the small swimDef.
 function terrainDef(terr, unit) { if (terr.id === 'water' && unit.swim) return unit.role === 'amphibious' ? TIDE.def : terr.swimDef; if (unit.fly && (terr.id === 'forest' || terr.id === 'mountain' || terr.id === 'tall' || terr.id === 'rubble' || terr.id === 'crate')) return 0; return terr.def; }
-function terrainEva(terr, unit) { if (terr.id === 'water' && unit.swim && unit.role === 'amphibious') return TIDE.eva; if (unit.fly && terr.id !== 'gym' && terr.id !== 'center') return 0; return terr.eva; }
+function terrainEva(terr, unit) { if (terr.id === 'water' && unit.swim && unit.role === 'amphibious') return TIDE.eva; if (unit.fly && terr.id !== 'gym' && terr.id !== 'center' && terr.id !== 'hq') return 0; return terr.eva; }
 
 // ---------------------------------------------------------------- dex
 const DEX = {}; const DEX_LIST = [];
@@ -143,13 +144,13 @@ const ROLE_LINES = {
 };
 // followUp: the role that turns a 10+ SPE lead into a second strike. Everyone else strikes once, whatever their speed.
 const ROLES = {
-  scout: { name: 'Scout', abbr: 'SCT', col: '#f0a040', skill: 'dart', followUp: true, desc: 'Flanker. After attacking it darts up to 2 tiles. Strikes twice when 10+ SPE faster.' },
-  defender: { name: 'Defender', abbr: 'DEF', col: '#a0a0b0', skill: 'brace', followUp: false, desc: 'Wall. Brace instead of attacking to take 40% less damage until its next turn.' },
-  amphibious: { name: 'Amphibious', abbr: 'AMP', col: '#5090f0', skill: 'tide', followUp: false, desc: 'Swims. On water it is at home: DEF 20% and AVO 20.' },
-  controller: { name: 'Controller', abbr: 'CTL', col: '#70c060', skill: 'root', followUp: false, desc: 'Root a foe within 2 tiles: it cannot move on its next turn. Every other turn; fliers are immune.' },
-  ranged: { name: 'Ranged', abbr: 'RNG', col: '#e070c0', skill: 'reach', followUp: false, desc: 'Reach: its ranged moves hit one tile further, out of most counters.' },
-  support: { name: 'Support', abbr: 'SUP', col: '#60d0a0', skill: 'mend', followUp: false, desc: 'Mend an adjacent ally: 30% HP and cures status and root. Every other turn.' },
-  striker: { name: 'Striker', abbr: 'STK', col: '#e05050', skill: null, followUp: true, desc: 'Plain attacker. Strikes twice when 10+ SPE faster.' },
+  scout: { icon: 'wing', name: 'Scout', abbr: 'SCT', col: '#f0a040', skill: 'dart', followUp: true, desc: 'Flanker. After attacking it darts up to 2 tiles. Strikes twice when 10+ SPE faster.' },
+  defender: { icon: 'shield', name: 'Defender', abbr: 'DEF', col: '#a0a0b0', skill: 'brace', followUp: false, desc: 'Wall. Brace instead of attacking to take 40% less damage until its next turn.' },
+  amphibious: { icon: 'wave', name: 'Amphibious', abbr: 'AMP', col: '#5090f0', skill: 'tide', followUp: false, desc: 'Swims. On water it is at home: DEF 20% and AVO 20.' },
+  controller: { icon: 'vine', name: 'Controller', abbr: 'CTL', col: '#70c060', skill: 'root', followUp: false, desc: 'Root a foe within 2 tiles: it cannot move on its next turn. Every other turn; fliers are immune.' },
+  ranged: { icon: 'target', name: 'Ranged', abbr: 'RNG', col: '#e070c0', skill: 'reach', followUp: false, desc: 'Reach: its ranged moves hit one tile further, out of most counters.' },
+  support: { icon: 'heart', name: 'Support', abbr: 'SUP', col: '#60d0a0', skill: 'mend', followUp: false, desc: 'Mend an adjacent ally: 30% HP and cures status and root. Every other turn.' },
+  striker: { icon: 'sword', name: 'Striker', abbr: 'STK', col: '#e05050', skill: null, followUp: true, desc: 'Plain attacker. Strikes twice when 10+ SPE faster.' },
 };
 // Active skills take the unit's action (like Attack) and go on cooldown for `cd` of the unit's own upkeeps:
 // cd 2 means use on turn N, unavailable on N+1, ready again on N+2 (every other turn).

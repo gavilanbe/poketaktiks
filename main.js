@@ -82,6 +82,7 @@ function resumeSuspend() {
   BACKDROP = makeBackdrop(mapDef); BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.hpShow.clear(); BT.cx = s.cx; BT.cy = s.cy; BT.zoom = 1; if (narrowView() && canZoom()) setZoom(.5); centerCam(BT.cx, BT.cy, true); BT.hoverAnchor = null; FX.parts = []; FX.texts = [];
   for (const u of B.units) requestBigSprite(u.num);
   if (s.skirmish && s.preset) SC.data = { preset: true };
+  if (B.territory) map.ownerAt = territoryOwnerAt;
   // the save was written after this phase's upkeep: resume without applying it again
   goScene('battle'); Audio.playMusic(map.music); beginPhase(0, true, true);
 }
@@ -120,7 +121,7 @@ function frame(t) {
     }
   }
   // update
-  if (SC.name === 'battle') battleUpdate(dt); else if (SC.name === 'story') storyUpdate(dt); else { Audio.tick(); }
+  if (SC.name === 'battle') battleUpdate(dt); else if (SC.name === 'story') storyUpdate(dt); else { if (SC.name === 'title') titleUpdate(dt); Audio.tick(); }
   // draw
   ctx.setTransform(VIEW.scale, 0, 0, VIEW.scale, 0, 0); ctx.imageSmoothingEnabled = false;
   switch (SC.name) {

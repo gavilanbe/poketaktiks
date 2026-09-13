@@ -5,7 +5,7 @@ const TERRITORY = { level: 12, cap: 5, capture: 20, income: 2, recovery: 2, hold
 const TERRITORY_ROSTER = [[16, 3], [74, 3], [7, 3], [1, 3], [63, 4], [35, 4]];
 const TERRITORY_MAP = {
   name: 'Three Bridges', seed: 73, music: 'player', objective: { type: 'territory' }, turnLimit: TERRITORY.turns,
-  rows: ['^^^^^^^^^^^^^^^', '^..T..~~~..T..^', '^..T..=C=..T..^', '^.....~~~.....^', '^...M..~..M...^', '^C####=C=####C^', '^...M..~..M...^', '^.....~~~.....^', '^..T..=C=..T..^', '^..T..~~~..T..^', '^^^^^^^^^^^^^^^'],
+  rows: ['TT....~~~....TT', 'T..T..~~~..T..T', '...T..=C=..T...', '......~~~......', '..T.M..~..M.T..', '.Q####=C=####Q.', '..T.M..~..M.T..', '......~~~......', '...T..=C=..T...', 'T..T..~~~..T..T', 'TT....~~~....TT'],
   deploy: [], units: [],
 };
 function territoryProperty(x, y) { return B && B.territory ? B.territory.properties.find(p => p.x === x && p.y === y) : null; }
@@ -142,7 +142,7 @@ function territoryDecide(u) {
   return best;
 }
 function launchTerritory(seed = 7, defer = false) {
-  BACKDROP = makeBackdrop(TERRITORY_MAP); startBattle(TERRITORY_MAP, [], {}, { territory: true, seed, defer: true });
+  BACKDROP = makeBackdrop(TERRITORY_MAP); startBattle(TERRITORY_MAP, [], {}, { territory: true, seed, defer: true }); B.map.ownerAt = territoryOwnerAt;
   BT.territoryGuide = !defer && PREF.territoryGuide === 'show' && !PARAMS.has('noguide');
   goScene('battle'); if (!defer) beginPhase(0, true);
 }
@@ -157,7 +157,7 @@ function territorySceneInput(ev) {
 function closeTerritoryGuide() { BT.territoryGuide = false; setPref('territoryGuide', 'hide'); BT.mode = 'idle'; }
 function territoryGuideRect() {
   const w = Math.min(VIEW.w - 16, 280), lines = [];
-  ['1. Move onto a gold center. Choose Capture twice at full HP.', '2. Use RESERVE at an empty blue center. Arrivals act next turn.', '3. Take the enemy HQ, or hold two centers for three of your turn starts.'].forEach((s, i) => { if (i) lines.push(''); lines.push(...wrap(s, w - 16)); });
+  ['1. Move onto a grey-roofed center. Choose Capture twice at full HP.', '2. Use RESERVE at an empty center with your blue roof. Arrivals act next turn.', '3. Take the red-roofed enemy HQ, or hold two centers for three of your turn starts.'].forEach((s, i) => { if (i) lines.push(''); lines.push(...wrap(s, w - 16)); });
   const h = 60 + lines.length * 10; return { x: (VIEW.w - w) / 2, y: (VIEW.h - h) / 2, w, h, lines };
 }
 function drawTerritoryGuide() {
@@ -186,22 +186,24 @@ function territorySetupDraw() {
   bigButton(W / 2 + 32, by, 50, 22, 'BACK', () => goScene('title'), { hot: SC.i === 1, variant: 'ghost' });
 }
 
+// Buildings show their owner on the roof (the tile itself, see ROOFS); the overlay only adds a capture-progress bar
+// and a soft pulse on the tile under the cursor.
 function drawTerritoryProperties() {
   for (const p of B.territory.properties) {
-    const x = tileX(p.x), y = tileY(p.y), col = p.owner < 0 ? UI.gold : teamColorL(p.owner);
-    outline(x + 1, y + 1, TILE - 2, TILE - 2, col); rect(x + 3, y + 3, 2, 11, '#ffffff'); rect(x + 5, y + 3, 9, 6, col);
-    text(p.hq >= 0 ? 'HQ' : 'C', x + 16, y + 3, '#ffffff', { outline: '#000' });
-    if (p.progress) { rect(x + 3, y + TILE - 5, TILE - 6, 4, '#101827'); rect(x + 3, y + TILE - 5, Math.floor((TILE - 6) * p.progress / TERRITORY.capture), 3, UI.gold); }
+    const x = tileX(p.x), y = tileY(p.y);
+    if (p.progress) { const w = TILE - 8; rect(x + 3, y + TILE - 6, w + 2, 5, UI.inset); rect(x + 4, y + TILE - 5, w, 3, '#2a2f44'); rect(x + 4, y + TILE - 5, Math.floor(w * p.progress / TERRITORY.capture), 3, UI.gold); hline(x + 4, y + TILE - 5, Math.floor(w * p.progress / TERRITORY.capture), '#fff0a0'); }
   }
 }
+function territoryOwnerAt(x, y) { const p = territoryProperty(x, y); return p ? p.owner : null; }
+// Turn card in Territory: TURN and READY in the header band; points and income, centers held and the hold race; then
+// the property under the cursor or the objective.
 function drawTerritoryTurn(r) {
-  const t = HT(), S = B.territory; hudPanel(r.x, r.y, r.w, r.h);
-  text('TURN ' + B.turn + '/' + TERRITORY.turns, r.x + 5, r.y + 4, UI.gold);
-  textR('READY ' + alive(t).filter(u => !u.acted).length + '/' + alive(t).length, r.x + r.w - 5, r.y + 4, UI.green);
-  text('CP ' + S.points[t] + ' (+' + territoryIncome(t) + ')  CENTERS ' + territoryControl(t) + '/3', r.x + 5, r.y + 14, UI.ink);
-  text('HOLD ' + S.hold[0] + '/3   FOE ' + S.hold[1] + '/3', r.x + 5, r.y + 24, UI.muted);
-  const p = territoryProperty(BT.cx, BT.cy); let s = p ? p.name + ' · ' + (p.owner < 0 ? 'NEUTRAL' : p.owner === t ? 'YOURS' : 'FOE') + (p.progress ? ' ' + p.progress + '/20' : '') : 'Enemy HQ or hold 2 centers';
-  while (textWidth(s) > r.w - 10) s = s.slice(0, -1); text(s, r.x + 5, r.y + 34, UI.gold);
+  const t = HT(), S = B.territory; hudPanel(r.x, r.y, r.w, r.h, { header: 'TURN ' + B.turn + '/' + TERRITORY.turns, headerRight: 'READY ' + alive(t).filter(u => !u.acted).length + '/' + alive(t).length, headerRightCol: UI.green, headerFill: teamColorD(t) });
+  const y0 = r.y + 17; text('POINTS ' + S.points[t], r.x + 5, y0, UI.gold); text('+' + territoryIncome(t) + '/turn', r.x + 5 + textWidth('POINTS ' + S.points[t]) + 4, y0, UI.muted);
+  textR('CENTERS ' + territoryControl(t) + '/3', r.x + r.w - 5, y0, UI.ink);
+  const hold = 'HOLD ' + S.hold[t] + '/3', foe = 'FOE ' + S.hold[1 - t] + '/3'; if (r.h >= 40) { text(hold, r.x + 5, y0 + 9, S.hold[t] ? UI.green : UI.muted); textR(foe, r.x + r.w - 5, y0 + 9, S.hold[1 - t] ? UI.red : UI.muted); }
+  const p = territoryProperty(BT.cx, BT.cy); let s = p ? p.name + ' · ' + (p.owner < 0 ? 'neutral' : p.owner === t ? 'yours' : 'enemy') + (p.progress ? ' · ' + p.progress + '/20' : '') : 'Take the enemy HQ or hold 2 centers';
+  while (textWidth(s) > r.w - 10) s = s.slice(0, -1); text(s, r.x + 5, r.h >= 40 ? y0 + 18 : y0 + 9, p ? UI.gold : UI.muted);
 }
 function openTerritoryReserves(p) {
   BT.sel = null; BT.autoEnd = 0; BT.mode = 'endmenu';

@@ -71,7 +71,7 @@ cv.addEventListener('pointerup', e => { const p = toLogical(e); INPUT.down = fal
 cv.addEventListener('pointercancel', () => { INPUT.down = false; });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('wheel', e => { e.preventDefault(); INPUT.queue.push({ type: 'wheel', dy: e.deltaY, dx: e.deltaX }); }, { passive: false });
-const KEYMAP = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right', z: 'ok', Z: 'ok', Enter: 'ok', ' ': 'ok', x: 'back', X: 'back', Escape: 'back', Backspace: 'back', q: 'prev', e: 'next', Q: 'prev', E: 'next', Tab: 'next', c: 'info', C: 'info', m: 'mute', M: 'mute', h: 'help', H: 'help', f: 'fast', F: 'fast', '+': 'zoomin', '-': 'zoomout', '=': 'zoomin' };
+const KEYMAP = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right', z: 'ok', Z: 'ok', Enter: 'ok', ' ': 'ok', x: 'back', X: 'back', Escape: 'back', Backspace: 'back', q: 'prev', e: 'next', Q: 'prev', E: 'next', Tab: 'next', c: 'info', C: 'info', m: 'mute', M: 'mute', h: 'help', H: 'help', f: 'fast', F: 'fast', '+': 'zoomin', '-': 'zoomout', '=': 'zoomin', v: 'detail', V: 'detail' };
 addEventListener('keydown', e => { const k = KEYMAP[e.key]; if (!k) return; e.preventDefault(); if (e.repeat && k !== 'up' && k !== 'down' && k !== 'left' && k !== 'right') return; INPUT.keys[k] = true; INPUT.queue.push({ type: 'key', key: k, repeat: e.repeat }); Audio.unlock(); });
 addEventListener('keyup', e => { const k = KEYMAP[e.key]; if (k) INPUT.keys[k] = false; });
 addEventListener('blur', () => { INPUT.keys = {}; INPUT.down = false; });
@@ -112,6 +112,7 @@ const UI = {
 // riding the top edge, 9 px above y), header (a band inside the panel; content starts at the returned cy).
 function panel(x, y, w, h, opt = {}) {
   x |= 0; y |= 0; w |= 0; h |= 0;
+  if (opt.light) return lightPanel(x, y, w, h, opt);
   const fill = opt.fill || UI.panel, border = opt.border || UI.border, accent = !!opt.border && opt.border !== UI.border;
   const hi = accent ? shade(border, .35) : UI.borderHi, lo = accent ? shade(border, -.35) : UI.borderLo;
   rrect(x + 1, y + 2, w, h, UI.shadow, 2);                 // drop shadow
@@ -126,6 +127,18 @@ function panel(x, y, w, h, opt = {}) {
   if (opt.title) { const tw = textWidth(opt.title) + 10, tx = x + 5; rrect(tx, y - 9, tw, 12, UI.inset, 1); rect(tx + 1, y - 8, tw - 2, 10, border); hline(tx + 2, y - 8, tw - 4, hi); rect(tx + 2, y - 7, tw - 4, 8, UI.panelDark); hline(tx + 2, y - 7, tw - 4, shade(UI.panelDark, .3)); text(opt.title, tx + 5, y - 7, opt.titleCol || UI.gold); }
   return { x, y, w, h, cx: x + 6, cy, cw: w - 12 };
 }
+// Light panel (in-battle HUD): a 1-px frame on a slightly lighter slate, a soft shadow and, with opt.header, a 12-px band
+// in opt.headerFill (a team colour) carrying opt.header left and opt.headerRight right. Same return shape as panel().
+function lightPanel(x, y, w, h, opt) {
+  const fill = opt.fill || UI.panelLight, border = opt.border || UI.border;
+  ctx.globalAlpha = .5; rrect(x + 1, y + 2, w, h, UI.shadow, 2); ctx.globalAlpha = 1;
+  rrect(x, y, w, h, UI.inset, 2); rrect(x + 1, y + 1, w - 2, h - 2, border, 1); rect(x + 2, y + 2, w - 4, h - 4, fill);
+  if (!opt.flat) { hline(x + 2, y + 2, w - 4, shade(fill, .14)); hline(x + 2, y + h - 3, w - 4, shade(fill, -.22)); }
+  let cy = y + 5;
+  if (opt.header) { const bh = 12, hf = opt.headerFill || UI.panelDark; rect(x + 2, y + 2, w - 4, bh, hf); hline(x + 2, y + 2, w - 4, shade(hf, .18)); hline(x + 2, y + 2 + bh, w - 4, shade(hf, -.35)); text(opt.header, x + 6, y + 5, opt.headerCol || UI.ink, { shadow: shade(hf, -.5) }); if (opt.headerRight) textR(opt.headerRight, x + w - 6, y + 5, opt.headerRightCol || UI.ink, { shadow: shade(hf, -.5) }); cy = y + 2 + bh + 4; }
+  if (opt.title) { const tw = textWidth(opt.title) + 8, tx = x + 4; rrect(tx, y - 8, tw, 11, UI.inset, 1); rect(tx + 1, y - 7, tw - 2, 9, border); text(opt.title, tx + 4, y - 6, '#1a1f2e'); }
+  return { x, y, w, h, cx: x + 4, cy, cw: w - 8 };
+}
 // Filled progress bar with an inset frame; opt.notch draws quarter marks on wide bars.
 function bar(x, y, w, h, ratio, col, back = UI.hpBack, opt = {}) {
   x |= 0; y |= 0; w |= 0; h |= 0; rect(x, y, w, h, back); const f = Math.round(clamp(ratio, 0, 1) * (w - 2));
@@ -133,6 +146,8 @@ function bar(x, y, w, h, ratio, col, back = UI.hpBack, opt = {}) {
   if (opt.notch && w >= 40) for (let q = 1; q < 4; q++) { const nx = x + 1 + Math.round((w - 2) * q / 4); vline(nx, y + 1, h - 2, shade(back, .25)); if (nx < x + 1 + f) vline(nx, y + 1, h - 2, shade(col, -.35)); }
   outline(x, y, w, h, UI.inset); hline(x + 1, y + h - 1, w - 2, shade(back, .35));
 }
+// Terrain defence as Advance Wars stars: one per 10% of damage reduction (max 4); '-' when none.
+function defStars(def) { const n = Math.min(4, Math.round(def / 10)); return n ? '★'.repeat(n) : '-'; }
 function hpColor(r) { return r > .5 ? UI.hpGreen : r > .2 ? UI.hpYellow : UI.hpRed; }
 function hpBar(x, y, w, cur, max) { bar(x, y, w, 5, cur / max, hpColor(cur / max), UI.hpBack, { notch: true }); }
 // Button face (no hit registration): dark outline, bevelled face, label. opt: hot, variant (neutral | primary |
@@ -162,6 +177,8 @@ function hintLine(items, cx, y, opt = {}) {
   for (const p of parts) { if (p.k && !VIEW.touch) x += keycap(p.k, x, y) + 3; text(p.t, x, y, opt.col || UI.muted); x += textWidth(p.t) + gap; }
   return tot;
 }
+// Width a hint line would take (same measuring as hintLine), for callers that trim hints to a card.
+function hintWidth(items) { const parts = items.filter(Boolean).map(it => Array.isArray(it) ? { k: it[0], t: it[1] } : { t: it }); const kw = p => (p.k && !VIEW.touch ? textWidth(p.k) + 6 + 3 : 0) + textWidth(p.t); return parts.reduce((s, p) => s + kw(p), 0) + 9 * (parts.length - 1) + 10; }
 // Small-caps section label with a rule running to the right edge.
 function sectionLabel(s, x, y, w, col = UI.muted) { const t = String(s).toUpperCase(); text(t, x, y, col); const rx = x + textWidth(t) + 5; if (w && rx < x + w) { hline(rx, y + 4, x + w - rx, UI.border2); hline(rx, y + 5, x + w - rx, UI.inset); } }
 function dimScreen(a = .55, col = '#050815') { ctx.globalAlpha = a; rect(0, 0, VIEW.w, VIEW.h, col); ctx.globalAlpha = 1; }
@@ -304,6 +321,8 @@ const Audio = {
       case 'select': this.tone('triangle', 520, 780, .08, .2); this.tone('square', 1040, 1560, .06, .06, .04); break;
       case 'step': this.tone('triangle', 300, 200, .05, .12); break;
       case 'menu': this.tone('square', 740, 740, .03, .07); break;
+      case 'titleFocus': this.tone('triangle', 740, 1110, .045, .1); this.tone('sine', 1480, 1480, .065, .025, .025); break;
+      case 'titleConfirm': this.tone('triangle', 440, 330, .045, .15); [660, 880, 1320].forEach((f, i) => this.tone('square', f, f, .07, .055, .035 + i * .035)); break;
       case 'hit': this.noise(.12, .3, 0, 400); this.tone('square', 220, 60, .15, .25); break;
       case 'hit2': this.noise(.1, .25, 0, 1200); this.tone('sawtooth', 320, 90, .12, .2); break;
       case 'crit': this.noise(.25, .4, 0, 300); this.tone('sawtooth', 500, 40, .3, .35); this.tone('square', 1200, 200, .2, .15, .02); break;

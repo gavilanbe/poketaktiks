@@ -29,7 +29,13 @@ Choose **TERRITORY** from the title. A short guide appears on first use;
 
 - Each side has six teammates: Pidgey, Geodude, Squirtle, Bulbasaur, Abra and
   Clefairy. The first three start on the map. Both sides stay at level 12,
-  with equal stats and no XP. At most five teammates can be active.
+  with equal stats and no XP. At most five teammates can be active. These six
+  species have board sprites of their own (`mapart.js`, 16x16 pixel maps
+  shown at 2x with an idle and a step frame); other species use their mini
+  icons on the board.
+- Buildings show their owner on the roof, as in Advance Wars: grey is neutral,
+  blue is yours, red is the enemy's. The two HQs are larger halls with a
+  banner; a capture in progress shows a gold bar under the building.
 - Any ready Pokémon standing on another center can **Capture**. A full-HP
   unit adds 10 of the required 20 points per action; damaged units add less.
   The same unit must remain there. Leaving or fainting resets its progress;
@@ -53,9 +59,13 @@ Choose **TERRITORY** from the title. A short guide appears on first use;
 
 Select a Pokémon, move through the blue tiles, then choose an action. Movement
 can be cancelled before committing the action. Red tiles show attack reach.
-The forecast lists the attack, eligible counter and any follow-up in order.
-Its HP projection assumes normal hits; hit/critical odds and critical-KO risks
-are shown separately. Conditional strikes are marked. Immunities block damage
+The forecast answers three questions on three lines: what you deal (move,
+damage, odds, x2 when a follow-up is nominal), what comes back (the counter,
+or why there is none), and the risks (a critical that would KO either side,
+secondary effects, recharge). Both HP totals are shown before and after,
+assuming normal hits. V, or a tap on the lines, opens the detailed table: every
+strike in resolver order with damage, hit and critical odds; conditional
+strikes are marked. Immunities block damage
 and secondary effects; drain heals only HP actually taken and missing.
 
 Type matchups use softened effectiveness (×1.5, ×2.25 for a double weakness,
@@ -123,14 +133,31 @@ menu (also opened with Escape) offers **Full duel / Quick duel / Map only**. All
 the same combat result; skipping cannot change it. Reduced-motion settings
 reduce movement and effects. A missing large sprite falls back to its mini icon.
 
-Team shapes and glyphs distinguish own, enemy, wild and allied units; spent
-units turn grey. The HUD shows ready actions, objectives, terrain and status.
-On phones the board opens zoomed out; drag to pan and use ZOOM for a closer view.
+Units stand directly on the terrain: a small mark in the tile's bottom-left
+corner gives the side (round for your own, a spike for enemy trainers, a
+diamond for wild, a cross for allies) and keeps its colour when the unit has
+acted and turns grey; the HP number appears in the bottom-right corner once a
+unit is hurt. Unit cards spell out the role (with its glyph), the move range
+and the types; terrain cards show defence as stars and the move cost.
+On phones the board opens at 24-px tiles when every row fits (16-px on tall
+maps); drag to pan and use ZOOM to cycle 32 / 24 / 16-px tiles. The action
+menu sits at the bottom of the screen, within thumb reach.
 
 ## Controls and saves
 
+The title screen assembles its logo letter by letter, with staggered arrival,
+individual motion and highlight frames. Each menu icon has four animation
+frames; the buttons have idle, focus and pressed sprites, a selection sweep,
+and a short confirmation effect. Tap the logo for a letter wave. Layouts adapt
+to desktop, portrait and short landscape screens; reduced motion disables
+ambient animation. The sound control works by touch or with M.
+The editable sprite sources and frame strips are described in
+[`assets/title/sprites/README.md`](assets/title/sprites/README.md); background
+art provenance and its generation prompt are in
+[`assets/title/README.md`](assets/title/README.md).
+
 - Arrows/WASD: cursor. Z/Enter/Space: confirm. X/Escape: cancel/menu.
-- Q/E: cycle units. C: unit information or switch the forecast move.
+- Q/E: cycle units. C: unit information or switch the forecast move. V: forecast details.
 - F: fast playback. `+` / `-`: zoom. H: help. M: mute.
 - Mouse: point and click; right-click to cancel/open the menu; drag/wheel to pan.
 - Touch: tap to select/confirm, drag to pan; use the on-screen buttons (NEXT
@@ -172,7 +199,8 @@ Deep links: `?ch=N`, `?ch=N&prep`, `?skirmish=SEED`, `?versus=SEED`,
 `&noguide` bypasses the territory guide. Presentation preferences are independent.
 
 Source modules: `core.js` (canvas/input/audio/RNG), `font.js`, `dex.js`, `data.js`,
-`animmeta.js` (generated), `art.js`, `model.js`, `battle.js`, `duel.js`, `campaign.js`, `territory.js`,
+`animmeta.js` (generated), `art.js`, `mapart.js` (board sprites; preview them with
+`node tools/preview-map-sprites.cjs`, which writes `artifacts/map-sprites.png`), `model.js`, `battle.js`, `duel.js`, `campaign.js`, `territory.js`,
 `scenes.js`, and `main.js`. `build.sh` regenerates the tracked `index.html`.
 
 Sprites: Pokémon Showdown mini icons and PokeAPI Black/White battle sprites

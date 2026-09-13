@@ -33,7 +33,8 @@ function teamName(t) { return B && B.versus ? (t === 0 ? 'PLAYER 1' : t === 1 ? 
 function phaseLabel(t) { return teamName(t) + ' PHASE'; }
 // Screen bands the HUD keeps for itself (in board pixels): the turn card on top and, on narrow portrait screens,
 // the context/forecast area and the button bar at the bottom. A board that fits is centred between them.
-function hudReserve() { const z = BT.zoom; if (B && B.territory) return { top: 52 / z, bottom: (narrowView() && portraitView() ? (['target', 'skillTarget'].includes(BT.mode) ? 170 : 118) : 40) / z }; if (narrowView() && portraitView()) return { top: 30 / z, bottom: (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget' ? 170 : 118) / z }; return { top: 30 / z, bottom: 40 / z }; }
+const STACK_BOTTOM = 96, STACK_TARGET = 176; // portrait phones: context card + button bar, or the forecast + bar
+function hudReserve() { const z = BT.zoom, stack = narrowView() && portraitView(); const top = B && B.territory ? (stack ? 40 : 50) : (stack ? 34 : 30); const bottom = stack ? (['target', 'catchTarget', 'skillTarget'].includes(BT.mode) ? STACK_TARGET : STACK_BOTTOM) : 40; return { top: top / z, bottom: bottom / z }; }
 // Range of camera positions: a board that fits sits centred (between the HUD bands vertically); a bigger board can
 // be panned edge to edge, and far enough past its top and bottom rows for them to clear the HUD bands.
 function camRange() {
@@ -49,11 +50,18 @@ function clampCam() { const r = camRange(); CAM.tx = clamp(CAM.tx, r.x[0], r.x[1
 // Is a unit's tile fully inside the view, clear of the HUD bands?
 function unitVisible(u) { const R = hudReserve(); const sx = u.x * TILE - CAM.tx, sy = u.y * TILE - CAM.ty; return sx >= 0 && sx + TILE <= bvW() && sy >= R.top && sy + TILE <= bvH() - R.bottom; }
 // Zoom: .5 shows twice the map. Available whenever the board does not fit at 1; zoomToFit picks the level that shows the whole map if one does.
-function boardFits(z) { const R = { top: 30 / z, bottom: (narrowView() && portraitView() ? 118 : 40) / z }; return B.map.w * TILE <= VIEW.w / z && B.map.h * TILE <= VIEW.h / z - R.top - R.bottom; }
+// Zoom levels: 1 (32-px tiles), .75 (24 px) and .5 (16 px). Zooming out is offered whenever the board does not fit at 1.
+const ZOOMS = [1, .75, .5];
+function boardFits(z) { const stack = narrowView() && portraitView(); const R = { top: (B && B.territory ? (stack ? 40 : 50) : 30) / z, bottom: (stack ? STACK_BOTTOM : 40) / z }; return B.map.w * TILE <= VIEW.w / z && B.map.h * TILE <= VIEW.h / z - R.top - R.bottom; }
+function boardHeightFits(z) { const stack = narrowView() && portraitView(); const R = { top: (B && B.territory ? (stack ? 40 : 50) : 30) / z, bottom: (stack ? STACK_BOTTOM : 40) / z }; return B.map.h * TILE <= VIEW.h / z - R.top - R.bottom; }
 function canZoom() { return B && !boardFits(1); }
-function setZoom(z) { if (z === BT.zoom || (z < 1 && !canZoom())) return false; const cx = CAM.tx + bvW() / 2, cy = CAM.ty + bvH() / 2; BT.zoom = z; CAM.tx = cx - bvW() / 2; CAM.ty = cy - bvH() / 2; clampCam(); CAM.x = CAM.tx; CAM.y = CAM.ty; return true; }
-function zoomToFit() { return setZoom(boardFits(1) || !boardFits(.5) ? 1 : .5); }
-function toggleZoom() { return setZoom(BT.zoom === 1 ? .5 : 1); }
+function setZoom(z) { if (z === BT.zoom || !ZOOMS.includes(z) || (z < 1 && !canZoom())) return false; const cx = CAM.tx + bvW() / 2, cy = CAM.ty + bvH() / 2; BT.zoom = z; CAM.tx = cx - bvW() / 2; CAM.ty = cy - bvH() / 2; clampCam(); CAM.x = CAM.tx; CAM.y = CAM.ty; return true; }
+// Phones open at the largest reduced zoom whose map height fits between the HUD bands: 24-px tiles when the map is
+// short enough to show every row, 16-px tiles for tall maps. Wide screens open at 1.
+function phoneZoom() { return boardHeightFits(.75) ? .75 : .5; }
+function zoomToFit() { return setZoom(boardFits(1) ? 1 : boardFits(.75) ? .75 : .5); }
+// ZOOM cycles 1 → .75 → .5 → 1 (the button says which way it goes next).
+function toggleZoom() { return setZoom(BT.zoom === 1 ? .75 : BT.zoom === .75 ? .5 : 1); }
 
 // ---------------------------------------------------------------- battle setup
 function startBattle(mapDef, party, bag, opts = {}) {
@@ -73,7 +81,7 @@ function startBattle(mapDef, party, bag, opts = {}) {
   if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fx.facing = -1; B.units.push(u); });
   BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.autoEnd = 0; BT.dart = false; BT.log = []; BT.showDanger = false; BT.hpShow.clear();
   for (const u of B.units) requestBigSprite(u.num); // warm the duel scene's sprites; nothing waits on them
-  const first = alive(0)[0]; BT.cx = first ? first.x : 0; BT.cy = first ? first.y : 0; BT.zoom = 1; if (narrowView() && canZoom()) setZoom(.5); centerCam(BT.cx, BT.cy, true); // phones open zoomed out: six 32 px tiles across is too little context
+  const first = alive(0)[0]; BT.cx = first ? first.x : 0; BT.cy = first ? first.y : 0; BT.zoom = 1; if (narrowView() && canZoom()) setZoom(phoneZoom()); centerCam(BT.cx, BT.cy, true); // phones open zoomed out: six 32 px tiles across is too little context
   BT.hoverAnchor = null; BT.lastMode = BT.mode; FX.parts = []; FX.texts = []; FX.sprites = [];
   Audio.playMusic(map.music);
   if (!opts.defer) beginPhase(0, true);
@@ -119,9 +127,9 @@ function nextAnim() {
   BT.anim = q; q.t = 0;
   if (q.kind === 'event') { setupEvent(q); }
   if (q.kind === 'duel') { startDuel(q); }
-  if (q.kind === 'move') { q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.i = 0; q.dur = (BT.fast ? .05 : .11); if (q.path.length > 1) { const l = q.path[q.path.length - 1]; if (!unitVisible(q.unit) || !unitVisible(l)) centerCam((q.path[0].x + l.x) / 2, (q.path[0].y + l.y) / 2); } }
-  if (q.kind === 'strike') { q.dur = BT.fast ? .35 : .62; centerCamBetween(q.att, q.def); }
-  if (q.kind === 'msg') { q.dur = BT.fast ? .5 : 1.1; }
+  if (q.kind === 'move') { q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.unit.fx.walk = true; q.i = 0; q.dur = (BT.fast ? .05 : .11); if (q.path.length > 1) { const l = q.path[q.path.length - 1]; if (!unitVisible(q.unit) || !unitVisible(l)) centerCam((q.path[0].x + l.x) / 2, (q.path[0].y + l.y) / 2); } }
+  if (q.kind === 'strike') { q.dur = BT.fast ? .3 : .5; centerCamBetween(q.att, q.def); }
+  if (q.kind === 'msg') { q.dur = BT.fast ? .4 : .9; }
   if (q.kind === 'wait') { q.dur = BT.fast ? q.t2 * .3 : q.t2; }
   if (q.kind === 'fn') { q.fn(); nextAnim(); }
 }
@@ -131,9 +139,9 @@ function setupEvent(q) {
   const e = q.ev; q.dur = BT.fast ? .35 : .7;
   const ux = u => u.x * TILE + TILE / 2, uy = u => u.y * TILE + 4;
   switch (e.type) {
-    case 'ko': q.dur = BT.fast ? .5 : .9; Audio.sfx('ko'); shake(4); spawnParts(ux(e.unit), uy(e.unit) + 8, 18, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 90, life: .7, grav: 60 }); noteKo(e); floatText(ux(e.unit), uy(e.unit) - 14, e.unit.team === 0 ? 'FAINTED!' : 'KO!', e.unit.team === 0 ? UI.red : UI.gold, { big: true, life: 1.3 }); break;
-    case 'xp': q.dur = BT.fast ? .5 : 1.0; q.from = e.unit.xp - e.amount; break;
-    case 'levelup': q.dur = BT.fast ? .9 : 2.1; Audio.sfx('levelup'); spawnParts(ux(e.unit), uy(e.unit), 24, ['#ffd24a', '#ffffff', '#5ee06a'], { speed: 70, life: .9, grav: -30, shape: 'ring' }); break;
+    case 'ko': q.dur = BT.fast ? .45 : .8; Audio.sfx('ko'); shake(4); spawnParts(ux(e.unit), uy(e.unit) + 8, 18, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 90, life: .7, grav: 60 }); noteKo(e); floatText(ux(e.unit), uy(e.unit) - 14, e.unit.team === 0 ? 'FAINTED!' : 'KO!', e.unit.team === 0 ? UI.red : UI.gold, { big: true, life: 1.3 }); break;
+    case 'xp': q.dur = BT.fast ? .35 : .6; q.from = e.unit.xp - e.amount; break;
+    case 'levelup': q.dur = BT.fast ? .8 : 1.6; Audio.sfx('levelup'); spawnParts(ux(e.unit), uy(e.unit), 24, ['#ffd24a', '#ffffff', '#5ee06a'], { speed: 70, life: .9, grav: -30, shape: 'ring' }); break;
     case 'evolve': q.dur = BT.fast ? 1.4 : 3.2; Audio.sfx('evolve'); requestBigSprite(e.to.num); break;
     case 'heal': Audio.sfx('heal'); floatText(ux(e.unit), uy(e.unit), '+' + e.amount, UI.green, { outline: '#0a3a10' }); spawnParts(ux(e.unit), uy(e.unit) + 10, 10, ['#5ee06a', '#ffffff'], { speed: 30, grav: -60, life: .8 }); break;
     case 'cure': floatText(ux(e.unit), uy(e.unit) - 8, e.kind === 'frz' ? 'Thawed!' : e.kind === 'par' ? 'Recovered!' : 'Cured!', '#98d8f8'); break;
@@ -158,11 +166,11 @@ function updateAnim(dt) {
   if (q.kind === 'duel') { updateDuel(q, dt); if (q.done) nextAnim(); return; }
   q.t += dt;
   if (q.kind === 'move') {
-    const p = q.path; if (p.length < 2) { q.unit.x = p[0].x; q.unit.y = p[0].y; nextAnim(); return; }
+    const p = q.path; if (p.length < 2) { q.unit.x = p[0].x; q.unit.y = p[0].y; q.unit.fx.walk = false; nextAnim(); return; }
     const total = (p.length - 1) * q.dur; const k = Math.min(1, q.t / total); const seg = Math.min(p.length - 2, Math.floor(k * (p.length - 1))); const f = k * (p.length - 1) - seg;
-    const a = p[seg], b = p[seg + 1]; const h = Math.abs(Math.sin(f * Math.PI)); q.unit.x = a.x; q.unit.y = a.y; q.unit.fx.dx = (b.x - a.x) * f * TILE; q.unit.fx.air = h * 6; q.unit.fx.dy = (b.y - a.y) * f * TILE - h * 6; q.unit.fx.sy = 1 + h * .14; q.unit.fx.sx = 1 - h * .1; q.unit.fx.facing = b.x - a.x !== 0 ? Math.sign(b.x - a.x) : q.unit.fx.facing;
+    const a = p[seg], b = p[seg + 1]; const spr = hasMapSprite(q.unit.num); const h = Math.abs(Math.sin(f * Math.PI)) * (spr ? 2 : 5); q.unit.x = a.x; q.unit.y = a.y; q.unit.fx.dx = (b.x - a.x) * f * TILE; q.unit.fx.air = h; q.unit.fx.dy = (b.y - a.y) * f * TILE - h; if (!spr) { q.unit.fx.sy = 1 + h * .02; q.unit.fx.sx = 1 - h * .015; } q.unit.fx.facing = b.x - a.x !== 0 ? Math.sign(b.x - a.x) : q.unit.fx.facing;
     if (seg !== q.i) { q.i = seg; Audio.sfx('step'); spawnParts(a.x * TILE + TILE / 2, a.y * TILE + TILE - 4, 3, ['#d8c8a0', '#ffffff'], { speed: 20, life: .35, grav: -10, flat: true }); }
-    if (k >= 1) { const l = p[p.length - 1]; q.unit.x = l.x; q.unit.y = l.y; q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.unit.fx.air = 0; q.unit.fx.sy = .78; q.unit.fx.sx = 1.24; Audio.sfx('step'); for (let i = 0; i < 3; i++) spawnSprite('poof', l.x * TILE + TILE / 2 + (i - 1) * 9, l.y * TILE + TILE - 5, { size: 3, life: .3, col: '#e8e0d0', col2: '#ffffff', vx: (i - 1) * 24, vy: -8, delay: 0 }); nextAnim(); }
+    if (k >= 1) { const l = p[p.length - 1]; q.unit.x = l.x; q.unit.y = l.y; q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.unit.fx.air = 0; q.unit.fx.walk = false; if (!hasMapSprite(q.unit.num)) { q.unit.fx.sy = .86; q.unit.fx.sx = 1.12; } Audio.sfx('step'); for (let i = 0; i < 3; i++) spawnSprite('poof', l.x * TILE + TILE / 2 + (i - 1) * 9, l.y * TILE + TILE - 5, { size: 3, life: .3, col: '#e8e0d0', col2: '#ffffff', vx: (i - 1) * 24, vy: -8, delay: 0 }); nextAnim(); }
     return;
   }
   if (q.kind === 'strike') {
@@ -236,7 +244,7 @@ function ambushed(u, foe) { Audio.sfx('error'); shake(3); floatText(u.x * TILE +
 function selectUnit(u) {
   if (!canTakeAction(u)) { Audio.sfx('error'); return false; }
   BT.sel = u; BT.reach = reachable(u, u.x, u.y, effMov(u), { through: o => fogHides(o, HT()) }); BT.atk = attackCells(u, BT.reach); BT.path = [{ x: u.x, y: u.y }]; BT.mode = 'move'; Audio.sfx('select');
-  u.fx.sy = .75; u.fx.sx = 1.25; BT.quip = { text: quipFor(u.num), t: 0, unit: u };
+  if (!hasMapSprite(u.num)) { u.fx.sy = .85; u.fx.sx = 1.12; } BT.quip = { text: quipFor(u.num), t: 0, unit: u };
 }
 function extendPath(x, y) {
   const u = BT.sel; const k = key(x, y); if (!BT.reach.has(k)) return; const p = BT.path;
@@ -349,7 +357,7 @@ function finishUnit(u) {
   u.acted = true; u.moved = true;
   if (B.versus) { const fe = versusAfterAction(u); if (fe) { Audio.sfx(fe.what === 'captured' ? 'select' : 'item'); floatText(u.x * TILE + TILE / 2, u.y * TILE - 8, fe.what === 'taken' ? 'FLAG TAKEN!' : fe.what === 'returned' ? 'Flag returned' : 'CAPTURED!', fe.what === 'captured' ? UI.gold : teamColorL(u.team), { big: fe.what !== 'returned', life: 1.4, outline: '#000' }); } }
   if (B.fog) refreshVision(HT()); BT.sel = null; BT.reach = null; BT.atk = null; BT.undo = null; BT.menu = null; BT.dart = false; BT.hpShow.clear();
-  for (const v of B.units) { v.fx.dx = v.fx.dy = 0; v.fx.sx = v.fx.sy = 1; v.fx.alpha = 1; v.fx.flash = 0; v.fx.showNum = null; }
+  for (const v of B.units) { v.fx.dx = v.fx.dy = 0; v.fx.sx = v.fx.sy = 1; v.fx.alpha = 1; v.fx.flash = 0; v.fx.showNum = null; v.fx.walk = false; }
   if (checkObjective()) { endBattle(); return; }
   if (!B.territory && alive(HT()).every(v => v.acted)) { BT.mode = 'idle'; BT.autoEnd = .6; return; }
   BT.mode = 'idle'; const f = alive(HT()).find(v => !v.acted); if (f && !VIEW.touch) { /* keep the cursor where it is; the player picks the next unit */ }
@@ -423,6 +431,7 @@ function menuNav(dir) { const m = BT.menu; if (!m) return; m.i = (m.i + dir + m.
 function keyInput(k) {
   const m = BT.mode;
   if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { if (k === 'up') menuNav(-1); else if (k === 'down') menuNav(1); else if (k === 'ok') activateMenu(); else if (k === 'back') cancel(); return; }
+  if (m === 'target' && k === 'detail') { BT.forecastDetail = !BT.forecastDetail; Audio.sfx('menu'); return; }
   if (m === 'target' || m === 'catchTarget' || m === 'skillTarget') { if (k === 'left' || k === 'up' || k === 'prev') { BT.tIdx = (BT.tIdx - 1 + BT.targets.length) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'right' || k === 'down' || k === 'next') { BT.tIdx = (BT.tIdx + 1) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'info') { BT.moveIdx++; Audio.sfx('menu'); } else if (k === 'ok') { if (m === 'target') confirmAttack(); else if (m === 'skillTarget') confirmSkill(); else pickBall(); } else if (k === 'back') cancel(); return; }
   if (m === 'itemTarget') { if (k === 'ok') useItemOn(BT.sel); else if (k === 'back') cancel(); return; }
   if (k === 'help') { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; return; }
@@ -485,7 +494,7 @@ function pointerInput(ev) {
     const { x: tx, y: ty } = screenToTile(ev.x, ev.y);
     if (hudHit(ev.x, ev.y)) return;
     if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { const h = menuHit(ev.x, ev.y); if (h >= 0) { BT.menu.i = h; activateMenu(); } else cancel(); return; }
-    if (m === 'target' || m === 'catchTarget' || m === 'skillTarget') { const go = () => { if (m === 'target') confirmAttack(); else if (m === 'skillTarget') confirmSkill(); else pickBall(); }; const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0) { if (ti === BT.tIdx) go(); else { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } } else if (forecastHit(ev.x, ev.y)) go(); else if (m === 'target' && moveSwitchHit(ev.x, ev.y)) { BT.moveIdx++; Audio.sfx('menu'); } else cancel(); return; }
+    if (m === 'target' || m === 'catchTarget' || m === 'skillTarget') { const go = () => { if (m === 'target') confirmAttack(); else if (m === 'skillTarget') confirmSkill(); else pickBall(); }; const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0) { if (ti === BT.tIdx) go(); else { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } } else if (m === 'target' && detailHit(ev.x, ev.y)) { BT.forecastDetail = !BT.forecastDetail; Audio.sfx('menu'); } else if (forecastHit(ev.x, ev.y)) go(); else if (m === 'target' && moveSwitchHit(ev.x, ev.y)) { BT.moveIdx++; Audio.sfx('menu'); } else cancel(); return; }
     if (m === 'itemTarget') { useItemOn(BT.sel); return; }
     if (hudCovers(ev.x, ev.y)) return; // a tap on a card is not a tap on the tile under it
     if (!inMap(tx, ty)) { if (m === 'move') cancel(); return; }
@@ -612,45 +621,53 @@ function unitLook(u) {
   const hovered = BT.cx === u.x && BT.cy === u.y && (BT.mode === 'idle' || BT.mode === 'unitinfo');
   return { grey, ready, sel, hovered, busy };
 }
+// Unit sprites: the species' board sprite (mapart.js) when it has one, else its mini icon. Sprites never stretch: life
+// comes from their two frames (a slow idle swap, a faster one while walking or selected) and small offsets. Under the
+// feet a soft shadow; in the tile's bottom corners the team mark (left, keeps its colour when the unit has acted) and,
+// once damaged, the HP number (right). Boss/leader marks and status badges stay in the top corners.
+function unitFrame(u, walking, sel) {
+  if (walking) return Math.floor(BT.time * 8) % 2;
+  if (sel) return Math.floor(BT.time * 5) % 2;
+  if (REDUCED) return 0; return Math.floor(BT.time * 1.6 + u.id * .37) % 2;
+}
 function drawUnit(u) {
   const f = u.fx; const X = tileX(u.x) + f.dx, Y = tileY(u.y) + f.dy; const cx = X + TILE / 2, by = Y + TILE - 3;
   const { ready, grey, sel, hovered } = unitLook(u);
-  // idle life: ready units breathe with a slow hop; the hovered one perks up; the selected one bounces
+  const num = f.showNum || u.num; const sprite = hasMapSprite(num); const walking = !!f.walk;
+  // idle life: the selected unit hops; icons (no frames of their own) breathe a little. Ready icons perk up on hover.
   let hop = 0, bsx = 1, bsy = 1;
-  if (sel) { const p = Math.abs(Math.sin(BT.time * 9)); hop = p * 3; bsy = 1 + p * .08; bsx = 1 - p * .05; }
-  else if (hovered && !REDUCED) { const p = Math.abs(Math.sin(BT.time * 7 + u.id)); hop = p * 2; bsy = 1 + p * .06; bsx = 1 - p * .04; }
-  else if (ready && !REDUCED) { const p = Math.abs(Math.sin(BT.time * 3 + u.id * 1.7)); hop = p * 1.5; bsy = 1 + p * .05; bsx = 1 - p * .03; }
-  else if (!REDUCED && !grey) { const p = .5 + .5 * Math.sin(BT.time * 2.2 + u.id * 2.1); bsy = 1 - p * .035; bsx = 1 + p * .02; }
+  if (sel) { const p = Math.abs(Math.sin(BT.time * 9)); hop = p * 2; if (!sprite) { bsy = 1 + p * .05; bsx = 1 - p * .03; } }
+  else if (!sprite && !REDUCED && !grey) { if (hovered) { const p = Math.abs(Math.sin(BT.time * 7 + u.id)); hop = p * 1.5; } else if (ready) { const p = Math.abs(Math.sin(BT.time * 3 + u.id * 1.7)); hop = p * 1; } else { const p = .5 + .5 * Math.sin(BT.time * 2.2 + u.id * 2.1); bsy = 1 - p * .02; bsx = 1 + p * .01; } }
   const bob = -Math.round(hop); const air = (f.air || 0) + hop; const gy = by + 1 + (f.air || 0); // ground baseline
-  // ground shadow + team plate (+ boss halo, + selection pulse). A ready unit's rim glints; an acted unit's plate goes grey with it.
-  if (u.boss) { ctx.globalAlpha = f.alpha * .9; const k = Math.floor(BT.time * 4) % 2; ellipseRing(cx, gy, 15 + k, 6, 2, '#ffd24a'); ctx.globalAlpha = 1; }
-  drawStand(cx, gy, u.team, f.alpha, air, { dim: grey, lit: ready && !REDUCED ? .35 + .35 * Math.sin(BT.time * 4 + u.id) : 0 });
-  if (sel && !REDUCED) { const k = (BT.time * 1.4) % 1; ctx.globalAlpha = (1 - k) * .8 * f.alpha; ellipseRing(cx, gy, Math.round(12 + k * 8), Math.round(4 + k * 3), 1, teamColorL(u.team)); ctx.globalAlpha = 1; }
-  const num = f.showNum || u.num; const flip = u.team === 1 || u.team === 2 ? f.facing !== 1 : f.facing === -1;
+  if (u.boss) { ctx.globalAlpha = f.alpha * .9; const k = Math.floor(BT.time * 4) % 2; ellipseRing(cx, gy, 14 + k, 5, 1, '#ffd24a'); ctx.globalAlpha = 1; }
+  const sh = Math.max(.4, 1 - air / 18); ctx.globalAlpha = .3 * f.alpha * sh; ellipse(cx, gy, Math.round(10 * sh), Math.max(1, Math.round(3 * sh)), '#000000'); ctx.globalAlpha = 1;
+  if (sel && !REDUCED) { const k = (BT.time * 1.4) % 1; ctx.globalAlpha = (1 - k) * .7 * f.alpha; ellipseRing(cx, gy, Math.round(11 + k * 8), Math.round(4 + k * 3), 1, teamColorL(u.team)); ctx.globalAlpha = 1; }
+  const flip = u.team === 1 || u.team === 2 ? f.facing !== 1 : f.facing === -1;
   let tint = null; if (f.flash) tint = '#ffffff';
-  const sx = f.sx * bsx, sy = f.sy * bsy;
   if (f.alpha > 0) {
-    if (grey) { ctx.globalAlpha = .9 * f.alpha; drawMon(num, cx, by + bob, { flip, sx, sy, tint: 'grey' }); ctx.globalAlpha = 1; }
-    else drawMon(num, cx, by + bob, { flip, sx, sy, tint, alpha: f.alpha });
-    if (f.flash === 1 && !grey) { ctx.globalAlpha = f.alpha; drawMon(num, cx, by + bob, { flip, sx, sy, tint: '#ffffff' }); ctx.globalAlpha = 1; }
+    if (sprite) { const frame = unitFrame(u, walking, sel); const step = walking && frame ? -1 : 0; drawMapSprite(num, cx, by + bob + step + 2, { frame, flip, tint: grey ? 'grey' : tint, alpha: grey ? .92 * f.alpha : f.alpha }); }
+    else { const sx = f.sx * bsx, sy = f.sy * bsy; if (grey) { ctx.globalAlpha = .9 * f.alpha; drawMon(num, cx, by + bob, { flip, sx, sy, tint: 'grey' }); ctx.globalAlpha = 1; } else drawMon(num, cx, by + bob, { flip, sx, sy, tint, alpha: f.alpha }); if (f.flash === 1 && !grey) { ctx.globalAlpha = f.alpha; drawMon(num, cx, by + bob, { flip, sx, sy, tint: '#ffffff' }); ctx.globalAlpha = 1; } }
   }
-  // HP plate below the feet with the team glyph on its left; marks sit in the tile's top corners, off the sprite:
-  // top-left: crown (leader) or skull (boss), with a CHG tag under it while recharging; top-right: status.
   const show = BT.hpShow.get(u.id); let hp = u.hp; if (show) hp = Math.round(lerp(show.from, show.to, Math.min(1, show.t)));
   if (f.alpha > 0 && hp > 0) {
-    ctx.globalAlpha = f.alpha; const bw = 18, bx = cx - bw / 2 + 3, byy = gy + 4; const pc = grey ? '#2e323c' : teamColorD(u.team);
-    ctx.globalAlpha = .85 * f.alpha; rrect(bx - 8, byy - 1, bw + 10, 7, UI.inset, 1); ctx.globalAlpha = f.alpha; rect(bx - 7, byy, 6, 5, pc); rect(bx, byy + 1, bw, 3, '#1c1c24');
-    teamGlyph(bx - 7, byy, u.team, grey ? '#9a9eaa' : teamColorL(u.team));
-    const ratio = clamp(hp / u.maxHp, 0, 1); const w = Math.round(bw * ratio);
-    if (w) { const hc = hpColor(ratio); rect(bx, byy + 1, w, 3, hc); hline(bx, byy + 1, w, shade(hc, .45)); ctx.globalAlpha = .35 * f.alpha; for (let i = 4; i < w; i += 4) vline(bx + i, byy + 1, 3, '#000000'); ctx.globalAlpha = f.alpha; }
-    if (show && show.t < 1 && show.from > show.to) { const w0 = Math.round(bw * clamp(show.from / u.maxHp, 0, 1)); if (w0 > w) { ctx.globalAlpha = f.alpha * (Math.floor(BT.time * 16) % 2 ? .9 : .4); rect(bx + w, byy + 1, w0 - w, 3, '#ffffff'); ctx.globalAlpha = f.alpha; } }
-    const k = Math.round(Math.sin(BT.time * 5) * 1); let tl = Y - 3;
-    if (u.leader) { drawCrown(X - 1, tl + k); tl += 6; } else if (u.boss) { drawSkull(X - 1, tl + k); tl += 8; }
-    if (u.recharge) miniBadge('CHG', RECHARGE_COL, X - 1, tl);
-    let tr = Y - 3; if (u.status) { statusBadge(u.status, X + TILE - 15, tr); tr += 7; }
-    if (u.brace) { miniBadge('BRC', BRACE_COL, X + TILE - 15, tr); tr += 7; } if (u.root) miniBadge('RT', ROOT_COL, X + TILE - 15, tr);
+    ctx.globalAlpha = f.alpha; const X0 = tileX(u.x), Y0 = tileY(u.y); // corner marks stay on the tile, not on the moving sprite
+    teamMark(X0 + 2, Y0 + TILE - 9, u.team, grey);
+    const ratio = clamp(hp / u.maxHp, 0, 1);
+    if (hp < u.maxHp || show) { const s = String(hp); const w = textWidth(s); const hx = X0 + TILE - 2 - w, hy = Y0 + TILE - 9; const blink = show && show.t < 1 && show.from > show.to && Math.floor(BT.time * 16) % 2; ctx.globalAlpha = .75 * f.alpha; rrect(hx - 2, hy - 1, w + 4, 9, UI.inset, 1); ctx.globalAlpha = f.alpha; text(s, hx, hy, blink ? '#ffffff' : hpColor(ratio), { outline: UI.shadow }); }
+    const k = Math.round(Math.sin(BT.time * 5) * 1); let tl = Y0 - 3;
+    if (u.leader) { drawCrown(X0 - 1, tl + k); tl += 6; } else if (u.boss) { drawSkull(X0 - 1, tl + k); tl += 8; }
+    if (u.recharge) miniBadge('CHG', RECHARGE_COL, X0 - 1, tl);
+    let tr = Y0 - 3; if (u.status) { statusBadge(u.status, X0 + TILE - 15, tr); tr += 7; }
+    if (u.brace) { miniBadge('BRC', BRACE_COL, X0 + TILE - 15, tr); tr += 7; } if (u.root) miniBadge('RT', ROOT_COL, X0 + TILE - 15, tr);
     ctx.globalAlpha = 1;
   }
+}
+// 7×7 team mark: own units a round plate, hostile trainers a spike (triangle), wild a diamond, allies a cross. Dimmed,
+// not recoloured, when the unit has acted, so the side stays readable on grey sprites.
+function teamMark(x, y, team, dim) {
+  const shape = teamShape(team); const col = dim ? mix(teamColor(team), '#6a6f7c', .5) : teamColor(team), colL = dim ? mix(teamColorL(team), '#8a8f9c', .5) : teamColorL(team), out = '#0b1020';
+  const rows = shape === 'ring' ? ['.OOOOO.', 'OCLCCCO', 'OLCCCCO', 'OCCCCCO', 'OCCCCCO', 'OCCCCCO', '.OOOOO.'] : shape === 'spiked' ? ['...O...', '..OCO..', '..OLO..', '.OCCCO.', '.OCCCO.', 'OCCCCCO', 'OOOOOOO'] : shape === 'dashed' ? ['...O...', '..OCO..', '.OCLCO.', 'OCCCCCO', '.OCCCO.', '..OCO..', '...O...'] : ['..OOO..', '..OCO..', 'OOOCOOO', 'OCLCCCO', 'OOOCOOO', '..OCO..', '..OOO..'];
+  stampAt(x, y, rows, { O: out, C: col, L: colL });
 }
 
 // ---------------------------------------------------------------- HUD
@@ -658,7 +675,7 @@ const HUD = { hits: [], panels: [] };
 function hudHit(x, y) { for (const h of HUD.hits) if (x >= h.x && y >= h.y && x < h.x + h.w && y < h.y + h.h) { h.run(); return true; } return false; }
 // Is the point over a HUD panel or button drawn this frame (so the board under it is not being pointed at)?
 function hudCovers(x, y) { for (const r of HUD.hits.concat(HUD.panels)) if (x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h) return true; return false; }
-function hudPanel(x, y, w, h, opt) { const p = panel(x, y, w, h, opt); HUD.panels.push({ x, y, w, h }); return p; }
+function hudPanel(x, y, w, h, opt) { const p = panel(x, y, w, h, Object.assign({ light: true }, opt)); HUD.panels.push({ x, y, w, h }); return p; }
 function button(x, y, w, h, label, run, opt = {}) { const hot = INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h && !VIEW.touch; uiButton(x, y, w, h, label, { hot, col: opt.col, variant: opt.variant, ink: opt.ink, icon: opt.icon, disabled: opt.disabled, on: opt.on }); HUD.hits.push({ x, y, w, h, run, label }); }
 // Screen rectangle of the board (the map itself, not the void around it).
 function boardRect() { const z = BT.zoom; return { x: toScreenX(tileX(0) - FX.shakeX), y: toScreenY(tileY(0) - FX.shakeY), w: Math.round(B.map.w * TILE * z), h: Math.round(B.map.h * TILE * z) }; }
@@ -667,15 +684,15 @@ function boardRect() { const z = BT.zoom; return { x: toScreenX(tileX(0) - FX.sh
 // side away from the cursor, hugging the board's lower edge when the board leaves room.
 function hudLayout() {
   const W = VIEW.w, H = VIEW.h, bh = btnH(), stack = narrowView() && portraitView(); const br = boardRect();
-  const L = { W, H, stack, bh, top: { x: 4, y: 4, w: stack ? W - 8 : W >= 320 ? Math.min(W - 8, 152) : Math.min(W - 8, B.versus ? 128 : 118), h: stack ? 26 : W < 320 ? 24 : 36 } };
-  if (B.territory) { L.top.h = 46; if (!stack) L.top.w = Math.min(202, W - 72); }
+  const L = { W, H, stack, bh, top: { x: 4, y: 4, w: stack ? W - 8 : W >= 320 ? Math.min(W - 8, 152) : Math.min(W - 8, B.versus ? 128 : 118), h: stack ? 28 : W < 320 ? 24 : 36 } };
+  if (B.territory) { L.top.h = stack ? 34 : 44; if (!stack) L.top.w = Math.min(202, W - 72); }
   if (stack) {
-    L.bar = { x: 4, y: H - 2 * bh - 8, w: W - 8, rows: 2 }; L.ctxY = L.bar.y - 52; L.ctxH = 48;
+    L.bar = { x: 4, y: H - 2 * bh - 8, w: W - 8, rows: 2 }; L.ctxH = 42; L.ctxY = L.bar.y - L.ctxH - 4;
     L.ctx = { x: 4, y: L.ctxY, w: W - 8, h: L.ctxH, unit: true, terrain: true, combined: true };
   } else {
-    const cursorLeft = toScreenX(tileX(BT.cx) - FX.shakeX) + TILE * BT.zoom / 2 < W / 2; const ch = 46;
+    const cursorLeft = toScreenX(tileX(BT.cx) - FX.shakeX) + TILE * BT.zoom / 2 < W / 2; const ch = 50;
     const y = Math.min(H - ch - 4, Math.max(L.top.y + L.top.h + 4, br.y + br.h + 6)); // under the board when it fits, else at the bottom
-    const uw = 136, tw = 96; const x = cursorLeft ? W - 4 - uw - 4 - tw : 4;
+    const uw = 140, tw = 100; const x = cursorLeft ? W - 4 - uw - 4 - tw : 4;
     L.ctx = { x, y, w: uw + 4 + tw, h: ch, unitX: x, terrX: x + uw + 4, unitW: uw, terrW: tw, combined: false };
     L.buttons = { x: W - 4 - 58, y: 4, w: 58 };
   }
@@ -689,10 +706,10 @@ function drawHUD() {
   drawTurnCard(L.top);
   // context cards: the hovered unit and its terrain, side by side or as one strip on portrait phones
   const hov = seenUnitAt(BT.cx, BT.cy); const t = terrAt(BT.cx, BT.cy);
-  if (boardModes.includes(BT.mode) && BT.mode !== 'target' && BT.mode !== 'catchTarget' && BT.mode !== 'skillTarget') {
+  if (boardModes.includes(BT.mode) && BT.mode !== 'target' && BT.mode !== 'catchTarget' && BT.mode !== 'skillTarget' && !(L.stack && BT.mode === 'menu')) {
     const ref = hov || BT.sel || { fly: false, swim: false }; const showUnit = hov && BT.mode !== 'menu';
-    if (L.stack) { const c = L.ctx; hudPanel(c.x, c.y, c.w, c.h); if (showUnit) { unitCardBody(hov, c.x, c.y, c.w - 62); vline(c.x + c.w - 60, c.y + 4, c.h - 8, UI.border2); terrainCardBody(t, ref, c.x + c.w - 56, c.y, 54, true); } else terrainCardBody(t, ref, c.x, c.y, c.w, false); }
-    else { const c = L.ctx; hudPanel(c.terrX, c.y + 10, c.terrW, 36); terrainCardBody(t, ref, c.terrX, c.y + 12, c.terrW, false); if (showUnit) { hudPanel(c.unitX, c.y, c.unitW, c.h); unitCardBody(hov, c.unitX, c.y, c.unitW); } }
+    if (L.stack) { const c = L.ctx; if (showUnit) { hudPanel(c.x, c.y, c.w, c.h, { header: hov.name, headerRight: 'Lv' + hov.level, headerFill: teamColorD(hov.team) }); unitCardBody(hov, c.x, c.y, c.w - 58, true); vline(c.x + c.w - 56, c.y + 16, c.h - 20, UI.border2); terrainCardBody(t, ref, c.x + c.w - 53, c.y + 11, 51, true); } else { hudPanel(c.x, c.y, c.w, c.h); terrainCardBody(t, ref, c.x, c.y + 4, c.w, false); } }
+    else { const c = L.ctx; hudPanel(c.terrX, c.y + 14, c.terrW, 36); terrainCardBody(t, ref, c.terrX, c.y + 16, c.terrW, false); if (showUnit) { hudPanel(c.unitX, c.y, c.unitW, c.h, { header: hov.name, headerRight: 'Lv' + hov.level, headerFill: teamColorD(hov.team) }); unitCardBody(hov, c.unitX, c.y, c.unitW, false); } }
   }
   if (BT.mode === 'move' && BT.sel) { const c = BT.sel; textC(c.name + (BT.dart ? '  DART ' + dartMov(c) + ' · X: stay' : '  MOV ' + effMov(c)) + (BT.path.length > 1 ? '  →' + (BT.path.length - 1) : ''), W / 2, L.top.y + L.top.h + 4, BT.dart ? ROLES.scout.col : UI.ink, { outline: UI.shadow }); }
   if (BT.quip && BT.quip.unit.hp > 0) { const u = BT.quip.unit; const x = toScreenX(tileX(u.x) + TILE / 2) + 16, y = toScreenY(tileY(u.y)) - 12 - Math.min(6, BT.quip.t * 30); const tw = textWidth(BT.quip.text) + 8; rrect(x - 2, y - 2, tw, 11, UI.shadow, 1); rrect(x - 3, y - 3, tw, 11, '#ffffff', 1); text(BT.quip.text, x + 1, y - 1, '#202030'); px(x, y + 8, '#ffffff'); px(x - 1, y + 9, '#ffffff'); }
@@ -725,14 +742,13 @@ function versusStatusText() {
 function drawTurnCard(r) {
   if (B.territory) { drawTerritoryTurn(r); return; }
   const mine = alive(HT()), ready = mine.filter(u => !u.acted).length; const turn = 'TURN ' + B.turn + (B.map.turnLimit && B.map.objective.type !== 'survive' ? '/' + B.map.turnLimit : B.map.objective.type === 'survive' ? '/' + B.map.objective.turns : '');
-  hudPanel(r.x, r.y, r.w, r.h, { border: B.versus ? teamColor(HT()) : UI.border }); const tall = r.h >= 32;
-  let x = r.x + 6; if (B.versus) { rrect(x, r.y + 5, 15, 8, teamColor(HT()), 1); textC('P' + (HT() + 1), x + 7, r.y + 5, '#ffffff'); x += 18; }
-  text(turn, x, r.y + 5, UI.gold); const readyCol = ready ? UI.green : UI.muted; const rs = 'READY ' + ready + '/' + mine.length; textR(rs, r.x + r.w - 6, r.y + 5, readyCol);
+  const tall = r.h >= 32; const head = (B.versus ? 'P' + (HT() + 1) + ' · ' : '') + turn; const readyCol = ready ? UI.green : UI.muted;
+  hudPanel(r.x, r.y, r.w, r.h, { header: head, headerRight: 'READY ' + ready + '/' + mine.length, headerRightCol: readyCol, headerFill: teamColorD(HT()) });
   // head counts: a coloured dot per side (wild too when any is left), right-aligned on the last row
   const counts = [[0, alive(0).length], [1, alive(1).length]]; if (alive(2).length) counts.push([2, alive(2).length]); if (alive(3).length) counts.push([3, alive(3).length]);
-  const cy = tall ? r.y + 24 : r.y + 14; let cx = r.x + r.w - 6; counts.reverse().forEach(([team, n]) => { cx -= textWidth(String(n)); text(String(n), cx, cy, UI.ink); cx -= 8; circle(cx + 2, cy + 3, 3, UI.inset); circle(cx + 2, cy + 3, 2, teamColor(team)); cx -= 8; });
-  let ob = objectiveText(); const avail = tall ? r.w - 12 : cx - r.x - 10; while (textWidth(ob) > avail && ob.length > 4) ob = ob.slice(0, -1); text(ob, r.x + 6, r.y + 14, UI.muted);
-  if (tall) { hline(r.x + 5, r.y + 22, r.w - 10, UI.inset); hline(r.x + 5, r.y + 23, r.w - 10, shade(UI.panel, .15)); const st = versusStatusText(); if (st) { let s = st.text; const avail = cx - r.x - 12; while (textWidth(s) > avail && s.length > 4) s = s.slice(0, -1); text(s, r.x + 6, r.y + 24, st.col); } else text('UNITS', r.x + 6, r.y + 24, UI.dim); }
+  const cy = tall ? r.y + 26 : r.y + 17; let cx = r.x + r.w - 6; counts.reverse().forEach(([team, n]) => { cx -= textWidth(String(n)); text(String(n), cx, cy, UI.ink); cx -= 8; circle(cx + 2, cy + 3, 3, UI.inset); circle(cx + 2, cy + 3, 2, teamColor(team)); cx -= 8; });
+  let ob = objectiveText(); const avail = tall ? r.w - 12 : cx - r.x - 10; while (textWidth(ob) > avail && ob.length > 4) ob = ob.slice(0, -1); text(ob, r.x + 6, r.y + 17, tall ? UI.ink : UI.muted);
+  if (tall) { const st = versusStatusText(); if (st) { let s = st.text; const avail = cx - r.x - 12; while (textWidth(s) > avail && s.length > 4) s = s.slice(0, -1); text(s, r.x + 6, r.y + 26, st.col); } }
 }
 function drawButtons(L) {
   const W = VIEW.w, bh = L.bh, m = BT.mode;
@@ -742,7 +758,7 @@ function drawButtons(L) {
   if (idle) items.push({ label: 'END TURN', variant: 'danger', run: () => { Audio.sfx('ok'); confirmEndTurn(); } }, { label: 'DANGER', on: BT.showDanger, run: () => { BT.showDanger = !BT.showDanger; Audio.sfx('menu'); } });
   if (acting) items.push({ label: m === 'move' && BT.dart ? 'STAY' : 'BACK', variant: 'ghost', run: () => cancel() });
   if (enemyAnim) items.push({ label: 'FAST', on: BT.fast, run: () => { BT.fast = !BT.fast; } });
-  if (idle && VIEW.touch && alive(HT()).some(u => !u.acted)) items.push({ label: 'NEXT', run: () => keyInput('next') });
+  if (idle && VIEW.touch && alive(HT()).some(u => !u.acted)) { const nx = { label: 'NEXT', run: () => keyInput('next') }; if (L.stack) items.splice(1, 0, nx); else items.push(nx); }
   if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
   if (idle && B.territory) items.push({ label: 'RESERVE', run: () => openTerritoryReserves() });
   if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; Audio.sfx('menu'); } }, { label: '♪', on: !Audio.muted, half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
@@ -766,28 +782,34 @@ function drawDangerLegend(x, y) {
   panel(x, y, w, 13, { fill: UI.panelDark, flat: true }); rect(x + 4, y + 4, 5, 5, DANGER.trainer[1]); text('foe', x + 11, y + 3, UI.ink);
   if (wild) { rect(x + 30, y + 4, 5, 5, DANGER.wild[1]); text('wild', x + 37, y + 3, UI.ink); }
 }
-// Unit card contents (portrait, name, level, HP, types, status/boss/recharge) inside a panel drawn by the caller.
-function unitCardBody(u, x, y, w) {
-  ctx.save(); ctx.beginPath(); ctx.rect(x + 3, y + 3, 40, 36); ctx.clip(); portraitBg(x + 3, y + 3, 40, 36, u.team); drawMon(u.num, x + 23, y + 36, { flip: u.team !== 0 }); ctx.restore();
-  teamGlyph(x + 5, y + 5, u.team, teamColorL(u.team));
-  text(u.name, x + 46, y + 5, UI.ink); textR('Lv' + u.level, x + w - 5, y + 5, UI.gold);
-  hpBar(x + 46, y + 15, w - 52, u.hp, u.maxHp); text(u.hp + '/' + u.maxHp, x + 46, y + 22, UI.ink);
-  if (u.team === HT() && isHuman(u.team) && !B.territory && u.xp != null) { const xw = w - 52; rect(x + 46, y + 20, xw, 1, '#1b2236'); rect(x + 46, y + 20, Math.round(xw * clamp(u.xp / 100, 0, 1)), 1, '#6ad0ff'); } // XP to the next level
-  u.types.forEach((t, i) => typeBadge(t, x + 46 + i * 26, y + 31, 24)); if (u.status) statusBadge(u.status, x + w - 20, y + 22);
-  // role badge (SCT/DEF/AMP/CTL/RNG/SUP/STK), then whichever of brace/root is on the unit
-  const R = ROLES[u.role]; miniBadge(R.abbr, R.col, x + w - (u.status ? 38 : 20), y + 22); if (u.brace) miniBadge('BRC', BRACE_COL, x + w - 56, y + 22); else if (u.root) miniBadge('RT', ROOT_COL, x + w - 56, y + 22);
-  if (u.boss) text('BOSS', x + w - 28, y + 31, UI.red); else if (u.recharge) miniBadge('CHG', RECHARGE_COL, x + w - 20, y + 31);
-  else if (u.team === HT() && isHuman(B.phase)) textR(u.acted ? 'DONE' : 'READY', x + w - 5, y + 31, u.acted ? UI.muted : UI.green);
+// Unit card body under a header band the caller draws (name / level in the team colour). Portrait at the left (the board
+// sprite when the species has one), then HP, the role with its glyph and the move range, and the types spelled out.
+// `compact` (phone strip) keeps two rows: HP, then role · move · types.
+function unitCardBody(u, x, y, w, compact) {
+  const y0 = y + 16, pw = compact ? 26 : 30, ph = compact ? 24 : 30; ctx.save(); ctx.beginPath(); ctx.rect(x + 3, y0 - 1, pw, ph); ctx.clip(); portraitBg(x + 3, y0 - 1, pw, ph, u.team);
+  if (hasMapSprite(u.num)) drawMapSprite(u.num, x + 3 + pw / 2, y0 + ph - 1, { flip: u.team !== HT() && u.team !== 0 }); else drawMon(u.num, x + 3 + pw / 2, y0 + ph - 1, { flip: u.team !== 0 }); ctx.restore();
+  const x1 = x + pw + 8, cw = x + w - 5 - x1; const hpTxt = u.hp + '/' + u.maxHp; const hw = textWidth(hpTxt);
+  hpBar(x1, y0 + 1, cw - hw - 4, u.hp, u.maxHp); textR(hpTxt, x + w - 5, y0, UI.ink);
+  if (u.team === HT() && isHuman(u.team) && !B.territory && u.xp != null) { rect(x1, y0 + 6, cw - hw - 4, 1, UI.inset); rect(x1, y0 + 6, Math.round((cw - hw - 4) * clamp(u.xp / 100, 0, 1)), 1, '#6ad0ff'); } // XP to the next level
+  const R = ROLES[u.role]; const my = compact ? y0 + 10 : y0 + 11; iconAt(R.icon, x1, my - 1, R.col); text(R.name, x1 + 11, my, R.col);
+  const mov = 'MOVE ' + effMov(u); if (!compact) textR(mov, x + w - 5, my, UI.ink); else text('· ' + mov, x1 + 11 + textWidth(R.name) + 3, my, UI.ink);
+  const ty = compact ? y0 + 10 : y0 + 21; let bx = compact ? x1 + 11 + textWidth(R.name) + 3 + textWidth('· ' + mov) + 5 : x1;
+  const tags = []; if (u.status) tags.push([STATUS[u.status].text, STATUS[u.status].col]); if (u.brace) tags.push(['braced', BRACE_COL]); if (u.root) tags.push(['rooted', ROOT_COL]); if (u.recharge) tags.push(['recharging', RECHARGE_COL]); if (u.boss) tags.push(['BOSS', UI.red]);
+  const mine = u.team === HT() && isHuman(B.phase); const tag = tags.length ? tags[0] : mine ? [u.acted ? 'done' : 'ready', u.acted ? UI.muted : UI.green] : null; const tagW = tag ? textWidth(tag[0]) + (tags.length ? 4 : 12) : 0;
+  if (!compact) { const full = u.types.reduce((a, t) => a + textWidth(t.toUpperCase()) + 9, 0) <= x + w - 5 - tagW - bx; for (const t of u.types) bx += typeBadge(t, bx, ty, full ? 'auto' : 24) + 3; } else { for (const t of u.types) { if (bx + 24 > x + w - 4) break; bx += typeBadge(t, bx, ty, 24) + 2; } }
+  if (!compact && tag) { if (tags.length) textR(tag[0], x + w - 5, ty, tag[1]); else { circle(x + w - 8, ty + 4, 2, tag[1]); textR(tag[0], x + w - 12, ty, tag[1]); } }
 }
-// Terrain card contents: tile swatch, name, DEF/AVO and the move cost (or heal/burn). `tall` stacks the numbers under the swatch.
+// Terrain card body: swatch, name, defence stars, move cost (or heal / no entry) and evasion when the tile has any.
 function terrainCardBody(t, ref, x, y, w, tall) {
-  const mv = inMap(BT.cx, BT.cy) ? B.map.variants[BT.cy][BT.cx] : 0; const sw = tall ? 12 : 20;
+  const mv = inMap(BT.cx, BT.cy) ? B.map.variants[BT.cy][BT.cx] : 0; const sw = tall ? 10 : 20;
   rect(x + 4, y + 3, sw, sw, UI.shadow); ctx.drawImage(tileImg(t.ch, mv, 0), 0, 0, 32, 32, x + 5, y + 4, sw - 2, sw - 2); outline(x + 4, y + 3, sw, sw, UI.border2);
   const property = B.territory && territoryProperty(BT.cx, BT.cy);
-  const healText = property && property.owner !== (ref.team == null ? HT() : ref.team) ? ['NO HEAL', UI.muted] : ['HEALS 30%', UI.green];
-  const extra = t.heal ? healText : t.burn ? ['BURNS', UI.red] : [moveCost(t, ref) >= 99 ? 'NO ENTRY' : 'MOVE ' + moveCost(t, ref), UI.muted];
-  if (tall) { let name = t.name; while (textWidth(name) > w - 22 && name.length > 3) name = name.slice(0, -1); text(name, x + 20, y + 4, UI.gold); text('DEF ' + terrainDef(t, ref) + '%', x + 16, y + 13, UI.ink); text('AVO ' + terrainEva(t, ref), x + 4, y + 22, UI.ink); text(extra[0], x + 4, y + 31, extra[1]); }
-  else { text(t.name, x + 27, y + 4, UI.gold); text('DEF ' + terrainDef(t, ref) + '% AVO ' + terrainEva(t, ref), x + 27, y + 13, UI.ink); text(extra[0], x + 27, y + 22, extra[1]); }
+  const healText = property && property.owner !== (ref.team == null ? HT() : ref.team) ? ['no heal here', UI.muted] : ['heals 30%', UI.green];
+  const cost = moveCost(t, ref); const extra = t.heal ? healText : t.burn ? ['burns', UI.red] : cost >= 99 ? ['no entry', UI.muted] : null;
+  const stars = defStars(terrainDef(t, ref)), eva = terrainEva(t, ref);
+  const def = stars === '-' ? ['no cover', UI.muted] : ['DEF ' + stars, UI.gold];
+  if (tall) { let name = t.name; while (textWidth(name) > w - 18 && name.length > 3) name = name.slice(0, -1); text(name, x + 17, y + 4, UI.gold); text(def[0], x + 4, y + 13, def[1]); text(extra ? extra[0] : 'MOVE ' + cost + (eva ? ' · EVA ' + eva : ''), x + 4, y + 22, extra ? extra[1] : UI.ink); }
+  else { text(t.name, x + 27, y + 4, UI.gold); text(def[0], x + 27, y + 13, def[1]); if (eva) text('EVADE +' + eva, x + 27 + textWidth(def[0]) + 6, y + 13, UI.info); text(extra ? extra[0] : 'MOVE ' + cost, x + 27, y + 22, extra ? extra[1] : UI.ink); }
 }
 // Menu geometry: a header band (the unit's name, BAG, BALLS or the menu title), one row per item and, when any item
 // carries a description, a footer strip that explains the highlighted one.
@@ -796,6 +818,7 @@ function menuRect() {
   const m = BT.menu, rh = rowH(); const w = Math.min(VIEW.w - 8, m.items.some(it => it.icon) ? 134 : 120), top = 21;
   const subLines = m.items.reduce((n, it) => Math.max(n, it.sub ? Math.min(2, wrap(it.sub, w - 14).length) : 0), 0); const foot = subLines ? subLines * 9 + 6 : 0;
   const h = top + m.items.length * rh + foot + 4; const tx = toScreenX(tileX(BT.cx) - FX.shakeX), ty = toScreenY(tileY(BT.cy) - FX.shakeY), ts = TILE * BT.zoom; let x = tx + ts + 6, y = ty - 4;
+  const L = hudLayout(); if (L.stack && BT.mode !== 'endmenu') { const ww = VIEW.w - 8; return { x: 4, y: Math.max(4, L.bar.y - h - 10), w: ww, h, top, foot, subLines }; } // phones: thumb reach, over the context card
   if (BT.mode === 'endmenu') { x = VIEW.w / 2 - w / 2; y = VIEW.h / 2 - h / 2; } if (x + w > VIEW.w - 4) x = tx - w - 6; if (x < 4) x = 4; y = clamp(y, 30, VIEW.h - h - 4); return { x, y, w, h, top, foot, subLines };
 }
 function menuHit(px2, py) { const r = menuRect(); if (px2 < r.x || px2 >= r.x + r.w || py < r.y || py >= r.y + r.h) return -1; return clamp(Math.floor((py - r.y - r.top) / rowH()), 0, BT.menu.items.length - 1); }
@@ -803,7 +826,7 @@ function drawMenu() {
   const m = BT.menu, rh = rowH(), ty = (rh - 7) >> 1; if (BT.mode === 'endmenu') dimScreen(.4);
   // a freshly opened menu rises and fades in over 120 ms
   const key = BT.mode + ':' + menuTitle() + ':' + m.items.length; if (BT.menuKey !== key) { BT.menuKey = key; BT.menuT0 = BT.time; } const ko = REDUCED ? 1 : Math.min(1, (BT.time - BT.menuT0) / .12); const r = menuRect(); r.y += Math.round((1 - easeOut(ko)) * 6); ctx.globalAlpha = ko;
-  hudPanel(r.x, r.y, r.w, r.h, { header: menuTitle(), headerRight: m.items.length > 4 ? (m.i + 1) + '/' + m.items.length : null });
+  hudPanel(r.x, r.y, r.w, r.h, { header: menuTitle(), headerRight: m.items.length > 4 ? (m.i + 1) + '/' + m.items.length : null, headerFill: BT.mode === 'menu' && BT.sel ? teamColorD(BT.sel.team) : UI.panelDark });
   m.items.forEach((it, i) => { const y = r.y + r.top + i * rh; const hot = i === m.i; const ink = it.off ? UI.dim : hot ? UI.hi : UI.ink; if (hot) selRow(r.x + 4, y, r.w - 8, rh - 1);
     const lx = r.x + (it.icon ? 22 : 11); if (it.icon) iconAt(it.icon, r.x + 9, y + ty - 1, it.off ? UI.dim : hot ? '#ffffff' : '#c8cddc'); text(it.label, lx, y + ty, ink, hot ? { shadow: shade(UI.sel, -.6) } : {}); });
   if (r.foot) { const fy = r.y + r.h - 4 - r.foot; rect(r.x + 4, fy, r.w - 8, r.foot, UI.panelDark); hline(r.x + 4, fy, r.w - 8, UI.inset); const it = m.items[m.i]; const lines = it && it.sub ? wrap(it.sub, r.w - 14).slice(0, 2) : []; lines.forEach((l, i) => text(l, r.x + 7, fy + 4 + i * 9, it.off ? '#d8a0a0' : UI.muted)); }
@@ -811,13 +834,15 @@ function drawMenu() {
 }
 // The forecast sits on the side away from the cursor on wide screens and spans the bottom on portrait phones.
 function forecastRect() {
-  const W = VIEW.w, H = VIEW.h, L = hudLayout();
-  if (L.stack) { const h = W - 8 >= 200 ? 128 : 118; return { x: 4, y: L.bar.y - h - 4, w: W - 8, h, stack: true }; }
-  const w = Math.min(220, W - 12), h = 124; const left = toScreenX(tileX(BT.cx) - FX.shakeX) + TILE * BT.zoom / 2 > W / 2; const bb = 4 + (canZoom() ? 2 : 1) * (btnH() + 2); // under the BACK / ZOOM buttons on the right
+  const W = VIEW.w, H = VIEW.h, L = hudLayout(); const h = 124;
+  if (L.stack) return { x: 4, y: L.bar.y - h - 4, w: W - 8, h, stack: true };
+  const w = Math.min(220, W - 12); const left = toScreenX(tileX(BT.cx) - FX.shakeX) + TILE * BT.zoom / 2 > W / 2; const bb = 4 + (canZoom() ? 2 : 1) * (btnH() + 2); // under the BACK / ZOOM buttons on the right
   return { x: left ? 6 : W - w - 6, y: Math.min(Math.max(L.top.y + L.top.h + 14, left ? 0 : bb + 4), Math.max(4, H - h - 24)), w, h, stack: false };
 }
-function forecastHit(x, y) { const r = forecastRect(); return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h - 16; }
-// The move selector strip along the bottom of the forecast (and the hint line under it) switches moves.
+// Hit areas: the head (portraits and HP) confirms, the three answer lines toggle the detailed table, the strip at
+// the bottom switches moves.
+function forecastHit(x, y) { const r = forecastRect(); return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + 58; }
+function detailHit(x, y) { const r = forecastRect(); return x >= r.x && y >= r.y + 58 && x < r.x + r.w && y < r.y + r.h - 16; }
 function moveSwitchHit(x, y) { const r = forecastRect(); return x >= r.x && y >= r.y + r.h - 16 && x < r.x + r.w && y < r.y + r.h + 12; }
 // HP bar that previews the damage: the part about to be lost is hatched in red.
 function hpBarPredict(x, y, w, cur, after, max) {
@@ -865,12 +890,31 @@ function fitForecastLine(l, avail) {
   while (!fits() && name.length > 3) { name = name.slice(0, -1); f = build(); }
   return f;
 }
+// The three questions a player asks before attacking, one line each. Pure.
+//   1. how much do I take off (per strike, the odds, twice when a follow-up is nominal; KO when the nominal exchange drops the target)
+//   2. can it answer, and how hard (the counter's move, damage and odds; conditional when it only happens if the first strike fails)
+//   3. what could go wrong (a critical that would KO either side, the counter dropping me, secondary effects, recharge)
+function forecastSummary(fc, att, def, move) {
+  const nominal = side => fc.strikes.filter(x => x.side === side && x.nominal); const a = fc.a, c = fc.c;
+  const deal = { side: 'a', text: '▸ ' + move.name.toUpperCase() + ' ' + a.dmg + (nominal('a').length > 1 ? ' ×2' : '') + ' · ' + a.hit + '% hit' + (a.eff === 0 ? ' · no effect' : a.eff >= 2 ? ' · ×2.25' : a.eff > 1 ? ' · ×1.5' : a.eff < 1 ? ' · ×' + a.eff : ''), col: a.eff === 0 ? UI.muted : '#8ab4ff', ko: fc.koD };
+  let answer;
+  if (!c) answer = { side: 'c', text: '◂ ' + (fc.noCounter === 'frozen' ? 'Frozen: no counter' : fc.noCounter === 'recharging' ? 'Recharging: no counter' : 'Out of reach: no counter'), col: UI.green, ko: false };
+  else if (!nominal('c').length) answer = { side: 'c', text: '◂ ' + c.move.name.toUpperCase() + ' ' + c.dmg + ' · only if it survives', col: UI.muted, ko: false };
+  else answer = { side: 'c', text: '◂ ' + c.move.name.toUpperCase() + ' ' + c.dmg + (nominal('c').length > 1 ? ' ×2' : '') + ' · ' + c.hit + '% hit', col: fc.koA ? UI.red : c.eff > 1 ? '#ffa0a0' : '#ff9a9a', ko: fc.koA };
+  const risk = []; let danger = false;
+  const critA = fc.strikes.find(x => x.side === 'a' && x.critKo), critC = fc.strikes.find(x => x.side === 'c' && x.critKo);
+  if (critC) { risk.push('foe crit ' + c.crit + '% KOs you'); danger = true; } else if (c) risk.push('foe crit ' + c.crit + '%');
+  if (critA) risk.push('your crit ' + a.crit + '% KOs'); else risk.push('crit ' + a.crit + '%');
+  if (a.eff !== 0) for (const e of moveEffects(move)) risk.push(e === 'must recharge' ? 'you must recharge' : e);
+  if (c && c.eff !== 0) for (const e of moveEffects(c.move)) if (e !== 'high crit') risk.push('foe ' + e);
+  return [deal, answer, { side: 'r', text: 'Risk: ' + risk.join(' · '), col: danger ? UI.red : UI.muted, ko: false }];
+}
 function drawForecast() {
   const cf = currentForecast(); if (!cf) return; const { fc, move, moves, target } = cf; const r = forecastRect(); const u = BT.sel; const a = fc.a, c = fc.c;
-  hudPanel(r.x, r.y, r.w, r.h, { title: 'FORECAST · NORMAL HITS' }); const half = Math.floor(r.w / 2); // HP after assumes hits land and none is critical
+  hudPanel(r.x, r.y, r.w, r.h, { title: BT.forecastDetail ? 'DETAILS · NORMAL HITS' : 'FORECAST · NORMAL HITS' }); const half = Math.floor(r.w / 2); // HP after assumes hits land and none is critical
   // both sides: portrait with the team glyph, name and level; then the HP bar with the loss hatched, and the HP after in the big face
   const side = (x, unit, after, right) => {
-    const px0 = right ? x + half - 6 - 34 : x + 6; ctx.save(); ctx.beginPath(); ctx.rect(px0, r.y + 7, 34, 28); ctx.clip(); portraitBg(px0, r.y + 7, 34, 28, unit.team); drawMon(unit.num, px0 + 17, r.y + 34, { flip: right }); ctx.restore(); teamGlyph(px0 + 2, r.y + 9, unit.team, teamColorL(unit.team));
+    const px0 = right ? x + half - 6 - 34 : x + 6; ctx.save(); ctx.beginPath(); ctx.rect(px0, r.y + 7, 34, 28); ctx.clip(); portraitBg(px0, r.y + 7, 34, 28, unit.team); if (hasMapSprite(unit.num)) drawMapSprite(unit.num, px0 + 17, r.y + 36, { flip: right }); else drawMon(unit.num, px0 + 17, r.y + 34, { flip: right }); ctx.restore(); teamGlyph(px0 + 2, r.y + 9, unit.team, teamColorL(unit.team));
     let name = unit.name; while (textWidth(name) > half - 52 && name.length > 3) name = name.slice(0, -1);
     if (right) { textR(name, px0 - 4, r.y + 8, UI.ink); textR('Lv' + unit.level, px0 - 4, r.y + 17, UI.gold); } else { text(name, px0 + 38, r.y + 8, UI.ink); text('Lv' + unit.level, px0 + 38, r.y + 17, UI.gold); }
     hpBarPredict(x + 6, r.y + 38, half - 12, unit.hp, after, unit.maxHp);
@@ -879,9 +923,27 @@ function drawForecast() {
   };
   side(r.x, u, fc.hpA, false); side(r.x + half, target, fc.hpD, true);
   vline(r.x + half, r.y + 8, 48, UI.border2);
-  // the ordered exchange, one line per strike; optional parts are dropped from the right until the line fits
-  const lines = forecastLines(fc, u, target); const ly = r.y + 58; const table = r.w >= 200;
-  const koTag = (kx, y, colr) => { rect(kx - 1, y - 1, textWidth('KO') + 2, 9, colr); text('KO', kx, y, '#ffffff'); };
+  const ly = r.y + 58; const koTag = (kx, y, colr) => { rect(kx - 1, y - 1, textWidth('KO') + 2, 9, colr); text('KO', kx, y, '#ffffff'); };
+  if (BT.forecastDetail) drawForecastTable(r, fc, u, target, ly, koTag);
+  else { // the three answers; a KO tag rides the line whose nominal exchange drops someone
+    hline(r.x + 5, ly - 3, r.w - 10, UI.inset);
+    forecastSummary(fc, u, target, move).forEach((l, i) => { const y = ly + i * 9; const tagW = l.ko ? textWidth('KO') + 5 : 0; let t = l.text; while (textWidth(t) > r.w - 12 - tagW && t.length > 6) t = t.slice(0, -1); text(t, r.x + 6, y, l.col); if (l.ko) koTag(r.x + 6 + textWidth(t) + 4, y, l.side === 'a' ? '#2a6a3a' : '#8a2c2c'); });
+  }
+  // move selector: a strip along the bottom, tappable; arrows and the C key switch moves
+  const sy = r.y + r.h - 16; rrect(r.x + 3, sy, r.w - 6, 13, UI.panelDark, 1); outline(r.x + 3, sy, r.w - 6, 13, moves.length > 1 ? UI.gold : UI.border2);
+  let mx = r.x + 6; if (moves.length > 1) { text('◂', mx, sy + 3, UI.gold); mx += 8; } typeBadge(move.type, mx, sy + 2, 24); mx += 27;
+  const idx = (moves.indexOf(move) + 1) + '/' + moves.length; const tail = moves.length > 1 ? idx + ' ▸' : ''; const tw = textWidth(tail);
+  let ms = move.name + '  ' + move.pow + ' power · range ' + move.rng[0] + (move.rng[1] > move.rng[0] ? '-' + move.rng[1] : ''); while (textWidth(ms) > r.x + r.w - 8 - tw - mx && ms.length > 6) ms = ms.slice(0, -1);
+  text(ms, mx, sy + 3, UI.ink); if (tail) textR(tail, r.x + r.w - 6, sy + 3, UI.gold);
+  // the hint drops its optional items until it fits the card's width
+  const hints = VIEW.touch ? [['tap target: attack', 'X: back'], [moves.length > 1 ? 'tap bar: move' : null], ['tap lines: details']] : [[['Z', 'attack'], ['X', 'back']], [moves.length > 1 ? ['C', 'move'] : null], [['V', BT.forecastDetail ? 'summary' : 'details']]];
+  let items = hints.flat().filter(Boolean); while (items.length > 2 && hintWidth(items) > r.w) items = items.slice(0, -1);
+  hintLine(items, r.x + r.w / 2, r.y + r.h + 5);
+}
+// The detailed exchange: one row per strike in resolver order with damage, hit and crit odds (a table on wide cards,
+// fitted lines on narrow ones), then the summary line and the moves' side effects.
+function drawForecastTable(r, fc, u, target, ly, koTag) {
+  const lines = forecastLines(fc, u, target); const table = r.w >= 200; const a = fc.a, c = fc.c, move = a.move;
   if (table) { // aligned columns: the strike (with its conditions), then DMG · HIT · CRIT right-aligned
     const cx = [r.x + r.w - 6 - 66, r.x + r.w - 6 - 36, r.x + r.w - 6]; text('STRIKE', r.x + 6, ly, UI.dim); textR('DMG', cx[0], ly, UI.dim); textR('HIT', cx[1], ly, UI.dim); textR('CRIT', cx[2], ly, UI.dim); hline(r.x + 5, ly + 8, r.w - 10, UI.inset); hline(r.x + 5, ly + 9, r.w - 10, shade(UI.panel, .15));
     lines.slice(0, 3).forEach((l, i) => {
@@ -905,13 +967,6 @@ function drawForecast() {
   const fxText = (ea.length ? '▸ ' + ea.join(' · ') : '') + (ea.length && ec.length ? '  ' : '') + (ec.length ? '◂ ' + ec.join(' · ') : '');
   let foot = sum.text + (fxText ? '  ·  ' + fxText : ''); while (textWidth(foot) > r.w - 12 && foot.length > 8) foot = foot.slice(0, -1);
   text(foot, r.x + 6, r.y + r.h - 27, fxText && ea.some(t => t === 'must recharge') ? RECHARGE_COL : sum.col);
-  // move selector: a strip along the bottom, tappable; arrows and the C key switch moves
-  const sy = r.y + r.h - 16; rrect(r.x + 3, sy, r.w - 6, 13, UI.panelDark, 1); outline(r.x + 3, sy, r.w - 6, 13, moves.length > 1 ? UI.gold : UI.border2);
-  let mx = r.x + 6; if (moves.length > 1) { text('◂', mx, sy + 3, UI.gold); mx += 8; } typeBadge(move.type, mx, sy + 2, 24); mx += 27;
-  const idx = (moves.indexOf(move) + 1) + '/' + moves.length; const tail = moves.length > 1 ? idx + ' ▸' : ''; const tw = textWidth(tail);
-  let ms = move.name + '  ' + move.pow + 'pw · rng ' + move.rng[0] + (move.rng[1] > move.rng[0] ? '-' + move.rng[1] : ''); while (textWidth(ms) > r.x + r.w - 8 - tw - mx && ms.length > 6) ms = ms.slice(0, -1);
-  text(ms, mx, sy + 3, UI.ink); if (tail) textR(tail, r.x + r.w - 6, sy + 3, UI.gold);
-  hintLine(VIEW.touch ? ['tap target: attack', 'X: back', moves.length > 1 ? 'tap bar: move' : null] : [['Z', 'attack'], ['X', 'back'], moves.length > 1 ? ['C', 'move'] : null], r.x + r.w / 2, r.y + r.h + 5);
 }
 // The skill card: what the chosen skill does to the highlighted target, with the exact numbers, and how to confirm or back out.
 function drawSkillCard() {
@@ -997,10 +1052,10 @@ function drawUnitSheet(u) {
 }
 const HELP_PAGES = [
   ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back. Mouse: hover + click; right click or an empty tile opens the menu. Touch: tap to move the cursor, tap again to confirm.', 'Q/E: next unit · C: unit info / switch move · F: fast · +/-: zoom · M: mute · H: help. Drag or wheel to pan.', 'Attack scene: any key speeds it up, X skips. The menu switches between full, quick and map-only battles.'],
-  ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch, use its Skill, the Bag or Wait. Blue = move, red = attack. Greyed units have acted.', 'Defenders counter if you are in their move range and still standing. Only Scouts and Strikers strike twice, when 10+ SPE faster. The forecast lists the strikes in order; a greyed one only happens if an earlier strike misses.', 'Crits: 4% (24% for high-crit moves), ×1.5 damage. The forecast HP is for normal hits; a strike whose crit would KO says so. Terrain gives DEF% and AVO. Poké Centers heal 30%/turn and cure. Danger: red = foe reach, yellow = wild reach. Hyper Beam: no counter after it, next turn recharging.'],
+  ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch, use its Skill, the Bag or Wait. Blue = move, red = attack. Greyed units have acted; the mark in the tile corner keeps their side, the number is their HP once hurt.', 'Defenders counter if you are in their move range and still standing. Only Scouts and Strikers strike twice, when 10+ SPE faster. The forecast answers three questions: what you deal, what comes back, and the risks; V (or a tap on the lines) opens the full strike table, where a greyed strike only happens if an earlier one misses.', 'Crits: 4% (24% for high-crit moves), ×1.5 damage. The forecast HP is for normal hits; a strike whose crit would KO says so. Terrain gives DEF% and AVO. Poké Centers heal 30%/turn and cure. Danger: red = foe reach, yellow = wild reach. Hyper Beam: no counter after it, next turn recharging.'],
   ['ROLES', 'Types say whom you beat; the role (badge on the unit card) says how to use it. One role per evolution line.', 'SCT Scout: Dart, moves 2 tiles after attacking. DEF Defender: Brace, 40% less damage until its next turn. AMP Amphibious: DEF 20% and AVO 20 on water. CTL Controller: Root a foe within 2, it cannot move on its next turn (fliers immune). RNG Ranged: ranged moves reach 1 tile further. SUP Support: Mend an adjacent ally 30% HP and cure it. STK Striker: plain attacker.', 'Brace, Root and Mend use the action, like Attack. Root and Mend earn XP outside Territory and work every other turn (the unit sheet counts the turns); Brace can be used every turn and earns nothing. A Poké Center or Full Heal also frees a rooted unit.'],
   ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67. STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV and has a 25% chance to spend the action at phase start. Frozen skips a phase unless it thaws; crits on it are guaranteed. Cures never refund spent actions.', 'Wild Pokémon (dashed ring) can be caught when weak: stand next to them, choose Catch and throw a ball. Trainer Pokémon (spiked ring) cannot be stolen. Level ups can evolve!'],
-  ['TERRITORY', 'Take the enemy HQ, or own 2 of the 3 contested centers at the start of 3 of your turns. Losing the majority resets your hold counter. After 40 turns, more contested centers wins; a tie is a draw.', 'Any ready Pokemon on another center can Capture. Reach 20 points: a full-HP unit adds 10 per action, damaged units add less. Leaving or fainting resets progress; damage slows the next capture. Root does not stop capture.', 'Only owned centers heal and cure your team. Each owned center earns 2 command points at the start of your turn (bank limit 30).'],
+  ['TERRITORY', 'Take the enemy HQ, or own 2 of the 3 contested centers at the start of 3 of your turns. Losing the majority resets your hold counter. After 40 turns, more contested centers wins; a tie is a draw.', 'Roofs show who owns a center: grey is neutral, blue yours, red the enemy. Any ready Pokemon on another center can Capture. Reach 20 points: a full-HP unit adds 10 per action, damaged units add less. Leaving or fainting resets progress; damage slows the next capture. Root does not stop capture.', 'Only owned centers heal and cure your team. Each owned center earns 2 command points at the start of your turn (bank limit 30).'],
   ['VERSUS MODES', 'Elimination: knock out the other team; at the turn limit the larger team wins. Capture the Flag: take the flag from the enemy base and carry it home to your own flag; a fainted carrier drops it, and stepping on your own dropped flag sends it home. King of the Hill: start three of your turns with more Pokémon than the other team inside the 3×3 hill.', 'Fog of war: you only see tiles within 3 of your Pokémon (4 for fliers); tall grass and forest hide anything not adjacent. Unseen foes do not block your planning, but a move that runs into one stops short: an ambush ends that Pokémon\'s action.'],
   ['RESERVES', 'Tap RESERVE or an empty owned center to deploy a teammate. Choose the center and Pokemon. Costs are shown before spending. The arrival has already acted. Maximum 5 on the map, from your finite team of 6.', 'Fainted teammates recover after 2 of your turn starts. Pay their cost to send them out again. Occupied centers cannot deploy. With reserves left, an empty battlefield does not lose the match.', 'Both teams stay at Lv12 with equal stats and no XP in this mode. End your turn manually, after moving and deploying. Campaign progress is separate.'],
 ];

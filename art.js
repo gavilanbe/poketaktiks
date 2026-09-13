@@ -52,8 +52,8 @@ const PAL = {
   out: '#1a2418', outW: '#2a1a10',
 };
 // Which terrain ids count as "grassy land" for edge blending.
-const GRASSY = new Set(['plain', 'flower', 'tall', 'forest', 'mountain', 'center', 'gym', 'house']);
-const OPEN = new Set(['plain', 'flower', 'tall', 'road', 'sand', 'cave', 'floor', 'snow', 'ice', 'bridge', 'rubble', 'crate', 'forest', 'mountain', 'center', 'gym', 'water', 'lava']);
+const GRASSY = new Set(['plain', 'flower', 'tall', 'forest', 'mountain', 'center', 'hq', 'gym', 'house']);
+const OPEN = new Set(['plain', 'flower', 'tall', 'road', 'sand', 'cave', 'floor', 'snow', 'ice', 'bridge', 'rubble', 'crate', 'forest', 'mountain', 'center', 'hq', 'gym', 'water', 'lava']);
 const LIQUID = new Set(['water', 'lava']);
 
 // ---------------------------------------------------------------- shared stamps
@@ -70,7 +70,11 @@ const ST = {
 };
 
 // ---------------------------------------------------------------- terrain bases
-function drawTile(ch, variant, frame, g) {
+// Roof colours of a capturable building by owner (Territory): neutral grey, the player's blue, the enemy's red; a plain
+// Poké Center keeps its classic red roof. [roof, roofD, roofL, flag]
+const ROOFS = { none: ['#e04848', '#a82c2c', '#ff6a60', null], n: ['#a8a8b4', '#70707c', '#cfcfd8', '#d8d8e0'], 0: ['#3f6fd6', '#2a4a9a', '#5f8ff0', '#3d7dff'], 1: ['#e04848', '#a82c2c', '#ff6a60', '#ff4b4b'] };
+function drawTile(ch, variant, frame, g, owner = null) {
+  const RF = ROOFS[owner == null ? 'none' : owner < 0 ? 'n' : owner];
   const p = painter(g), r = mulberry32(ch.charCodeAt(0) * 977 + variant * 131 + 7); const rr = (a, b) => a + Math.floor(r() * (b - a + 1));
   const G = PAL.grass;
   // Grass: flat base, one soft darker patch, a few light tufts on a jittered grid, a rare darker tuft.
@@ -162,10 +166,15 @@ function drawTile(ch, variant, frame, g) {
       p.H(0, 1, 32, K.l); p.H(0, 2, 32, K.d); p.H(0, 29, 32, K.l); p.H(0, 30, 32, K.d); for (let x = 3; x < 32; x += 8) { p.R(x, 0, 2, 5, K.ll); p.V(x + 1, 0, 5, K.d); p.R(x, 27, 2, 5, K.ll); p.V(x + 1, 27, 5, K.d); } break; }
     case '#': { const R = PAL.road; p.R(0, 0, 32, 32, R.m); for (let i = 0; i < 2; i++) { const x = rr(-4, 26), y = rr(-2, 26); p.E(x + 6, y + 3, rr(4, 7), rr(2, 3), R.l); } for (let i = 0; i < 3; i++) { const x = rr(0, 29), y = rr(0, 30); p.H(x, y, rr(2, 3), mix(R.m, R.d, .7)); p.P(x + 1, y + 1, R.ll); } if (variant & 1) { const x = rr(1, 28), y = rr(1, 28); p.R(x, y, 2, 1, R.ll); p.P(x, y + 1, R.d); } break; }
     case 's': { const S = PAL.sand; p.R(0, 0, 32, 32, S.m); for (let i = 0; i < 2; i++) { const x = rr(-4, 26), y = rr(-2, 26); p.E(x + 6, y + 3, rr(5, 8), 2, S.l); } for (let i = 0; i < 2; i++) { const x = rr(0, 22), y = rr(2, 30); for (let k = 0; k < rr(4, 8); k++) p.P(x + k, y + (k > 2 ? 1 : 0), mix(S.m, S.d, .7)); } if (variant & 1) p.P(rr(0, 31), rr(0, 31), S.ll); break; }
-    case 'C': grassBase(1); building({ roof: '#e04848', roofD: '#a82c2c', roofL: '#ff6a60', wall: '#f6f1e6', wallD: '#c8bfae', wallTop: 13, wallH: 14, ridge: 5 });
-      p.S(14, 0, ST.pokeEmblem, { O: PAL.out, R: '#ff5a5a', W: '#ffffff' });
+    case 'C': grassBase(1); building({ roof: RF[0], roofD: RF[1], roofL: RF[2], wall: '#f6f1e6', wallD: '#c8bfae', wallTop: 13, wallH: 14, ridge: 5 });
+      if (RF[3]) { p.V(25, 0, 8, '#e8e0d0'); p.P(25, 0, '#ffffff'); p.R(26, 1, 5, 4, RF[3]); p.H(26, 4, 4, shade(RF[3], -.35)); } else p.S(14, 0, ST.pokeEmblem, { O: PAL.out, R: '#ff5a5a', W: '#ffffff' });
       p.R(11, 15, 10, 5, '#ffffff'); p.R(10, 14, 12, 7, PAL.out); p.R(11, 15, 10, 5, '#fff4d0'); p.R(13, 16, 2, 3, '#e04848'); p.P(15, 16, '#e04848'); p.P(15, 17, '#e04848'); p.R(17, 16, 3, 1, '#e04848'); p.P(17, 17, '#e04848'); p.P(17, 18, '#e04848');
       door(13, 22, 6, 5, '#8fd0ff'); p.V(16, 22, 5, PAL.out); win(6, 17, false); win(23, 17, false); break;
+    case 'Q': grassBase(1); building({ roof: RF[0], roofD: RF[1], roofL: RF[2], wall: '#ece6d6', wallD: '#bdb3a0', x0: 2, w: 28, wallTop: 12, wallH: 15, ridge: 4 });
+      p.R(5, 14, 4, 5, PAL.out); p.R(6, 15, 2, 3, '#8fd0ff'); p.R(23, 14, 4, 5, PAL.out); p.R(24, 15, 2, 3, '#8fd0ff'); p.R(11, 14, 10, 4, PAL.out); p.R(12, 15, 8, 2, RF[0]); p.R(12, 15, 8, 1, RF[2]);
+      door(13, 21, 6, 6, '#6a4a30'); p.V(16, 21, 6, PAL.out); p.R(4, 26, 24, 1, '#bdb3a0');
+      p.V(16, 0, 5, '#e8e0d0'); p.P(16, 0, '#ffffff'); if (RF[3]) { p.R(17, 1, 7, 4, RF[3]); p.H(17, 4, 6, shade(RF[3], -.35)); p.P(23, 2, shade(RF[3], -.35)); } else { p.R(17, 1, 7, 4, '#d8d8e0'); p.H(17, 4, 6, '#a0a0ac'); }
+      break;
     case 'G': grassBase(1); building({ roof: '#3f6fd6', roofD: '#2a4a9a', roofL: '#5f8ff0', wall: '#d8dce8', wallD: '#a8adbf', wallTop: 12, wallH: 15, ridge: 4 });
       // columns, a GYM sign and a banner pole
       p.R(5, 13, 3, 13, '#eef0f6'); p.V(7, 13, 13, '#a8adbf'); p.R(24, 13, 3, 13, '#eef0f6'); p.V(26, 13, 13, '#a8adbf'); p.H(4, 12, 5, PAL.out); p.H(23, 12, 5, PAL.out);
@@ -198,7 +207,11 @@ function buildTileset() {
     for (let f = 0; f < frames; f++) { const c = tileCanvas(); drawTile(ch, v, f, c.getContext('2d')); TILESET[ch + v + f] = c; }
   }
 }
-function tileImg(ch, v, f) { const frames = (ch === '~' || ch === 'w' || ch === '=' || ch === 'L') ? WATER_FRAMES : 1; return TILESET[ch + (v % VARIANTS) + (f % frames)] || TILESET['.00']; }
+function tileImg(ch, v, f, owner = null) {
+  const frames = (ch === '~' || ch === 'w' || ch === '=' || ch === 'L') ? WATER_FRAMES : 1; const key = ch + (v % VARIANTS) + (f % frames);
+  if (owner == null || !(ch === 'C' || ch === 'Q')) return TILESET[key] || TILESET['.00'];
+  const ok = key + 'o' + owner; if (!TILESET[ok]) { const c = tileCanvas(); drawTile(ch, v % VARIANTS, f % frames, c.getContext('2d'), owner); TILESET[ok] = c; } return TILESET[ok];
+}
 
 // ---------------------------------------------------------------- autotile overlays
 const EDGES = new Map();
@@ -220,7 +233,8 @@ function nb(m, x, y, dx, dy) { const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 
 // Draws base tile + context-aware overlays for tile (x,y) at screen (X,Y).
 function drawTerrain(g, m, x, y, X, Y, frame, time = 0) {
   const t = m.tiles[y][x]; const v = m.variants[y][x]; const id = t.id;
-  g.drawImage(tileImg(t.ch, v, frame), X, Y);
+  const owner = (id === 'center' || id === 'hq') && m.ownerAt ? m.ownerAt(x, y) : null; // capturable buildings wear their owner's roof
+  g.drawImage(tileImg(t.ch, v, frame, owner), X, Y);
   const N = nb(m, x, y, 0, -1), S = nb(m, x, y, 0, 1), W = nb(m, x, y, -1, 0), E = nb(m, x, y, 1, 0);
   if (id === 'water' || id === 'lava') {
     const isLand = n => n && !LIQUID.has(n.id) && n.id !== 'bridge';
@@ -244,7 +258,7 @@ function drawTerrain(g, m, x, y, X, Y, frame, time = 0) {
     if (mask) g.drawImage(edgeCanvas('tg' + mask + v, p => drawTallEdge(p, sides, v)), X, Y);
   }
   // soft ground shadow cast south by tall things
-  if ((id === 'forest' || id === 'mountain' || id === 'house' || id === 'center' || id === 'gym' || id === 'wall' || id === 'bwall' || id === 'rock' || id === 'pillar') && S && OPEN.has(S.id) && S.id !== 'water' && S.id !== 'lava' && S.id !== id) {
+  if ((id === 'forest' || id === 'mountain' || id === 'house' || id === 'center' || id === 'hq' || id === 'gym' || id === 'wall' || id === 'bwall' || id === 'rock' || id === 'pillar') && S && OPEN.has(S.id) && S.id !== 'water' && S.id !== 'lava' && S.id !== id) {
     g.globalAlpha = .22; g.fillStyle = '#000000'; g.fillRect(X, Y + TILE, TILE, 3); g.globalAlpha = .1; g.fillRect(X, Y + TILE + 3, TILE, 2); g.globalAlpha = 1;
   }
 }
@@ -573,7 +587,8 @@ function drawBall(x, y, col = '#f04848', r = 5) {
   circle(x, y, r, UI.shadow); circle(x, y, r - 1, '#f6f2e6'); ctx.fillStyle = col; for (let j = -r + 1; j < 0; j++) { const w = Math.floor(Math.sqrt((r - 1) * (r - 1) - j * j) + .5); ctx.fillRect(x - w, y + j, 2 * w + 1, 1); } hline(x - r + 1, y, 2 * r - 1, UI.shadow); px(x, y, '#ffffff'); px(x - 1, y - 2, shade(col, .5));
 }
 const TYPE_ABBR = { Normal: 'NRM', Fire: 'FIR', Water: 'WTR', Electric: 'ELC', Grass: 'GRS', Ice: 'ICE', Fighting: 'FGT', Poison: 'PSN', Ground: 'GRD', Flying: 'FLY', Psychic: 'PSY', Bug: 'BUG', Rock: 'RCK', Ghost: 'GHO', Dragon: 'DRG', Dark: 'DRK', Steel: 'STL', Fairy: 'FRY' };
-function typeBadge(t, x, y, w = 24) { const c = TYPE_COL[t] || '#888'; rrect(x, y, w, 9, shade(c, -.55), 1); rrect(x + 1, y + 1, w - 2, 7, c, 0); hline(x + 2, y + 1, w - 4, shade(c, .3)); hline(x + 2, y + 7, w - 4, shade(c, -.25)); textC(w >= 40 ? t.toUpperCase() : TYPE_ABBR[t] || t.slice(0, 3).toUpperCase(), x + w / 2, y + 1, '#ffffff', { shadow: shade(c, -.5) }); }
+// Type badge: `w` pixels wide (24 = three-letter code); w = 'auto' spells the type out and returns the width used.
+function typeBadge(t, x, y, w = 24) { const c = TYPE_COL[t] || '#888'; const full = w === 'auto'; if (full) w = textWidth(t.toUpperCase()) + 6; rrect(x, y, w, 9, shade(c, -.55), 1); rrect(x + 1, y + 1, w - 2, 7, c, 0); hline(x + 2, y + 1, w - 4, shade(c, .3)); hline(x + 2, y + 7, w - 4, shade(c, -.25)); textC(full || w >= 40 ? t.toUpperCase() : TYPE_ABBR[t] || t.slice(0, 3).toUpperCase(), x + w / 2, y + 1, '#ffffff', { shadow: shade(c, -.5) }); return w; }
 function miniBadge(label, col, x, y) { rrect(x, y, 15, 8, shade(col, -.55), 1); rrect(x + 1, y + 1, 13, 6, col, 0); hline(x + 2, y + 1, 11, shade(col, .3)); textC(label, x + 8, y + 1, '#ffffff', { shadow: shade(col, -.5) }); }
 function statusBadge(st, x, y) { const s = STATUS[st]; if (s) miniBadge(s.name, s.col, x, y); }
 function teamColor(team) { return team === 0 ? '#3d7dff' : team === 1 ? '#ff4b4b' : team === 2 ? '#e0c040' : '#40d060'; }
@@ -634,6 +649,13 @@ const ICONS = {
   crown: ['O...O...O', 'OO.OYO.OO', 'OYOYYYOYO', 'OYYYYYYYO', 'OYYYYYYYO', '.OYYYYYO.', '.OOOOOOO.', '.OYYYYYO.', '.OOOOOOO.'],
   book: ['.OOOOOOO.', 'OWWWOWWWO', 'OWLWOWLWO', 'OWWWOWWWO', 'OWLWOWLWO', 'OWWWOWWWO', 'OWLWOWLWO', 'OWWWOWWWO', '.OOOOOOO.'],
   skill: ['....O....', '...OWO...', '...OWO...', 'OOOOWOOOO', 'OWWWYWWWO', 'OOOOWOOOO', '...OWO...', '...OWO...', '....O....'],
+  // role glyphs (unit cards, sheet, forecast): wing = scout, shield = defender, wave = amphibious, vine = controller, target = ranged, heart = support, sword = striker
+  wing: ['........O', '......OWO', '....OWWWO', '..OWWWWO.', 'OWWWWWO..', '.OOWWO...', '...OWO...', '....OO...', '.........'],
+  shield: ['OOOOOOOOO', 'OWWWWWWWO', 'OWWWOWWWO', 'OWWOWOWWO', 'OWWWOWWWO', '.OWWWWWO.', '..OWWWO..', '...OWO...', '....O....'],
+  wave: ['.........', '..OO.....', '.OWWO..OO', 'OWOOWOOWO', 'OW..OWWWO', '.........', '..OO.....', '.OWWO..OO', 'OWOOWOOWO'],
+  vine: ['....O....', '...OWO...', '..OWOWO..', '.OWO.OWO.', 'OWO...OWO', 'OO.OWO.OO', '...OWO...', '...OWO...', '....O....'],
+  target: ['..OOOOO..', '.OWWWWWO.', 'OWOOOOOWO', 'OWOWWWOWO', 'OWOWOWOWO', 'OWOWWWOWO', 'OWOOOOOWO', '.OWWWWWO.', '..OOOOO..'],
+  heart: ['.OO...OO.', 'OWWO.OWWO', 'OWWWOWWWO', 'OWWWWWWWO', 'OWWWWWWWO', '.OWWWWWO.', '..OWWWO..', '...OWO...', '....O....'],
 };
 // Draw a UI icon; `col` overrides the main (W) colour.
 function iconAt(id, x, y, col) {
