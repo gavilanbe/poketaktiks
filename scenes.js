@@ -10,8 +10,8 @@ function goScene(name, data) { if (!NO_WIPE.has(SC.name + '>' + name) && SC.name
 function hit(x, y, w, h, run, label) { SC.hits.push({ x, y, w, h, run, label }); }
 function hitAt(px2, py) { for (const h of SC.hits) if (px2 >= h.x && py >= h.y && px2 < h.x + h.w && py < h.y + h.h) return h; return null; }
 function bigButton(x, y, w, h, label, run, opt = {}) {
-  const hot = (INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h && !VIEW.touch) || opt.hot;
-  uiButton(x, y, w, h, label, { hot, col: opt.col, variant: opt.variant, ink: opt.ink, big: !opt.small, disabled: opt.disabled, icon: opt.icon });
+  const over = INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h, hot = (over && !VIEW.touch) || opt.hot;
+  uiButton(x, y, w, h, label, { hot, pressed: over && INPUT.down, col: opt.col, variant: opt.variant, ink: opt.ink, big: !opt.small, disabled: opt.disabled, icon: opt.icon });
   hit(x, y, w, h, run, label); }
 
 // ---------------------------------------------------------------- shared: draw a map definition as a backdrop

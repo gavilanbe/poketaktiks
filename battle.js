@@ -557,6 +557,7 @@ function drawBoardLayer() {
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
     drawTerrain(ctx, m, x, y, tileX(x), tileY(y), f, BT.time);
   }
+  if (!REDUCED) drawBoardAmbience(m);
   // items on the floor
   for (const it of m.items) if (!it.taken) { const X = tileX(it.x) + TILE / 2, Y = tileY(it.y) + TILE / 2 + Math.round(Math.sin(BT.time * 4 + it.x) * 2); drawBall(X, Y, ITEMS.pokeball.col, 5); if (Math.floor(BT.time * 6 + it.x) % 5 === 0) px(X + 6, Y - 6, '#ffffff'); }
   // king of the hill zone and capture-the-flag bases
@@ -602,6 +603,17 @@ function drawBoardLayer() {
   if (['idle', 'move', 'target', 'catchTarget', 'skillTarget', 'unitinfo'].includes(BT.mode)) { const hostileCur = unitAt(BT.cx, BT.cy) && hostile(unitAt(BT.cx, BT.cy).team, HT()); drawCursor(tileX(BT.cx), tileY(BT.cy), BT.time * 1000, '#ffffff', (BT.mode === 'target' || hostileCur) ? '#ff5a5a' : BT.mode === 'skillTarget' ? '#60e070' : '#ffd24a'); }
   if (BT.anim && BT.anim.ball) { const b = BT.anim.ball; drawBall(Math.round(b.x - CAM.x), Math.round(b.y - CAM.y), ITEMS[BT.anim.ev.ball].col, 5); }
   drawFX(-CAM.x + FX.shakeX, -CAM.y + FX.shakeY, false);
+}
+// Ambient life on outdoor maps: huge soft cloud shadows drifting across the field and a few butterflies. Faint on
+// purpose (the board must stay readable) and absent indoors, in caves and with reduced motion.
+function boardOutdoor(m) { if (m.outdoor == null) { let g = 0, n = 0; for (const row of m.tiles) for (const t of row) { n++; if (GRASSY.has(t.id) || t.id === 'water' || t.id === 'road' || t.id === 'sand' || t.id === 'bridge') g++; } m.outdoor = g / Math.max(1, n) > .6; } return m.outdoor; }
+function drawBoardAmbience(m) {
+  if (!boardOutdoor(m)) return; const ox = -CAM.x + FX.shakeX, oy = -CAM.y + FX.shakeY, mw = m.w * TILE, mh = m.h * TILE, t = BT.time;
+  ctx.save(); ctx.beginPath(); ctx.rect(tileX(0), tileY(0), mw, mh); ctx.clip();
+  ctx.globalAlpha = .075; for (let i = 0; i < 3; i++) { const rx = 70 + i * 18, ry = 30 + i * 6, span = mw + rx * 4, x = ((i * 347 + t * (7 + i * 2)) % span) - rx * 2, y = ((i * 211 + t * 3) % (mh + ry * 4)) - ry * 2; ellipse(Math.round(ox + x), Math.round(oy + y), rx, ry, '#06101a'); ellipse(Math.round(ox + x - rx * .5), Math.round(oy + y + 8), Math.round(rx * .6), Math.round(ry * .6), '#06101a'); } ctx.globalAlpha = 1;
+  const cols = ['#ffffff', '#ffe36a', '#ffb3d0']; for (let i = 0; i < 3; i++) { const k = t * (.05 + i * .01) + i * .31, x = (Math.sin(k * 2.3 + i) * .45 + .5) * mw, y = (Math.cos(k * 1.7 + i * 2) * .45 + .5) * mh + Math.sin(t * 6 + i) * 3, flap = Math.floor(t * 10 + i * 3) % 2, X = Math.round(ox + x), Y = Math.round(oy + y);
+    if (flap) { px(X - 1, Y, cols[i]); px(X + 1, Y, cols[i]); px(X - 2, Y - 1, cols[i]); px(X + 2, Y - 1, cols[i]); } else { px(X - 1, Y - 1, cols[i]); px(X + 1, Y - 1, cols[i]); } px(X, Y, '#3a2a20'); }
+  ctx.restore();
 }
 // The land outside the board: the map's own border terrain, dimmed, so the world seems to continue past the frame.
 const VOID = { key: null, canvas: null };
@@ -694,7 +706,7 @@ function hudHit(x, y) { for (const h of HUD.hits) if (x >= h.x && y >= h.y && x 
 // Is the point over a HUD panel or button drawn this frame (so the board under it is not being pointed at)?
 function hudCovers(x, y) { for (const r of HUD.hits.concat(HUD.panels)) if (x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h) return true; return false; }
 function hudPanel(x, y, w, h, opt) { const p = panel(x, y, w, h, Object.assign({ light: true }, opt)); HUD.panels.push({ x, y, w, h }); return p; }
-function button(x, y, w, h, label, run, opt = {}) { const hot = INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h && !VIEW.touch; uiButton(x, y, w, h, label, { hot, col: opt.col, variant: opt.variant, ink: opt.ink, icon: opt.icon, disabled: opt.disabled, on: opt.on }); HUD.hits.push({ x, y, w, h, run, label }); }
+function button(x, y, w, h, label, run, opt = {}) { const over = INPUT.x >= x && INPUT.y >= y && INPUT.x < x + w && INPUT.y < y + h, hot = over && !VIEW.touch; uiButton(x, y, w, h, label, { hot, pressed: over && INPUT.down, col: opt.col, variant: opt.variant, ink: opt.ink, icon: opt.icon, disabled: opt.disabled, on: opt.on }); HUD.hits.push({ x, y, w, h, run, label }); }
 // Screen rectangle of the board (the map itself, not the void around it).
 function boardRect() { const z = BT.zoom; return { x: toScreenX(tileX(0) - FX.shakeX), y: toScreenY(tileY(0) - FX.shakeY), w: Math.round(B.map.w * TILE * z), h: Math.round(B.map.h * TILE * z) }; }
 // Where the HUD goes. Portrait phones stack everything under the board: context cards, then a two-row button bar.
