@@ -133,6 +133,25 @@ test('title confirmation fires once after its press effect; dragging to another 
   g.titleInput({ type: 'key', key: 'down' }); assert.equal(G('SC.i'), i + 1);
   g.titleActivate(i); g.titleUpdate(.21); g.titleInput({ type: 'key', key: 'right' }); g.titleInput({ type: 'key', key: 'ok' }); assert.equal(G('SC.name'), 'starter');
 });
+test('route map: stars for par and faints, first-clear rewards, replays never rewind progress, the reveal opens the next stop', () => {
+  const T = loadGame(), { g, G, C, store } = T; G("PARAMS.set('nostory','')");
+  G('SAVE = { chapter: 0, party: [partyUnit(4, 5), partyUnit(16, 4)], bag: { pokeball: 5 }, stars: {}, captainPid: 0, starter: 4, journey: { version: 1, firstCatch: true } }');
+  const win = (idx, turn, faints) => { const ch = C.CHAPTERS[idx]; g.startBattle(ch.map, G('SAVE.party.map((p,pid)=>Object.assign({},p,{pid}))'), G('SAVE.bag'), { chapter: idx, defer: true, seed: 3, captain: { pid: 0, root: 4, chapter: idx } }); const B = T.B(); B.turn = turn; B.faints = faints; B.result = 'win'; g.onBattleEnd('win'); return G('SC.data'); };
+  let R = win(0, 3, 0); assert.equal(R.stars, 3, 'under par, nobody fainted'); assert.equal(G('SAVE.chapter'), 1); assert.equal(G('SAVE.rating.meadow'), 3); assert.equal(G('SAVE.bag.pokeball'), 5 + C.CHAPTERS[0].rewards.pokeball);
+  R.next(); assert.equal(G('SC.name'), 'route'); assert.equal(G('SC.data.reveal.unlocked'), 1); for (let i = 0; i < 200 && G('SC.data.reveal'); i++) g.routeUpdate(.05); assert.equal(G('SC.data.sel'), 1, 'the captain walks on to the new stop'); for (let i = 0; i < 60; i++) g.routeUpdate(.05);
+  R = win(1, 30, 2); assert.equal(R.stars, 1, 'over par with faints: one star'); assert.equal(G('SAVE.chapter'), 2);
+  const balls = G('SAVE.bag.pokeball'); R = win(0, 20, 1); assert.equal(R.stars, 1); assert.equal(G('SAVE.chapter'), 2, 'a replay keeps the progress'); assert.equal(G('SAVE.rating.meadow'), 3, 'the best rating stays'); assert.equal(G('SAVE.bag.pokeball'), balls, 'no reward for a replay');
+  R.next(); assert.equal(G('SC.data.reveal.unlocked'), null, 'a replay reveals no new stop');
+  // navigation: locked stops cannot be picked, OK opens the preparation, its BACK returns to the route on that stop
+  g.openRoute(); for (let i = 0; i < 40; i++) g.routeUpdate(.05); assert.equal(G('SC.data.sel'), 2);
+  g.routeInput({ type: 'key', key: 'right' }); assert.equal(G('SC.data.sel'), 2, 'stop 4 is locked'); g.routeInput({ type: 'key', key: 'left' }); for (let i = 0; i < 60; i++) g.routeUpdate(.05); assert.equal(G('SC.data.sel'), 1);
+  g.routeInput({ type: 'key', key: 'ok' }); assert.equal(G('SC.name'), 'prep'); assert.equal(G('SC.data.chapter.id'), C.CHAPTERS[1].id); g.prepInput({ type: 'key', key: 'back' }); assert.equal(G('SC.name'), 'route'); assert.equal(G('SC.data.sel'), 1);
+  for (const [w, h] of [[180, 390], [195, 422], [422, 195], [480, 270], [640, 360]]) {
+    G(`VIEW.w=${w};VIEW.h=${h};`); g.openRoute(); const boxes = textHook(T); g.routeDraw();
+    for (const b of boxes()) assert(b.x >= -1 && b.x + b.w <= w + 1 && b.y >= -1 && b.y + 7 <= h + 1, `${w}x${h} route text outside: ${JSON.stringify(b)}`);
+    for (const b of G('SC.hits')) if (!/^STOP/.test(b.label)) assert(b.x >= 0 && b.y >= 0 && b.x + b.w <= w && b.y + b.h <= h, `${w}x${h} route control outside: ${b.label}`);
+  }
+});
 test('territory runs through the real enemy animation queue to results and rematch', () => {
   const T = loadGame(), { g, G } = T; G("PREF.territoryGuide='hide';PREF.battle='map';BT.fast=true;"); g.launchTerritory(7);
   let frames = 0;

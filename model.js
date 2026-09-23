@@ -149,7 +149,7 @@ function resolveCombat(att, def, move, from) {
     if (ef && ef.status && !powerBlocksStatus(Dn) && !isPracticeTarget(Dn) && dmg > 0 && !Dn.status && Dn.hp > 0 && rnd() * 100 < ef.chance) { const st = ef.status; if (!(st === 'brn' && Dn.types.includes('Fire')) && !(st === 'psn' && (Dn.types.includes('Poison') || Dn.types.includes('Steel'))) && !(st === 'par' && Dn.types.includes('Electric')) && !(st === 'frz' && Dn.types.includes('Ice'))) { Dn.status = st; Dn.statusTurns = 0; status = st; } }
     const drain = Math.min(drainFor(s.move, lost), A.maxHp - A.hp); A.hp += drain; // the event carries the HP actually restored
     ev.push({ type: 'hit', att: A, def: Dn, move: s.move, dmg, lost, crit, eff: s.eff, hpAfter: Dn.hp, status, drain, attHpAfter: A.hp, counter: isCounter });
-    if (Dn.hp <= 0) ev.push({ type: 'ko', unit: Dn, by: A });
+    if (Dn.hp <= 0) { ev.push({ type: 'ko', unit: Dn, by: A }); if (Dn.team === 0 && !B.versus) B.faints = (B.faints || 0) + 1; }
     if (Dn.status === 'frz' && dmg > 0 && s.move.type === 'Fire') { Dn.status = null; ev.push({ type: 'thaw', unit: Dn }); }
   }
   // firing a recharge move costs the next turn whether it hit or missed
