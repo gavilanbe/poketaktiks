@@ -88,12 +88,8 @@ async function main() {
       // catch: Squirtle next to the weakened Caterpie
       await ev('(function(){const t=__pk.B.units.find(u=>u.name==="Caterpie"); t.hp=2; const s=__pk.B.units.find(u=>u.name==="Squirtle"); s.x=5; s.y=8; __pk.BT.cx=5; __pk.BT.cy=8;})()');
       await key('z','KeyZ'); await sleep(200); await tapTile(5,8); await waitMode('menu', 4000); out.push('menu with wild adjacent: ' + await ev('JSON.stringify(__pk.BT.menu.items.map(i=>i.id))'));
-      await ev('__pk.BT.menu.i=__pk.BT.menu.items.findIndex(i=>i.id==="catch")'); await key('z','KeyZ'); await waitMode('catchTarget', 3000); await shot('33-catch-card'); await key('z','KeyZ'); await waitMode('ballPick', 3000); await shot('34-ballpick'); await key('z','KeyZ'); await sleep(1200); await shot('35-ball-shake'); await waitMode('idle', 15000);
+      await ev('__pk.BT.menu.i=__pk.BT.menu.items.findIndex(i=>i.id==="catch")'); await key('z','KeyZ'); await waitMode('catchTarget', 3000); await shot('33-catch-card'); await key('z','KeyZ'); await sleep(1200); await shot('35-ball-shake'); await waitMode('idle', 15000);
       out.push('captured: ' + await ev('JSON.stringify(__pk.B.captured.map(c=>[c.num,c.level]))') + ' bag=' + await ev('JSON.stringify(__pk.B.bag)'));
-      // bag: Bulbasaur uses a potion
-      await ev('(function(){const b=__pk.B.units.find(u=>u.name==="Bulbasaur"); b.hp=5; __pk.BT.cx=b.x; __pk.BT.cy=b.y;})()');
-      await key('z','KeyZ'); await sleep(200); await key('z','KeyZ'); await waitMode('menu', 4000); await ev('__pk.BT.menu.i=__pk.BT.menu.items.findIndex(i=>i.id==="item")'); await key('z','KeyZ'); await waitMode('item', 3000); await shot('36-bag'); await key('z','KeyZ'); await waitMode('itemTarget', 3000); await key('z','KeyZ'); await waitMode('idle', 8000);
-      out.push('after potion: ' + await ev('JSON.stringify(__pk.B.units.filter(u=>u.name==="Bulbasaur").map(u=>[u.hp,u.maxHp]))') + ' bag=' + await ev('JSON.stringify(__pk.B.bag)'));
       // seize on ch4
       await nav('ch=4&silent&nosave'); await waitMode('idle', 6000); await ev('(function(){const u=__pk.B.units.find(u=>u.team===0); u.x=16; u.y=4; __pk.BT.cx=16; __pk.BT.cy=4;})()'); await key('z','KeyZ'); await sleep(200); await key('z','KeyZ'); await waitMode('menu', 4000); out.push('seize menu: ' + await ev('JSON.stringify(__pk.BT.menu.items.map(i=>i.id))')); await key('z','KeyZ'); await sleep(2000); await shot('37-seized'); out.push('ch4 result: ' + await ev('__pk.B.result'));
       // survive on ch7 (lava damage on upkeep too)

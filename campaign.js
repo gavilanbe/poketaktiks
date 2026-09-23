@@ -15,7 +15,7 @@ const CHAPTERS = [
       { who: 'Prof. Oak', mon: 143, text: 'Your captain and Pidgey are ready. Caterpie is here for catching practice: weaken it, stand next to it, then Catch.' },
     ],
     outro: [{ who: 'Youngster Joey', mon: 19, text: 'Nooo! My top-percentage Rattata!' }, { who: 'Prof. Oak', mon: 143, text: 'Well done. Head north through Viridian Forest. Mind the bugs.' }],
-    rewards: { pokeball: 3, potion: 2 },
+    rewards: { pokeball: 3 },
     map: {
       name: 'Pallet Meadow', seed: 11, objective: { type: 'rout' },
       rows: [
@@ -31,7 +31,7 @@ const CHAPTERS = [
       ],
       deploy: [{ x: 1, y: 3 }, { x: 1, y: 6 }, { x: 2, y: 4 }],
       units: [{ mon: 19, level: 3, x: 12, y: 2 }, { mon: 19, level: 2, x: 13, y: 4 }, { mon: 16, level: 3, x: 12, y: 7, ai: 'guard' }, { mon: 16, level: 2, team: 2, x: 8, y: 3, ai: 'aggro' }, { mon: 10, level: 3, team: 2, x: 3, y: 4, ai: 'stay' }],
-      items: [{ x: 9, y: 0, item: 'potion' }],
+      items: [{ x: 9, y: 0, item: 'pokeball' }],
     },
   },
   {
@@ -42,7 +42,7 @@ const CHAPTERS = [
       { who: 'Prof. Oak', mon: 143, text: 'I heard a Pikachu lives here. Catching one would be... electrifying.' },
     ],
     outro: [{ who: 'Bug Catcher Timmy', mon: 11, text: 'My beautiful cocoons! Fine, take the road to Mt. Moon. Team Rocket is digging there.' }],
-    rewards: { pokeball: 2, greatball: 1, potion: 1 },
+    rewards: { pokeball: 3 },
     map: {
       name: 'Viridian Forest', seed: 22, objective: { type: 'rout' },
       outposts: [{ x: 6, y: 5, name: 'FOREST OUTPOST' }],
@@ -61,7 +61,7 @@ const CHAPTERS = [
       deploy: [{ x: 1, y: 3 }, { x: 0, y: 6 }, { x: 2, y: 7 }, { x: 1, y: 8 }],
       units: [{ mon: 10, level: 5, x: 11, y: 3 }, { mon: 13, level: 5, x: 12, y: 6 }, { mon: 11, level: 6, x: 14, y: 2, ai: 'guard' }, { mon: 14, level: 6, x: 13, y: 7, ai: 'guard' }, { mon: 12, level: 8, x: 14, y: 4, ai: 'guard', boss: true, nick: 'Timmy\'s Butterfree' }, { mon: 13, level: 4, x: 9, y: 1 },
         { mon: 25, level: 6, team: 2, x: 7, y: 3, ai: 'aggro' }, { mon: 43, level: 5, team: 2, x: 4, y: 1, ai: 'aggro' }, { mon: 16, level: 5, team: 2, x: 10, y: 8, ai: 'aggro' }],
-      items: [{ x: 3, y: 1, item: 'pokeball' }, { x: 14, y: 8, item: 'candy' }],
+      items: [{ x: 3, y: 1, item: 'pokeball' }, { x: 14, y: 8, item: 'pokeball' }],
     },
   },
   {
@@ -72,7 +72,7 @@ const CHAPTERS = [
       { who: 'Prof. Oak', mon: 143, text: 'Zubat fly over rubble. Geodude climb it. A wild Geodude lives here: Rock and Ground types will matter later, hint hint.' },
     ],
     outro: [{ who: 'Rocket Grunt', mon: 41, text: 'Raticate down?! The boss will hear about this... run!' }, { who: 'Prof. Oak', mon: 143, text: 'A Clefairy waved at you on the way out. What a night. Next: Cerulean and its famous bridge.' }],
-    rewards: { pokeball: 3, greatball: 1, superpotion: 1, fullheal: 1 },
+    rewards: { pokeball: 4 },
     map: {
       name: 'Mt. Moon', seed: 33, objective: { type: 'boss', bossName: 'Raticate' },
       rows: [
@@ -90,7 +90,7 @@ const CHAPTERS = [
       deploy: [{ x: 2, y: 2 }, { x: 1, y: 3 }, { x: 2, y: 4 }, { x: 1, y: 5 }],
       units: [{ mon: 41, level: 8, x: 8, y: 2 }, { mon: 41, level: 8, x: 9, y: 6 }, { mon: 41, level: 9, x: 13, y: 3, ai: 'guard' }, { mon: 74, level: 9, x: 7, y: 4, ai: 'guard' }, { mon: 74, level: 9, x: 11, y: 7, ai: 'guard' }, { mon: 23, level: 9, x: 12, y: 1 }, { mon: 27, level: 9, x: 10, y: 8, ai: 'guard' }, { mon: 20, level: 11, x: 15, y: 5, ai: 'boss', boss: true, nick: 'Boss Raticate' }, { mon: 109, level: 10, x: 15, y: 2, ai: 'guard' },
         { mon: 35, level: 9, team: 2, x: 5, y: 7, ai: 'aggro' }, { mon: 74, level: 8, team: 2, x: 5, y: 1, ai: 'aggro' }],
-      items: [{ x: 16, y: 8, item: 'candy' }, { x: 3, y: 8, item: 'greatball' }],
+      items: [{ x: 16, y: 8, item: 'pokeball' }, { x: 3, y: 8, item: 'pokeball' }],
       reinforce: [{ turn: 4, units: [{ mon: 41, level: 9, x: 16, y: 1 }, { mon: 41, level: 9, x: 16, y: 7 }] }],
     },
   },
@@ -102,7 +102,7 @@ const CHAPTERS = [
       { who: 'Prof. Oak', mon: 143, text: 'Something big sleeps in the lake. Do not poke it unless you mean it.' },
     ],
     outro: [{ who: 'Swimmer Ana', mon: 55, text: 'You seized my gym?! Ugh. Fine. Rumour says Team Rocket has a hideout under the Game Corner.' }],
-    rewards: { pokeball: 2, greatball: 2, potion: 2, candy: 1 },
+    rewards: { pokeball: 4 },
     map: {
       name: 'Nugget Bridge', seed: 44, objective: { type: 'seize', what: 'Gym' }, seize: { x: 17, y: 4 }, par: 10,
       outposts: [{ x: 8, y: 4, name: 'BRIDGE OUTPOST' }, { x: 17, y: 4, name: 'GYM', owner: 1, goal: true }],
@@ -121,7 +121,7 @@ const CHAPTERS = [
       deploy: [{ x: 1, y: 3 }, { x: 1, y: 5 }, { x: 2, y: 4 }, { x: 0, y: 4 }, { x: 2, y: 2 }],
       units: [{ mon: 60, level: 10, x: 8, y: 3, ai: 'aggro' }, { mon: 60, level: 10, x: 8, y: 5, ai: 'aggro' }, { mon: 118, level: 11, x: 10, y: 6, ai: 'guard' }, { mon: 120, level: 11, x: 11, y: 2, ai: 'guard' }, { mon: 72, level: 10, x: 6, y: 8, ai: 'aggro' }, { mon: 55, level: 12, x: 12, y: 4, ai: 'guard' }, { mon: 54, level: 11, x: 15, y: 5, ai: 'guard' }, { mon: 79, level: 12, x: 16, y: 3, ai: 'guard' }, { mon: 130, level: 15, x: 9, y: 1, ai: 'guard', boss: true, nick: 'Lake Gyarados' },
         { mon: 129, level: 6, team: 2, x: 4, y: 8, ai: 'aggro' }, { mon: 98, level: 11, team: 2, x: 5, y: 2, ai: 'aggro' }, { mon: 116, level: 11, team: 2, x: 13, y: 7, ai: 'aggro' }],
-      items: [{ x: 16, y: 1, item: 'superpotion' }, { x: 17, y: 8, item: 'candy' }],
+      items: [{ x: 16, y: 1, item: 'pokeball' }, { x: 17, y: 8, item: 'pokeball' }],
       reinforce: [{ turn: 4, units: [{ mon: 72, level: 11, x: 13, y: 1 }, { mon: 72, level: 11, x: 13, y: 8 }] }],
     },
   },
@@ -133,7 +133,7 @@ const CHAPTERS = [
       { who: 'Giovanni', mon: 53, text: 'Zubat, seal the doors in four turns. Nobody leaves.' },
     ],
     outro: [{ who: 'Giovanni', mon: 53, text: 'Tch. A tactician indeed. We will meet again, and I will have something... legendary.' }, { who: 'Prof. Oak', mon: 143, text: 'Legendary? The Power Plant reported strange lightning. Go look, and bring an umbrella.' }],
-    rewards: { ultraball: 1, greatball: 2, superpotion: 2, fullheal: 1, candy: 1 },
+    rewards: { pokeball: 5 },
     map: {
       name: 'Rocket Hideout', seed: 55, objective: { type: 'boss', bossName: 'Persian' }, music: 'enemy',
       rows: [
@@ -151,7 +151,7 @@ const CHAPTERS = [
       deploy: [{ x: 1, y: 2 }, { x: 2, y: 3 }, { x: 1, y: 5 }, { x: 2, y: 6 }, { x: 1, y: 7 }],
       units: [{ mon: 88, level: 13, x: 8, y: 2, ai: 'aggro' }, { mon: 88, level: 13, x: 9, y: 7, ai: 'aggro' }, { mon: 109, level: 14, x: 11, y: 3, ai: 'guard' }, { mon: 109, level: 14, x: 12, y: 6, ai: 'aggro' }, { mon: 23, level: 13, x: 6, y: 1 }, { mon: 24, level: 15, x: 14, y: 2, ai: 'guard' }, { mon: 96, level: 14, x: 15, y: 7, ai: 'guard' }, { mon: 52, level: 14, x: 13, y: 8, ai: 'guard' }, { mon: 53, level: 18, x: 15, y: 4, ai: 'boss', boss: true, nick: 'Giovanni\'s Persian' }, { mon: 89, level: 16, x: 16, y: 5, ai: 'guard' },
         { mon: 132, level: 14, team: 2, x: 6, y: 5, ai: 'aggro', nick: 'Ditto' }, { mon: 50, level: 13, team: 2, x: 9, y: 3, ai: 'aggro' }],
-      items: [{ x: 4, y: 8, item: 'fullheal' }, { x: 16, y: 1, item: 'candy' }, { x: 12, y: 1, item: 'ultraball' }],
+      items: [{ x: 4, y: 8, item: 'pokeball' }, { x: 16, y: 1, item: 'pokeball' }, { x: 12, y: 1, item: 'pokeball' }],
       reinforce: [{ turn: 4, units: [{ mon: 41, level: 13, x: 1, y: 1 }, { mon: 41, level: 13, x: 1, y: 8 }, { mon: 42, level: 15, x: 16, y: 8 }] }],
     },
   },
@@ -163,7 +163,7 @@ const CHAPTERS = [
       { who: 'Engineer Watt', mon: 81, text: 'Careful with the Voltorbs, they look like Poké Balls. They are NOT Poké Balls.' },
     ],
     outro: [{ who: 'Engineer Watt', mon: 81, text: 'The lights are back! You... you fought Zapdos and lived. Legends say a fire bird nests in the Cinnabar volcano.' }],
-    rewards: { ultraball: 2, greatball: 2, superpotion: 2, candy: 1 },
+    rewards: { pokeball: 5 },
     map: {
       name: 'Power Plant', seed: 66, objective: { type: 'boss', bossName: 'Zapdos' },
       rows: [
@@ -181,7 +181,7 @@ const CHAPTERS = [
       deploy: [{ x: 1, y: 2 }, { x: 2, y: 3 }, { x: 1, y: 4 }, { x: 2, y: 5 }, { x: 1, y: 6 }, { x: 2, y: 7 }],
       units: [{ mon: 100, level: 17, x: 7, y: 2, ai: 'aggro' }, { mon: 100, level: 17, x: 8, y: 6, ai: 'guard' }, { mon: 100, level: 16, x: 6, y: 8, ai: 'aggro' }, { mon: 81, level: 17, x: 10, y: 1, ai: 'guard' }, { mon: 82, level: 19, x: 13, y: 4, ai: 'guard' }, { mon: 125, level: 19, x: 12, y: 2, ai: 'guard' }, { mon: 26, level: 19, x: 15, y: 6, ai: 'guard' }, { mon: 101, level: 19, x: 16, y: 2, ai: 'guard' }, { mon: 145, level: 23, x: 17, y: 4, ai: 'boss', boss: true, nick: 'Zapdos' },
         { mon: 100, level: 17, team: 2, x: 5, y: 5, ai: 'aggro' }, { mon: 81, level: 17, team: 2, x: 9, y: 4, ai: 'aggro' }],
-      items: [{ x: 18, y: 8, item: 'candy' }, { x: 4, y: 1, item: 'ultraball' }],
+      items: [{ x: 18, y: 8, item: 'pokeball' }, { x: 4, y: 1, item: 'pokeball' }],
     },
   },
   {
@@ -191,7 +191,7 @@ const CHAPTERS = [
       { who: 'Prof. Oak', mon: 143, text: 'Lava burns anything that is not Fire or flying. Hold the rubble, it gives cover. Water and Rock are your friends here.' },
     ],
     outro: [{ who: 'Blaine', mon: 126, text: 'Seven turns! Hah! You have fire in you after all. Go, the last riddle waits in Cerulean Cave.' }, { who: 'Moltres', mon: 146, text: '*screeches and flies away, dropping a feather*' }],
-    rewards: { ultraball: 2, superpotion: 3, fullheal: 2, candy: 2 },
+    rewards: { pokeball: 5 },
     map: {
       name: 'Cinnabar Volcano', seed: 77, objective: { type: 'survive', turns: 7 }, music: 'boss',
       rows: [
@@ -209,7 +209,7 @@ const CHAPTERS = [
       deploy: [{ x: 1, y: 3 }, { x: 2, y: 4 }, { x: 1, y: 5 }, { x: 2, y: 6 }, { x: 3, y: 5 }, { x: 1, y: 7 }],
       units: [{ mon: 58, level: 21, x: 9, y: 2, ai: 'aggro' }, { mon: 58, level: 21, x: 10, y: 7, ai: 'aggro' }, { mon: 77, level: 21, x: 12, y: 4, ai: 'guard' }, { mon: 77, level: 21, x: 8, y: 5, ai: 'aggro' }, { mon: 126, level: 23, x: 14, y: 2, ai: 'guard', nick: 'Blaine\'s Magmar' }, { mon: 78, level: 23, x: 15, y: 8, ai: 'guard' }, { mon: 59, level: 26, x: 16, y: 4, ai: 'guard', boss: true, nick: 'Blaine\'s Arcanine' }, { mon: 146, level: 26, x: 16, y: 1, ai: 'boss', boss: true, nick: 'Moltres' },
         { mon: 37, level: 22, team: 2, x: 6, y: 8, ai: 'aggro' }],
-      items: [{ x: 7, y: 1, item: 'superpotion' }, { x: 16, y: 6, item: 'candy' }],
+      items: [{ x: 7, y: 1, item: 'pokeball' }, { x: 16, y: 6, item: 'pokeball' }],
       reinforce: [{ turn: 3, units: [{ mon: 58, level: 22, x: 16, y: 2 }] }, { turn: 4, units: [{ mon: 77, level: 22, x: 16, y: 8 }] }, { turn: 5, units: [{ mon: 126, level: 24, x: 16, y: 5 }] }, { turn: 6, units: [{ mon: 78, level: 24, x: 16, y: 2 }, { mon: 58, level: 23, x: 16, y: 8 }] }],
     },
   },
@@ -221,7 +221,7 @@ const CHAPTERS = [
       { who: 'Prof. Oak', mon: 143, text: 'Mewtwo resists Psychic and shreds Fighting and Poison. Bug, Ghost and Dark bite it. Wear it down and strike together!' },
     ],
     outro: [{ who: 'Mewtwo', mon: 150, text: '...So this is what a team is. Go. I have thinking to do.' }, { who: 'Prof. Oak', mon: 143, text: 'You did it. The region is safe, the Rockets are scattered, and you owe me a Pokédex. Congratulations, Tactician!' }],
-    rewards: { ultraball: 3, superpotion: 3, candy: 3 },
+    rewards: { pokeball: 6 },
     map: {
       name: 'Cerulean Cave', seed: 88, objective: { type: 'boss', bossName: 'Mewtwo' }, music: 'boss',
       rows: [
@@ -240,7 +240,7 @@ const CHAPTERS = [
       deploy: [{ x: 1, y: 2 }, { x: 2, y: 3 }, { x: 1, y: 4 }, { x: 2, y: 6 }, { x: 1, y: 7 }, { x: 2, y: 8 }, { x: 3, y: 9 }],
       units: [{ mon: 64, level: 27, x: 8, y: 2, ai: 'aggro' }, { mon: 75, level: 27, x: 7, y: 5, ai: 'guard' }, { mon: 76, level: 28, x: 12, y: 3, ai: 'guard' }, { mon: 93, level: 27, x: 11, y: 6, ai: 'guard' }, { mon: 94, level: 29, x: 14, y: 8, ai: 'guard' }, { mon: 148, level: 28, x: 13, y: 1, ai: 'guard' }, { mon: 68, level: 29, x: 15, y: 5, ai: 'guard' }, { mon: 65, level: 30, x: 17, y: 2, ai: 'guard' }, { mon: 150, level: 34, x: 17, y: 5, ai: 'boss', boss: true, nick: 'Mewtwo' },
         { mon: 147, level: 26, team: 2, x: 5, y: 8, ai: 'aggro' }, { mon: 42, level: 27, team: 2, x: 6, y: 1, ai: 'aggro' }],
-      items: [{ x: 18, y: 9, item: 'candy' }, { x: 9, y: 1, item: 'ultraball' }, { x: 4, y: 5, item: 'superpotion' }],
+      items: [{ x: 18, y: 9, item: 'pokeball' }, { x: 9, y: 1, item: 'pokeball' }, { x: 4, y: 5, item: 'pokeball' }],
       reinforce: [{ turn: 5, units: [{ mon: 42, level: 28, x: 18, y: 1 }, { mon: 42, level: 28, x: 18, y: 9 }] }],
     },
   },
@@ -261,7 +261,7 @@ function skirmishMap(seed, w = 16, h = 11, avgLevel = 12) {
   const n = 5 + Math.floor(r() * 3);
   for (let i = 0; i < n; i++) { const s = spot(Math.floor(w * .55)); if (!s) break; const d = pool[Math.floor(r() * pool.length)]; const lvl = Math.max(2, avgLevel + Math.floor(r() * 5) - 2); units.push({ mon: d.num, level: lvl, x: s.x, y: s.y, ai: r() < .6 ? 'aggro' : 'guard', boss: i === 0, nick: i === 0 ? 'Rival ' + d.name : null }); if (i === 0) units[0].level += 3; }
   for (let i = 0; i < 3; i++) { const s = spot(3); if (!s) break; const d = pool[Math.floor(r() * pool.length)]; units.push({ mon: d.num, level: Math.max(2, avgLevel - 2 + Math.floor(r() * 4)), x: s.x, y: s.y, team: 2, ai: 'aggro' }); }
-  const items = []; for (let i = 0; i < 2; i++) { const s = spot(3); if (s) items.push({ x: s.x, y: s.y, item: pick(['potion', 'pokeball', 'greatball', 'candy', 'superpotion']) }); }
+  const items = []; for (let i = 0; i < 2; i++) { const s = spot(3); if (s) items.push({ x: s.x, y: s.y, item: 'pokeball' }); }
   return { name: 'Skirmish #' + (seed % 1000), seed, objective: { type: 'boss', bossName: 'the Rival' }, rows, deploy, units, items, par: 10, music: pick(['player', 'calm']) };
 }
 
@@ -288,6 +288,5 @@ function versusMap(seed, w = 18, h = 11, opt = {}) {
   const pool = DEX_LIST.filter(d => d.num < 144 && d.num !== 132 && d.num !== 143);
   const spot = () => { for (let i = 0; i < 200; i++) { const x = 3 + Math.floor(r() * (half - 3)), y = Math.floor(r() * h); if ('.,t#TsM'.includes(rows[y][x]) && !taken.has(key(x, y)) && !taken.has(key(w - 1 - x, y))) { taken.add(key(x, y)); taken.add(key(w - 1 - x, y)); return { x, y }; } } return null; };
   if (opt.wild !== false) for (let i = 0; i < 2; i++) { const s = spot(); if (!s) break; const d = pool[Math.floor(r() * pool.length)]; const lvl = Math.max(2, (opt.level || 20) - 3); units.push({ mon: d.num, level: lvl, x: s.x, y: s.y, team: 2, ai: 'aggro' }); if (s.x !== w - 1 - s.x) units.push({ mon: d.num, level: lvl, x: w - 1 - s.x, y: s.y, team: 2, ai: 'aggro' }); }
-  for (let i = 0; i < 2; i++) { const s = spot(); if (!s) break; const it = ['potion', 'pokeball', 'superpotion', 'greatball'][Math.floor(r() * 4)]; items.push({ x: s.x, y: s.y, item: it }); if (s.x !== w - 1 - s.x) items.push({ x: w - 1 - s.x, y: s.y, item: it }); }
   return { name: 'Arena #' + (seed % 1000), seed, objective: { type: 'versus', mode: opt.mode || 'elim' }, rows, deploy, deploy2, units, items, par: 0, music: 'player', turnLimit: opt.turns == null ? 30 : opt.turns, flags, hill, fog: !!opt.fog };
 }

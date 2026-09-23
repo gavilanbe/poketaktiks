@@ -22,7 +22,7 @@ test('human and AI freeze/paralysis use the same one-time phase action check and
     u.status = 'frz'; G('rnd=()=>.9'); g.upkeep(team); assert.equal(u.acted, true); assert.equal(g.canTakeAction(u), false); assert.equal(g.selectUnit(u), false); assert.equal(g.aiDecide(u), null);
     u.status = 'par'; u.statusTurns = 0; G('var rolls=0; rnd=()=>{rolls++;return .1;}'); g.upkeep(team); assert(u.acted); assert.equal(G('rolls'), 1);
     g.selectUnit(u); g.selectUnit(u); assert.equal(G('rolls'), 1, 'selection never rerolls');
-    g.useItem(u, 'fullheal'); assert(u.acted, 'a cure never refunds an action already spent');
+    const nurse = place(T, 35, 12, team, u.x, u.y + 1); u.hp = 1; g.useSkill(nurse, nurse.skill, u); assert(!u.status && u.acted, 'a cure never refunds an action already spent');
     g.upkeep(team); assert(!u.acted && g.canTakeAction(u));
   }
   const T = loadGame(), { g, G, C } = T; g.startBattle(C.CHAPTERS[0].map, [g.partyUnit(1, 5)], {}, { chapter: 0, defer: true });

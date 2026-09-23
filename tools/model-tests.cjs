@@ -408,7 +408,7 @@ test('unit look: acted units grey whatever the mode, unacted never grey during a
 test('HUD layout: buttons, cards, menus, forecast, sheet and help stay inside the view, apart, and touch-sized on phones', T => {
   const { g, G, C } = T;
   for (const [w, h] of SIZES) {
-    G('VIEW.w = ' + w + '; VIEW.h = ' + h); g.startBattle(C.CHAPTERS[0].map, [g.partyUnit(4, 5), g.partyUnit(25, 5)], { pokeball: 1, potion: 1 }, { chapter: 0, seed: 7, defer: true }); const BT = G('BT'), HUD = G('HUD'); const tag = w + 'x' + h + ': '; const narrow = w < 300;
+    G('VIEW.w = ' + w + '; VIEW.h = ' + h); g.startBattle(C.CHAPTERS[0].map, [g.partyUnit(4, 5), g.partyUnit(25, 5)], { pokeball: 1 }, { chapter: 0, seed: 7, defer: true }); const BT = G('BT'), HUD = G('HUD'); const tag = w + 'x' + h + ': '; const narrow = w < 300;
     const me = T.B().units.find(u => u.team === 0), foe = T.B().units.find(u => u.team !== 0); BT.cx = me.x; BT.cy = me.y;
     const checkHits = mode => { g.battleDraw(); for (const r of HUD.hits) { assert(inside(r, w, h), tag + mode + ': button ' + r.label + ' inside'); if (narrow) assert(r.h >= 18, tag + mode + ': button ' + r.label + ' is ' + r.h + ' tall'); }
       for (let i = 0; i < HUD.hits.length; i++) for (let j = i + 1; j < HUD.hits.length; j++) assert(!overlaps(HUD.hits[i], HUD.hits[j]), tag + mode + ': buttons ' + HUD.hits[i].label + ' / ' + HUD.hits[j].label + ' overlap');
@@ -536,9 +536,9 @@ const TEXT_CASES = [
   ['title', `goScene('title'); SC.t = 5;`, 'titleDraw()'],
   ['versus', `startVersusSetup(5); SC.t = 5;`, 'versusDraw()'],
   ['starter', `goScene('title'); titleDraw(); startNewGame(); SC.t = 5;`, 'starterDraw()'],
-  ['prep', `SAVE = { chapter: 5, party: [4, 7, 1, 25, 133, 66, 74, 16].map(n => partyUnit(n, 20)), bag: { pokeball: 3, potion: 2 }, stars: {}, beaten: false }; prepChapter(5); SC.t = 5;`, 'prepDraw()'],
+  ['prep', `SAVE = { chapter: 5, party: [4, 7, 1, 25, 133, 66, 74, 16].map(n => partyUnit(n, 20)), bag: { pokeball: 3 }, stars: {}, beaten: false }; prepChapter(5); SC.t = 5;`, 'prepDraw()'],
   ['skirmish', `startSkirmishSetup(); SC.t = 5;`, 'skirmishDraw()'],
-  ['results', `goScene('results', { win: true, turns: 5, kills: 3, par: 8, rewards: { pokeball: 1, greatball: 1, potion: 1 }, caught: [{ num: 16, level: 5 }, { num: 19, level: 4 }], trained: ['Charmeleon trained from Lv14 to Lv17'], evolved: ['Charmander evolved into Charmeleon!'], next: () => {} }); SC.t = 5;`, 'resultsDraw()'],
+  ['results', `goScene('results', { win: true, turns: 5, kills: 3, par: 8, rewards: { pokeball: 3 }, caught: [{ num: 16, level: 5 }, { num: 19, level: 4 }], trained: ['Charmeleon trained from Lv14 to Lv17'], evolved: ['Charmander evolved into Charmeleon!'], next: () => {} }); SC.t = 5;`, 'resultsDraw()'],
   ['board', battleSetup, 'drawHUD()'],
   ['forecast', battleSetup + ` BT.sel = alive(0)[0]; BT.sel.x = 5; BT.sel.y = 2; BT.targets = [alive(1)[0]]; BT.tIdx = 0; BT.moveIdx = 0; BT.mode = 'target'; setTargetCursor();`, 'drawHUD()'],
   ['unitinfo', battleSetup + ` BT.info = B.units.find(u => u.boss) || B.units[0]; BT.mode = 'unitinfo';`, 'drawHUD()'],
@@ -555,9 +555,9 @@ test('narrow screens: every rendered string and every control stays inside the v
 test('phone keyboard and touch access: Versus draft, prep toggles and starter pick work through keys and their on-screen controls', T => {
   const { g, G } = T; G('VIEW.w = 180; VIEW.h = 390');
   g.startVersusSetup(5); const S = G('SC.data'); g.versusDraw(); const hits = G('SC.hits');
-  const plus = k => hits.find(h => h.label === k + '+'); assert(plus('SEED') && plus('LEVEL'), 'the seed and level [+] controls are on screen'); const lvl = S.level; plus('LEVEL').run(); assert.strictEqual(S.level, lvl + 5, 'the level [+] is usable'); const seed = S.seed; plus('SEED').run(); assert.strictEqual(S.seed, (seed + 1) % 1000, 'the arena [+] is usable');
+  const plus = k => hits.find(h => h.label === k + '+'); assert(plus('MAP') && plus('MODE') && plus('P2 CAPTAIN'), 'the map, mode and captain [+] controls are on screen'); const cap = S.cap1; plus('P2 CAPTAIN').run(); assert.notStrictEqual(S.cap1, cap, 'the captain [+] is usable'); const seed = S.seed; plus('MAP').run(); assert.strictEqual(S.seed, (seed + 1) % 1000, 'the map [+] is usable');
   for (const k of ['right', 'down', 'ok']) g.versusInput({ type: 'key', key: k }); assert.strictEqual(S.teams[0].length + S.teams[1].length, 1, 'keys draft a Pokémon'); assert.strictEqual(G('SC.i'), 1 + g.vsCols(), 'down moves one roster row (four columns on phones)');
-  g.versusDraw(); for (const l of ['BACK', 'RANDOM', 'CLEAR', 'BATTLE!']) assert(G('SC.hits').some(h => h.label === l), l + ' button present'); assert(G('SC.hits').some(h => h.label && h.label.startsWith('WILD')), 'WILD toggle present');
+  g.versusDraw(); for (const l of ['BACK', 'RANDOM', 'CLEAR', 'BATTLE!']) assert(G('SC.hits').some(h => h.label === l), l + ' button present'); assert(G('SC.hits').some(h => h.label && h.label.startsWith('FOG')), 'FOG toggle present');
   g.goScene('title'); g.titleDraw(); G('SAVE = { chapter: 0, party: [], bag: {}, stars: {}, beaten: false }'); g.goScene('starter'); g.starterDraw(); assert.strictEqual(G('SC.hits').length, 3, 'three starter cards'); g.starterInput({ type: 'key', key: 'right' }); assert.strictEqual(G('SC.i'), 1);
   G('SAVE.party = [partyUnit(4, 5), partyUnit(25, 5), partyUnit(7, 5), partyUnit(1, 5)]'); g.prepChapter(0); const P = G('SC.data'); g.prepDraw(); const n0 = P.deploy.length; g.prepInput({ type: 'key', key: 'down' }); g.prepInput({ type: 'key', key: 'ok' }); assert.notStrictEqual(P.deploy.length, n0, 'OK toggles the selected card'); g.prepDraw(); for (const l of ['BACK', 'AUTO PICK', 'START']) assert(G('SC.hits').some(h => h.label === l), l + ' button present on the phone layout');
 });
@@ -650,8 +650,8 @@ test('skills: legal targets, action cost, cooldown, brace and root expiry, clean
   g.upkeep(1); assert.strictEqual(rat.root, 1, 'held during its own phase'); assert.strictEqual(g.effMov(rat), 0); assert.strictEqual(g.rootAfterUpkeep(rat), 0); off.recharge = 1; bird.recharge = 1; assert(g.dangerZones(0).trainer.size > 20, 'next phase it moves again: the danger zone grows');
   const evu = g.upkeep(1); assert.strictEqual(rat.root, 0, 'free after one held phase'); assert(evu.some(e => e.type === 'unroot' && e.unit === rat)); assert(g.effMov(rat) > 0);
   const d2 = g.aiDecide(rat); assert(d2, 'the freed Rattata acts'); rat.root = 2; const d3 = g.aiDecide(rat); assert(!d3 || (d3.x === rat.x && d3.y === rat.y), 'a rooted unit acts from its tile: ' + JSON.stringify(d3 && [d3.x, d3.y]));
-  // cleanse: Full Heal and a Poké Center free a rooted unit; Mend does too; the rooted unit still counters
-  rat.root = 2; g.useItem(rat, 'fullheal'); assert.strictEqual(rat.root, 0, 'Full Heal frees'); rat.root = 2; ally.root = 2; const cl = place(T, 35, 20, 0, 3, 5); g.useSkill(cl, cl.skill, ally); assert.strictEqual(ally.root, 0, 'Mend frees an ally');
+  // cleanse: a Poké Center frees a rooted unit; Mend does too; the rooted unit still counters
+  rat.root = 2; ally.root = 2; const cl = place(T, 35, 20, 0, 3, 5); g.useSkill(cl, cl.skill, ally); assert.strictEqual(ally.root, 0, 'Mend frees an ally');
   arena(T, ['C....']); const rooted = place(T, 19, 20, 1, 0, 0); rooted.root = 2; assert.strictEqual(g.rootAfterUpkeep(rooted), 0, 'the center will free it'); g.upkeep(1); assert.strictEqual(rooted.root, 0);
   arena(T); fixedRoll(T, .5); const r2 = place(T, 19, 20, 1, 2, 2), p2 = place(T, 25, 20, 0, 3, 2); r2.root = 2; const fc2 = g.forecast(p2, r2, move(p2, 'Thunder Shock'), p2); assert(fc2.c, 'a rooted unit still counters');
   assert(bird.fly && off && MOVES);

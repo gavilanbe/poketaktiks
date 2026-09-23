@@ -92,7 +92,7 @@ test('practice target stays put, cannot faint even on a double, and capture is f
   assert.equal(g.captureChance(target, G('ITEMS.practiceball')), 1);
   for (const v of g.alive(1)) v.hp = 0; assert.equal(g.checkObjective(), null, 'catch required even after rout');
   u.x = target.x - 1; u.y = target.y; G('BT.mode="idle"'); g.selectUnit(u); const BT = G('BT'); BT.targets = [target]; BT.tIdx = 0; BT.ball = 'practiceball';
-  g.confirmCatch(); flush(T); assert(B.lesson.complete); assert.equal(B.captured.length, 1); assert.equal(json(B.bag), '{}'); assert.equal(g.checkObjective(), 'win');
+  g.confirmCatch(); flush(T); assert(B.lesson.complete); assert.equal(B.captured.length, 1); assert.equal(json(B.bag), '{"pokeball":0}', 'the practice ball is free: no Poké Ball spent'); assert.equal(g.checkObjective(), 'win');
   g.onBattleEnd('win'); if (G('SC.dialog')) g.finishDialog();
   assert(G('SAVE.journey.firstCatch')); assert(G('SAVE.party.some(p=>p.num===10)')); assert.equal(G('SAVE.captainPid'), 0);
 });
@@ -159,6 +159,17 @@ test('starter, lessons, preparation and power screens fit portrait and short lan
     const controls = G(['starter','journey','prep','territory'].includes(scene) ? 'SC.hits' : 'HUD.hits');
     for (const b of controls) assert(b.x >= 0 && b.y >= 0 && b.x+b.w <= w && b.y+b.h <= h, `${w}x${h} ${scene} control outside view`);
   }
+});
+test('versus: each trainer picks a captain style, the first pick leads, both powers are unlocked and charge from combat', () => {
+  const T = loadGame(), { g, G } = T;
+  g.launchVersus({ seed: 5, level: 20, wild: false, mode: 'elim', arena: 's', fog: false, turns: 30, cap0: 1, cap1: 4, teams: [[25, 5], [7, 133]], order: [0, 1, 1, 0], size: 2, cur: 0 });
+  const B = T.B(), s0 = g.powerState(0), s1 = g.powerState(1);
+  assert(s0 && s1, 'both trainers command a power'); assert.equal(s0.root, 1); assert.equal(s1.root, 4); assert(s0.unlocked && s0.superUnlocked && s1.superUnlocked);
+  assert.equal(g.powerCaptain(0).num, 25, 'player 1 first pick leads'); assert.equal(g.powerCaptain(1).num, 8, 'player 2 first pick leads (Squirtle has evolved at Lv20)');
+  assert.equal(B.units.filter(u => u.leader).length, 2, 'one crown per side'); assert.equal(json(B.bag), '{"pokeball":0}', 'no catching gear in Versus'); assert(!B.units.some(u => u.team === 2), 'no wild Pokémon');
+  G('rnd = () => .5'); const a = g.alive(0)[0], d = g.alive(1)[0]; a.x = 3; a.y = 3; d.x = 4; d.y = 3; B.phase = 0; g.resolveCombat(a, d, a.moves[0], a);
+  assert(s0.charge > 0 && s1.charge > 0, 'combat charges both bars: ' + s0.charge + '/' + s1.charge);
+  s0.charge = 50; a.hp = 1; assert.equal(g.powerBlock(0, false), null); const ev = g.activatePower(0, false); assert(ev && ev.some(e => e.type === 'heal'), 'Life Link heals in Versus');
 });
 let failed = 0;
 for (const [name, fn] of tests) { try { fn(); console.log('  ok   ' + name); } catch (e) { failed++; console.error('  FAIL ' + name + '\n' + e.stack); } }

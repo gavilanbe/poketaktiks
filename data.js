@@ -71,15 +71,13 @@ function movesFor(types, level, signature) {
 const STATUS = { psn: { name: 'PSN', col: '#b050d0', text: 'poisoned' }, brn: { name: 'BRN', col: '#f08030', text: 'burned' }, par: { name: 'PAR', col: '#f8d030', text: 'paralyzed' }, frz: { name: 'FRZ', col: '#98d8f8', text: 'frozen' }, slp: { name: 'SLP', col: '#a0a0c0', text: 'asleep' } };
 
 // ---------------------------------------------------------------- items
+// One kind of ball, counted. There is no bag: healing comes from Poké Centers, Mend and the Grass captain, levels from
+// battles and the training between chapters. (journey.js adds Oak's free practice ball for the first lesson.)
 const ITEMS = {
   pokeball: { name: 'Poké Ball', desc: 'Catch a weakened wild Pokémon.', rate: 1, kind: 'ball', col: '#f04848' },
-  greatball: { name: 'Great Ball', desc: 'A better ball. ×1.5 catch rate.', rate: 1.5, kind: 'ball', col: '#4888f0' },
-  ultraball: { name: 'Ultra Ball', desc: 'The best ball. ×2 catch rate.', rate: 2, kind: 'ball', col: '#f8d030' },
-  potion: { name: 'Potion', desc: 'Restores 50% HP.', heal: .5, kind: 'heal', col: '#c060e0' },
-  superpotion: { name: 'Super Potion', desc: 'Restores all HP.', heal: 1, kind: 'heal', col: '#f08030' },
-  fullheal: { name: 'Full Heal', desc: 'Cures any status, frees a rooted unit.', cure: true, kind: 'heal', col: '#48d0a0' },
-  candy: { name: 'Rare Candy', desc: 'Raises a Pokémon one level.', kind: 'candy', col: '#f8a0d0' },
 };
+// Saves written before the redesign carry other items: every kind of ball counts as a Poké Ball, the rest is dropped.
+function normalizeBag(bag) { let n = 0; for (const k in bag || {}) if (/ball$/.test(k) && k !== 'practiceball') n += Math.max(0, bag[k] | 0); return { pokeball: n }; }
 
 // ---------------------------------------------------------------- terrain
 // Map characters → terrain. cost: {walk, fly, swim, climb, forester, desert}; def: % damage reduction; eva: evasion bonus.

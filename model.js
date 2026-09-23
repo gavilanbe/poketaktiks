@@ -10,7 +10,7 @@ function parseMap(def) {
   const rows = def.rows.map(r => r.replace(/\s+$/, '')); const h = rows.length, w = Math.max(...rows.map(r => r.length));
   const tiles = []; for (let y = 0; y < h; y++) { tiles.push([]); for (let x = 0; x < w; x++) { const ch = rows[y][x] || '.'; tiles[y].push(TERRAIN[ch] || TERRAIN['.']); } }
   const variants = []; const vr = mulberry32((def.seed || 1) * 7919); for (let y = 0; y < h; y++) { variants.push([]); for (let x = 0; x < w; x++) variants[y].push(Math.floor(vr() * VARIANTS)); }
-  return { w, h, tiles, variants, name: def.name || 'Map', objective: def.objective || { type: 'rout' }, deploy: def.deploy || [], deploy2: def.deploy2 || [], items: (def.items || []).map(i => Object.assign({}, i)), seize: def.seize || null, turnLimit: def.turnLimit || 0, reinforce: def.reinforce || [], music: def.music || 'player', flags: def.flags || null, hill: def.hill || null, fog: !!def.fog };
+  return { w, h, tiles, variants, name: def.name || 'Map', objective: def.objective || { type: 'rout' }, deploy: def.deploy || [], deploy2: def.deploy2 || [], items: (def.items || []).map(i => ({ x: i.x, y: i.y, item: 'pokeball' })), seize: def.seize || null, turnLimit: def.turnLimit || 0, reinforce: def.reinforce || [], music: def.music || 'player', flags: def.flags || null, hill: def.hill || null, fog: !!def.fog };
 }
 function inMap(x, y) { return x >= 0 && y >= 0 && x < B.map.w && y < B.map.h; }
 function terrAt(x, y) { return inMap(x, y) ? B.map.tiles[y][x] : TERRAIN['^']; }
@@ -196,12 +196,6 @@ function tryCapture(target, ball) {
   const p = captureChance(target, ball);
   const ok = p === 1 || (p > 0 && rnd() < p); const shakes = ok ? 3 : Math.floor(rnd() * 3);
   return { ok, shakes, p };
-}
-function useItem(u, item) {
-  const it = ITEMS[item]; const ev = [];
-  if (it.kind === 'heal') { if (it.heal) { const h = Math.max(1, Math.floor(u.maxHp * it.heal)); const before = u.hp; u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: u.hp - before }); } if (it.cure && (u.status || u.root)) { u.status = null; u.root = 0; ev.push({ type: 'cure', unit: u }); } }
-  if (it.kind === 'candy') { const gains = levelUp(u); ev.push({ type: 'levelup', unit: u, gains, level: u.level }); const evo = evolutionFor(u); if (evo) { const from = u.dex; ev.push({ type: 'evolve', unit: u, from, to: evo }); evolve(u, evo); } }
-  return ev;
 }
 // ---------------------------------------------------------------- role skills
 // Legal targets of an active skill for `u` standing at `from` (its own tile by default). Pure.

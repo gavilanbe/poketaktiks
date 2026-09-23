@@ -13,7 +13,7 @@ function launch(T, idx, seed) {
   const { g, C } = T; const ch = C.CHAPTERS[idx]; const L = ch.level;
   const party = [g.partyUnit(4, L), g.partyUnit(7, L), g.partyUnit(1, L), g.partyUnit(25, L), g.partyUnit(133, L - 1), g.partyUnit(66, L - 1), g.partyUnit(74, L - 1), g.partyUnit(16, L - 2)];
   const deployed = party.slice(0, ch.slots).map((p, i) => Object.assign({}, p, { pid: i }));
-  g.startBattle(ch.map, deployed, { pokeball: 3, greatball: 2, potion: 2, superpotion: 1, fullheal: 1, candy: 1 }, { chapter: idx, seed, defer: true });
+  g.startBattle(ch.map, deployed, { pokeball: 5 }, { chapter: idx, seed, defer: true });
   T.G('B.units.forEach(u => { u.provoked = u.provoked || false; })');
 }
 let wins = 0, total = 0; const out = [];

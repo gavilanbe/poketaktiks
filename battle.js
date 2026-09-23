@@ -6,7 +6,7 @@
 'use strict';
 const CAM = { x: 0, y: 0, tx: 0, ty: 0 };
 const BT = {  // battle scene UI state
-  mode: 'idle',      // idle | move | menu | target | forecast | item | itemTarget | anim | enemy | banner | end | help | unitinfo
+  mode: 'idle',      // idle | move | menu | target | catchTarget | skillTarget | anim | banner | end | help | unitinfo | endmenu | power
   cx: 0, cy: 0,      // cursor tile
   sel: null, reach: null, atk: null, path: [], menu: null, targets: [], tIdx: 0, item: null, hover: null,
   time: 0, anim: null, queue: [], danger: false, showDanger: false, msg: null, banner: null, endTimer: 0, fast: false, skipAnim: false,
@@ -68,7 +68,7 @@ function toggleZoom() { return setZoom(BT.zoom === 1 ? .75 : BT.zoom === .75 ? .
 function startBattle(mapDef, party, bag, opts = {}) {
   seedRng(opts.seed || (Date.now() & 0xffff));
   const map = parseMap(mapDef); UID = 1;
-  B = { map, units: [], turn: 1, phase: 0, bag: bag, result: null, seized: false, captured: [], kills: 0, chapter: opts.chapter != null ? opts.chapter : null, log: [], seed: opts.seed || 1, skirmish: !!opts.skirmish, turnsUsed: 0, versus: !!opts.versus, humans: opts.humans || [0], bags: opts.versus ? [bag, Object.assign({}, opts.bag2 || bag)] : null, setup: opts.setup || null };
+  B = { map, units: [], turn: 1, phase: 0, bag: normalizeBag(bag), result: null, seized: false, captured: [], kills: 0, chapter: opts.chapter != null ? opts.chapter : null, log: [], seed: opts.seed || 1, skirmish: !!opts.skirmish, turnsUsed: 0, versus: !!opts.versus, humans: opts.humans || [0], setup: opts.setup || null };
   // versus rules: fog of war, capture-the-flag bases, the hill
   B.fog = !!map.fog; B.vis = null; B.captureBy = null; B.endReason = null; B.flags = map.flags ? map.flags.map(f => ({ team: f.team, home: { x: f.x, y: f.y }, x: f.x, y: f.y, carrier: null })) : null; B.hill = map.hill ? { x: map.hill.x, y: map.hill.y, r: map.hill.r || 1, score: [0, 0], need: 3 } : null;
   // enemies / wild / allies from the map definition
@@ -99,7 +99,6 @@ function beginPhase(team, first, resumed = false) {
   if (B.territory && !resumed) { territoryUpkeep(team); if (checkObjective()) { endBattle(); return; } if (!isHuman(team)) for (const u of territoryAiDeploy(team)) ev.push({ type: 'spawn', unit: u }); }
   if (team === 0 && !first && !B.territory) { B.turn++; if (checkObjective()) { endBattle(); return; } }
   if (team === 0 && !B.versus && !resumed) { saveSuspend(); }
-  if (B.versus && B.bags && isHuman(team)) B.bag = B.bags[team];
   const teamsPresent = [0, 1, 2, 3].filter(t => alive(t).length);
   if (!teamsPresent.includes(team) && team !== 0 && !(B.territory && team === 1)) { nextPhase(); return; }
   // reinforcements at the start of the enemy phase
@@ -264,23 +263,22 @@ function confirmMove() {
   BT.queue = [{ kind: 'move', unit: u, path: fp.path }];
   playQueue(() => { u.moved = true; pickupAt(u); if (fp.ambush) { BT.undo = null; ambushed(u, fp.ambush); } else openActionMenu(u); });
 }
-// Items lying on the board are picked up by the player unit that ends its move on them.
+// Poké Balls lying on the board are picked up by the human unit that ends its move on them.
 function pickupAt(u) {
-  if (!isHuman(u.team)) return; const it = B.map.items.find(i => !i.taken && i.x === u.x && i.y === u.y); if (!it || !ITEMS[it.item]) return;
-  it.taken = true; B.bag[it.item] = (B.bag[it.item] || 0) + 1; Audio.sfx('item');
-  floatText(u.x * TILE + TILE / 2, u.y * TILE - 6, 'Got ' + ITEMS[it.item].name + '!', UI.gold, { outline: '#402000', life: 1.4 });
-  spawnParts(u.x * TILE + TILE / 2, u.y * TILE + 10, 14, ['#ffd24a', '#ffffff', ITEMS[it.item].col], { speed: 50, life: .6, grav: -20 });
+  if (!isHuman(u.team)) return; const it = B.map.items.find(i => !i.taken && i.x === u.x && i.y === u.y); if (!it) return;
+  it.taken = true; B.bag.pokeball = (B.bag.pokeball || 0) + 1; Audio.sfx('item');
+  floatText(u.x * TILE + TILE / 2, u.y * TILE - 6, '+1 Poké Ball!', UI.gold, { outline: '#402000', life: 1.4 });
+  spawnParts(u.x * TILE + TILE / 2, u.y * TILE + 10, 14, ['#ffd24a', '#ffffff', ITEMS.pokeball.col], { speed: 50, life: .6, grav: -20 });
 }
 function openActionMenu(u) {
   const items = []; const tg = seenTargets(u); if (tg.length) items.push({ id: 'attack', label: 'Attack', icon: 'sword', sub: tg.length + (tg.length > 1 ? ' targets' : ' target') });
-  const wildAdj = B.units.filter(v => v.hp > 0 && v.team === 2 && dist(v, u) === 1); const hasBall = wildAdj.some(isPracticeTarget) || Object.keys(B.bag).some(k => ITEMS[k].kind === 'ball' && B.bag[k] > 0);
-  if (wildAdj.length && hasBall) items.push({ id: 'catch', label: 'Catch', icon: 'ball', sub: 'Throw a ball' });
+  const wildAdj = B.units.filter(v => v.hp > 0 && v.team === 2 && dist(v, u) === 1); const hasBall = wildAdj.some(isPracticeTarget) || (B.bag.pokeball || 0) > 0;
+  if (wildAdj.length && hasBall) items.push({ id: 'catch', label: 'Catch', icon: 'ball', sub: wildAdj.some(isPracticeTarget) ? 'Oak\'s practice ball' : 'Throw a Poké Ball · ' + B.bag.pokeball + ' left' });
   if (B.map.objective.type === 'seize' && B.map.seize && u.x === B.map.seize.x && u.y === B.map.seize.y && !campaignProperty(u.x, u.y)) items.unshift({ id: 'seize', label: 'Seize', icon: 'flag', sub: 'Win the map!' });
   if (B.territory && !territoryCaptureBlock(u)) { const p = territoryProperty(u.x, u.y); items.unshift({ id: 'property', label: 'Capture', icon: 'flag', sub: p.name + ': ' + (p.captor === u.id ? p.progress : 0) + '/20 + ' + territoryCaptureGain(u) + ' · leaving resets progress' }); }
   if (!B.territory && !campaignCaptureBlock(u)) { const p = campaignProperty(u.x, u.y); items.unshift({ id: 'outpost', label: 'Capture', icon: 'flag', sub: p.name + ': ' + (p.captor === u.id ? p.progress : 0) + '/20 + ' + territoryCaptureGain(u) }); }
   // the role skill: always listed so the player learns it exists; greyed with the reason when it cannot be used now
   if (u.skill && !u.skill.passive) { const why = skillBlock(u); const n = why ? 0 : skillTargetsAt(u).length; items.push({ id: 'skill', label: u.skill.name, icon: 'skill', off: !!why, sub: why ? u.skill.menu + ' (' + why + ')' : u.skill.menu + (u.skill.target === 'self' ? '' : ' · ' + n + (n > 1 ? ' targets' : ' target')) + (u.skill.cd ? ' · ' + cooldownText(u.skill) : '') }); }
-  if (Object.keys(B.bag).some(k => ITEMS[k].kind !== 'ball' && B.bag[k] > 0)) items.push({ id: 'item', label: 'Bag', icon: 'bag', sub: 'Use an item' });
   items.push({ id: 'wait', label: 'Wait', icon: 'wait', sub: 'End this unit\'s turn' });
   BT.menu = { items, i: 0 }; BT.mode = 'menu'; BT.cx = u.x; BT.cy = u.y;
 }
@@ -293,7 +291,6 @@ function menuChoose(id) {
   else if (id === 'attack') { BT.targets = seenTargets(u); BT.tIdx = 0; BT.moveIdx = 0; BT.mode = 'target'; setTargetCursor(); }
   else if (id === 'catch') { BT.targets = B.units.filter(v => v.hp > 0 && v.team === 2 && dist(v, u) === 1); BT.tIdx = 0; BT.mode = 'catchTarget'; setTargetCursor(); }
   else if (id === 'seize') { B.seized = true; Audio.sfx('win'); floatText(u.x * TILE + TILE / 2, u.y * TILE - 8, 'SEIZED!', UI.gold, { big: true, life: 1.5 }); spawnParts(u.x * TILE + TILE / 2, u.y * TILE + 8, 30, ['#ffd24a', '#ffffff', '#3d7dff'], { speed: 100, life: 1, grav: 40 }); BT.queue = [{ kind: 'wait', t2: 1.2 }]; playQueue(() => { u.acted = true; checkObjective(); endBattle(); }); }
-  else if (id === 'item') { BT.itemList = Object.keys(B.bag).filter(k => ITEMS[k].kind !== 'ball' && B.bag[k] > 0); BT.menu = { items: BT.itemList.map(k => ({ id: k, label: ITEMS[k].name + ' ×' + B.bag[k], sub: ITEMS[k].desc })), i: 0, back: 'menu' }; BT.mode = 'item'; }
 }
 function setTargetCursor() { const t = BT.targets[BT.tIdx]; if (t) { BT.cx = t.x; BT.cy = t.y; keepCursorVisible(); } }
 function currentForecast() { const u = BT.sel, t = BT.targets[BT.tIdx]; if (!t) return null; const d = dist(u, t); const ms = usableMoves(u, d); if (!ms.length) return null; BT.moveIdx = BT.moveIdx % ms.length; const m = ms[BT.moveIdx]; return { fc: forecast(u, t, m, u), move: m, moves: ms, target: t }; }
@@ -351,7 +348,7 @@ function noteKo(e) { if (e.noted) return; e.noted = true; if (e.unit.team !== 0)
 function confirmCatch() {
   const u = BT.sel, t = BT.targets[BT.tIdx]; const ball = BT.ball; if (!t || !ball || !canTakeAction(u) || t.hp <= 0 || t.team !== 2 || dist(u, t) !== 1 || (ball === 'practiceball' && !isPracticeTarget(t))) return;
   if (isPracticeTarget(t) && !practiceReady(t)) { Audio.sfx('error'); return; }
-  if (ball !== 'practiceball') { if (!B.bag[ball]) return; B.bag[ball]--; if (B.bag[ball] <= 0) delete B.bag[ball]; }
+  if (ball !== 'practiceball') { if (!(B.bag.pokeball > 0)) return; B.bag.pokeball--; }
   const r = tryCapture(t, ITEMS[ball]);
   BT.queue = [{ kind: 'event', ev: { type: 'capture', unit: t, ok: r.ok, shakes: r.shakes, from: { x: u.x, y: u.y }, ball } }];
   if (r.ok) BT.queue.push({ kind: 'fn', fn: () => {
@@ -375,9 +372,7 @@ function cancel() {
   if (BT.mode === 'move' && BT.dart) { const u = BT.sel; BT.cx = u.x; BT.cy = u.y; Audio.sfx('cancel'); finishUnit(u); } // staying put ends the darting unit's turn
   else if (BT.mode === 'move') { BT.sel.fx.sx = BT.sel.fx.sy = 1; BT.cx = BT.sel.x; BT.cy = BT.sel.y; BT.sel = null; BT.reach = null; BT.atk = null; BT.mode = 'idle'; Audio.sfx('cancel'); }
   else if (BT.mode === 'menu') { const u = BT.sel; if (BT.undo && BT.undo.unit === u) { u.x = BT.undo.x; u.y = BT.undo.y; u.moved = false; BT.undo = null; } BT.menu = null; selectUnit(u); BT.cx = u.x; BT.cy = u.y; Audio.sfx('cancel'); }
-  else if (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget' || BT.mode === 'item') { BT.mode = 'menu'; BT.cx = BT.sel.x; BT.cy = BT.sel.y; openActionMenu(BT.sel); Audio.sfx('cancel'); }
-  else if (BT.mode === 'ballPick') { BT.mode = 'catchTarget'; Audio.sfx('cancel'); }
-  else if (BT.mode === 'itemTarget') { BT.mode = 'item'; Audio.sfx('cancel'); }
+  else if (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget') { BT.mode = 'menu'; BT.cx = BT.sel.x; BT.cy = BT.sel.y; openActionMenu(BT.sel); Audio.sfx('cancel'); }
   else if (BT.mode === 'help' || BT.mode === 'unitinfo' || BT.mode === 'endmenu') { BT.mode = 'idle'; Audio.sfx('cancel'); }
   else if (BT.mode === 'idle') { openEndMenu(); Audio.sfx('menu'); }
 }
@@ -444,10 +439,9 @@ function menuNav(dir) { const m = BT.menu; if (!m) return; m.i = (m.i + dir + m.
 function keyInput(k) {
   const m = BT.mode;
   if (k === 'power' && m === 'idle') { openPowerMenu(); return; }
-  if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { if (k === 'up') menuNav(-1); else if (k === 'down') menuNav(1); else if (k === 'ok') activateMenu(); else if (k === 'back') cancel(); return; }
+  if (m === 'menu' || m === 'endmenu') { if (k === 'up') menuNav(-1); else if (k === 'down') menuNav(1); else if (k === 'ok') activateMenu(); else if (k === 'back') cancel(); return; }
   if (m === 'target' && k === 'detail') { BT.forecastDetail = !BT.forecastDetail; Audio.sfx('menu'); return; }
   if (m === 'target' || m === 'catchTarget' || m === 'skillTarget') { if (k === 'left' || k === 'up' || k === 'prev') { BT.tIdx = (BT.tIdx - 1 + BT.targets.length) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'right' || k === 'down' || k === 'next') { BT.tIdx = (BT.tIdx + 1) % BT.targets.length; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } else if (k === 'info') { BT.moveIdx++; Audio.sfx('menu'); } else if (k === 'ok') { if (m === 'target') confirmAttack(); else if (m === 'skillTarget') confirmSkill(); else pickBall(); } else if (k === 'back') cancel(); return; }
-  if (m === 'itemTarget') { if (k === 'ok') useItemOn(BT.sel); else if (k === 'back') cancel(); return; }
   if (k === 'help') { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; return; }
   const dx = k === 'left' ? -1 : k === 'right' ? 1 : 0, dy = k === 'up' ? -1 : k === 'down' ? 1 : 0;
   if (dx || dy) { const nx = clamp(BT.cx + dx, 0, B.map.w - 1), ny = clamp(BT.cy + dy, 0, B.map.h - 1); if (nx !== BT.cx || ny !== BT.cy) { BT.cx = nx; BT.cy = ny; keepCursorVisible(); Audio.sfx('cursor'); if (m === 'move') extendPath(nx, ny); } return; }
@@ -461,17 +455,15 @@ function activateMenu() {
   if (territoryMenuAction(it)) return;
   if (it.off) { Audio.sfx('error'); return; }
   if (BT.mode === 'menu') menuChoose(it.id);
-  else if (BT.mode === 'item') { BT.item = it.id; BT.mode = 'itemTarget'; Audio.sfx('ok'); }
-  else if (BT.mode === 'ballPick') { BT.ball = it.id; confirmCatch(); }
   else if (BT.mode === 'endmenu') { Audio.sfx('ok'); if (it.id === 'endturn') endTurn(); else if (it.id === 'power') { BT.mode = 'idle'; openPowerMenu(); } else if (it.id === 'danger') { BT.showDanger = !BT.showDanger; BT.mode = 'idle'; } else if (it.id === 'scene') { cyclePref('battle'); openEndMenu(m.i); } else if (it.id === 'help') { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; } else if (it.id === 'mute') { Audio.toggle(); BT.mode = 'idle'; } else if (it.id === 'retreat') { B.result = B.versus ? (HT() === 0 ? 'p2' : 'p1') : 'retreat'; endBattle(); } else BT.mode = 'idle'; }
 }
+// Throwing: the practice ball on Oak's Caterpie (only once it is weak enough), a counted Poké Ball on anything else.
 function pickBall() {
-  const t = BT.targets[BT.tIdx];
-  const balls = isPracticeTarget(t) ? ['practiceball'] : Object.keys(B.bag).filter(k => ITEMS[k].kind === 'ball' && B.bag[k] > 0);
-  if (!balls.length) { Audio.sfx('error'); return; }
-  BT.menu = { items: balls.map(k => ({ id: k, label: ITEMS[k].name + (k === 'practiceball' ? '' : ' x' + B.bag[k]), off: isPracticeTarget(t) && !practiceReady(t), sub: isPracticeTarget(t) ? practiceReady(t) ? 'Guaranteed · free · joins after victory' : 'Weaken Caterpie to half HP first' : Math.round(captureChance(t, ITEMS[k]) * 100) + '% chance' })), i: 0 }; BT.mode = 'ballPick'; Audio.sfx('ok');
+  const t = BT.targets[BT.tIdx]; if (!t) return;
+  if (isPracticeTarget(t)) { if (!practiceReady(t)) { Audio.sfx('error'); floatText(t.x * TILE + TILE / 2, t.y * TILE - 6, 'Weaken it first!', UI.gold, { outline: '#000' }); return; } BT.ball = 'practiceball'; }
+  else { if (!(B.bag.pokeball > 0)) { Audio.sfx('error'); return; } BT.ball = 'pokeball'; }
+  Audio.sfx('ok'); confirmCatch();
 }
-function useItemOn(u) { const it = BT.item; B.bag[it]--; if (B.bag[it] <= 0) delete B.bag[it]; Audio.sfx('item'); const ev = useItem(u, it); BT.queue = ev.map(e => ({ kind: 'event', ev: e })); playQueue(() => finishUnit(u)); }
 function tileAction(x, y) {
   const m = BT.mode; const u = seenUnitAt(x, y);
   if (m === 'idle') {
@@ -502,7 +494,7 @@ function pointerInput(ev) {
     if (BT.dragStart && INPUT.down) { const dx = ev.x - BT.dragStart.x, dy = ev.y - BT.dragStart.y; if (BT.dragged || Math.abs(dx) + Math.abs(dy) > 6) { BT.dragged = true; CAM.tx = BT.dragStart.cx - dx / BT.zoom; CAM.ty = BT.dragStart.cy - dy / BT.zoom; clampCam(); CAM.x = CAM.tx; CAM.y = CAM.ty; } return; }
     if (ev.touch || hoverLocked(ev)) return;
     const { x: tx, y: ty } = screenToTile(ev.x, ev.y);
-    if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { const h = menuHit(ev.x, ev.y); if (h >= 0 && h !== BT.menu.i) { BT.menu.i = h; Audio.sfx('menu'); } return; }
+    if (m === 'menu' || m === 'endmenu') { const h = menuHit(ev.x, ev.y); if (h >= 0 && h !== BT.menu.i) { BT.menu.i = h; Audio.sfx('menu'); } return; }
     if (m === 'target' || m === 'catchTarget' || m === 'skillTarget') { const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0 && ti !== BT.tIdx) { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } return; }
     if (hudCovers(ev.x, ev.y)) return; // pointer over a HUD panel: the board underneath is not being pointed at
     if (inMap(tx, ty) && (tx !== BT.cx || ty !== BT.cy) && (m === 'idle' || m === 'move')) { BT.cx = tx; BT.cy = ty; if (m === 'move') extendPath(tx, ty); }
@@ -512,9 +504,8 @@ function pointerInput(ev) {
     if (BT.dragged) { BT.dragged = false; BT.dragStart = null; return; } BT.dragStart = null;
     const { x: tx, y: ty } = screenToTile(ev.x, ev.y);
     if (hudHit(ev.x, ev.y)) return;
-    if (m === 'menu' || m === 'item' || m === 'endmenu' || m === 'ballPick') { const h = menuHit(ev.x, ev.y); if (h >= 0) { BT.menu.i = h; activateMenu(); } else cancel(); return; }
+    if (m === 'menu' || m === 'endmenu') { const h = menuHit(ev.x, ev.y); if (h >= 0) { BT.menu.i = h; activateMenu(); } else cancel(); return; }
     if (m === 'target' || m === 'catchTarget' || m === 'skillTarget') { const go = () => { if (m === 'target') confirmAttack(); else if (m === 'skillTarget') confirmSkill(); else pickBall(); }; const ti = BT.targets.findIndex(t => t.x === tx && t.y === ty); if (ti >= 0) { if (ti === BT.tIdx) go(); else { BT.tIdx = ti; BT.moveIdx = 0; setTargetCursor(); Audio.sfx('cursor'); } } else if (m === 'target' && detailHit(ev.x, ev.y)) { BT.forecastDetail = !BT.forecastDetail; Audio.sfx('menu'); } else if (forecastHit(ev.x, ev.y)) go(); else if (m === 'target' && moveSwitchHit(ev.x, ev.y)) { BT.moveIdx++; Audio.sfx('menu'); } else cancel(); return; }
-    if (m === 'itemTarget') { useItemOn(BT.sel); return; }
     if (hudCovers(ev.x, ev.y)) return; // a tap on a card is not a tap on the tile under it
     if (!inMap(tx, ty)) { if (m === 'move') cancel(); return; }
     if (ev.touch && (tx !== BT.cx || ty !== BT.cy) && m === 'move') { BT.cx = tx; BT.cy = ty; extendPath(tx, ty); keepCursorVisible(); Audio.sfx('cursor'); const u = unitAt(tx, ty); if (!u || u === BT.sel) return; }
@@ -564,7 +555,7 @@ function drawBoardLayer() {
     drawTerrain(ctx, m, x, y, tileX(x), tileY(y), f, BT.time);
   }
   // items on the floor
-  for (const it of m.items) if (!it.taken) { const X = tileX(it.x) + TILE / 2, Y = tileY(it.y) + TILE / 2 + Math.round(Math.sin(BT.time * 4 + it.x) * 2); drawBall(X, Y, ITEMS[it.item] ? ITEMS[it.item].col : '#f04848', 5); if (Math.floor(BT.time * 6 + it.x) % 5 === 0) px(X + 6, Y - 6, '#ffffff'); }
+  for (const it of m.items) if (!it.taken) { const X = tileX(it.x) + TILE / 2, Y = tileY(it.y) + TILE / 2 + Math.round(Math.sin(BT.time * 4 + it.x) * 2); drawBall(X, Y, ITEMS.pokeball.col, 5); if (Math.floor(BT.time * 6 + it.x) % 5 === 0) px(X + 6, Y - 6, '#ffffff'); }
   // king of the hill zone and capture-the-flag bases
   if (B.hill) { const h = B.hill, X = tileX(h.x - h.r), Y = tileY(h.y - h.r), S = (2 * h.r + 1) * TILE; const k = Math.floor(BT.time * 3) % 2; ctx.globalAlpha = .18; rect(X, Y, S, S, UI.gold); ctx.globalAlpha = 1; outline(X + k, Y + k, S - 2 * k, S - 2 * k, UI.gold); for (const [cx, cy] of [[X, Y], [X + S - 6, Y], [X, Y + S - 6], [X + S - 6, Y + S - 6]]) rect(cx, cy, 6, 6, UI.goldDark); text('HILL', X + S / 2 - textWidth('HILL') / 2, Y - 9, UI.gold, { outline: '#000' }); }
   if (B.flags) for (const f of B.flags) { const X = tileX(f.home.x), Y = tileY(f.home.y); ctx.globalAlpha = .25; rect(X + 2, Y + 2, TILE - 4, TILE - 4, teamColor(f.team)); ctx.globalAlpha = 1; outline(X + 2, Y + 2, TILE - 4, TILE - 4, teamColorD(f.team)); rect(X + 10, Y + TILE - 8, 12, 3, teamColorD(f.team)); rect(X + 12, Y + TILE - 6, 8, 1, teamColorL(f.team)); if (f.carrier == null) drawFlag(tileX(f.x) + 13, tileY(f.y) + 6 + Math.round(Math.sin(BT.time * 5) * 1), f.team, Math.floor(BT.time * 6) % 2); }
@@ -733,12 +724,11 @@ function drawHUD() {
   }
   if (BT.mode === 'move' && BT.sel) { const c = BT.sel; textC(c.name + (BT.dart ? '  DART ' + dartMov(c) + ' · X: stay' : '  MOV ' + effMov(c)) + (BT.path.length > 1 ? '  →' + (BT.path.length - 1) : ''), W / 2, L.top.y + L.top.h + powerRibbonHeight() + 4, BT.dart ? ROLES.scout.col : UI.ink, { outline: UI.shadow }); }
   if (BT.quip && BT.quip.unit.hp > 0) { const u = BT.quip.unit; const x = toScreenX(tileX(u.x) + TILE / 2) + 16, y = toScreenY(tileY(u.y)) - 12 - Math.min(6, BT.quip.t * 30); const tw = textWidth(BT.quip.text) + 8; rrect(x - 2, y - 2, tw, 11, UI.shadow, 1); rrect(x - 3, y - 3, tw, 11, '#ffffff', 1); text(BT.quip.text, x + 1, y - 1, '#202030'); px(x, y + 8, '#ffffff'); px(x - 1, y + 9, '#ffffff'); }
-  if (BT.mode === 'menu' || BT.mode === 'item' || BT.mode === 'endmenu' || BT.mode === 'ballPick') drawMenu();
+  if (BT.mode === 'menu' || BT.mode === 'endmenu') drawMenu();
   if (BT.mode === 'target') drawForecast();
   if (BT.mode === 'catchTarget') drawCatchCard();
   if (BT.mode === 'idle' && B.lesson && !B.lesson.complete) drawCatchLesson(L);
   if (BT.mode === 'skillTarget') drawSkillCard();
-  if (BT.mode === 'itemTarget') { const w = Math.min(160, W - 12); hudPanel(W / 2 - w / 2, H / 2 - 16, w, 32); textC('Use ' + ITEMS[BT.item].name + ' on ' + BT.sel.name + '?', W / 2, H / 2 - 10, UI.ink); hintLine([['Z', 'confirm'], ['X', 'cancel']], W / 2, H / 2 + 2, { pill: false }); }
   if (BT.mode === 'unitinfo' && BT.info) { dimScreen(.3); drawUnitSheet(BT.info); }
   if (BT.mode === 'help') drawHelp();
   if (BT.mode === 'territoryGuide') drawTerritoryGuide();
@@ -834,7 +824,7 @@ function terrainCardBody(t, ref, x, y, w, tall) {
 }
 // Menu geometry: a header band (the unit's name, BAG, BALLS or the menu title), one row per item and, when any item
 // carries a description, a footer strip that explains the highlighted one.
-function menuTitle() { const m = BT.menu; return m.title || (BT.mode === 'item' ? 'BAG' : BT.mode === 'ballPick' ? 'BALLS' : BT.mode === 'endmenu' ? 'MENU' : BT.sel ? BT.sel.name.toUpperCase() : 'ACTION'); }
+function menuTitle() { const m = BT.menu; return m.title || (BT.mode === 'endmenu' ? 'MENU' : BT.sel ? BT.sel.name.toUpperCase() : 'ACTION'); }
 function menuRect() {
   const m = BT.menu, rh = rowH(); const w = Math.min(VIEW.w - 8, m.items.some(it => it.icon) ? 134 : 120), top = 21;
   const subLines = m.items.reduce((n, it) => Math.max(n, it.sub ? Math.min(2, wrap(it.sub, w - 14).length) : 0), 0); const foot = subLines ? subLines * 9 + 6 : 0;
@@ -1009,10 +999,13 @@ function skillCardRect() {
   return { x: r.x, y: r.y, w: r.w, h: 40 + cost.length * 9 + 4, effect, cost };
 }
 function drawCatchCard() {
-  const t = BT.targets[BT.tIdx]; if (!t) return; const r = forecastRect(); hudPanel(r.x, r.y, r.w, 50, { title: 'CATCH' });
-  drawMon(t.num, r.x + 24, r.y + 36, { flip: true }); text(t.name + '  Lv' + t.level, r.x + 48, r.y + 8, UI.ink); hpBar(r.x + 48, r.y + 18, r.w - 56, t.hp, t.maxHp); text(t.hp + '/' + t.maxHp + ' HP', r.x + 48, r.y + 26, UI.ink);
-  const p = clamp(.22 + .68 * (1 - t.hp / t.maxHp), .05, .97); text('Base chance ' + Math.round(p * 100) + '%', r.x + 48, r.y + 36, p > .6 ? UI.green : p > .35 ? UI.gold : UI.red);
-  hintLine(VIEW.touch ? ['tap: pick a ball', 'X: back'] : [['Z', 'pick a ball'], ['X', 'back']], r.x + r.w / 2, r.y + 55);
+  const t = BT.targets[BT.tIdx]; if (!t) return; const r = forecastRect(); const practice = isPracticeTarget(t); hudPanel(r.x, r.y, r.w, 50, { title: practice ? 'PRACTICE CATCH' : 'CATCH' });
+  ctx.save(); ctx.beginPath(); ctx.rect(r.x + 6, r.y + 8, 34, 30); ctx.clip(); portraitBg(r.x + 6, r.y + 8, 34, 30, t.team); drawMon(t.num, r.x + 23, r.y + 37, { flip: true }); ctx.restore();
+  text(t.name + '  Lv' + t.level, r.x + 46, r.y + 8, UI.ink); hpBar(r.x + 46, r.y + 18, r.w - 54, t.hp, t.maxHp);
+  const p = captureChance(t, practice ? ITEMS.practiceball : ITEMS.pokeball), left = practice ? 'free ball' : (B.bag.pokeball || 0) + ' ball' + (B.bag.pokeball === 1 ? '' : 's') + ' left';
+  text(practice ? (practiceReady(t) ? 'Ready: a sure catch' : 'Weaken it to half HP') : 'Chance ' + Math.round(p * 100) + '%', r.x + 46, r.y + 27, p > .6 ? UI.green : p > .35 ? UI.gold : UI.red); textR(left, r.x + r.w - 8, r.y + 27, UI.muted);
+  text(fitLabel(practice ? 'Caterpie cannot faint' : 'Weaker foes and statuses help', r.w - 54), r.x + 46, r.y + 37, UI.dim);
+  hintLine(VIEW.touch ? ['tap: throw', 'X: back'] : [['Z', 'throw'], ['X', 'back']], r.x + r.w / 2, r.y + 55);
 }
 function drawDuelCard(q) {
   // a compact "who is hitting whom" strip at the top
@@ -1074,14 +1067,11 @@ function drawUnitSheet(u) {
   hintLine([['◂▸', 'browse'], ['X', 'close']], W / 2, y + h + 5);
 }
 const HELP_PAGES = [
-  ['CAPTAINS & POWERS', 'Your starter is your campaign captain; its evolution keeps the same power.', 'P / tap POWER: inspect and activate. Normal costs 50; super costs 100.', 'Normal unlocks in chapter 2; super in chapter 4. Territory has both.', 'Combat charges both teams. Catching gives 15; claiming an outpost gives 20.', 'One power per own turn. Effects expire at the next own turn. Healing never refunds actions.', 'A fainted captain blocks activation, not victory. Territory captains can recover and redeploy.', 'Capture outposts twice at full HP. Damage slows capture; leaving resets it. Owned centers heal.', 'Campaign: captures join after a win. Everyone recovers and weaker companions train.'],
-  ['CONTROLS', 'Arrows/WASD: cursor · Z/Enter/Space: OK · X/Esc: back. Mouse: hover + click; right click or an empty tile opens the menu. Touch: tap to move the cursor, tap again to confirm.', 'Q/E: next unit · C: unit info / switch move · F: fast · +/-: zoom · M: mute · H: help. Drag or wheel to pan.', 'Attack scene: any key speeds it up, X skips. The menu switches between full, quick and map-only battles.'],
-  ['RULES', 'Pick a unit, walk the yellow arrow, then Attack, Catch, use its Skill, the Bag or Wait. Blue = move, red = attack. Greyed units have acted; the mark in the tile corner keeps their side, the number is their HP once hurt.', 'Defenders counter if you are in their move range and still standing. Only Scouts and Strikers strike twice, when 10+ SPE faster. The forecast answers three questions: what you deal, what comes back, and the risks; V (or a tap on the lines) opens the full strike table, where a greyed strike only happens if an earlier one misses.', 'Crits: 4% (24% for high-crit moves), ×1.5 damage. The forecast HP is for normal hits; a strike whose crit would KO says so. Terrain gives DEF% and AVO. Poké Centers heal 30%/turn and cure. Danger: red = foe reach, yellow = wild reach. Hyper Beam: no counter after it, next turn recharging.'],
-  ['ROLES', 'Types say whom you beat; the role (badge on the unit card) says how to use it. One role per evolution line.', 'SCT Scout: Dart, moves 2 tiles after attacking. DEF Defender: Brace, 40% less damage until its next turn. AMP Amphibious: DEF 20% and AVO 20 on water. CTL Controller: Root a foe within 2, it cannot move on its next turn (fliers immune). RNG Ranged: ranged moves reach 1 tile further. SUP Support: Mend an adjacent ally 30% HP and cure it. STK Striker: plain attacker.', 'Brace, Root and Mend use the action, like Attack. Root and Mend earn XP outside Territory and work every other turn (the unit sheet counts the turns); Brace can be used every turn and earns nothing. A Poké Center or Full Heal also frees a rooted unit.'],
-  ['TYPES & CATCHING', 'Super effective ×1.5 (×2.25 double), resisted ×0.67. STAB: a move of your own type deals +25%.', 'Burn halves ATK, Poison ticks, Paralysis cuts MOV and has a 25% chance to spend the action at phase start. Frozen skips a phase unless it thaws; crits on it are guaranteed. Cures never refund spent actions.', 'Wild Pokémon (dashed ring) can be caught when weak: stand next to them, choose Catch and throw a ball. Trainer Pokémon (spiked ring) cannot be stolen. Level ups can evolve!'],
-  ['TERRITORY', 'Take the enemy HQ, or own 2 of the 3 contested centers at the start of 3 of your turns. Losing the majority resets your hold counter. After 40 turns, more contested centers wins; a tie is a draw.', 'Roofs show who owns a center: grey is neutral, blue yours, red the enemy. Any ready Pokemon on another center can Capture. Reach 20 points: a full-HP unit adds 10 per action, damaged units add less. Leaving or fainting resets progress; damage slows the next capture. Root does not stop capture.', 'Only owned centers heal and cure your team. Each owned center earns 2 command points at the start of your turn (bank limit 30).'],
-  ['VERSUS MODES', 'Elimination: knock out the other team; at the turn limit the larger team wins. Capture the Flag: take the flag from the enemy base and carry it home to your own flag; a fainted carrier drops it, and stepping on your own dropped flag sends it home. King of the Hill: start three of your turns with more Pokémon than the other team inside the 3×3 hill.', 'Fog of war: you only see tiles within 3 of your Pokémon (4 for fliers); tall grass and forest hide anything not adjacent. Unseen foes do not block your planning, but a move that runs into one stops short: an ambush ends that Pokémon\'s action.'],
-  ['RESERVES', 'Tap RESERVE or an empty owned center to deploy a teammate. Choose the center and Pokemon. Costs are shown before spending. The arrival has already acted. Maximum 5 on the map, from your finite team of 6.', 'Fainted teammates recover after 2 of your turn starts. Pay their cost to send them out again. Occupied centers cannot deploy. With reserves left, an empty battlefield does not lose the match.', 'Both teams stay at Lv12 with equal stats and no XP in this mode. End your turn manually, after moving and deploying. Campaign progress is separate.'],
+  ['HOW TO PLAY', 'Pick one of your Pokémon, walk it through the blue tiles, then act: Attack, Capture a center, use its role Skill, Catch a weak wild Pokémon, or Wait. Red tiles show what it can hit.', 'When everyone has acted the turn passes; END TURN passes early. The objective in the top card is how you win.', 'Keys: arrows move · Z confirm · X back · Q/E next Pokémon · C info · V forecast details · P power · F fast · H help. Mouse or touch: tap to select and confirm, drag to pan.'],
+  ['COMBAT', 'Before every attack the forecast answers three questions: what you deal, what comes back, and what could go wrong. Its numbers assume normal hits.', 'Types: super effective ×1.5 (×2.25 on a double weakness), resisted ×0.67, immune 0. A move of your own type hits 25% harder. Crits: 4% (24% for high-crit moves), ×1.5.', 'A foe that can reach you counters. Scouts and Strikers strike twice when 10+ SPE faster. Terrain stars cut damage; tall grass, forest and mountains also help dodge.', 'Burn halves ATK and ticks, poison ticks, paralysis slows and may skip a turn, frozen skips until it thaws.'],
+  ['ROLES', 'The type says whom a Pokémon beats; its role says how to use it (the badge on its card). Evolution keeps the role.', 'SCOUT darts 2 tiles after attacking. DEFENDER can Brace: 40% less damage until its next turn. AMPHIBIOUS swims and is tougher on water. CONTROLLER Roots a foe within 2 tiles (fliers are immune). RANGED hits one tile further. SUPPORT Mends an adjacent ally: +30% HP and a cure. STRIKER just hits hard.', 'Skills use the action, like an attack. Root and Mend work every other turn and earn XP; Brace can be used every turn and earns nothing.'],
+  ['CAPTAINS & CENTERS', 'Your captain wears the crown. Hits dealt and taken fill the power bar; P or POWER spends it: a normal power for 50, a super for 100. One per turn; it lasts until your next turn.', 'Charmander: every ally\'s next attack +25% (super +50%). Squirtle: allies take 20% less damage (40%). Bulbasaur: allies heal 20% and are cured (40%, and no new status).', 'Poké Centers heal 30% and cure their owner at the start of each turn. Stand on one you do not own and Capture: 20 points, 10 per action at full HP; leaving resets it. A capture adds 20 charge.'],
+  ['MODES', 'CAMPAIGN: your captain and your catches travel the route map. Each chapter has one objective and three stars: win, win under par, win with nobody fainted.', 'CONQUEST: centers earn 2 points a turn; spend them to call reserves at an empty center you own. Take the enemy HQ, or own 2 of the 3 middle centers at the start of 3 of your turns.', 'VERSUS: Elimination, Capture the Flag (carry their flag home) or King of the Hill (out-number them on the hill for 3 turns). With fog you only see 3 tiles around your team.'],
 ];
 function helpRect() { const W = VIEW.w, H = VIEW.h, w = Math.min(280, W - 12); const all = helpLines(BT.helpPage, w - 16), limit = Math.max(1, Math.floor((H - 64) / 10)), start = Math.min(BT.helpOffset || 0, Math.max(0, all.length - 1)); const lines = all.slice(start, start + limit), h = 50 + lines.length * 10; return { x: W / 2 - w / 2, y: Math.max(6, H / 2 - h / 2), w, h, lines, limit, next: start + limit < all.length ? start + limit : null }; }
 function helpLines(page, width) { const p = HELP_PAGES[page]; const out = []; p.slice(1).forEach((para, i) => { if (i) out.push(''); out.push(...wrap(para, width)); }); return out; }

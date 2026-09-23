@@ -35,6 +35,9 @@ function initBattleCaptains(opts) {
   B.command = null;
   if (B.territory) {
     for (const team of [0, 1]) { const u = alive(team).find(u => u.reserveSlot === 2); addCaptain(team, u, captainRoot(u && u.num) || 7); }
+  } else if (B.versus) {
+    const roots = opts.captains || [4, 7];
+    for (const team of [0, 1]) { const u = alive(team).find(v => v.leader) || alive(team)[0]; for (const a of alive(team)) a.leader = a === u; addCaptain(team, u, roots[team], 8); }
   } else if (opts.captain) {
     const u = alive(0).find(u => u.pid === opts.captain.pid) || alive(0)[0];
     for (const a of alive(0)) a.leader = a === u;
