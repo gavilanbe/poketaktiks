@@ -6228,6 +6228,7 @@ function drawTitleMeadow(L, BG) {
 }
 // 13×13 menu icons: a star (new game), a route map (continue), crossed blades (quick battle), two balls (versus), play.
 const TITLE_ICONS = {
+  crown: ['.............', '.O....O....O.', 'OYO..OYO..OYO', 'OYYO.OYO.OYYO', 'OYYYOOYOOYYYO', 'OYYYYYYYYYYYO', 'OYYYYYYYYYYYO', 'OYYRYYWYYRYYO', 'OyYYYYYYYYYyO', 'OyyyyyyyyyyyO', '.OOOOOOOOOOO.', '.............', '.............'],
   star: ['......O......', '.....OYO.....', '.....OYO.....', '....OYWYO....', 'OOOOOYWYOOOOO', 'OYYYYYWYYYYyO', '.OYYYYYYYYyO.', '..OYYYYYYyO..', '...OYYYYyO...', '..OYYyOYYyO..', '..OYyO.OYyO..', '.OYyO...OyyO.', '.OOO.....OOO.'],
   map: ['.OOOO.OOO.OO.', 'OKWWWOGGGOWWO', 'OKWRWOGgGOWWO', 'OKWWWOGGGOWBO', 'OKWWROGGWOWBO', 'OKWWWRGWROBBO', 'OKGGWOWRWOWWO', 'OKGgWOWWROWWO', 'OKGGWOWWWRWWO', 'OKWWWOBBWOWRO', 'OKWWWOBBWOWWO', '.OOO.OOOO.OO.', '.............'],
   blades: ['OO.........OO', 'OSO.......OSO', '.OSO.....OSO.', '..OSO...OSO..', '...OSO.OSO...', '....OSOSO....', '.....OsO.....', '....OSOsO....', '.OO.OsO.OsO.O', 'OKKOsO...OsOK', '.OKKO.....OKO', 'OKOKKO...OKOK', 'OO..OO...OO.O'],
@@ -6270,7 +6271,7 @@ function initTitle() {
   items.push({ label: 'NEW GAME', sub: 'Free Kanto from Team Rocket', icon: 'star', run: () => { if (save) openTitleConfirm(); else startNewGame(); } });
   items.push({ label: 'QUICK BATTLE', sub: 'Skirmish · Tower · Safari · Conquest', icon: 'blades', run: () => goScene('quick') });
   items.push({ label: 'VERSUS', sub: 'Two players, one screen', icon: 'duo', run: startVersusSetup });
-  items.push({ label: 'COMMANDERS', sub: 'Gym Leaders, their Aces and powers', icon: 'star', run: openCoRoom });
+  items.push({ label: 'COMMANDERS', sub: 'Gym Leaders, their Aces and powers', icon: 'crown', run: openCoRoom });
   items.forEach((item, i) => { item.hover = i === 0 ? 1 : 0; });
   SC.titleItems = items; SC.menuLen = items.length; SC.titleConfirm = null;
   SC.titleFx = { particles: [], focusAt: -10, logoAt: -10, down: null, action: null, hop: [], landed: {}, shake: 0 };
