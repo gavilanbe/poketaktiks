@@ -19,7 +19,7 @@ function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; 
 function continueCampaign() { SAVE = loadSave(); if (!SAVE) { startNewGame(); return; } openRoute(); }
 function prepChapter(idx) {
   migrateCaptain(SAVE);
-  const ch = CHAPTERS[idx]; const P = { chapter: ch, party: SAVE.party, bag: SAVE.bag, deploy: [], start: null, back: () => openRoute({ sel: idx }) };
+  const ch = CHAPTERS[idx]; const P = { chapter: ch, party: SAVE.party, bag: SAVE.bag, deploy: [], start: null, noCaptain: idx >= 3 && !!SAVE.co && SAVE.co !== 'you' && coUnlocked(SAVE).includes(SAVE.co), back: () => openRoute({ sel: idx }) };
   autoDeploy(P);
   P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, SAVE.party[i], { pid: i })); goScene('card', { chapter: ch, next: () => launchChapter(idx, deployed) }); };
   goScene('prep', P);

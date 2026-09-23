@@ -108,7 +108,8 @@ function migrateCaptain(save) {
   save.starter = captainRoot(save.party[pid].num) || (CAPTAINS[save.starter] ? save.starter : 7);
   return save;
 }
-function prepCaptain(P) { if (P && P.captain != null) return P.captain; return P && !P.preset && typeof SAVE !== 'undefined' && SAVE && P.party === SAVE.party ? (migrateCaptain(SAVE), SAVE.captainPid) : null; }
+// The partner locked into the squad (crowned); none when a Gym Leader leads (P.noCaptain).
+function prepCaptain(P) { if (P && P.noCaptain) return null; if (P && P.captain != null) return P.captain; return P && !P.preset && typeof SAVE !== 'undefined' && SAVE && P.party === SAVE.party ? (migrateCaptain(SAVE), SAVE.captainPid) : null; }
 function powerState(team) { return B && B.command && B.command.teams[team] || null; }
 function powerCaptain(team) { const s = powerState(team); return s && B.units.find(u => u.id === s.captainId && u.team === team && u.hp > 0); }
 function addCaptain(team, unit, root, chapter = 8, co = 'you') {
