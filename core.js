@@ -122,7 +122,7 @@ function countUp(id, v, dur = .6, delay = 0) { const t = appear(id) - delay; if 
 const TRANS = { snap: null, t: 0, on: false };
 function captureTransition() {
   if (REDUCED || !CLOCK.frame) return;
-  try { if (!TRANS.snap) TRANS.snap = document.createElement('canvas'); TRANS.snap.width = cv.width; TRANS.snap.height = cv.height; TRANS.snap.getContext('2d').drawImage(cv, 0, 0); TRANS.t = 0; TRANS.on = true; } catch (_) { TRANS.on = false; }
+  try { if (!TRANS.snap) TRANS.snap = document.createElement('canvas'); TRANS.snap.width = cv.width; TRANS.snap.height = cv.height; TRANS.snap.getContext('2d').drawImage(cv, 0, 0); TRANS.t = 0; TRANS.on = true; Audio.sfx('wipe'); } catch (_) { TRANS.on = false; }
 }
 function drawTransition(dt) {
   if (!TRANS.on) return; TRANS.t += dt; const T = TRANS.t, CLOSE = .17, HOLD = .07, OPEN = .28;
@@ -433,6 +433,10 @@ const Audio = {
       case 'psy': this.tone('sine', 400, 1400, .45, .14); this.tone('sine', 800, 2800, .45, .05, .02); break;
       case 'beam': this.tone('sawtooth', 300, 1200, .3, .12); this.tone('square', 600, 2400, .3, .05, .03); break;
       case 'faint': this.tone('square', 330, 40, .55, .22); this.tone('triangle', 220, 30, .6, .12, .05); break;
+      // presentation: a letter landing, a soft tick, a sparkle chime
+      case 'stamp': this.tone('square', 170, 55, .09, .18); this.noise(.05, .12, 0, 260); break;
+      case 'tick': this.tone('triangle', 900, 700, .03, .06); break;
+      case 'chime': [1319, 1760].forEach((f, i) => this.tone('sine', f, f, .12, .08, i * .05)); break;
     }
   },
   // Music: a tiny 3-voice step sequencer. Songs are {bpm, bass:[...], lead:[...], arp:[...]} with note numbers (semitones from A3) or null.

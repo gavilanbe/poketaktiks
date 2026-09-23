@@ -590,7 +590,10 @@ function drawFX(ox, oy, texts = true) {
 }
 // Floating texts: world position (x + ox, y + oy) times `sc` gives the screen position; the text itself keeps its pixel size.
 function drawFXTexts(ox, oy, sc = 1) {
-  for (const f of FX.texts) { if (f.delay > 0) continue; const k = f.t / f.life; ctx.globalAlpha = k > .7 ? 1 - (k - .7) / .3 : 1; const pop = f.pop && f.t < .15 ? 1 + (1 - f.t / .15) * .5 : 1; const x = (f.x + ox) * sc, y = (f.y + oy) * sc - (pop - 1) * 6; if (f.big) bigC(f.s, x, y, f.col, { outline: f.outline }); else textC(f.s, x, y, f.col, { outline: f.outline }); ctx.globalAlpha = 1; }
+  for (const f of FX.texts) { if (f.delay > 0) continue; const k = f.t / f.life; ctx.globalAlpha = k > .7 ? 1 - (k - .7) / .3 : 1; const pop = f.pop && f.t < .15 ? 1 + (1 - f.t / .15) * .5 : 1; const x = (f.x + ox) * sc, y = (f.y + oy) * sc - (pop - 1) * 6;
+    // big numbers land: two frames at double size, then their own size (whole-pixel scales keep the glyphs crisp)
+    if (f.big && f.pop && f.t < .1 && !REDUCED) { ctx.save(); ctx.translate(Math.round(x), Math.round(y + 4)); ctx.scale(2, 2); bigC(f.s, 0, -4.5, '#ffffff', { outline: f.outline }); ctx.restore(); }
+    else if (f.big) bigC(f.s, x, y, f.col, { outline: f.outline }); else textC(f.s, x, y, f.col, { outline: f.outline }); ctx.globalAlpha = 1; }
 }
 function shake(n) { FX.shake = Math.max(FX.shake, n); }
 function flashScreen(col = '#ffffff', a = 1) { FX.flash = a; FX.flashCol = col; }

@@ -78,7 +78,7 @@ function drawLogo(cx, y, cell) {
       // the shine: a 3-px band sweeping left to right across the whole wordmark
       const k = ((t - 1.6) % 4.2) / .9; if (!REDUCED && k >= 0 && k < 1) { const sx = Math.round(cx - M.w / 2 - 10 + (M.w + 20) * k) + (p.row ? 6 : 0); ctx.save(); ctx.beginPath(); ctx.rect(sx, p.y - 4, 3, p.h + 8); ctx.rect(sx + 5, p.y - 4, 1, p.h + 8); ctx.clip(); ctx.globalAlpha *= .85; ctx.drawImage(L.shine, p.x - L.P, p.y - L.P); ctx.restore(); } }
     SC.titleLetters.push({ x: p.x, y: p.y, w: p.w, h: p.h });
-    const lk = p.row + ':' + p.i; if (!REDUCED && p.u >= 1 && fx.landed && !fx.landed[lk]) { fx.landed[lk] = true; titleDust(p.x + p.w / 2, p.y + p.h + 2); if (p.row && p.i === 6) { shakeTitle(); Audio.sfx('shake'); } }
+    const lk = p.row + ':' + p.i; if (!REDUCED && p.u >= 1 && fx.landed && !fx.landed[lk]) { fx.landed[lk] = true; titleDust(p.x + p.w / 2, p.y + p.h + 2); Audio.sfx('tick'); if (p.row && p.i === 6) { shakeTitle(); Audio.sfx('shake'); } }
   }
   ctx.globalAlpha = 1;
   // sparkles: four-point stars that grow and shrink on the letters

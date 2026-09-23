@@ -159,7 +159,9 @@ function setupEvent(q) {
     case 'brace': Audio.sfx('shake'); floatText(ux(e.unit), uy(e.unit) - 8, 'BRACED!', BRACE_COL, { outline: '#000' }); e.unit.fx.sy = .8; e.unit.fx.sx = 1.2; break;
     case 'root': Audio.sfx('grass'); shake(1); floatText(ux(e.unit), uy(e.unit) - 8, 'ROOTED!', ROOT_COL, { outline: '#000' }); spawnParts(ux(e.unit), uy(e.unit) + 12, 12, ['#2a6b38', '#c8f0a0'], { speed: 30, grav: 40, life: .6 }); break;
     case 'blocked': q.dur = BT.fast ? .4 : .7; if (!unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); floatText(ux(e.unit), uy(e.unit) - 8, e.kind === 'frz' ? 'Frozen solid!' : 'Fully paralyzed!', STATUS[e.kind].col, { outline: '#000' }); break;
-    case 'property': q.dur = BT.fast ? .4 : .8; floatText(ux(e.unit), uy(e.unit) - 10, e.done ? 'CAPTURED!' : e.progress + '/20', UI.gold, { outline: '#000' }); Audio.sfx('select'); break;
+    case 'property': q.dur = BT.fast ? .4 : e.done ? 1.1 : .8; floatText(ux(e.unit), uy(e.unit) - 10, e.done ? 'CAPTURED!' : e.progress + '/20', e.done ? UI.gold : '#fff0a0', { outline: '#000', big: !!e.done, life: e.done ? 1.4 : 1 });
+      if (e.done) { const c = teamColorL(e.unit.team); Audio.sfx('caught'); shake(3); flashScreen(c, .25); spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 30, life: .55, col: c }); spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 18, life: .45, col: '#ffffff', delay: .08 }); spawnParts(ux(e.unit), uy(e.unit) + 4, 26, [c, '#ffffff', UI.gold, teamColor(e.unit.team)], { speed: 90, life: .9, grav: 90 }); e.unit.fx.sy = .75; e.unit.fx.sx = 1.25; }
+      else { Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 20, 8, [UI.gold, '#ffffff'], { speed: 30, life: .5, grav: -40 }); } break;
     case 'unroot': q.dur = BT.fast ? .2 : .4; floatText(ux(e.unit), uy(e.unit) - 8, 'Free!', ROOT_COL, { outline: '#000' }); break;
   }
 }
@@ -716,7 +718,7 @@ function hudLayout() {
 }
 function drawHUD() {
   HUD.hits = []; HUD.panels = []; const W = VIEW.w, H = VIEW.h; const L = hudLayout();
-  if (BT.mode === 'end') { drawEndScreen(); return; }
+  if (BT.mode === 'end') { if (SC.name === 'battle') drawEndScreen(); return; } // the outro dialogue draws over the board, not over the stamp
   const boardModes = ['idle', 'move', 'target', 'catchTarget', 'skillTarget', 'unitinfo', 'menu'];
   // turn / objective / ready-count card (top-left)
   if (BT.mode === 'power') { drawPowerMenu(); return; }
@@ -1129,6 +1131,7 @@ function drawHandoff() {
 const END_BEATS = { letters: .15, stars: 1.25, starGap: .38 };
 function endStars() { if (B.versus || B.territory || !(B.result === 'win')) return null; return battleStars(B.map.par || (CHAPTERS[B.chapter] && CHAPTERS[B.chapter].par) || 10); }
 function endSequenceCues(a, b) {
+  if (!REDUCED) { const word = endWord(); for (let i = 0; i < word.length; i++) { const at = END_BEATS.letters + i * .06 + .2; if (word[i] !== ' ' && a < at && b >= at) Audio.sfx(i === word.length - 1 ? 'crit' : 'stamp'); } }
   const n = endStars(); if (n == null || REDUCED) return;
   for (let k = 0; k < 3; k++) { const at = END_BEATS.stars + k * END_BEATS.starGap; if (a < at && b >= at) { if (k < n) { Audio.sfx('levelup'); shake(2); const W = bvW(); spawnParts(CAM.x + W / 2 + (k - 1) * 40 / BT.zoom, CAM.y + bvH() / 2 + 18 / BT.zoom, 16, [UI.gold, '#ffffff', '#fff0a0'], { speed: 80, life: .7, grav: 60 }); } else Audio.sfx('cursor'); } }
 }
@@ -1144,9 +1147,10 @@ function drawStampWord(word, cx, y, t, col, dark, scale) {
   chars.forEach((ch, i) => { const at = END_BEATS.letters + i * .06, u = REDUCED ? 1 : clamp((t - at) / .22, 0, 1); if (u > 0 && ch !== ' ') { const drop = Math.round((1 - easeOutBounce(u)) * -34), sc = scale * (1 + (1 - u) * .8); ctx.save(); ctx.globalAlpha = Math.min(1, u * 3); ctx.translate(x + widths[i] * scale / 2, y + drop + 4.5 * scale); ctx.scale(sc, sc); bigC(ch, 0, -4.5, col, { outline: dark }); ctx.restore(); } x += widths[i] * scale; });
   return total;
 }
+function endWord() { const vs = B.versus, vt = B.result === 'p1' ? 0 : B.result === 'p2' ? 1 : -1; return vs ? (vt < 0 ? 'DRAW' : teamName(vt) + ' WINS!') : B.result === 'win' ? 'VICTORY!' : B.result === 'draw' ? 'DRAW' : B.result === 'retreat' ? 'RETREAT' : 'DEFEAT'; }
 function drawEndScreen() {
   const W = VIEW.w, H = VIEW.h, t = BT.endTimer, k = Math.min(1, t / .5), vs = B.versus, vt = B.result === 'p1' ? 0 : B.result === 'p2' ? 1 : -1, win = vs ? vt >= 0 : B.result === 'win';
-  const word = vs ? (vt < 0 ? 'DRAW' : teamName(vt) + ' WINS!') : B.result === 'win' ? 'VICTORY!' : B.result === 'draw' ? 'DRAW' : B.result === 'retreat' ? 'RETREAT' : 'DEFEAT';
+  const word = endWord();
   const col = vs ? (vt < 0 ? UI.muted : teamColorL(vt)) : win ? UI.gold : B.result === 'draw' ? UI.ink : '#ff8080', dark = win ? (vs ? UI.inset : UI.goldDark) : '#2a0a14';
   ctx.globalAlpha = .62 * k; rect(0, 0, W, H, win ? '#0a0820' : '#1a0610'); ctx.globalAlpha = 1;
   const cy = Math.round(H * .4), scale = W >= textWidth(word, BIG) * 3 + 30 ? 3 : W >= textWidth(word, BIG) * 2 + 16 ? 2 : 1;

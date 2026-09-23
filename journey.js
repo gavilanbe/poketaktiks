@@ -3,15 +3,23 @@
 ITEMS.practiceball = { name: 'Practice Ball', kind: 'ball', rate: 1, col: '#f0c957', desc: 'Oak\'s free practice ball. Guaranteed at half HP.' };
 function fitLabel(s, w) { if (textWidth(s) <= w) return s; while (s.length > 1 && textWidth(s + '...') > w) s = s.slice(0, -1); return s + '...'; }
 function showJourney(lines, next) { goScene('journey', { lines, next }); }
+// A lesson card: the captain in a portrait on the left (when there is room), the lesson title on a ribbon, and each tip
+// sliding in after the one before with a numbered bullet; LET'S GO pulses once everything is on screen.
 function journeyDraw() {
-  const W = VIEW.w, H = VIEW.h, S = SC.data, w = Math.min(310, W - 16), x = (W - w) / 2;
-  rect(0, 0, W, H, UI.bg); SC.hits = [];
-  const rows = S.lines.slice(1).map((s, i) => wrap((i + 1) + '. ' + s, w - 24));
-  const h = Math.min(H - 12, 50 + rows.reduce((n, a) => n + a.length * 10 + 5, 0)), y = (H - h) / 2;
-  const p = panel(x, y, w, h, { header: fitLabel(S.lines[0], w - 16), headerFill: UI.panel2 });
-  let yy = p.cy + 4;
-  rows.forEach(ls => { ls.forEach(l => { text(l, x + 12, yy, UI.ink); yy += 10; }); yy += 5; });
-  bigButton(x + 8, y + h - 27, w - 16, 20, 'LET\'S GO', () => { Audio.sfx('ok'); S.next(); }, { variant: 'primary' });
+  const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t, portrait = W >= 300, w = Math.min(360, W - 16), x = Math.round((W - w) / 2);
+  rect(0, 0, W, H, UI.bg); for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .18 * y / H; rect(0, y, W, 2, '#2a2f78'); } ctx.globalAlpha = 1; SC.hits = [];
+  const pw = portrait ? 64 : 0, tw = w - 20 - (pw ? pw + 8 : 0), rows = S.lines.slice(1).map(s2 => wrap(s2, tw - 16));
+  const h = Math.min(H - 12, 44 + rows.reduce((n, a) => n + a.length * 10 + 5, 0) + 30), y = Math.round((H - h) / 2), tok = unfold('journey', x, y, w, h, .22);
+  const p = panel(x, y, w, h, { header: fitLabel(S.lines[0], w - 16), headerFill: '#2a2470' });
+  const cap = SAVE && SAVE.party && SAVE.party.length ? SAVE.party[SAVE.captainPid || 0].num : 25;
+  if (pw) { const px0 = x + 10, py0 = p.cy + 2, ph = Math.min(70, h - (p.cy - y) - 36); portraitBg(px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); requestAnim(cap); ctx.save(); ctx.beginPath(); ctx.rect(px0, py0, pw, ph); ctx.clip(); if (animReady(cap)) drawAnim(cap, px0 + pw / 2, py0 + ph - 3, t); else drawMon(cap, px0 + pw / 2, py0 + ph - 3, { outline: teamColor(0) }); ctx.restore(); if (SAVE) drawCrown(px0 + 2, py0 + 2); }
+  let yy = p.cy + 4; const tx = x + 10 + (pw ? pw + 8 : 0);
+  rows.forEach((ls, i) => { const k = REDUCED ? 1 : clamp((t - .25 - i * .18) / .25, 0, 1); if (k <= 0) { yy += ls.length * 10 + 5; return; } ctx.globalAlpha = k; const off = Math.round((1 - easeOut(k)) * 16);
+    circle(tx + 4 - off, yy + 3, 5, UI.inset); circle(tx + 4 - off, yy + 3, 4, UI.gold); textC(String(i + 1), tx + 5 - off, yy, UI.goldDark);
+    ls.forEach(l => { text(l, tx + 13 - off, yy, UI.ink); yy += 10; }); yy += 5; ctx.globalAlpha = 1; });
+  unfoldEnd(tok);
+  const ready = REDUCED || t > .25 + rows.length * .18, pulse = ready && !REDUCED ? Math.round(Math.abs(Math.sin(t * 4)) * 1) : 0;
+  bigButton(x + 8, y + h - 26 - pulse, w - 16, 20, 'LET\'S GO', () => { Audio.sfx('ok'); S.next(); }, { variant: 'primary', hot: ready });
 }
 function journeyInput(ev) {
   if (ev.type === 'key' && (ev.key === 'ok' || ev.key === 'back')) { Audio.sfx('ok'); SC.data.next(); }
@@ -174,40 +182,37 @@ function drawOutposts() {
   }
 }
 
+// Conquest setup: pick the captain (both sides lead with the same one), see the six teammates (three start, three wait as
+// reserves with their cost), the three rules, and the Three Bridges map. Controls: the captain cards, BACK, START.
 function territorySetupDraw() {
-  const W = VIEW.w, H = VIEW.h, S = SC.data, w = Math.min(330, W - 16), x = (W - w) / 2;
-  S.captain = CAPTAINS[S.captain] ? S.captain : 7;
-  rect(0, 0, W, H, UI.bg); SC.hits = [];
-  screenTitle('TERRITORY', 'Three Bridges · same captain both sides', 6);
-  const cw = Math.floor((w - 8) / 3), y = 40;
-  STARTERS.forEach((n, i) => {
-    const xx = x + i * (cw + 4), c = CAPTAINS[n], selected = S.captain === n;
-    panel(xx, y, cw, 53, { fill: selected ? UI.panel2 : UI.panelDark, border: selected || SC.i === i ? c.col : UI.border2 });
-    drawMon(n, xx + cw / 2, y + 31, {});
-    textC(fitLabel(DEX[n].name, cw - 8), xx + cw / 2, y + 39, selected ? c.col : UI.ink);
-    hit(xx, y, cw, 53, () => { S.captain = n; SC.i = i; Audio.sfx('cursor'); });
-  });
-  const c = CAPTAINS[S.captain]; textC(c.name + ' / ' + c.superName, W / 2, 102, c.col);
-  const ls = wrap(c.normal, w - 8); ls.forEach((l, i) => textC(l, W / 2, 114 + i * 10, UI.ink));
-  const by = H - 27, infoY = 118 + ls.length * 10;
-  const info = ['3 start · 6 teammates · 5 on map', 'Capture HQ, or hold 2 centers for 3 turns.', 'Centers earn CP. Powers use a separate bar.'];
-  if (H > 265) {
-    textC('YOUR TEAM · 3 START / 3 RESERVE', W / 2, infoY, UI.gold);
-    territoryRoster(S.captain).forEach(([num, cost], i) => {
-      const cell = Math.floor(w / 2), xx = x + (i % 2) * cell, yy = infoY + 13 + Math.floor(i / 2) * 20;
-      text(fitLabel(DEX[num].name, cell - 8), xx + 4, yy, UI.ink);
-      text(i < 3 ? 'STARTS' : cost + ' CP', xx + 4, yy + 9, i < 3 ? UI.green : UI.muted);
-    });
-  }
-  let iy = H > 265 ? infoY + 77 : infoY;
-  const rules = H < 215 ? ['Same captain on both sides · HELP for rules'] : info;
-  for (const s of rules) for (const l of wrap(s, w)) { if (iy + 8 < by - 3) textC(l, W / 2, iy, UI.muted); iy += 10; }
-  const available = by - iy - 10;
-  if (available > 45) {
-    const bd = S.bd, scale = Math.min((w - 12) / bd.canvas.width, available / bd.canvas.height);
-    const mw = Math.floor(bd.canvas.width * scale), mh = Math.floor(bd.canvas.height * scale), mx = Math.floor((W - mw) / 2), my = Math.floor(iy + 5 + (available - mh) / 2);
-    outline(mx - 2, my - 2, mw + 4, mh + 4, UI.border2); ctx.drawImage(bd.canvas, mx, my, mw, mh);
-  }
-  bigButton(x, by, Math.floor(w * .3), 20, 'BACK', () => goScene('quick'), { variant: 'ghost', hot: SC.i === 3 });
-  bigButton(x + Math.floor(w * .3) + 4, by, w - Math.floor(w * .3) - 4, 20, 'START', () => launchTerritory(S.seed, false, [S.captain, S.captain]), { variant: 'primary', hot: SC.i === 4 });
+  const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t, bh = btnH(); S.captain = CAPTAINS[S.captain] ? S.captain : 7; rect(0, 0, W, H, UI.bg); SC.hits = [];
+  drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 - t * 4, (H - S.bd.canvas.height) / 2, .82);
+  const top = screenTitle('CONQUEST', H >= 240 ? (W >= 220 ? 'Three Bridges · centers, points and reserves' : 'Three Bridges') : null, 5), by = H - bh - 6, wide = W >= 420;
+  const colW = wide ? Math.min(250, Math.floor((W - 20) / 2)) : Math.min(W - 12, 300), x0 = wide ? Math.round(W / 2 - colW - 4) : Math.round((W - colW) / 2);
+  // captains
+  const cw = Math.floor((colW - 8) / 3), chh = H >= 260 ? 50 : 38, cy0 = top + 2;
+  STARTERS.forEach((n, i) => { const xx = x0 + i * (cw + 4), c = CAPTAINS[n], sel = S.captain === n, focus = SC.i === i;
+    panel(xx, cy0, cw, chh, { fill: sel ? UI.panel2 : UI.panelDark, border: sel ? c.col : focus ? UI.gold : UI.border2, flat: true });
+    requestAnim(n); const hop = sel && !REDUCED ? Math.round(Math.abs(Math.sin(t * 5)) * 2) : 0; if (chh >= 50 && animReady(n)) { ctx.save(); ctx.beginPath(); ctx.rect(xx + 3, cy0 + 3, cw - 6, chh - 16); ctx.clip(); drawAnim(n, xx + cw / 2, cy0 + chh - 13 - hop, t + i, { sx: 1, sy: 1 }); ctx.restore(); } else drawMon(n, xx + cw / 2, cy0 + chh - 12 - hop, { outline: sel ? c.col : null });
+    textC(fitLabel(c.name, cw - 6), xx + cw / 2, cy0 + chh - 11, sel ? c.col : UI.muted);
+    hit(xx, cy0, cw, chh, () => { S.captain = n; SC.i = i; Audio.sfx('catch'); }); });
+  let y = cy0 + chh + 6; const c = CAPTAINS[S.captain];
+  if (y + 9 < by - 4) { textC(fitLabel(c.normal, colW), x0 + colW / 2, y, UI.ink, { outline: UI.inset }); y += 10; }
+  if (y + 9 < by - 4 && H >= 260) { textC(fitLabel('Super ' + c.superName + ': ' + c.super, colW), x0 + colW / 2, y, c.col, { outline: UI.inset }); y += 12; } else y += 2;
+  // the six: who starts, who waits and what each costs
+  const rosterX = wide ? x0 + colW + 8 : x0, rosterW = wide ? colW : colW; let ry = wide ? cy0 : y;
+  const roster = territoryRoster(S.captain), cellW = Math.floor((rosterW - 4) / 3), cellH = 24;
+  if (ry + 12 + cellH * 2 < by - 4) { sectionLabel('Your six', rosterX, ry, rosterW, UI.gold); ry += 10;
+    roster.forEach(([num, cost], i) => { const xx = rosterX + (i % 3) * (cellW + 2), yy = ry + Math.floor(i / 3) * (cellH + 2), starts = i < 3; rrect(xx, yy, cellW, cellH, starts ? '#1c3a6a' : '#1c1d3c', 1); drawMon(num, xx + 14, yy + cellH - 1, { outline: starts ? teamColor(0) : null }); text(starts ? 'START' : cost + ' CP', xx + 28, yy + 4, starts ? UI.green : UI.gold); text(fitLabel(ROLES[roleFor(DEX[num])].name, cellW - 30), xx + 28, yy + 13, UI.muted); });
+    ry += (cellH + 2) * 2 + 4; if (!wide) y = ry; }
+  // the rules, one line each
+  const rules = [['flag', 'Take the enemy HQ, or', UI.gold], ['flag', 'hold 2 of 3 middle centers 3 turns', UI.gold], ['ball', 'Centers pay 2 CP a turn: call reserves', UI.info]];
+  let rY = wide ? ry : y; const rX = wide ? rosterX : x0, rW = wide ? rosterW : colW;
+  for (const [ic, s2, col] of rules) { if (rY + 9 > by - 4) break; iconAt(ic, rX, rY - 1, col); text(fitLabel(s2, rW - 12), rX + 12, rY, UI.ink); rY += 11; }
+  // the map, when there is room left in the left column
+  const mapTop = wide ? y + 2 : rY + 4, avail = by - 6 - mapTop;
+  if (avail > 50) { const bd = S.bd, sc = Math.min(colW / bd.canvas.width, avail / bd.canvas.height), mw = Math.floor(bd.canvas.width * sc), mh = Math.floor(bd.canvas.height * sc), mx = (wide ? x0 : x0) + Math.floor((colW - mw) / 2), my = mapTop + Math.floor((avail - mh) / 2);
+    rect(mx - 2, my - 2, mw + 4, mh + 4, UI.inset); ctx.drawImage(bd.canvas, mx, my, mw, mh); outline(mx - 1, my - 1, mw + 2, mh + 2, UI.border2); }
+  bigButton(x0, by, Math.floor(colW * .3), bh, 'BACK', () => goScene('quick'), { variant: 'ghost', hot: SC.i === 3 });
+  bigButton(x0 + Math.floor(colW * .3) + 4, by, (wide ? colW * 2 + 8 : colW) - Math.floor(colW * .3) - 4, bh, 'START', () => launchTerritory(S.seed, false, [S.captain, S.captain]), { variant: 'primary', hot: SC.i === 4 });
 }

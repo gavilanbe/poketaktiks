@@ -66,14 +66,14 @@ function versusDraw() {
   if (narrow) { // phones: two compact team strips, no arena preview, a four-column roster
     const pw = Math.floor((W - 16) / 2), ph = 40, py = 38;
     const strip = (t, x) => { panel(x, py, pw, ph, { title: 'P' + (t + 1), fill: t === 0 ? '#17264a' : '#3a1a22', border: cur === t ? UI.gold : UI.border });
-      const sw = Math.floor((pw - 10) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 5 + i * sw; portraitBg(sx, py + 7, sw - 2, 22, t); const n = S.teams[t][i]; if (n != null) { ctx.drawImage(monIcon(n, t === 1), sx + Math.round((sw - 2 - 24) / 2), py + 10, 24, 18); hit(sx, py + 7, sw - 2, 22, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 7, sw - 2, 22, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 14, '#ffffff40'); }
+      const sw = Math.floor((pw - 10) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 5 + i * sw; portraitBg(sx, py + 7, sw - 2, 22, t); const n = S.teams[t][i]; if (n != null) { ctx.drawImage(monIcon(n, t === 1), sx + Math.round((sw - 2 - 24) / 2), py + 10, 24, 18); if (i === 0) drawCrown(sx + 1, py + 8); hit(sx, py + 7, sw - 2, 22, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 7, sw - 2, 22, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 14, '#ffffff40'); }
       textC(S.teams[t].length >= S.size ? 'READY' : cur === t ? 'PICKING…' : S.teams[t].length + '/' + S.size, x + pw / 2, py + ph - 9, S.teams[t].length >= S.size ? UI.green : cur === t ? UI.gold : UI.muted); };
     strip(0, 6); strip(1, W - 6 - pw); gy = py + ph + 8;
   } else {
     // team panels left / right, arena preview in the middle
     const pw = Math.min(140, Math.floor((W - 110) / 2) - 8), ph = 56, py = 28; const p1x = 6, p2x = W - pw - 6;
     const teamPanel = (t, x) => { panel(x, py, pw, ph, { title: 'PLAYER ' + (t + 1), fill: t === 0 ? '#17264a' : '#3a1a22', border: cur === t ? UI.gold : UI.border });
-      const sw = Math.floor((pw - 12) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 6 + i * sw; portraitBg(sx, py + 8, sw - 2, 34, t); const n = S.teams[t][i]; if (n != null) { drawMon(n, sx + (sw - 2) / 2, py + 40, { flip: t === 1 }); hit(sx, py + 8, sw - 2, 34, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 8, sw - 2, 34, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 22, '#ffffff40'); }
+      const sw = Math.floor((pw - 12) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 6 + i * sw; portraitBg(sx, py + 8, sw - 2, 34, t); const n = S.teams[t][i]; if (n != null) { drawMon(n, sx + (sw - 2) / 2, py + 40, { flip: t === 1, outline: i === 0 ? UI.gold : null }); if (i === 0) drawCrown(sx + 2, py + 10); hit(sx, py + 8, sw - 2, 34, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 8, sw - 2, 34, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 22, '#ffffff40'); }
       text(S.teams[t].length + '/' + S.size + ' picked', x + 6, py + ph - 10, UI.muted); textR(S.teams[t].length >= S.size ? 'READY' : cur === t ? 'PICKING…' : 'waiting', x + pw - 6, py + ph - 10, S.teams[t].length >= S.size ? UI.green : cur === t ? UI.gold : UI.muted); };
     teamPanel(0, p1x); teamPanel(1, p2x);
     const mw = p2x - (p1x + pw) - 12; const sc = Math.min(mw / S.bd.canvas.width, (ph - 4) / S.bd.canvas.height); const pwid = Math.round(S.bd.canvas.width * sc), phei = Math.round(S.bd.canvas.height * sc); preview(Math.round(W / 2 - pwid / 2), py + Math.round((ph - phei) / 2), pwid, phei);
@@ -122,18 +122,25 @@ function starterInput(ev) {
 }
 
 // ---------------------------------------------------------------- chapter card
-// Chapter title card: the map itself, dimmed, behind a letterboxed band; the title grows in and the rules follow.
+// Between the preparation and the board: letterbox bars close in over the map, a gold ribbon slides in with the chapter
+// number, the name drops in letter by letter, the goal follows; on boss maps the boss slides in from the right.
 function cardDraw() {
-  const W = VIEW.w, H = VIEW.h; const ch = SC.data.chapter; rect(0, 0, W, H, '#0e0c10');
-  if (!SC.data.bd) SC.data.bd = makeBackdrop(ch.map); const bd = SC.data.bd; drawBackdrop(bd, (W - bd.canvas.width) / 2 - SC.t * 4, (H - bd.canvas.height) / 2, .78);
-  const k = Math.min(1, SC.t / .5), y = Math.round(H / 2 - 22); const ts = textWidth(ch.title.toUpperCase(), BIG) * 2 > W - 8 ? 1 : 2;
-  const bandH = 64; rect(0, 0, W, Math.max(0, y - 14 - Math.round(H * .18)), '#070a14'); rect(0, y - 14 + bandH + Math.round(H * .18), W, H, '#070a14');
-  ctx.globalAlpha = .82 * k; rect(0, y - 14, W, bandH, '#070a14'); ctx.globalAlpha = k; hline(0, y - 14, W, UI.gold); hline(0, y - 13, W, UI.goldDark); hline(0, y - 14 + bandH, W, UI.gold); hline(0, y - 15 + bandH, W, UI.goldDark);
-  bigC(ch.num ? 'CHAPTER ' + ch.num : 'SKIRMISH', W / 2, y - 6, UI.muted, { outline: UI.shadow });
-  const grow = easeOut(k); ctx.save(); ctx.translate(W / 2, y + 8 + (ts === 1 ? 4 : 0)); ctx.scale(ts * (.6 + .4 * grow), ts * (.6 + .4 * grow)); bigC(ch.title, 0, 0, UI.gold, { outline: '#3a2000' }); ctx.restore();
-  if (SC.t > .35) { ctx.globalAlpha = Math.min(1, (SC.t - .35) / .3); wrap(objectiveTextFor(ch.map.objective), W - 12).forEach((l, i) => textC(l, W / 2, y + 34 + i * 9, UI.ink)); }
-  ctx.globalAlpha = 1; if (SC.t > 2.4 || (SC.t > .6 && SC.skip)) { SC.skip = false; SC.data.next(); }
+  const W = VIEW.w, H = VIEW.h, ch = SC.data.chapter, t = SC.t; rect(0, 0, W, H, '#0e0c10');
+  if (!SC.data.bd) SC.data.bd = makeBackdrop(ch.map); const bd = SC.data.bd; drawBackdrop(bd, (W - bd.canvas.width) / 2 - t * 8, (H - bd.canvas.height) / 2, .7);
+  const bars = Math.round(H * .2 * easeOut(clamp(t / .35, 0, 1))); rect(0, 0, W, bars, '#05040f'); rect(0, H - bars, W, bars, '#05040f'); hline(0, bars, W, UI.goldDark); hline(0, H - bars - 1, W, UI.goldDark);
+  const cy = Math.round(H * .46), label = ch.num ? 'CHAPTER ' + ch.num : 'SKIRMISH';
+  const rib = REDUCED ? 0 : Math.round((1 - easeOut(clamp((t - .15) / .3, 0, 1))) * -W * .6), rw = textWidth(label) + 16; ribbonTab(label, Math.round(W / 2 - rw / 2) + rib, cy - 34);
+  const tw = textWidth(ch.title.toUpperCase(), BIG), scale = W >= tw * 3 + 24 ? 3 : W >= tw * 2 + 16 ? 2 : 1;
+  drawStampWordAt(ch.title, W / 2, cy - Math.round(4.5 * scale) - 4, t - .25, UI.gold, UI.goldDark, scale);
+  const landed = [...ch.title].filter((c2, i) => c2 !== ' ' && t - .25 >= i * .06 + .2).length; if (landed > (SC.data.stamped || 0)) { SC.data.stamped = landed; if (!REDUCED) Audio.sfx(landed === [...ch.title].filter(c2 => c2 !== ' ').length ? 'hit' : 'stamp'); }
+  if (t > .9) { ctx.globalAlpha = clamp((t - .9) / .3, 0, 1); const goal = objectiveTextFor(ch.map.objective).replace('Objective: ', ''); const gl = goal[0].toUpperCase() + goal.slice(1), gw = textWidth(gl) + 14; iconAt('flag', Math.round(W / 2 - gw / 2), cy + Math.round(4.5 * scale) + 5, UI.gold); text(gl, Math.round(W / 2 - gw / 2) + 14, cy + Math.round(4.5 * scale) + 6, UI.ink, { outline: UI.inset });
+    const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2); if (foes.length) textC(foes.length + ' foes' + (wild.length ? ' · ' + wild.length + ' wild' : '') + ' · Lv ' + Math.min(...foes.map(u => u.level)) + '-' + Math.max(...foes.map(u => u.level)), W / 2, cy + Math.round(4.5 * scale) + 18, UI.muted, { outline: UI.inset }); ctx.globalAlpha = 1; }
+  // the boss slides in from the right on boss maps
+  const boss = (ch.map.units || []).find(u => u.boss && (u.team == null || u.team === 1)); if (boss && H >= 200) { requestAnim(boss.mon); const bx = Math.round(W - 44 + (REDUCED ? 0 : (1 - easeOut(clamp((t - .6) / .4, 0, 1))) * 80)), by = H - bars - 6; if (bx < W + 40) { ctx.globalAlpha = .5; ellipse(bx, by, 16, 3, '#000'); ctx.globalAlpha = 1; if (animReady(boss.mon)) drawAnim(boss.mon, bx, by, t); else drawMon(boss.mon, bx, by, { flip: true }); if (t > 1.1) { const mh = typeof ANIM_META !== 'undefined' && ANIM_META[boss.mon] ? ANIM_META[boss.mon].b : 30; textC('BOSS', bx, Math.max(bars + 2, by - mh - 10), UI.red, { outline: UI.inset }); } } }
+  if (SC.t > 2.6 || (SC.t > .6 && SC.skip)) { SC.skip = false; SC.data.next(); }
 }
+// drawStampWord with an explicit time (the chapter card starts its letters later than the end screen).
+function drawStampWordAt(word, cx, y, t, col, dark, scale) { return drawStampWord(word, cx, y, t + END_BEATS.letters, col, dark, scale); }
 function objectiveTextFor(o) { switch (o.type) { case 'rout': return 'Objective: defeat all enemies'; case 'boss': return 'Objective: defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Objective: survive ' + o.turns + ' turns'; case 'seize': return 'Objective: seize the ' + (o.what || 'gym'); case 'versus': return 'Objective: defeat the other trainer'; } return ''; }
 function cardInput(ev) { if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) SC.skip = true; }
 

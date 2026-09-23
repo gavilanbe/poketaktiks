@@ -145,7 +145,7 @@ function countUp(id, v, dur = .6, delay = 0) { const t = appear(id) - delay; if 
 const TRANS = { snap: null, t: 0, on: false };
 function captureTransition() {
   if (REDUCED || !CLOCK.frame) return;
-  try { if (!TRANS.snap) TRANS.snap = document.createElement('canvas'); TRANS.snap.width = cv.width; TRANS.snap.height = cv.height; TRANS.snap.getContext('2d').drawImage(cv, 0, 0); TRANS.t = 0; TRANS.on = true; } catch (_) { TRANS.on = false; }
+  try { if (!TRANS.snap) TRANS.snap = document.createElement('canvas'); TRANS.snap.width = cv.width; TRANS.snap.height = cv.height; TRANS.snap.getContext('2d').drawImage(cv, 0, 0); TRANS.t = 0; TRANS.on = true; Audio.sfx('wipe'); } catch (_) { TRANS.on = false; }
 }
 function drawTransition(dt) {
   if (!TRANS.on) return; TRANS.t += dt; const T = TRANS.t, CLOSE = .17, HOLD = .07, OPEN = .28;
@@ -456,6 +456,10 @@ const Audio = {
       case 'psy': this.tone('sine', 400, 1400, .45, .14); this.tone('sine', 800, 2800, .45, .05, .02); break;
       case 'beam': this.tone('sawtooth', 300, 1200, .3, .12); this.tone('square', 600, 2400, .3, .05, .03); break;
       case 'faint': this.tone('square', 330, 40, .55, .22); this.tone('triangle', 220, 30, .6, .12, .05); break;
+      // presentation: a letter landing, a soft tick, a sparkle chime
+      case 'stamp': this.tone('square', 170, 55, .09, .18); this.noise(.05, .12, 0, 260); break;
+      case 'tick': this.tone('triangle', 900, 700, .03, .06); break;
+      case 'chime': [1319, 1760].forEach((f, i) => this.tone('sine', f, f, .12, .08, i * .05)); break;
     }
   },
   // Music: a tiny 3-voice step sequencer. Songs are {bpm, bass:[...], lead:[...], arp:[...]} with note numbers (semitones from A3) or null.
@@ -549,7 +553,8 @@ const ROTULO_SRC = {
 // A glyph is "offset|rows" — offset is the row where the glyph starts below the cap line (2 = x-height).
 function parseGlyphs(src) { const out = {}; for (const k in src) { let s = src[k], off = 0; const bar = s.indexOf('|'); if (bar >= 0 && bar < 3) { off = parseInt(s.slice(0, bar)); s = s.slice(bar + 1); } const rows = s.split('/'); out[k] = { off, rows, w: rows[0].length, h: rows.length }; } return out; }
 const EXTRA_SRC = { '♪': '00011/00010/00010/00010/01110/11110/01100', '●': '1|01110/11111/11111/11111/01110', '○': '1|01110/10001/10001/10001/01110', '◂': '1|00001/00111/11111/00111/00001', '▸': '1|10000/11100/11111/11100/10000', '▲': '2|00100/01110/11111', '▼': '2|11111/01110/00100', '◆': '1|00100/01110/11111/01110/00100' };
-const FONT = Object.assign(parseGlyphs(CUADERNO_SRC), parseGlyphs(EXTRA_SRC)), BIG = parseGlyphs(ROTULO_SRC);
+const BIG_EXTRA_SRC = { "'": '11/11/01/10/00/00/00/00/00', '★': '0001000/0001000/0011100/1111111/0111110/0011100/0110110/1100011/0000000', '♥': '0110110/1111111/1111111/1111111/0111110/0011100/0001000/0000000/0000000', '#': '0110110/0110110/1111111/0110110/0110110/1111111/0110110/0110110/0000000' };
+const FONT = Object.assign(parseGlyphs(CUADERNO_SRC), parseGlyphs(EXTRA_SRC)), BIG = Object.assign(parseGlyphs(ROTULO_SRC), parseGlyphs(BIG_EXTRA_SRC));
 const DESC = new Set('gjpqy,;¡¿ç');
 function stripAccents(c) { return c.normalize('NFD').replace(/[̀-ͯ]/g, ''); }
 function glyph(c, font) { return font[c] || font[stripAccents(c)] || (font === BIG ? BIG[c.toUpperCase()] || BIG[stripAccents(c).toUpperCase()] : null) || font['?']; }
@@ -1544,7 +1549,10 @@ function drawFX(ox, oy, texts = true) {
 }
 // Floating texts: world position (x + ox, y + oy) times `sc` gives the screen position; the text itself keeps its pixel size.
 function drawFXTexts(ox, oy, sc = 1) {
-  for (const f of FX.texts) { if (f.delay > 0) continue; const k = f.t / f.life; ctx.globalAlpha = k > .7 ? 1 - (k - .7) / .3 : 1; const pop = f.pop && f.t < .15 ? 1 + (1 - f.t / .15) * .5 : 1; const x = (f.x + ox) * sc, y = (f.y + oy) * sc - (pop - 1) * 6; if (f.big) bigC(f.s, x, y, f.col, { outline: f.outline }); else textC(f.s, x, y, f.col, { outline: f.outline }); ctx.globalAlpha = 1; }
+  for (const f of FX.texts) { if (f.delay > 0) continue; const k = f.t / f.life; ctx.globalAlpha = k > .7 ? 1 - (k - .7) / .3 : 1; const pop = f.pop && f.t < .15 ? 1 + (1 - f.t / .15) * .5 : 1; const x = (f.x + ox) * sc, y = (f.y + oy) * sc - (pop - 1) * 6;
+    // big numbers land: two frames at double size, then their own size (whole-pixel scales keep the glyphs crisp)
+    if (f.big && f.pop && f.t < .1 && !REDUCED) { ctx.save(); ctx.translate(Math.round(x), Math.round(y + 4)); ctx.scale(2, 2); bigC(f.s, 0, -4.5, '#ffffff', { outline: f.outline }); ctx.restore(); }
+    else if (f.big) bigC(f.s, x, y, f.col, { outline: f.outline }); else textC(f.s, x, y, f.col, { outline: f.outline }); ctx.globalAlpha = 1; }
 }
 function shake(n) { FX.shake = Math.max(FX.shake, n); }
 function flashScreen(col = '#ffffff', a = 1) { FX.flash = a; FX.flashCol = col; }
@@ -2398,7 +2406,9 @@ function setupEvent(q) {
     case 'brace': Audio.sfx('shake'); floatText(ux(e.unit), uy(e.unit) - 8, 'BRACED!', BRACE_COL, { outline: '#000' }); e.unit.fx.sy = .8; e.unit.fx.sx = 1.2; break;
     case 'root': Audio.sfx('grass'); shake(1); floatText(ux(e.unit), uy(e.unit) - 8, 'ROOTED!', ROOT_COL, { outline: '#000' }); spawnParts(ux(e.unit), uy(e.unit) + 12, 12, ['#2a6b38', '#c8f0a0'], { speed: 30, grav: 40, life: .6 }); break;
     case 'blocked': q.dur = BT.fast ? .4 : .7; if (!unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); floatText(ux(e.unit), uy(e.unit) - 8, e.kind === 'frz' ? 'Frozen solid!' : 'Fully paralyzed!', STATUS[e.kind].col, { outline: '#000' }); break;
-    case 'property': q.dur = BT.fast ? .4 : .8; floatText(ux(e.unit), uy(e.unit) - 10, e.done ? 'CAPTURED!' : e.progress + '/20', UI.gold, { outline: '#000' }); Audio.sfx('select'); break;
+    case 'property': q.dur = BT.fast ? .4 : e.done ? 1.1 : .8; floatText(ux(e.unit), uy(e.unit) - 10, e.done ? 'CAPTURED!' : e.progress + '/20', e.done ? UI.gold : '#fff0a0', { outline: '#000', big: !!e.done, life: e.done ? 1.4 : 1 });
+      if (e.done) { const c = teamColorL(e.unit.team); Audio.sfx('caught'); shake(3); flashScreen(c, .25); spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 30, life: .55, col: c }); spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 18, life: .45, col: '#ffffff', delay: .08 }); spawnParts(ux(e.unit), uy(e.unit) + 4, 26, [c, '#ffffff', UI.gold, teamColor(e.unit.team)], { speed: 90, life: .9, grav: 90 }); e.unit.fx.sy = .75; e.unit.fx.sx = 1.25; }
+      else { Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 20, 8, [UI.gold, '#ffffff'], { speed: 30, life: .5, grav: -40 }); } break;
     case 'unroot': q.dur = BT.fast ? .2 : .4; floatText(ux(e.unit), uy(e.unit) - 8, 'Free!', ROOT_COL, { outline: '#000' }); break;
   }
 }
@@ -2955,7 +2965,7 @@ function hudLayout() {
 }
 function drawHUD() {
   HUD.hits = []; HUD.panels = []; const W = VIEW.w, H = VIEW.h; const L = hudLayout();
-  if (BT.mode === 'end') { drawEndScreen(); return; }
+  if (BT.mode === 'end') { if (SC.name === 'battle') drawEndScreen(); return; } // the outro dialogue draws over the board, not over the stamp
   const boardModes = ['idle', 'move', 'target', 'catchTarget', 'skillTarget', 'unitinfo', 'menu'];
   // turn / objective / ready-count card (top-left)
   if (BT.mode === 'power') { drawPowerMenu(); return; }
@@ -3368,6 +3378,7 @@ function drawHandoff() {
 const END_BEATS = { letters: .15, stars: 1.25, starGap: .38 };
 function endStars() { if (B.versus || B.territory || !(B.result === 'win')) return null; return battleStars(B.map.par || (CHAPTERS[B.chapter] && CHAPTERS[B.chapter].par) || 10); }
 function endSequenceCues(a, b) {
+  if (!REDUCED) { const word = endWord(); for (let i = 0; i < word.length; i++) { const at = END_BEATS.letters + i * .06 + .2; if (word[i] !== ' ' && a < at && b >= at) Audio.sfx(i === word.length - 1 ? 'crit' : 'stamp'); } }
   const n = endStars(); if (n == null || REDUCED) return;
   for (let k = 0; k < 3; k++) { const at = END_BEATS.stars + k * END_BEATS.starGap; if (a < at && b >= at) { if (k < n) { Audio.sfx('levelup'); shake(2); const W = bvW(); spawnParts(CAM.x + W / 2 + (k - 1) * 40 / BT.zoom, CAM.y + bvH() / 2 + 18 / BT.zoom, 16, [UI.gold, '#ffffff', '#fff0a0'], { speed: 80, life: .7, grav: 60 }); } else Audio.sfx('cursor'); } }
 }
@@ -3383,9 +3394,10 @@ function drawStampWord(word, cx, y, t, col, dark, scale) {
   chars.forEach((ch, i) => { const at = END_BEATS.letters + i * .06, u = REDUCED ? 1 : clamp((t - at) / .22, 0, 1); if (u > 0 && ch !== ' ') { const drop = Math.round((1 - easeOutBounce(u)) * -34), sc = scale * (1 + (1 - u) * .8); ctx.save(); ctx.globalAlpha = Math.min(1, u * 3); ctx.translate(x + widths[i] * scale / 2, y + drop + 4.5 * scale); ctx.scale(sc, sc); bigC(ch, 0, -4.5, col, { outline: dark }); ctx.restore(); } x += widths[i] * scale; });
   return total;
 }
+function endWord() { const vs = B.versus, vt = B.result === 'p1' ? 0 : B.result === 'p2' ? 1 : -1; return vs ? (vt < 0 ? 'DRAW' : teamName(vt) + ' WINS!') : B.result === 'win' ? 'VICTORY!' : B.result === 'draw' ? 'DRAW' : B.result === 'retreat' ? 'RETREAT' : 'DEFEAT'; }
 function drawEndScreen() {
   const W = VIEW.w, H = VIEW.h, t = BT.endTimer, k = Math.min(1, t / .5), vs = B.versus, vt = B.result === 'p1' ? 0 : B.result === 'p2' ? 1 : -1, win = vs ? vt >= 0 : B.result === 'win';
-  const word = vs ? (vt < 0 ? 'DRAW' : teamName(vt) + ' WINS!') : B.result === 'win' ? 'VICTORY!' : B.result === 'draw' ? 'DRAW' : B.result === 'retreat' ? 'RETREAT' : 'DEFEAT';
+  const word = endWord();
   const col = vs ? (vt < 0 ? UI.muted : teamColorL(vt)) : win ? UI.gold : B.result === 'draw' ? UI.ink : '#ff8080', dark = win ? (vs ? UI.inset : UI.goldDark) : '#2a0a14';
   ctx.globalAlpha = .62 * k; rect(0, 0, W, H, win ? '#0a0820' : '#1a0610'); ctx.globalAlpha = 1;
   const cy = Math.round(H * .4), scale = W >= textWidth(word, BIG) * 3 + 30 ? 3 : W >= textWidth(word, BIG) * 2 + 16 ? 2 : 1;
@@ -4308,14 +4320,14 @@ function versusDraw() {
   if (narrow) { // phones: two compact team strips, no arena preview, a four-column roster
     const pw = Math.floor((W - 16) / 2), ph = 40, py = 38;
     const strip = (t, x) => { panel(x, py, pw, ph, { title: 'P' + (t + 1), fill: t === 0 ? '#17264a' : '#3a1a22', border: cur === t ? UI.gold : UI.border });
-      const sw = Math.floor((pw - 10) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 5 + i * sw; portraitBg(sx, py + 7, sw - 2, 22, t); const n = S.teams[t][i]; if (n != null) { ctx.drawImage(monIcon(n, t === 1), sx + Math.round((sw - 2 - 24) / 2), py + 10, 24, 18); hit(sx, py + 7, sw - 2, 22, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 7, sw - 2, 22, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 14, '#ffffff40'); }
+      const sw = Math.floor((pw - 10) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 5 + i * sw; portraitBg(sx, py + 7, sw - 2, 22, t); const n = S.teams[t][i]; if (n != null) { ctx.drawImage(monIcon(n, t === 1), sx + Math.round((sw - 2 - 24) / 2), py + 10, 24, 18); if (i === 0) drawCrown(sx + 1, py + 8); hit(sx, py + 7, sw - 2, 22, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 7, sw - 2, 22, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 14, '#ffffff40'); }
       textC(S.teams[t].length >= S.size ? 'READY' : cur === t ? 'PICKING…' : S.teams[t].length + '/' + S.size, x + pw / 2, py + ph - 9, S.teams[t].length >= S.size ? UI.green : cur === t ? UI.gold : UI.muted); };
     strip(0, 6); strip(1, W - 6 - pw); gy = py + ph + 8;
   } else {
     // team panels left / right, arena preview in the middle
     const pw = Math.min(140, Math.floor((W - 110) / 2) - 8), ph = 56, py = 28; const p1x = 6, p2x = W - pw - 6;
     const teamPanel = (t, x) => { panel(x, py, pw, ph, { title: 'PLAYER ' + (t + 1), fill: t === 0 ? '#17264a' : '#3a1a22', border: cur === t ? UI.gold : UI.border });
-      const sw = Math.floor((pw - 12) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 6 + i * sw; portraitBg(sx, py + 8, sw - 2, 34, t); const n = S.teams[t][i]; if (n != null) { drawMon(n, sx + (sw - 2) / 2, py + 40, { flip: t === 1 }); hit(sx, py + 8, sw - 2, 34, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 8, sw - 2, 34, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 22, '#ffffff40'); }
+      const sw = Math.floor((pw - 12) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 6 + i * sw; portraitBg(sx, py + 8, sw - 2, 34, t); const n = S.teams[t][i]; if (n != null) { drawMon(n, sx + (sw - 2) / 2, py + 40, { flip: t === 1, outline: i === 0 ? UI.gold : null }); if (i === 0) drawCrown(sx + 2, py + 10); hit(sx, py + 8, sw - 2, 34, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 8, sw - 2, 34, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 22, '#ffffff40'); }
       text(S.teams[t].length + '/' + S.size + ' picked', x + 6, py + ph - 10, UI.muted); textR(S.teams[t].length >= S.size ? 'READY' : cur === t ? 'PICKING…' : 'waiting', x + pw - 6, py + ph - 10, S.teams[t].length >= S.size ? UI.green : cur === t ? UI.gold : UI.muted); };
     teamPanel(0, p1x); teamPanel(1, p2x);
     const mw = p2x - (p1x + pw) - 12; const sc = Math.min(mw / S.bd.canvas.width, (ph - 4) / S.bd.canvas.height); const pwid = Math.round(S.bd.canvas.width * sc), phei = Math.round(S.bd.canvas.height * sc); preview(Math.round(W / 2 - pwid / 2), py + Math.round((ph - phei) / 2), pwid, phei);
@@ -4364,18 +4376,25 @@ function starterInput(ev) {
 }
 
 // ---------------------------------------------------------------- chapter card
-// Chapter title card: the map itself, dimmed, behind a letterboxed band; the title grows in and the rules follow.
+// Between the preparation and the board: letterbox bars close in over the map, a gold ribbon slides in with the chapter
+// number, the name drops in letter by letter, the goal follows; on boss maps the boss slides in from the right.
 function cardDraw() {
-  const W = VIEW.w, H = VIEW.h; const ch = SC.data.chapter; rect(0, 0, W, H, '#0e0c10');
-  if (!SC.data.bd) SC.data.bd = makeBackdrop(ch.map); const bd = SC.data.bd; drawBackdrop(bd, (W - bd.canvas.width) / 2 - SC.t * 4, (H - bd.canvas.height) / 2, .78);
-  const k = Math.min(1, SC.t / .5), y = Math.round(H / 2 - 22); const ts = textWidth(ch.title.toUpperCase(), BIG) * 2 > W - 8 ? 1 : 2;
-  const bandH = 64; rect(0, 0, W, Math.max(0, y - 14 - Math.round(H * .18)), '#070a14'); rect(0, y - 14 + bandH + Math.round(H * .18), W, H, '#070a14');
-  ctx.globalAlpha = .82 * k; rect(0, y - 14, W, bandH, '#070a14'); ctx.globalAlpha = k; hline(0, y - 14, W, UI.gold); hline(0, y - 13, W, UI.goldDark); hline(0, y - 14 + bandH, W, UI.gold); hline(0, y - 15 + bandH, W, UI.goldDark);
-  bigC(ch.num ? 'CHAPTER ' + ch.num : 'SKIRMISH', W / 2, y - 6, UI.muted, { outline: UI.shadow });
-  const grow = easeOut(k); ctx.save(); ctx.translate(W / 2, y + 8 + (ts === 1 ? 4 : 0)); ctx.scale(ts * (.6 + .4 * grow), ts * (.6 + .4 * grow)); bigC(ch.title, 0, 0, UI.gold, { outline: '#3a2000' }); ctx.restore();
-  if (SC.t > .35) { ctx.globalAlpha = Math.min(1, (SC.t - .35) / .3); wrap(objectiveTextFor(ch.map.objective), W - 12).forEach((l, i) => textC(l, W / 2, y + 34 + i * 9, UI.ink)); }
-  ctx.globalAlpha = 1; if (SC.t > 2.4 || (SC.t > .6 && SC.skip)) { SC.skip = false; SC.data.next(); }
+  const W = VIEW.w, H = VIEW.h, ch = SC.data.chapter, t = SC.t; rect(0, 0, W, H, '#0e0c10');
+  if (!SC.data.bd) SC.data.bd = makeBackdrop(ch.map); const bd = SC.data.bd; drawBackdrop(bd, (W - bd.canvas.width) / 2 - t * 8, (H - bd.canvas.height) / 2, .7);
+  const bars = Math.round(H * .2 * easeOut(clamp(t / .35, 0, 1))); rect(0, 0, W, bars, '#05040f'); rect(0, H - bars, W, bars, '#05040f'); hline(0, bars, W, UI.goldDark); hline(0, H - bars - 1, W, UI.goldDark);
+  const cy = Math.round(H * .46), label = ch.num ? 'CHAPTER ' + ch.num : 'SKIRMISH';
+  const rib = REDUCED ? 0 : Math.round((1 - easeOut(clamp((t - .15) / .3, 0, 1))) * -W * .6), rw = textWidth(label) + 16; ribbonTab(label, Math.round(W / 2 - rw / 2) + rib, cy - 34);
+  const tw = textWidth(ch.title.toUpperCase(), BIG), scale = W >= tw * 3 + 24 ? 3 : W >= tw * 2 + 16 ? 2 : 1;
+  drawStampWordAt(ch.title, W / 2, cy - Math.round(4.5 * scale) - 4, t - .25, UI.gold, UI.goldDark, scale);
+  const landed = [...ch.title].filter((c2, i) => c2 !== ' ' && t - .25 >= i * .06 + .2).length; if (landed > (SC.data.stamped || 0)) { SC.data.stamped = landed; if (!REDUCED) Audio.sfx(landed === [...ch.title].filter(c2 => c2 !== ' ').length ? 'hit' : 'stamp'); }
+  if (t > .9) { ctx.globalAlpha = clamp((t - .9) / .3, 0, 1); const goal = objectiveTextFor(ch.map.objective).replace('Objective: ', ''); const gl = goal[0].toUpperCase() + goal.slice(1), gw = textWidth(gl) + 14; iconAt('flag', Math.round(W / 2 - gw / 2), cy + Math.round(4.5 * scale) + 5, UI.gold); text(gl, Math.round(W / 2 - gw / 2) + 14, cy + Math.round(4.5 * scale) + 6, UI.ink, { outline: UI.inset });
+    const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2); if (foes.length) textC(foes.length + ' foes' + (wild.length ? ' · ' + wild.length + ' wild' : '') + ' · Lv ' + Math.min(...foes.map(u => u.level)) + '-' + Math.max(...foes.map(u => u.level)), W / 2, cy + Math.round(4.5 * scale) + 18, UI.muted, { outline: UI.inset }); ctx.globalAlpha = 1; }
+  // the boss slides in from the right on boss maps
+  const boss = (ch.map.units || []).find(u => u.boss && (u.team == null || u.team === 1)); if (boss && H >= 200) { requestAnim(boss.mon); const bx = Math.round(W - 44 + (REDUCED ? 0 : (1 - easeOut(clamp((t - .6) / .4, 0, 1))) * 80)), by = H - bars - 6; if (bx < W + 40) { ctx.globalAlpha = .5; ellipse(bx, by, 16, 3, '#000'); ctx.globalAlpha = 1; if (animReady(boss.mon)) drawAnim(boss.mon, bx, by, t); else drawMon(boss.mon, bx, by, { flip: true }); if (t > 1.1) { const mh = typeof ANIM_META !== 'undefined' && ANIM_META[boss.mon] ? ANIM_META[boss.mon].b : 30; textC('BOSS', bx, Math.max(bars + 2, by - mh - 10), UI.red, { outline: UI.inset }); } } }
+  if (SC.t > 2.6 || (SC.t > .6 && SC.skip)) { SC.skip = false; SC.data.next(); }
 }
+// drawStampWord with an explicit time (the chapter card starts its letters later than the end screen).
+function drawStampWordAt(word, cx, y, t, col, dark, scale) { return drawStampWord(word, cx, y, t + END_BEATS.letters, col, dark, scale); }
 function objectiveTextFor(o) { switch (o.type) { case 'rout': return 'Objective: defeat all enemies'; case 'boss': return 'Objective: defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Objective: survive ' + o.turns + ' turns'; case 'seize': return 'Objective: seize the ' + (o.what || 'gym'); case 'versus': return 'Objective: defeat the other trainer'; } return ''; }
 function cardInput(ev) { if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) SC.skip = true; }
 
@@ -4658,7 +4677,7 @@ function drawLogo(cx, y, cell) {
       // the shine: a 3-px band sweeping left to right across the whole wordmark
       const k = ((t - 1.6) % 4.2) / .9; if (!REDUCED && k >= 0 && k < 1) { const sx = Math.round(cx - M.w / 2 - 10 + (M.w + 20) * k) + (p.row ? 6 : 0); ctx.save(); ctx.beginPath(); ctx.rect(sx, p.y - 4, 3, p.h + 8); ctx.rect(sx + 5, p.y - 4, 1, p.h + 8); ctx.clip(); ctx.globalAlpha *= .85; ctx.drawImage(L.shine, p.x - L.P, p.y - L.P); ctx.restore(); } }
     SC.titleLetters.push({ x: p.x, y: p.y, w: p.w, h: p.h });
-    const lk = p.row + ':' + p.i; if (!REDUCED && p.u >= 1 && fx.landed && !fx.landed[lk]) { fx.landed[lk] = true; titleDust(p.x + p.w / 2, p.y + p.h + 2); if (p.row && p.i === 6) { shakeTitle(); Audio.sfx('shake'); } }
+    const lk = p.row + ':' + p.i; if (!REDUCED && p.u >= 1 && fx.landed && !fx.landed[lk]) { fx.landed[lk] = true; titleDust(p.x + p.w / 2, p.y + p.h + 2); Audio.sfx('tick'); if (p.row && p.i === 6) { shakeTitle(); Audio.sfx('shake'); } }
   }
   ctx.globalAlpha = 1;
   // sparkles: four-point stars that grow and shrink on the letters
@@ -5079,15 +5098,23 @@ function routeInput(ev) {
 ITEMS.practiceball = { name: 'Practice Ball', kind: 'ball', rate: 1, col: '#f0c957', desc: 'Oak\'s free practice ball. Guaranteed at half HP.' };
 function fitLabel(s, w) { if (textWidth(s) <= w) return s; while (s.length > 1 && textWidth(s + '...') > w) s = s.slice(0, -1); return s + '...'; }
 function showJourney(lines, next) { goScene('journey', { lines, next }); }
+// A lesson card: the captain in a portrait on the left (when there is room), the lesson title on a ribbon, and each tip
+// sliding in after the one before with a numbered bullet; LET'S GO pulses once everything is on screen.
 function journeyDraw() {
-  const W = VIEW.w, H = VIEW.h, S = SC.data, w = Math.min(310, W - 16), x = (W - w) / 2;
-  rect(0, 0, W, H, UI.bg); SC.hits = [];
-  const rows = S.lines.slice(1).map((s, i) => wrap((i + 1) + '. ' + s, w - 24));
-  const h = Math.min(H - 12, 50 + rows.reduce((n, a) => n + a.length * 10 + 5, 0)), y = (H - h) / 2;
-  const p = panel(x, y, w, h, { header: fitLabel(S.lines[0], w - 16), headerFill: UI.panel2 });
-  let yy = p.cy + 4;
-  rows.forEach(ls => { ls.forEach(l => { text(l, x + 12, yy, UI.ink); yy += 10; }); yy += 5; });
-  bigButton(x + 8, y + h - 27, w - 16, 20, 'LET\'S GO', () => { Audio.sfx('ok'); S.next(); }, { variant: 'primary' });
+  const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t, portrait = W >= 300, w = Math.min(360, W - 16), x = Math.round((W - w) / 2);
+  rect(0, 0, W, H, UI.bg); for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .18 * y / H; rect(0, y, W, 2, '#2a2f78'); } ctx.globalAlpha = 1; SC.hits = [];
+  const pw = portrait ? 64 : 0, tw = w - 20 - (pw ? pw + 8 : 0), rows = S.lines.slice(1).map(s2 => wrap(s2, tw - 16));
+  const h = Math.min(H - 12, 44 + rows.reduce((n, a) => n + a.length * 10 + 5, 0) + 30), y = Math.round((H - h) / 2), tok = unfold('journey', x, y, w, h, .22);
+  const p = panel(x, y, w, h, { header: fitLabel(S.lines[0], w - 16), headerFill: '#2a2470' });
+  const cap = SAVE && SAVE.party && SAVE.party.length ? SAVE.party[SAVE.captainPid || 0].num : 25;
+  if (pw) { const px0 = x + 10, py0 = p.cy + 2, ph = Math.min(70, h - (p.cy - y) - 36); portraitBg(px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); requestAnim(cap); ctx.save(); ctx.beginPath(); ctx.rect(px0, py0, pw, ph); ctx.clip(); if (animReady(cap)) drawAnim(cap, px0 + pw / 2, py0 + ph - 3, t); else drawMon(cap, px0 + pw / 2, py0 + ph - 3, { outline: teamColor(0) }); ctx.restore(); if (SAVE) drawCrown(px0 + 2, py0 + 2); }
+  let yy = p.cy + 4; const tx = x + 10 + (pw ? pw + 8 : 0);
+  rows.forEach((ls, i) => { const k = REDUCED ? 1 : clamp((t - .25 - i * .18) / .25, 0, 1); if (k <= 0) { yy += ls.length * 10 + 5; return; } ctx.globalAlpha = k; const off = Math.round((1 - easeOut(k)) * 16);
+    circle(tx + 4 - off, yy + 3, 5, UI.inset); circle(tx + 4 - off, yy + 3, 4, UI.gold); textC(String(i + 1), tx + 5 - off, yy, UI.goldDark);
+    ls.forEach(l => { text(l, tx + 13 - off, yy, UI.ink); yy += 10; }); yy += 5; ctx.globalAlpha = 1; });
+  unfoldEnd(tok);
+  const ready = REDUCED || t > .25 + rows.length * .18, pulse = ready && !REDUCED ? Math.round(Math.abs(Math.sin(t * 4)) * 1) : 0;
+  bigButton(x + 8, y + h - 26 - pulse, w - 16, 20, 'LET\'S GO', () => { Audio.sfx('ok'); S.next(); }, { variant: 'primary', hot: ready });
 }
 function journeyInput(ev) {
   if (ev.type === 'key' && (ev.key === 'ok' || ev.key === 'back')) { Audio.sfx('ok'); SC.data.next(); }
@@ -5250,42 +5277,39 @@ function drawOutposts() {
   }
 }
 
+// Conquest setup: pick the captain (both sides lead with the same one), see the six teammates (three start, three wait as
+// reserves with their cost), the three rules, and the Three Bridges map. Controls: the captain cards, BACK, START.
 function territorySetupDraw() {
-  const W = VIEW.w, H = VIEW.h, S = SC.data, w = Math.min(330, W - 16), x = (W - w) / 2;
-  S.captain = CAPTAINS[S.captain] ? S.captain : 7;
-  rect(0, 0, W, H, UI.bg); SC.hits = [];
-  screenTitle('TERRITORY', 'Three Bridges · same captain both sides', 6);
-  const cw = Math.floor((w - 8) / 3), y = 40;
-  STARTERS.forEach((n, i) => {
-    const xx = x + i * (cw + 4), c = CAPTAINS[n], selected = S.captain === n;
-    panel(xx, y, cw, 53, { fill: selected ? UI.panel2 : UI.panelDark, border: selected || SC.i === i ? c.col : UI.border2 });
-    drawMon(n, xx + cw / 2, y + 31, {});
-    textC(fitLabel(DEX[n].name, cw - 8), xx + cw / 2, y + 39, selected ? c.col : UI.ink);
-    hit(xx, y, cw, 53, () => { S.captain = n; SC.i = i; Audio.sfx('cursor'); });
-  });
-  const c = CAPTAINS[S.captain]; textC(c.name + ' / ' + c.superName, W / 2, 102, c.col);
-  const ls = wrap(c.normal, w - 8); ls.forEach((l, i) => textC(l, W / 2, 114 + i * 10, UI.ink));
-  const by = H - 27, infoY = 118 + ls.length * 10;
-  const info = ['3 start · 6 teammates · 5 on map', 'Capture HQ, or hold 2 centers for 3 turns.', 'Centers earn CP. Powers use a separate bar.'];
-  if (H > 265) {
-    textC('YOUR TEAM · 3 START / 3 RESERVE', W / 2, infoY, UI.gold);
-    territoryRoster(S.captain).forEach(([num, cost], i) => {
-      const cell = Math.floor(w / 2), xx = x + (i % 2) * cell, yy = infoY + 13 + Math.floor(i / 2) * 20;
-      text(fitLabel(DEX[num].name, cell - 8), xx + 4, yy, UI.ink);
-      text(i < 3 ? 'STARTS' : cost + ' CP', xx + 4, yy + 9, i < 3 ? UI.green : UI.muted);
-    });
-  }
-  let iy = H > 265 ? infoY + 77 : infoY;
-  const rules = H < 215 ? ['Same captain on both sides · HELP for rules'] : info;
-  for (const s of rules) for (const l of wrap(s, w)) { if (iy + 8 < by - 3) textC(l, W / 2, iy, UI.muted); iy += 10; }
-  const available = by - iy - 10;
-  if (available > 45) {
-    const bd = S.bd, scale = Math.min((w - 12) / bd.canvas.width, available / bd.canvas.height);
-    const mw = Math.floor(bd.canvas.width * scale), mh = Math.floor(bd.canvas.height * scale), mx = Math.floor((W - mw) / 2), my = Math.floor(iy + 5 + (available - mh) / 2);
-    outline(mx - 2, my - 2, mw + 4, mh + 4, UI.border2); ctx.drawImage(bd.canvas, mx, my, mw, mh);
-  }
-  bigButton(x, by, Math.floor(w * .3), 20, 'BACK', () => goScene('quick'), { variant: 'ghost', hot: SC.i === 3 });
-  bigButton(x + Math.floor(w * .3) + 4, by, w - Math.floor(w * .3) - 4, 20, 'START', () => launchTerritory(S.seed, false, [S.captain, S.captain]), { variant: 'primary', hot: SC.i === 4 });
+  const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t, bh = btnH(); S.captain = CAPTAINS[S.captain] ? S.captain : 7; rect(0, 0, W, H, UI.bg); SC.hits = [];
+  drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 - t * 4, (H - S.bd.canvas.height) / 2, .82);
+  const top = screenTitle('CONQUEST', H >= 240 ? (W >= 220 ? 'Three Bridges · centers, points and reserves' : 'Three Bridges') : null, 5), by = H - bh - 6, wide = W >= 420;
+  const colW = wide ? Math.min(250, Math.floor((W - 20) / 2)) : Math.min(W - 12, 300), x0 = wide ? Math.round(W / 2 - colW - 4) : Math.round((W - colW) / 2);
+  // captains
+  const cw = Math.floor((colW - 8) / 3), chh = H >= 260 ? 50 : 38, cy0 = top + 2;
+  STARTERS.forEach((n, i) => { const xx = x0 + i * (cw + 4), c = CAPTAINS[n], sel = S.captain === n, focus = SC.i === i;
+    panel(xx, cy0, cw, chh, { fill: sel ? UI.panel2 : UI.panelDark, border: sel ? c.col : focus ? UI.gold : UI.border2, flat: true });
+    requestAnim(n); const hop = sel && !REDUCED ? Math.round(Math.abs(Math.sin(t * 5)) * 2) : 0; if (chh >= 50 && animReady(n)) { ctx.save(); ctx.beginPath(); ctx.rect(xx + 3, cy0 + 3, cw - 6, chh - 16); ctx.clip(); drawAnim(n, xx + cw / 2, cy0 + chh - 13 - hop, t + i, { sx: 1, sy: 1 }); ctx.restore(); } else drawMon(n, xx + cw / 2, cy0 + chh - 12 - hop, { outline: sel ? c.col : null });
+    textC(fitLabel(c.name, cw - 6), xx + cw / 2, cy0 + chh - 11, sel ? c.col : UI.muted);
+    hit(xx, cy0, cw, chh, () => { S.captain = n; SC.i = i; Audio.sfx('catch'); }); });
+  let y = cy0 + chh + 6; const c = CAPTAINS[S.captain];
+  if (y + 9 < by - 4) { textC(fitLabel(c.normal, colW), x0 + colW / 2, y, UI.ink, { outline: UI.inset }); y += 10; }
+  if (y + 9 < by - 4 && H >= 260) { textC(fitLabel('Super ' + c.superName + ': ' + c.super, colW), x0 + colW / 2, y, c.col, { outline: UI.inset }); y += 12; } else y += 2;
+  // the six: who starts, who waits and what each costs
+  const rosterX = wide ? x0 + colW + 8 : x0, rosterW = wide ? colW : colW; let ry = wide ? cy0 : y;
+  const roster = territoryRoster(S.captain), cellW = Math.floor((rosterW - 4) / 3), cellH = 24;
+  if (ry + 12 + cellH * 2 < by - 4) { sectionLabel('Your six', rosterX, ry, rosterW, UI.gold); ry += 10;
+    roster.forEach(([num, cost], i) => { const xx = rosterX + (i % 3) * (cellW + 2), yy = ry + Math.floor(i / 3) * (cellH + 2), starts = i < 3; rrect(xx, yy, cellW, cellH, starts ? '#1c3a6a' : '#1c1d3c', 1); drawMon(num, xx + 14, yy + cellH - 1, { outline: starts ? teamColor(0) : null }); text(starts ? 'START' : cost + ' CP', xx + 28, yy + 4, starts ? UI.green : UI.gold); text(fitLabel(ROLES[roleFor(DEX[num])].name, cellW - 30), xx + 28, yy + 13, UI.muted); });
+    ry += (cellH + 2) * 2 + 4; if (!wide) y = ry; }
+  // the rules, one line each
+  const rules = [['flag', 'Take the enemy HQ, or', UI.gold], ['flag', 'hold 2 of 3 middle centers 3 turns', UI.gold], ['ball', 'Centers pay 2 CP a turn: call reserves', UI.info]];
+  let rY = wide ? ry : y; const rX = wide ? rosterX : x0, rW = wide ? rosterW : colW;
+  for (const [ic, s2, col] of rules) { if (rY + 9 > by - 4) break; iconAt(ic, rX, rY - 1, col); text(fitLabel(s2, rW - 12), rX + 12, rY, UI.ink); rY += 11; }
+  // the map, when there is room left in the left column
+  const mapTop = wide ? y + 2 : rY + 4, avail = by - 6 - mapTop;
+  if (avail > 50) { const bd = S.bd, sc = Math.min(colW / bd.canvas.width, avail / bd.canvas.height), mw = Math.floor(bd.canvas.width * sc), mh = Math.floor(bd.canvas.height * sc), mx = (wide ? x0 : x0) + Math.floor((colW - mw) / 2), my = mapTop + Math.floor((avail - mh) / 2);
+    rect(mx - 2, my - 2, mw + 4, mh + 4, UI.inset); ctx.drawImage(bd.canvas, mx, my, mw, mh); outline(mx - 1, my - 1, mw + 2, mh + 2, UI.border2); }
+  bigButton(x0, by, Math.floor(colW * .3), bh, 'BACK', () => goScene('quick'), { variant: 'ghost', hot: SC.i === 3 });
+  bigButton(x0 + Math.floor(colW * .3) + 4, by, (wide ? colW * 2 + 8 : colW) - Math.floor(colW * .3) - 4, bh, 'START', () => launchTerritory(S.seed, false, [S.captain, S.captain]), { variant: 'primary', hot: SC.i === 4 });
 }
 // ============================================================================
 // main.js — game flow (campaign, skirmish, saves), the main loop and boot.

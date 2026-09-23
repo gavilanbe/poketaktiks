@@ -63,7 +63,8 @@ const ROTULO_SRC = {
 // A glyph is "offset|rows" — offset is the row where the glyph starts below the cap line (2 = x-height).
 function parseGlyphs(src) { const out = {}; for (const k in src) { let s = src[k], off = 0; const bar = s.indexOf('|'); if (bar >= 0 && bar < 3) { off = parseInt(s.slice(0, bar)); s = s.slice(bar + 1); } const rows = s.split('/'); out[k] = { off, rows, w: rows[0].length, h: rows.length }; } return out; }
 const EXTRA_SRC = { '♪': '00011/00010/00010/00010/01110/11110/01100', '●': '1|01110/11111/11111/11111/01110', '○': '1|01110/10001/10001/10001/01110', '◂': '1|00001/00111/11111/00111/00001', '▸': '1|10000/11100/11111/11100/10000', '▲': '2|00100/01110/11111', '▼': '2|11111/01110/00100', '◆': '1|00100/01110/11111/01110/00100' };
-const FONT = Object.assign(parseGlyphs(CUADERNO_SRC), parseGlyphs(EXTRA_SRC)), BIG = parseGlyphs(ROTULO_SRC);
+const BIG_EXTRA_SRC = { "'": '11/11/01/10/00/00/00/00/00', '★': '0001000/0001000/0011100/1111111/0111110/0011100/0110110/1100011/0000000', '♥': '0110110/1111111/1111111/1111111/0111110/0011100/0001000/0000000/0000000', '#': '0110110/0110110/1111111/0110110/0110110/1111111/0110110/0110110/0000000' };
+const FONT = Object.assign(parseGlyphs(CUADERNO_SRC), parseGlyphs(EXTRA_SRC)), BIG = Object.assign(parseGlyphs(ROTULO_SRC), parseGlyphs(BIG_EXTRA_SRC));
 const DESC = new Set('gjpqy,;¡¿ç');
 function stripAccents(c) { return c.normalize('NFD').replace(/[̀-ͯ]/g, ''); }
 function glyph(c, font) { return font[c] || font[stripAccents(c)] || (font === BIG ? BIG[c.toUpperCase()] || BIG[stripAccents(c).toUpperCase()] : null) || font['?']; }
