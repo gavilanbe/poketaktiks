@@ -4601,7 +4601,7 @@ function resultsDraw() {
   const p = panel(x, y, w, phh, { header: win ? (R.skirmish ? 'SKIRMISH WON!' : 'CHAPTER CLEAR!') : 'RETREAT', headerRight: stars && R.stars > (R.best || 0) && !R.skirmish ? 'NEW BEST' : null, headerRightCol: UI.gold, headerFill: win ? '#2a2470' : '#4a1626' });
   y = p.cy;
   if (stars) { // three stars pop in one after another, then the goals they stand for
-    for (let s2 = 0; s2 < 3; s2++) { const t0 = appear('res:star' + s2) - .25 - s2 * .3, u = clamp(t0 / .25, 0, 1), on = s2 < R.stars && u > 0, sc = on ? 1 + Math.round((1 - easeOutBack(u, 3)) * 1.5) : 1; drawBigStar(x + w / 2 + (s2 - 1) * 20, y + 7, sc, on); }
+    for (let s2 = 0; s2 < 3; s2++) { const t0 = appear('res:star' + s2) - .25 - s2 * .3, u = clamp(t0 / .25, 0, 1), on = s2 < R.stars && u > 0, sc = on ? 1 + Math.round((1 - easeOutBack(u, 3)) * 1.5) : 1; drawBigStar(x + w / 2 + (s2 - 1) * 20, y + 7, sc, on); if (u > 0 && CLOCK.frame && (R.starSfx || 0) <= s2) { R.starSfx = s2 + 1; Audio.sfx(s2 < R.stars ? 'chime' : 'tick'); } }
     y += 18; textC('win  ·  ' + (R.turns <= (R.par || 10) ? 'under par' : 'over par') + '  ·  ' + (R.faints ? R.faints + ' fainted' : 'nobody fainted'), x + w / 2, y, UI.muted); y += 12;
   }
   if (win) { const tv = countUp('res:turns', R.turns, .5, .2), kv = countUp('res:kos', R.kills, .5, .35); text('Turns ' + tv + (R.par ? ' / par ' + R.par : ''), x + 8, y, R.par && R.turns <= R.par ? UI.green : UI.ink); textR('KOs ' + kv, x + w - 8, y, UI.ink); y += 12; }
