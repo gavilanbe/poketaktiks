@@ -437,6 +437,7 @@ const Audio = {
       case 'stamp': this.tone('square', 170, 55, .09, .18); this.noise(.05, .12, 0, 260); break;
       case 'tick': this.tone('triangle', 900, 700, .03, .06); break;
       case 'chime': [1319, 1760].forEach((f, i) => this.tone('sine', f, f, .12, .08, i * .05)); break;
+      case 'boom': this.noise(.35, .12, 0, 180); this.tone('sine', 140, 45, .3, .1); this.noise(.5, .04, .08, 3000); break;
     }
   },
   // Music: a tiny 3-voice step sequencer. Songs are {bpm, bass:[...], lead:[...], arp:[...]} with note numbers (semitones from A3) or null.

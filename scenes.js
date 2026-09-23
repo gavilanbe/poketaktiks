@@ -281,13 +281,25 @@ function resultsDraw() {
 function resultsInput(ev) { if (ev.type === 'key' && (ev.key === 'ok' || ev.key === 'back')) { Audio.sfx('ok'); SC.data.next(); return; } if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); } }
 
 // ---------------------------------------------------------------- credits
+// The end of the journey: the title's dusk landscape with your own team on the knoll, fireworks over the lake, the credits
+// rising through the sky, and the wordmark dropping in letter by letter at the end.
 function creditsDraw() {
-  const W = VIEW.w, H = VIEW.h; rect(0, 0, W, H, '#0e0c10'); if (BACKDROP) drawBackdrop(BACKDROP, -((SC.t * 6) % 200), 0, .8);
-  const lines = ['POKÉTAKTIKS', '', 'You beat the campaign!', '', 'Every Pokémon on your team', 'says thank you.', '', 'Skirmish mode is waiting on the title screen', 'with fresh random maps.', '', 'Sprites: Pokémon Showdown mini icons', 'Pokémon © Nintendo / Game Freak', 'Made with pixels and WebAudio', '', 'THE END'];
-  const y0 = H - SC.t * 18; lines.forEach((l, i) => { const y = y0 + i * 16; if (y < -10 || y > H) return; if (l === 'POKÉTAKTIKS' || l === 'THE END') bigC(l, W / 2, y, UI.gold, { outline: '#3a2000' }); else textC(l, W / 2, y, UI.ink, { outline: UI.shadow }); });
-  const party = SC.data.party || []; party.slice(0, 10).forEach((p, i) => { const x = ((SC.t * 20 + i * 44) % (W + 60)) - 30; drawMon(p.num, x, H - 8 + Math.round(Math.sin(SC.t * 8 + i) * 2), {}); });
-  if (y0 + lines.length * 16 < H / 2 || SC.t > 4 && SC.skip) { goScene('title'); }
-  if (Math.random() < .3) spawnParts(vrnd() * W, -4, 1, ['#ffd24a', '#5ee06a', '#3d7dff', '#ff5a5a', '#ffffff'], { speed: 5, vy: 30, life: 4, grav: 10, size: 3 }); updateFX(1 / 60); drawFX(0, 0);
+  const W = VIEW.w, H = VIEW.h, t = SC.t, party = (SC.data && SC.data.party || []).slice(0, 6); SC.titleFx = SC.titleFx || { particles: [], hop: [], landed: {} };
+  const L = titleLayout(3); if (party.length) { L.team = party.map(p => p.num); L.teamGap = Math.min(L.teamGap, Math.floor((L.portrait ? W - 30 : W * .4) / Math.max(1, party.length - 1))); L.teamX = Math.round(Math.min(L.knollX - L.teamGap * (party.length - 1) / 2, W - 26 - L.teamGap * (party.length - 1))); }
+  if (!REDUCED && Math.floor(t * 1.4) !== Math.floor((t - (CLOCK.dt || .016)) * 1.4)) { const i = Math.floor(t * 1.4); SC.titleFx.hop[i % Math.max(1, L.team.length)] = SC.t + .45; }
+  titleScene(L);
+  ctx.globalAlpha = .45; rect(0, 0, W, Math.round(L.horizon * .9), '#07051c'); ctx.globalAlpha = 1;
+  // fireworks
+  if (!REDUCED && Math.random() < .045) { const fx0 = W * (.15 + Math.random() * .7), fy = L.horizon * (.15 + Math.random() * .45), cols = [['#ffd24a', '#ffffff'], ['#ff6a8a', '#ffd0e0'], ['#6ab0ff', '#e0f0ff'], ['#62e58d', '#e8ffe8']][Math.floor(Math.random() * 4)]; spawnParts(fx0, fy, 30, cols, { speed: 70, life: 1.2, grav: 22, size: 2 }); spawnSprite('burst', fx0, fy, { size: 16, life: .45, col: cols[0] }); spawnSprite('flash', fx0, fy, { size: 6, life: .25, col: cols[1] }); Audio.sfx('boom'); }
+  updateFX(CLOCK.dt || 1 / 60); drawFX(0, 0);
+  // the credits rise through the sky
+  const stars = SAVE && SAVE.rating ? Object.values(SAVE.rating).reduce((a, b) => a + b, 0) : 0;
+  const lines = [['YOUR JOURNEY IS COMPLETE!', UI.gold, true], ['', UI.ink], [party.length + ' Pokémon walked the route with you.', UI.ink], ['Stars earned: ' + stars + ' / ' + CHAPTERS.length * 3, UI.gold], ['', UI.ink], ['Replay any stop for stars,', UI.muted], ['or try Quick Battle and Versus.', UI.muted], ['', UI.ink], ['Sprites: Pokémon Showdown mini icons', UI.muted], ['and PokeAPI Black/White sprites', UI.muted], ['Pokémon © Nintendo / Game Freak / Creatures', UI.muted], ['Made with pixels and WebAudio', UI.muted], ['', UI.ink], ['THANK YOU FOR PLAYING', UI.gold, true]];
+  const top = L.horizon * .9, y0 = top - 8 - (t - .3) * 18; lines.forEach(([l, col, big], i) => { const y = y0 + i * 14; if (y < 4 || y > top - 8) return; ctx.globalAlpha = clamp(Math.min(y - 4, top - 8 - y) / 16, 0, 1); if (big) bigC(l, W / 2, y, col, { outline: UI.inset }); else textC(l, W / 2, y, col, { outline: UI.inset }); ctx.globalAlpha = 1; });
+  // the wordmark lands once the credits have passed
+  const endAt = .3 + (top - 12 + (lines.length - 1) * 14) / 18 + .6; if (t > endAt) { const saved = SC.t; SC.t = t - endAt; const cell = logoCell(W, H, W - 24); drawLogo(W / 2, Math.max(8, Math.round(top * .25)), cell); SC.t = saved; if (t > endAt + 1.6) { ctx.globalAlpha = clamp((t - endAt - 1.6) / .5, 0, 1); bigC('THE END', W / 2, Math.round(top * .25) + logoMetrics(cell).h + 8, UI.ink, { outline: UI.inset }); ctx.globalAlpha = 1; } }
+  if (t > endAt + 2.4 || (t > 4 && SC.skip)) goScene('title');
+  else if (t > 3) hintLine(VIEW.touch ? ['tap to skip'] : [['Z', 'skip']], W / 2, H - 14);
 }
 function creditsInput(ev) { if (ev.type === 'up' || ev.type === 'key') SC.skip = true; }
 

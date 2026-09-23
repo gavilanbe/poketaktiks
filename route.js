@@ -45,7 +45,8 @@ function routeCanvases() {
   if (ROUTE.roads) return ROUTE;
   const def = routeWorldDef(); ROUTE.def = def; ROUTE.roads = makeBackdrop(def).canvas;
   const bareRows = def.rows.map((row, y) => row.split('').map((ch, x) => ch === '#' ? (routeTreeless(def, x, y)) : ch === '=' ? '~' : ch).join(''));
-  ROUTE.bare = makeBackdrop(Object.assign({}, def, { rows: bareRows })).canvas; return ROUTE;
+  const bareDef = Object.assign({}, def, { rows: bareRows }); ROUTE.bare = makeBackdrop(bareDef).canvas; ROUTE.m = parseMap(bareDef);
+  ROUTE.water = []; for (let y = 0; y < ROUTE.m.h; y++) for (let x = 0; x < ROUTE.m.w; x++) if (LIQUID.has(ROUTE.m.tiles[y][x].id)) ROUTE.water.push({ x, y }); return ROUTE;
 }
 function routeTreeless(def, x, y) { const n = [[0, -1], [1, 0], [0, 1], [-1, 0]].map(([dx, dy]) => (def.rows[y + dy] || '')[x + dx]).filter(c => c && '#='.indexOf(c) < 0); return n.includes('c') || n.includes('W') ? 'c' : ','; }
 // Stars a chapter has earned (0-3) and whether it is open to play.
@@ -99,6 +100,7 @@ function routeDraw() {
   const ox = -Math.round(S.cam.x), oy = -Math.round(S.cam.y);
   ctx.save(); ctx.beginPath(); ctx.rect(L.view.x, L.view.y, L.view.w, L.view.h); ctx.clip();
   ctx.drawImage(C.bare, ox, oy);
+  if (!REDUCED) { const f = Math.floor(t * 3) % WATER_FRAMES; for (const c of C.water) { const X = ox + c.x * TILE, Y = oy + c.y * TILE; if (X > L.view.x + L.view.w || Y > L.view.y + L.view.h || X + TILE < L.view.x || Y + TILE < L.view.y) continue; drawTerrain(ctx, C.m, c.x, c.y, X, Y, f); } }
   // roads: every stretch up to the furthest open stop, and the one being revealed tile by tile
   const R = S.reveal; const roadsOpen = R && R.unlocked != null ? R.cleared : open;
   for (let s = 0; s < ROUTE_ROADS.length; s++) { const cells = routeCells(s); let n = s < roadsOpen ? cells.length : 0; if (R && R.unlocked != null && s === R.cleared) n = Math.floor(cells.length * (R.road || 0)); for (let i = 0; i < cells.length; i++) { const c = cells[i]; if (i < n) ctx.drawImage(C.roads, c.x * TILE, c.y * TILE, TILE, TILE, ox + c.x * TILE, oy + c.y * TILE, TILE, TILE); else if (i % 2 === 0) { ctx.globalAlpha = .45; rect(ox + c.x * TILE + 14, oy + c.y * TILE + 14, 4, 4, '#1a1426'); ctx.globalAlpha = 1; } } }
