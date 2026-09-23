@@ -14,8 +14,8 @@ function clearSuspend() { if (PARAMS.has('nosave')) return; try { localStorage.r
 function partyUnit(num, level, hpBonus = BOND_HP) { const u = makeUnit(num, level, 0, { hpBonus }); let evo; while ((evo = evolutionFor(u))) evolve(u, evo); u.hp = u.maxHp; return serializeUnit(u); }
 
 // ---------------------------------------------------------------- campaign flow
-function startNewGame() { clearSuspend(); SAVE = { chapter: 0, party: [], bag: { pokeball: 5 }, stars: {}, beaten: false, journey: { version: 1, firstCatch: false } }; goScene('starter'); }
-function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; SAVE.starter = num; SAVE.captainPid = 0; writeSave(); showJourney(['YOUR CAPTAIN, YOUR TEAM', DEX[num].name + ' leads your team. Pidgey joins as your scout.', 'Eight stops on the route. Each one has a goal and three stars to earn.', 'Catch weakened wild Pokemon: they join your team after the battle.', 'Team powers unlock in chapter 2; superpowers in chapter 4.'], () => openRoute({ sel: 0 })); }
+function startNewGame() { clearSuspend(); SAVE = { chapter: 0, party: [], bag: { pokeball: 5 }, stars: {}, beaten: false, co: 'you', journey: { version: 1, firstCatch: false } }; if (PARAMS.has('nostory')) goScene('starter'); else startPrologue(() => goScene('starter')); }
+function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; SAVE.starter = num; SAVE.captainPid = 0; writeSave(); showJourney(['YOUR PARTNER, YOUR PC BOX', DEX[num].name + ' is your partner: it wears the crown and leads your army. Pidgey joins as your scout.', 'Every Pokémon you catch waits in your PC Box, ready to deploy.', 'Hold Poké Centers: each pays ₽1,000 a day, and your Box deploys there.', 'Eight fronts to free across Kanto, each with a goal and three stars.'], () => openRoute({ sel: 0 })); }
 function continueCampaign() { SAVE = loadSave(); if (!SAVE) { startNewGame(); return; } openRoute(); }
 function prepChapter(idx) {
   migrateCaptain(SAVE);
@@ -24,10 +24,16 @@ function prepChapter(idx) {
   P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, SAVE.party[i], { pid: i })); goScene('card', { chapter: ch, next: () => launchChapter(idx, deployed) }); };
   goScene('prep', P);
 }
+// A front's battle options: your collection's Box, your commander (the Tactician or a freed Gym Leader), and the enemy
+// commander with their army waiting at the Rocket-held centers (from Mt. Moon on).
+function chapterOpts(idx, box, seed) {
+  const ch = CHAPTERS[idx], onMap = ch.map.units.filter(u => u.team == null || u.team === 1).map(u => u.mon);
+  return { chapter: idx, seed, defer: true, box, captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx }, co: SAVE.co, enemyCo: ch.co || null, box2: ch.co ? coTeam(ch.co, Math.max(3, ch.level - 1), 5, ch.num, onMap) : [], war: { funds: [0, 0] }, lesson: idx === 0 && SAVE.journey && !SAVE.journey.firstCatch };
+}
 function launchChapter(idx, deployed) {
   const ch = CHAPTERS[idx]; BACKDROP = makeBackdrop(ch.map);
   const box = SAVE.party.map((p, i) => Object.assign({}, p, { pid: i })).filter(p => !deployed.some(d => d.pid === p.pid));
-  startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: (Date.now() & 0xffff) | 1, defer: true, box, captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx }, lesson: idx === 0 && SAVE.journey && !SAVE.journey.firstCatch });
+  startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), chapterOpts(idx, box, (Date.now() & 0xffff) | 1));
   for (const u of alive(0)) { const src = deployed.find(d => d.pid != null && d.num === u.num && d.level === u.level && !d._used); if (src) { src._used = true; u.pid = src.pid; } }
   const go = () => { const start = () => { goScene('battle'); beginPhase(0, true); }; if (CHAPTER_LESSONS[idx]) showJourney(CHAPTER_LESSONS[idx], start); else start(); };
   if (ch.intro && !PARAMS.has('nostory')) { goScene('battle'); startDialog(ch.intro, go); } else go();
@@ -57,7 +63,8 @@ function onBattleEnd(result) {
     // training: everyone below the next chapter's level catches up
     const nextCh = CHAPTERS[idx + 1]; const target = nextCh ? nextCh.level - 1 : ch.level + 4;
     SAVE.party = SAVE.party.map(p => { const u = restoreUnit(p); let msg = null; if (u.level < target) { const from = u.level; while (u.level < target) { levelUp(u); const evo = evolutionFor(u); if (evo) { R.evolved.push(u.name + ' evolved into ' + evo.name + '!'); evolve(u, evo); } } msg = u.name + ' trained from Lv' + from + ' to Lv' + u.level; } if (msg) R.trained.push(msg); u.hp = u.maxHp; u.status = null; return serializeUnit(u); });
-    SAVE.stars[ch.id] = Math.min(SAVE.stars[ch.id] || 99, B.turn); SAVE.chapter = Math.max(SAVE.chapter || 0, idx + 1); if (SAVE.chapter >= CHAPTERS.length) SAVE.beaten = true; writeSave();
+    const coBefore = coUnlocked(SAVE); SAVE.stars[ch.id] = Math.min(SAVE.stars[ch.id] || 99, B.turn); SAVE.chapter = Math.max(SAVE.chapter || 0, idx + 1); if (SAVE.chapter >= CHAPTERS.length) SAVE.beaten = true; writeSave();
+    R.newCos = coUnlocked(SAVE).filter(c => !coBefore.includes(c)); // Gym Leaders freed on this front join as commanders
     const unlocked = first && idx + 1 < CHAPTERS.length ? idx + 1 : null;
     R.next = () => { if (first && idx + 1 >= CHAPTERS.length) goScene('credits', { party: SAVE.party }); else openRoute({ reveal: { cleared: idx, stars, unlocked } }); };
     goScene('results', R);
@@ -158,7 +165,7 @@ function frame(t) {
     if (ev.type === 'key' && ev.key === 'mute' && SC.name !== 'battle') { Audio.toggle(); continue; }
     switch (SC.name) {
       case 'journey': journeyInput(ev); break; case 'territory': case 'territoryResults': territorySceneInput(ev); break; case 'title': titleInput(ev); break; case 'starter': starterInput(ev); break; case 'card': cardInput(ev); break; case 'story': storyInput(ev); break;
-      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break; case 'route': routeInput(ev); break; case 'tower': towerInput(ev); break; case 'rank': rankInput(ev); break;
+      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break; case 'route': routeInput(ev); break; case 'tower': towerInput(ev); break; case 'rank': rankInput(ev); break; case 'brief': briefInput(ev); break;
     }
   }
   // update
@@ -168,7 +175,7 @@ function frame(t) {
   switch (SC.name) {
     case 'loading': rect(0, 0, VIEW.w, VIEW.h, '#0e0c10'); textC('loading sprites…', VIEW.w / 2, VIEW.h / 2, UI.muted); break;
     case 'journey': journeyDraw(); break; case 'territory': territorySetupDraw(); break; case 'territoryResults': territoryResultsDraw(); break; case 'title': titleDraw(); break; case 'starter': starterDraw(); break; case 'card': cardDraw(); break; case 'story': storyDraw(); break;
-    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break; case 'route': routeDraw(); break; case 'tower': towerDraw(); break; case 'rank': rankDraw(); break;
+    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break; case 'route': routeDraw(); break; case 'tower': towerDraw(); break; case 'rank': rankDraw(); break; case 'brief': briefDraw(); break;
   }
   // every scene change closes and reopens a Poké Ball over the screen (see captureTransition)
   drawTransition(dt);
@@ -182,9 +189,11 @@ function boot() {
     const idx = clamp(parseInt(PARAMS.get('ch')) - 1, 0, CHAPTERS.length - 1); const ch = CHAPTERS[idx]; const L = ch.level;
     SAVE = { chapter: idx, party: [partyUnit(4, L), partyUnit(7, L), partyUnit(1, L), partyUnit(25, L), partyUnit(133, L - 1), partyUnit(66, L - 1), partyUnit(74, L - 1), partyUnit(16, L - 2)], bag: { pokeball: 5 }, stars: {}, beaten: false };
     if (PARAMS.has('prep')) { prepChapter(idx); return; }
+    if (PARAMS.has('brief')) { briefChapter(idx); return; }
     migrateCaptain(SAVE);
     const deployed = SAVE.party.slice(0, ch.slots).map((p, i) => Object.assign({}, p, { pid: i })); BACKDROP = makeBackdrop(ch.map);
-    startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: parseInt(PARAMS.get('seed') || '7'), defer: true, box: SAVE.party.slice(ch.slots).map((p, i) => Object.assign({}, p, { pid: ch.slots + i })), captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx } }); alive(0).forEach((u, i) => u.pid = i); goScene('battle'); beginPhase(0, true); return;
+    if (PARAMS.has('co')) SAVE.co = PARAMS.get('co');
+    startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), Object.assign(chapterOpts(idx, SAVE.party.slice(ch.slots).map((p, i) => Object.assign({}, p, { pid: ch.slots + i })), parseInt(PARAMS.get('seed') || '7')), { lesson: false })); alive(0).forEach((u, i) => { if (u.pid == null && !u.loaned) u.pid = i; }); goScene('battle'); beginPhase(0, true); return;
   }
   if (PARAMS.has('skirmish')) { startSkirmishSetup(); SC.data.seed = parseInt(PARAMS.get('skirmish')) || 1; return; }
   if (PARAMS.has('safari')) { startSafari(); return; }

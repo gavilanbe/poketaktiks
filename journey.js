@@ -235,3 +235,73 @@ function territorySetupDraw() {
   bigButton(x0, by, Math.floor(colW * .3), bh, 'BACK', () => goScene('quick'), { variant: 'ghost', hot: SC.i === 3 });
   bigButton(x0 + Math.floor(colW * .3) + 4, by, (wide ? colW * 2 + 8 : colW) - Math.floor(colW * .3) - 4, bh, 'START', () => launchTerritory(S.seed, false, [S.captain, S.captain]), { variant: 'primary', hot: SC.i === 4 });
 }
+
+// ---------------------------------------------------------------- the briefing before a front
+// Who holds this front and what they said, the mission (goal, level, par, the enemy forces and the wild Pokémon), and
+// who commands your side: the Tactician, or a Gym Leader freed on the route. PREPARE picks the squad.
+function briefChapter(idx) { if (SAVE) migrateCaptain(SAVE); const cos = coUnlocked(SAVE); goScene('brief', { idx, cos, co: SAVE && cos.includes(SAVE.co) ? SAVE.co : 'you' }); }
+function briefGo(S) { if (SAVE) { SAVE.co = S.co; writeSave(); } Audio.sfx('select'); prepChapter(S.idx); }
+function briefDraw() {
+  const S = SC.data, ch = CHAPTERS[S.idx], W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), bh = btnH(); if (!S.bd) S.bd = makeBackdrop(ch.map);
+  rect(0, 0, W, H, UI.bg); drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 - t * 3, (H - S.bd.canvas.height) / 2, .8); SC.hits = [];
+  const top = screenTitle('CHAPTER ' + ch.num + ' · ' + ch.title.toUpperCase(), narrow ? null : objectiveTextFor(ch.map.objective), 4), foot = narrow ? H - 2 * (bh + 4) - 8 : footerBand(bh + 12);
+  const co = ch.co ? COS[ch.co] : null, sp = ch.foe ? SPEAKERS[ch.foe] : null, as = co ? null : { tr: sp ? sp.tr : 'rocketgrunt', name: ch.foe || 'Rocket', col: sp ? sp.col : UI.red };
+  const lw = narrow ? W - 12 : Math.min(250, Math.floor(W * .42)), lx = 6, ly = top + 2, cardW = narrow ? 70 : 84, cardH = narrow ? 60 : 76;
+  // the enemy commander and their words
+  const fp = panel(lx, ly, lw, narrow ? cardH + 18 : Math.min(foot - 6 - ly, cardH + (co ? 110 : 44)), { header: co ? 'ENEMY COMMANDER' : 'ENEMY TRAINER', headerFill: shade(co ? co.col : as.col, -.55) });
+  coCard(lx + 6, fp.cy, cardW, cardH, co ? ch.co : 'you', 1, null, { as, tag: 'FOE', pop: t });
+  const qx = lx + 12 + cardW, qw = lw - (qx - lx) - 8, ql = wrap('"' + (ch.brief || '') + '"', qw - 8).slice(0, Math.floor((cardH - 6) / 9)); rrect(qx, fp.cy + 2, qw, ql.length * 9 + 8, '#fff6d8', 2); outline(qx, fp.cy + 2, qw, ql.length * 9 + 8, UI.inset); for (let k = 0; k < 3; k++) px(qx - 1 - k, fp.cy + 10 + k, '#fff6d8');
+  ql.forEach((l, k) => { const a = REDUCED ? 1 : clamp((t - .3 - k * .25) / .2, 0, 1); ctx.globalAlpha = a; text(l, qx + 4, fp.cy + 6 + k * 9, '#3a2a18'); ctx.globalAlpha = 1; });
+  const foes0 = ch.map.units.filter(u => u.team == null || u.team === 1), lead = co && (foes0.find(u => u.mon === co.ace) || foes0.find(u => u.boss) || foes0[0]); // who wears their crown on this front
+  if (!narrow && co) { let y = fp.cy + cardH + 8; const c = coOf({ co: ch.co }); sectionLabel('HOW THEY FIGHT', lx + 8, y, lw - 16, co.col); y += 11;
+    for (const [k, v] of [['Ace', DEX[lead ? lead.mon : co.ace].name], ['Passive', c.passive.text], ['Power', c.power.name + ': ' + c.power.text], ['Super', c.super.name + ': ' + c.super.text]]) { if (y + 9 > fp.y + fp.h - 4) break; text(k, lx + 8, y, UI.muted); const ls = wrap(v, lw - 62); ls.slice(0, 2).forEach((l, i) => text(l, lx + 52, y + i * 9, k === 'Super' ? UI.gold : UI.ink)); y += Math.min(2, ls.length) * 9 + 3; } }
+  else if (!narrow) { const y = fp.cy + cardH + 10; wrap('A local trainer paid by Team Rocket. No commander powers yet: those start at Mt. Moon.', lw - 16).forEach((l, i) => text(l, lx + 8, y + i * 9, UI.muted)); }
+  // the mission
+  const mx = narrow ? 6 : lx + lw + 6, my = narrow ? ly + cardH + 24 : ly, mw = narrow ? W - 12 : W - mx - 6, mh = foot - 6 - my;
+  const mp = panel(mx, my, mw, mh, { header: 'MISSION', headerRight: 'Lv ' + ch.level + ' · par ' + ch.par + ' days', headerRightCol: UI.gold }); let y = mp.cy;
+  const goal = objectiveTextFor(ch.map.objective).replace('Objective: ', ''); iconAt('flag', mx + 6, y - 1, UI.gold); text(fitLabel(goal[0].toUpperCase() + goal.slice(1), mw - 22), mx + 17, y, UI.ink); y += 12;
+  const foes = ch.map.units.filter(u => u.team == null || u.team === 1), wild = ch.map.units.filter(u => u.team === 2), rocket = ch.map.war && ch.map.war.owners ? Object.keys(ch.map.war.owners).length : 0, per = Math.max(1, Math.floor((mw - 12) / 20));
+  const row = (label, list, col, flip) => { if (!list.length || y + 26 > my + mh - 4) return; sectionLabel(label, mx + 8, y, mw - 16, col); y += 10; list.slice(0, per).forEach((n, k) => { const bob = !REDUCED && k === Math.floor(t * 3) % Math.min(per, list.length) ? -1 : 0; ctx.drawImage(monIcon(n, flip), mx + 4 + k * 20, y + bob, 24, 18); if (k === 0 && label.startsWith('ENEMY') && co) drawCrown(mx + 17 + k * 20, y); }); y += 20; };
+  row('ENEMY FORCES · ' + foes.length, (lead ? [lead.mon] : []).concat(foes.filter(u => u !== lead).map(u => u.mon)), '#ff9a9a', true); // their Ace first
+  if (rocket && y + 9 <= my + mh - 4) { text(fitLabel((rocket > 1 ? rocket + ' Rocket centers deploy ' : 'A Rocket center deploys ') + (co ? co.name + '\'s' : 'their') + ' army each day: take ' + (rocket > 1 ? 'them' : 'it') + '!', mw - 16), mx + 8, y, UI.red); y += 12; }
+  row('WILD POKéMON', wild.map(u => u.mon), '#fff0a0', true);
+  if (SAVE && y + 9 <= my + mh - 4) { text(fitLabel('Your collection: ' + SAVE.party.length + ' · ' + ch.slots + ' open the battle, the rest wait in the PC Box', mw - 16), mx + 8, y, UI.muted); y += 12; }
+  // your commander
+  if (y + 16 <= my + mh - 2) { if (S.cos.length > 1) { vsRuleRows(S, mx + 4, y, mw - 8, 14, [{ k: 'co', label: 'YOUR COMMANDER', vals: X => X.cos, show: v => v === 'you' ? 'Tactician' : COS[v].name }], 0); y += 16; if (S.co !== 'you' && y + 9 <= my + mh - 4) { text(fitLabel(COS[S.co].name + ' leads: ' + DEX[COS[S.co].ace].name + ' joins your team', mw - 16), mx + 8, y, UI.info); y += 10; } }
+    else { text(fitLabel('Your commander: the Tactician. Freed Gym Leaders can lead too.', mw - 16), mx + 8, y + 2, UI.dim); y += 13; } }
+  // the battlefield: your deploy tiles and center, the Rocket-held ones, every Pokémon on it
+  const room = my + mh - 6 - y; if (room >= 40) { const sc = Math.min((mw - 16) / S.bd.canvas.width, room / S.bd.canvas.height), pw = Math.floor(S.bd.canvas.width * sc), ph = Math.floor(S.bd.canvas.height * sc), px0 = mx + Math.round((mw - pw) / 2), py0 = y + 2;
+    rect(px0 - 2, py0 - 2, pw + 4, ph + 4, UI.inset); ctx.drawImage(S.bd.canvas, px0, py0, pw, ph); drawWarPreview(ch.map, S.bd, px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); }
+  const back = () => { Audio.sfx('cancel'); openRoute({ sel: S.idx }); };
+  if (narrow) { footerBand(2 * (bh + 4) + 4); bigButton(6, H - 2 * (bh + 4), W - 12, bh, 'PREPARE', () => briefGo(S), { variant: 'primary' }); bigButton(6, H - bh - 4, W - 12, bh, 'ROUTE', back, { variant: 'ghost' }); return; }
+  const fy = foot + 6; bigButton(W - 96, fy, 90, bh, 'PREPARE', () => briefGo(S), { variant: 'primary' }); bigButton(6, fy, 70, bh, 'ROUTE', back, { variant: 'ghost' });
+  if (W > 360) hintLine(S.cos.length > 1 ? [['◂▸', 'commander'], ['Z', 'prepare']] : [['Z', 'prepare'], ['X', 'route']], W / 2, fy + (bh - 7) / 2, { pill: false });
+}
+function briefInput(ev) {
+  const S = SC.data; if (ev.type === 'key') { if (ev.key === 'left' || ev.key === 'right') { if (S.cos.length > 1) vsCycle(S, { k: 'co', vals: X => X.cos }, ev.key === 'left' ? -1 : 1); } else if (ev.key === 'ok' || ev.key === 'next') briefGo(S); else if (ev.key === 'back') { Audio.sfx('cancel'); openRoute({ sel: S.idx }); } else if (ev.key === 'mute') Audio.toggle(); return; }
+  if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
+}
+
+// ---------------------------------------------------------------- the prologue
+// A new journey opens on a town at night: the Poké Center's PC sign flickers dead red in the rain while Prof. Oak and
+// Bill explain what Team Rocket did and what a Tactician is, before the walk to the lab and the choice of a partner.
+const PROLOGUE = [
+  { who: 'Prof. Oak', text: 'You made it through the rain. Good. Listen closely: *Kanto has a problem*.' },
+  { who: 'Bill', side: 1, text: 'Team Rocket hijacked my *Pokémon Storage System*. Every Poké Center is locked, and every Pokémon stored in a PC is out of reach.' },
+  { who: 'Prof. Oak', text: 'Trainers without their Pokémon cannot fight back. But a *Tactician* can command any Pokémon linked to their PC Box.' },
+  { who: 'Bill', side: 1, text: 'Free a Poké Center and it reconnects the PC around it. From there you *deploy* Pokémon from your Box, and every Center you hold *pays funds* each day.' },
+  { who: 'Prof. Oak', text: 'Catch wild Pokémon and they wait in your Box, ready to fight. And the Gym Leaders... Rocket is *blackmailing* them. Free their towns and they will command beside you.' },
+  { who: 'Bill', side: 1, text: 'Somebody has to lead this. Oak says it should be you.' },
+  { who: 'Prof. Oak', text: 'Every Tactician needs a partner. Come to the lab and *choose yours*.' },
+];
+function prologueStage(d) {
+  const W = VIEW.w, H = VIEW.h, t = d.T, hz = Math.round(H * .5), gy = Math.round(H * .78), S = sceneFor('town', W, H, hz, gy, 5, 'center'), drift = REDUCED ? 0 : Math.round(Math.sin(t * .15) * 8);
+  ctx.drawImage(S.sky, -SCENE_PAD + drift * .2, 0); ctx.drawImage(S.far, -SCENE_PAD + drift * .4, 0); ctx.drawImage(S.mid, -SCENE_PAD + drift, 0); ctx.drawImage(S.ground, -SCENE_PAD + drift, 0);
+  // night falls over it, the Center's sign flickers red (the PC is down), rain
+  ctx.globalAlpha = .55; rect(0, 0, W, H, '#0a0c2e'); ctx.globalAlpha = 1;
+  const flick = REDUCED ? .5 : (Math.sin(t * 9) > .2 || Math.sin(t * 23) > .7 ? .9 : .25), b = S.fx.building || { x: W / 2 + SCENE_PAD, y: hz + 2 }, cx = Math.round(b.x - SCENE_PAD + drift), cy = b.y - 20; ctx.globalAlpha = .22 * flick; circle(cx, cy, 30, '#ff3040'); ctx.globalAlpha = .12 * flick; circle(cx, cy, 52, '#ff3040'); ctx.globalAlpha = 1;
+  const sign = 'PC OFFLINE', sw = textWidth(sign) + 8; rrect(cx - sw / 2, cy - 5, sw, 11, '#1a0610', 1); textC(sign, cx, cy - 3, flick > .5 ? '#ff5a6a' : '#6a2030');
+  drawWeather('rain', W, H, t);
+  const cap = 'KANTO · THE NIGHT THE PCs WENT DARK', a = REDUCED ? 1 : clamp(t / .8, 0, 1) * clamp((6 - t) / 1, 0, 1); if (a > 0) { ctx.globalAlpha = a; bigC(cap, W / 2, 18, '#ffe2a8', { outline: '#0a0820' }); ctx.globalAlpha = 1; }
+}
+function startPrologue(next) { trainerImg('oak'); trainerImg('bill'); startDialog(PROLOGUE, next, { stage: prologueStage }); Audio.playMusic('calm'); }

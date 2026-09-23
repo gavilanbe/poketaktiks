@@ -145,7 +145,7 @@ function sceneFor(kind, W, H, hz, gy, seed, tile) {
       sceneRange(far.p, LW, hz - 8, 46 + R() * 16, R, SCN.far, true, skyRamp[skyRamp.length - 2]);
       sceneRange(far.p, LW, hz - 2, 22 + R() * 8, R, SCN.farGreen, false, null);
       const hill = sceneHills(mid.p, LW, hz + 1, 12 + R() * 6, R, SCN.hills);
-      if (kind === 'town') sceneTown(mid.p, LW, hz, R, tile); else for (let x = 10 + R() * 30; x < LW; x += 26 + R() * 40) sceneTree(mid.p, Math.round(x), hill(Math.round(x)) + 3, 4 + Math.round(R() * 4), R);
+      if (kind === 'town') fx.building = { x: sceneTown(mid.p, LW, hz, R, tile), y: hz + 2 }; else for (let x = 10 + R() * 30; x < LW; x += 26 + R() * 40) sceneTree(mid.p, Math.round(x), hill(Math.round(x)) + 3, 4 + Math.round(R() * 4), R);
       if (kind === 'town') { sceneGround(gnd.p, LW, hz, H, SCN.plaza); scenePlaza(gnd.p, LW, hz, H, gy); }
       else { sceneGround(gnd.p, LW, hz, H, SCN.grass); sceneScatter(LW, hz, H, R, .55, (x, y, d) => grassTuft(gnd.p, x, y, d, SCN.grass)); }
       if (kind === 'meadow') sceneScatter(LW, hz, H, R, .45, (x, y, d) => { const c = ['#f05a5a', '#ffffff', '#ffd83a', '#ff8ac0'][Math.floor(R() * 4)]; if (d < .35) gnd.p.P(x, y, c); else { gnd.p.P(x, y - 1, c); gnd.p.P(x - 1, y, c); gnd.p.P(x + 1, y, c); gnd.p.P(x, y, '#ffd24a'); gnd.p.P(x, y + 1, SCN.grass[1]); if (d > .7) { gnd.p.P(x, y - 2, c); gnd.p.P(x - 2, y, c); gnd.p.P(x + 2, y, c); } } });
@@ -257,6 +257,7 @@ function sceneTown(p, w, hz, R, tile) {
   else if (big === 'hq') { const x0 = bx - 30, ww = 60; bldWalls(p, x0, ww, base - 26, base + 1, ['#6a6a78', '#5a5a68', '#9a9aa8', '#bcbcc8'], false); for (let y = base - 22; y < base - 2; y += 4) for (let x = x0 + ((y >> 2) & 1) * 4; x < x0 + ww - 4; x += 8) { p.H(x, y, 7, '#aaaab6'); p.H(x, y + 3, 8, '#7a7a88'); }
     bldRoof(p, x0, ww, base - 38, base - 27, ROOF_RAMP.red, 5); for (let x = x0; x < x0 + ww; x += 6) { p.R(x, base - 29, 3, 3, '#9a9aa8'); p.P(x, base - 29, '#c8c8d4'); } bldFlag(p, bx, base - 48, '#d8d8e0');
     p.R(bx - 9, base - 16, 18, 16, BOUT); p.R(bx - 8, base - 15, 16, 15, '#5a3a24'); for (let x = bx - 8; x < bx + 8; x += 3) p.V(x, base - 15, 15, '#6a4a30'); p.H(bx - 8, base - 11, 16, '#3a3a44'); p.H(bx - 8, base - 5, 16, '#3a3a44'); p.V(bx, base - 15, 15, '#2a1a10'); }
+  return bx;
 }
 // The back wall of a cave: packed rock, stalactites hanging from the top with their tips remembered for drips,
 // glowing crystal clusters remembered for glints.

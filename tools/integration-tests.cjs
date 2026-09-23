@@ -59,12 +59,13 @@ test('all help lines can be read on short screens and the full title menu fits',
 });
 test('title routes work before artwork loads; sound, pointer and keyboard controls stay independent', () => {
   const T = loadGame(), { g, G } = T;
-  for (const [label, scene, draw] of [['NEW GAME', 'starter', 'starterDraw'], ['QUICK BATTLE', 'quick', 'quickDraw'], ['VERSUS', 'versus', 'versusDraw']]) {
+  for (const [label, scene, draw] of [['NEW GAME', 'story', 'storyDraw'], ['QUICK BATTLE', 'quick', 'quickDraw'], ['VERSUS', 'versus', 'versusDraw']]) {
     g.goScene('title'); g.titleDraw();
     const h = G('SC.hits').find(h => h.label === label);
     g.titleInput({ type: 'up', x: h.x + h.w / 2, y: h.y + h.h / 2, touch: true });
     g.titleUpdate(.21);
     assert.equal(G('SC.name'), scene); assert.doesNotThrow(() => g[draw]());
+    if (scene === 'story') { assert.doesNotThrow(() => g.storyUpdate(.5)); g.finishDialog(); assert.equal(G('SC.name'), 'starter', 'the prologue leads to the lab'); assert.doesNotThrow(() => g.starterDraw()); } // a new journey opens on the prologue
   }
   // quick battle: a tap selects a card, a second tap (or OK) opens its setup; BACK returns to the title
   for (const [i, scene, draw] of [[0, 'skirmish', 'skirmishDraw'], [1, 'territory', 'territorySetupDraw']]) {
@@ -131,7 +132,7 @@ test('title confirmation fires once after its press effect; dragging to another 
   g.titleInput({ type: 'key', key: 'down' }); assert.equal(G('SC.i'), i, 'the menu is frozen while the confirmation is open');
   g.titleInput({ type: 'key', key: 'back' }); assert.equal(G('SC.titleConfirm'), null);
   g.titleInput({ type: 'key', key: 'down' }); assert.equal(G('SC.i'), i + 1);
-  g.titleActivate(i); g.titleUpdate(.21); g.titleInput({ type: 'key', key: 'right' }); g.titleInput({ type: 'key', key: 'ok' }); assert.equal(G('SC.name'), 'starter');
+  g.titleActivate(i); g.titleUpdate(.21); g.titleInput({ type: 'key', key: 'right' }); g.titleInput({ type: 'key', key: 'ok' }); assert.equal(G('SC.name'), 'story'); g.finishDialog(); assert.equal(G('SC.name'), 'starter');
 });
 test('route map: stars for par and faints, first-clear rewards, replays never rewind progress, the reveal opens the next stop', () => {
   const T = loadGame(), { g, G, C, store } = T; G("PARAMS.set('nostory','')");
@@ -145,7 +146,7 @@ test('route map: stars for par and faints, first-clear rewards, replays never re
   // navigation: locked stops cannot be picked, OK opens the preparation, its BACK returns to the route on that stop
   g.openRoute(); for (let i = 0; i < 40; i++) g.routeUpdate(.05); assert.equal(G('SC.data.sel'), 2);
   g.routeInput({ type: 'key', key: 'right' }); assert.equal(G('SC.data.sel'), 2, 'stop 4 is locked'); g.routeInput({ type: 'key', key: 'left' }); for (let i = 0; i < 60; i++) g.routeUpdate(.05); assert.equal(G('SC.data.sel'), 1);
-  g.routeInput({ type: 'key', key: 'ok' }); assert.equal(G('SC.name'), 'prep'); assert.equal(G('SC.data.chapter.id'), C.CHAPTERS[1].id); g.prepInput({ type: 'key', key: 'back' }); assert.equal(G('SC.name'), 'route'); assert.equal(G('SC.data.sel'), 1);
+  g.routeInput({ type: 'key', key: 'ok' }); assert.equal(G('SC.name'), 'brief', 'a front opens on its briefing'); assert.doesNotThrow(() => g.briefDraw()); g.briefInput({ type: 'key', key: 'ok' }); assert.equal(G('SC.name'), 'prep'); assert.equal(G('SC.data.chapter.id'), C.CHAPTERS[1].id); g.prepInput({ type: 'key', key: 'back' }); assert.equal(G('SC.name'), 'route'); assert.equal(G('SC.data.sel'), 1);
   for (const [w, h] of [[180, 390], [195, 422], [422, 195], [480, 270], [640, 360]]) {
     G(`VIEW.w=${w};VIEW.h=${h};`); g.openRoute(); const boxes = textHook(T); g.routeDraw();
     for (const b of boxes()) assert(b.x >= -1 && b.x + b.w <= w + 1 && b.y >= -1 && b.y + 7 <= h + 1, `${w}x${h} route text outside: ${JSON.stringify(b)}`);

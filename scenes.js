@@ -164,7 +164,7 @@ const SPEAKERS = {
   'Lt. Surge': { tr: 'ltsurge', side: 1, col: '#ffd24a', voice: 180 }, 'Erika': { tr: 'erika', side: 1, col: '#8cd058', voice: 440 }, 'Koga': { tr: 'koga', side: 1, col: '#b070d0', voice: 210 }, 'Sabrina': { tr: 'sabrina', side: 1, col: '#ff70b0', voice: 400 }, 'Blaine': { tr: 'blaine', side: 1, col: '#ff7040', voice: 190 },
   'Mewtwo': { mon: 150, side: 1, col: '#c890f0', voice: 90, cry: true }, 'Moltres': { mon: 146, side: 1, col: '#ff8a2c', voice: 130, cry: true },
 };
-function speakerOf(line) { return SPEAKERS[line.who] || (line.mon ? { mon: line.mon, side: 1, col: UI.gold, voice: 300 } : { side: 0, col: UI.gold, voice: 300 }); }
+function speakerOf(line) { const S = SPEAKERS[line.who] || (line.mon ? { mon: line.mon, side: 1, col: UI.gold, voice: 300 } : { side: 0, col: UI.gold, voice: 300 }); return line.side != null && line.side !== S.side ? Object.assign({}, S, { side: line.side }) : S; } // a line may put its speaker on the other side
 const TRAINERS = { img: {}, state: {}, cache: {} };
 function trainerImg(tr) {
   if (!TRAINERS.state[tr] && typeof Image !== 'undefined') { TRAINERS.state[tr] = 'loading'; const img = new Image(); img.onload = () => { TRAINERS.img[tr] = img; TRAINERS.state[tr] = 'ok'; }; img.onerror = () => { TRAINERS.state[tr] = 'fail'; }; img.src = 'assets/trainers/' + tr + '.png'; }
@@ -193,20 +193,21 @@ function trainerBust(tr, flip) {
 // A commander card, Advance Wars style: the trainer's bust over bands of their colour, the name on a strip below;
 // side 1 faces left. Tapping it runs `run` (cycling the choice on setup screens).
 function coCard(x, y, w, h, id, side, run, opt = {}) {
-  const co = COS[id] || COS.you, col = opt.col || co.col, t = SC.t; trainerImg(co.tr);
+  const co = opt.as || COS[id] || COS.you, col = opt.col || co.col, t = SC.t; trainerImg(co.tr); // opt.as: any trainer { tr, name, col }
   rrect(x, y, w, h, opt.hot ? UI.gold : UI.inset, 2); ctx.save(); ctx.beginPath(); ctx.rect(x + 1, y + 1, w - 2, h - 2); ctx.clip();
   rect(x + 1, y + 1, w - 2, h - 2, shade(col, -.62)); ctx.fillStyle = shade(col, -.35); const drift = REDUCED ? 0 : Math.floor(t * 8) % 12;
   for (let k = -h - 12 + (side ? -drift : drift); k < w + 12; k += 12) { ctx.beginPath(); ctx.moveTo(x + k, y + h); ctx.lineTo(x + k + h, y); ctx.lineTo(x + k + h + 5, y); ctx.lineTo(x + k + 5, y + h); ctx.fill(); }
   const bust = trainerBust(co.tr, side === 1), by = y + h - 10 - 48 + (opt.pop ? Math.round((1 - easeOutBack(clamp(opt.pop / .25, 0, 1), 2)) * 10) : 0);
   if (bust) { ctx.globalAlpha = .5; ctx.drawImage(bust, x + Math.round((w - 48) / 2) + (side ? 2 : -2), by + 1); ctx.globalAlpha = 1; ctx.drawImage(bust, x + Math.round((w - 48) / 2), by); }
   ctx.restore(); rect(x + 1, y + h - 10, w - 2, 9, '#07061ae0'); hline(x + 1, y + h - 11, w - 2, col);
-  textC(fitLabel(id === 'you' ? 'TACTICIAN' : co.name.toUpperCase(), w - 6), x + w / 2, y + h - 9, opt.hot ? UI.gold : '#ffffff');
+  textC(fitLabel(id === 'you' && !opt.as ? 'TACTICIAN' : co.name.toUpperCase(), w - 6), x + w / 2, y + h - 9, opt.hot ? UI.gold : '#ffffff');
   if (opt.tag) { const tw = textWidth(opt.tag) + 6, tx = side ? x + w - tw - 2 : x + 2; rrect(tx, y + 2, tw, 9, side ? teamColorD(1) : teamColorD(0), 1); text(opt.tag, tx + 3, y + 3, '#ffffff'); }
   if (run) hit(x, y, w, h, run, opt.label || (side ? 'FOE CO' : 'YOUR CO'));
 }
 // A line's text with its *emphasis* resolved: the plain text and which letters to colour.
 function richLine(line) { if (line._rich) return line._rich; const em = []; let plain = '', on = false; for (const c of line.text) { if (c === '*') { on = !on; continue; } if (on) em[plain.length] = true; plain += c; } return (line._rich = { plain, em }); }
-function startDialog(lines, done) { for (const l of lines) { const Sp = SPEAKERS[l.who]; if (Sp && Sp.tr) trainerImg(Sp.tr); } SC.dialog = { lines, i: 0, chars: 0, t: 0, T: 0, pause: 0, done, cast: [null, null], since: [0, 0] }; goScene('story'); }
+// opt.stage: draws the scene behind the dialogue when there is no battle board (the prologue)
+function startDialog(lines, done, opt = {}) { for (const l of lines) { const Sp = SPEAKERS[l.who]; if (Sp && Sp.tr) trainerImg(Sp.tr); } SC.dialog = { lines, i: 0, chars: 0, t: 0, T: 0, pause: 0, done, cast: [null, null], since: [0, 0], stage: opt.stage || null }; goScene('story'); }
 function storyUpdate(dt) {
   const d = SC.dialog; if (!d) return; d.t += dt; d.T += dt; const line = d.lines[d.i], R = richLine(line), S = speakerOf(line), total = R.plain.length;
   if (d.cast[S.side] !== line.who) { d.cast[S.side] = line.who; d.since[S.side] = d.T; if (d.T > .1) Audio.sfx('whoosh'); }
@@ -214,6 +215,7 @@ function storyUpdate(dt) {
   if (d.pause > 0) d.pause -= dt;
   else if (d.chars < total) { const before = Math.floor(d.chars); d.chars = Math.min(total, d.chars + dt * 48); const now = Math.floor(d.chars);
     if (now !== before) { const c = R.plain[now - 1]; if ('.!?'.includes(c) && R.plain[now] === ' ') d.pause = .2; else if (c === ',' || c === ':') d.pause = .08; if (now % 2 === 0 && c !== ' ') Audio.voice(S.voice, S.cry); } }
+  if (d.stage || !B) { Audio.tick(); BT.time += dt; return; }
   CAM.x += (CAM.tx - CAM.x) * Math.min(1, dt * 6); CAM.y += (CAM.ty - CAM.y) * Math.min(1, dt * 6); for (const u of B.units) { u.fx.sx += (1 - u.fx.sx) * dt * 10; u.fx.sy += (1 - u.fx.sy) * dt * 10; } updateFX(dt); Audio.tick(); BT.time += dt;
 }
 // One speaker on their side, behind the box (the box hides their legs): they slide in when they first speak, bob while
@@ -230,7 +232,7 @@ function drawSpeaker(who, side, active, since, d, line, sc, box) {
   if (!active) ctx.globalAlpha = .55; if (animReady(num)) drawAnim(num, cx + shout, by - bob, BT.time, { flip: side === 0, sx: sc, sy: sc }); else if (bigReady(num)) drawBig(num, cx + shout, by + 8 - bob, { flip: side === 0, sx: sc, sy: sc }); else drawMon(num, cx, by - bob, { flip: side === 0, sx: sc, sy: sc }); ctx.globalAlpha = 1;
 }
 function storyDraw() {
-  battleDraw(); const d = SC.dialog; if (!d) return; const W = VIEW.w, H = VIEW.h, line = d.lines[d.i], t = d.t, R = richLine(line), S = speakerOf(line), wide = W >= 480 && H >= 280, sc = wide ? 2 : 1;
+  const d = SC.dialog; if (d && d.stage) d.stage(d); else battleDraw(); if (!d) return; const W = VIEW.w, H = VIEW.h, line = d.lines[d.i], t = d.t, R = richLine(line), S = speakerOf(line), wide = W >= 480 && H >= 280, sc = wide ? 2 : 1;
   // cinematic: the board dims and black bars close in from the top and the bottom
   const intro = REDUCED ? 1 : easeOut(clamp(d.T / .3, 0, 1)); ctx.globalAlpha = .3 * intro; rect(0, 0, W, H, '#05041a'); ctx.globalAlpha = 1; const bar = Math.round((wide ? 14 : 8) * intro); rect(0, 0, W, bar, '#000000'); rect(0, H - bar, W, bar, '#000000');
   const bh = wide ? 64 : 62, rise = REDUCED ? 0 : Math.round((1 - easeOutBack(clamp(appear('story') / .3, 0, 1), 2)) * 30), box = { x: 6, y: H - bar - bh - 4 + rise, w: W - 12, h: bh };
@@ -246,7 +248,7 @@ function storyDraw() {
   const hint = [(d.i + 1) + ' / ' + d.lines.length, ['X', 'skip']], hw = hintWidth(hint), nameR = line.who ? nx + nameW : -1, nameL = line.who ? nx : 1e9;
   if (S.side === 0 && box.x + box.w - 4 - hw > nameR + 4) hintLine(hint, box.x + box.w - 4, box.y - 12, { right: true }); else if (S.side === 1 && box.x + 8 + hw < nameL - 4) hintLine(hint, box.x + 8, box.y - 12, { left: true }); else textR((d.i + 1) + '/' + d.lines.length, box.x + box.w - 20, box.y + box.h - 11, UI.muted);
   // focus the camera on the speaker's Pokémon if it is on the board
-  const spk = B.units.find(u => u.num === line.mon && u.hp > 0); if (spk && !d.focused) { d.focused = true; centerCam(spk.x, spk.y); spk.fx.sy = .8; spk.fx.sx = 1.2; }
+  const spk = !d.stage && B && B.units.find(u => u.num === line.mon && u.hp > 0); if (spk && !d.focused) { d.focused = true; centerCam(spk.x, spk.y); spk.fx.sy = .8; spk.fx.sx = 1.2; }
 }
 function storyInput(ev) { const d = SC.dialog; if (!d) return; if (ev.type === 'key' && ev.key === 'back') { finishDialog(); return; } if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) { const line = d.lines[d.i]; if (d.chars < richLine(line).plain.length) { d.chars = richLine(line).plain.length; d.pause = 0; return; } d.i++; d.chars = 0; d.t = 0; d.pause = 0; d.focused = false; Audio.sfx('ok'); if (d.i >= d.lines.length) finishDialog(); } }
 function finishDialog() { const d = SC.dialog; SC.dialog = null; if (d && d.done) d.done(); }
@@ -345,9 +347,9 @@ function resultsDraw() {
     return;
   }
   const rc = Math.max(1, Math.floor((w - 16) / 96)), cc = Math.max(1, Math.floor((w - 16) / 70)); // rewards / catches per row
-  const nRew = R.rewards ? Object.keys(R.rewards).length : 0, nC = R.caught ? R.caught.length : 0, nT = R.trained ? Math.min(6, R.trained.length) : 0, nE = R.evolved ? R.evolved.length : 0, stars = win && R.stars != null;
+  const nRew = R.rewards ? Object.keys(R.rewards).length : 0, nC = R.caught ? R.caught.length : 0, nT = R.trained ? Math.min(6, R.trained.length) : 0, nE = R.evolved ? R.evolved.length : 0, nCo = R.newCos ? R.newCos.length : 0, stars = win && R.stars != null;
   const lose = wrap('The team limps back to the Poké Center. Everyone is fine. Mostly.', w - 16);
-  const ph = 36 + (stars ? 30 : 0) + (win ? 10 : (lose.length - 1) * 9) + (nRew ? 14 + Math.ceil(nRew / rc) * 10 : (win && !R.skirmish ? 12 : 0)) + (nC ? 14 + Math.ceil(nC / cc) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + 8;
+  const ph = 36 + (stars ? 30 : 0) + (win ? 10 : (lose.length - 1) * 9) + (nRew ? 14 + Math.ceil(nRew / rc) * 10 : (win && !R.skirmish ? 12 : 0)) + (nC ? 14 + Math.ceil(nC / cc) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + (nCo ? 12 + nCo * 22 : 0) + 8;
   const phh = Math.min(H - 44, Math.max(60, ph)); y = Math.max(8, Math.round((H - 30 - phh) / 2));
   const tok = unfold('results', x, y, w, phh, .25);
   const p = panel(x, y, w, phh, { header: win ? (R.skirmish ? 'SKIRMISH WON!' : 'CHAPTER CLEAR!') : 'RETREAT', headerRight: stars && R.stars > (R.best || 0) && !R.skirmish ? 'NEW BEST' : null, headerRightCol: UI.gold, headerFill: win ? '#2a2470' : '#4a1626' });
@@ -363,6 +365,9 @@ function resultsDraw() {
   if (nC) { sectionLabel('New team members', x + 8, y, w - 16, UI.gold); y += 10; R.caught.forEach((c, i) => { const cx = x + 10 + (i % cc) * 70; const cy = y + Math.floor(i / cc) * 26; drawMon(c.num, cx + 16, cy + 22 + Math.round(Math.abs(Math.sin(SC.t * 6 + i)) * -3), { outline: teamColor(0) }); text(DEX[c.num].name, cx + 32, cy + 6, UI.ink); text('Lv' + c.level, cx + 32, cy + 14, UI.gold); }); y += Math.ceil(R.caught.length / cc) * 26 + 4; }
   if (R.trained && R.trained.length) { sectionLabel('Training at the Center', x + 8, y, w - 16, UI.gold); y += 10; R.trained.forEach((t, i) => { if (i > 5) return; let s2 = t; while (textWidth(s2) > w - 20 && s2.length > 8) s2 = s2.slice(0, -1); text(s2, x + 10, y, '#98d8f8'); y += 9; }); y += 2; }
   if (R.evolved && R.evolved.length) { R.evolved.forEach(e => { let s2 = e; while (textWidth(s2) > w - 20 && s2.length > 8) s2 = s2.slice(0, -1); text(s2, x + 10, y, UI.gold); y += 9; }); }
+  if (nCo) { sectionLabel(nCo > 1 ? 'New commanders' : 'New commander', x + 8, y + 2, w - 16, UI.gold); y += 12; R.newCos.forEach((id, i) => { const co = COS[id], face = trainerFace(co.tr), a = clamp((appear('res:co' + i) - .6 - i * .2) / .25, 0, 1); if (a <= 0) { y += 22; return; } ctx.globalAlpha = a;
+      rect(x + 10, y, 20, 20, shade(co.col, -.4)); if (face) ctx.drawImage(face, x + 11, y + 1); outline(x + 9, y - 1, 22, 22, co.col); text(co.name.toUpperCase() + ' JOINS YOU!', x + 36, y + 2, co.col, { outline: UI.inset }); text(fitLabel(co.passive.text, w - 48), x + 36, y + 11, UI.muted); ctx.globalAlpha = 1;
+      if (!R['coSfx' + i] && a > 0) { R['coSfx' + i] = true; Audio.sfx('levelup'); } y += 22; }); }
   unfoldEnd(tok);
   { const fy = footerBand(30) + 6; if (R.route) { const bw = Math.min(100, Math.floor((W - 18) / 2)); bigButton(W / 2 - bw - 4, fy, bw, 18, 'ROUTE', () => { Audio.sfx('cancel'); R.route(); }, { variant: 'ghost' }); bigButton(W / 2 + 4, fy, bw, 18, R.nextLabel || 'CONTINUE', () => { Audio.sfx('ok'); R.next(); }, { variant: 'primary' }); } else bigButton(W / 2 - 50, fy, 100, 18, R.nextLabel || 'CONTINUE', () => { Audio.sfx('ok'); R.next(); }, { variant: 'primary' }); }
 }
@@ -445,10 +450,10 @@ const SK_RULES = [
 ];
 function skirmishRoot() { return typeof SAVE !== 'undefined' && SAVE && SAVE.starter && !(SC.data && SC.data.preset) ? SAVE.starter : 4; }
 // The battlefield in miniature: deploy tiles, each property under its owner's colour (HQs flagged), every Pokémon.
-function drawWarPreview(map, bd, px0, py0, pw, ph) {
+function drawWarPreview(map, bd, px0, py0, pw, ph, centers = -1) {
   const cell = pw / bd.canvas.width * TILE, c = Math.max(3, Math.ceil(cell)), owners = (map.war && map.war.owners) || {}, W = bd.map.w;
   for (const d of map.deploy) { const ux = Math.round(px0 + d.x * cell), uy = Math.round(py0 + d.y * cell); ctx.globalAlpha = .22; rect(ux, uy, c, c, '#8ab4ff'); ctx.globalAlpha = .8; outline(ux + 1, uy + 1, c - 2, c - 2, teamColor(0)); ctx.globalAlpha = 1; }
-  map.rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const ch = row[x]; if (!PROP_KIND[ch]) continue; const k = x + ',' + y, owner = owners[k] != null ? owners[k] : ch === 'Q' ? (x < W / 2 ? 0 : 1) : -1, col = owner < 0 ? '#d8d8e8' : teamColor(owner);
+  map.rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const ch = row[x]; if (!PROP_KIND[ch]) continue; const k = x + ',' + y, owner = owners[k] != null ? owners[k] : ch === 'Q' ? (x < W / 2 ? 0 : 1) : centers, col = owner < 0 ? '#d8d8e8' : teamColor(owner);
     const ux = Math.round(px0 + x * cell), uy = Math.round(py0 + y * cell); outline(ux, uy, c, c, col); outline(ux + 1, uy + 1, c - 2, c - 2, UI.inset);
     if (ch === 'Q') { const fx = ux + Math.round(c / 2), fy = uy - 5; vline(fx, fy, 7, '#e8e0d0'); rect(fx + 1, fy, 4, 3, col); } } });
   for (const u of map.units) { const d = DEX[u.mon], ux = px0 + (u.x + .5) * cell, uy = py0 + (u.y + 1) * cell, iw = Math.max(12, Math.round(cell * 1.1)); ellipse(Math.round(ux), Math.round(uy), Math.round(iw / 3), 2, teamColor(u.team == null ? 1 : u.team)); ctx.drawImage(monIcon(d.num, true), Math.round(ux - iw / 2), Math.round(uy - iw * .75), iw, Math.round(iw * .75)); }

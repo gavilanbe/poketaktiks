@@ -2144,7 +2144,7 @@ function sceneFor(kind, W, H, hz, gy, seed, tile) {
       sceneRange(far.p, LW, hz - 8, 46 + R() * 16, R, SCN.far, true, skyRamp[skyRamp.length - 2]);
       sceneRange(far.p, LW, hz - 2, 22 + R() * 8, R, SCN.farGreen, false, null);
       const hill = sceneHills(mid.p, LW, hz + 1, 12 + R() * 6, R, SCN.hills);
-      if (kind === 'town') sceneTown(mid.p, LW, hz, R, tile); else for (let x = 10 + R() * 30; x < LW; x += 26 + R() * 40) sceneTree(mid.p, Math.round(x), hill(Math.round(x)) + 3, 4 + Math.round(R() * 4), R);
+      if (kind === 'town') fx.building = { x: sceneTown(mid.p, LW, hz, R, tile), y: hz + 2 }; else for (let x = 10 + R() * 30; x < LW; x += 26 + R() * 40) sceneTree(mid.p, Math.round(x), hill(Math.round(x)) + 3, 4 + Math.round(R() * 4), R);
       if (kind === 'town') { sceneGround(gnd.p, LW, hz, H, SCN.plaza); scenePlaza(gnd.p, LW, hz, H, gy); }
       else { sceneGround(gnd.p, LW, hz, H, SCN.grass); sceneScatter(LW, hz, H, R, .55, (x, y, d) => grassTuft(gnd.p, x, y, d, SCN.grass)); }
       if (kind === 'meadow') sceneScatter(LW, hz, H, R, .45, (x, y, d) => { const c = ['#f05a5a', '#ffffff', '#ffd83a', '#ff8ac0'][Math.floor(R() * 4)]; if (d < .35) gnd.p.P(x, y, c); else { gnd.p.P(x, y - 1, c); gnd.p.P(x - 1, y, c); gnd.p.P(x + 1, y, c); gnd.p.P(x, y, '#ffd24a'); gnd.p.P(x, y + 1, SCN.grass[1]); if (d > .7) { gnd.p.P(x, y - 2, c); gnd.p.P(x - 2, y, c); gnd.p.P(x + 2, y, c); } } });
@@ -2256,6 +2256,7 @@ function sceneTown(p, w, hz, R, tile) {
   else if (big === 'hq') { const x0 = bx - 30, ww = 60; bldWalls(p, x0, ww, base - 26, base + 1, ['#6a6a78', '#5a5a68', '#9a9aa8', '#bcbcc8'], false); for (let y = base - 22; y < base - 2; y += 4) for (let x = x0 + ((y >> 2) & 1) * 4; x < x0 + ww - 4; x += 8) { p.H(x, y, 7, '#aaaab6'); p.H(x, y + 3, 8, '#7a7a88'); }
     bldRoof(p, x0, ww, base - 38, base - 27, ROOF_RAMP.red, 5); for (let x = x0; x < x0 + ww; x += 6) { p.R(x, base - 29, 3, 3, '#9a9aa8'); p.P(x, base - 29, '#c8c8d4'); } bldFlag(p, bx, base - 48, '#d8d8e0');
     p.R(bx - 9, base - 16, 18, 16, BOUT); p.R(bx - 8, base - 15, 16, 15, '#5a3a24'); for (let x = bx - 8; x < bx + 8; x += 3) p.V(x, base - 15, 15, '#6a4a30'); p.H(bx - 8, base - 11, 16, '#3a3a44'); p.H(bx - 8, base - 5, 16, '#3a3a44'); p.V(bx, base - 15, 15, '#2a1a10'); }
+  return bx;
 }
 // The back wall of a cave: packed rock, stalactites hanging from the top with their tips remembered for drips,
 // glowing crystal clusters remembered for glints.
@@ -2855,11 +2856,13 @@ function initBattleCaptains(opts) {
   } else if (opts.cos && (opts.cos[0] || opts.cos[1])) { // Skirmish and the Tower name both commanders
     for (const team of [0, 1]) { const co = COS[opts.cos[team]] ? opts.cos[team] : null; if (!co) continue; const lvl = alive(team)[0] ? alive(team)[0].level : 12; const u = co !== 'you' ? coAce(team, co, lvl) : alive(team).find(v => v.leader) || alive(team)[0]; if (u) { for (const a of alive(team)) a.leader = a === u; addCaptain(team, u, co === 'you' ? (opts.captain && opts.captain.root) || captainRoot(u.num) || 7 : 7, 8, co); } }
   } else if (opts.captain) {
-    const u = alive(0).find(u => u.pid === opts.captain.pid) || alive(0)[0];
+    // a Gym Leader freed on the route can lead instead of you: their Ace joins at the front's level
+    const pco = opts.co && opts.co !== 'you' && COS[opts.co] && opts.captain.chapter >= 3 ? opts.co : null, lvl = (CHAPTERS[opts.captain.chapter] || {}).level || (alive(0)[0] || {}).level || 10;
+    const u = (pco && coAce(0, pco, lvl)) || alive(0).find(u => u.pid === opts.captain.pid) || alive(0)[0];
     for (const a of alive(0)) a.leader = a === u;
-    addCaptain(0, u, opts.captain.root, opts.captain.chapter);
-    // Rival/boss commands are introduced alongside the player's superpower.
-    if (opts.captain.chapter >= 3) {
+    addCaptain(0, u, opts.captain.root, opts.captain.chapter, pco && u && u.num === COS[pco].ace ? pco : 'you');
+    // Enemy commanders lead from Mt. Moon (Brock) on; a front without one gives its boss a command from chapter 4.
+    if (opts.enemyCo || opts.captain.chapter >= 3) {
       const eco = opts.enemyCo && COS[opts.enemyCo] ? opts.enemyCo : null, foe = eco ? (alive(1).find(v => v.num === COS[eco].ace) || alive(1).find(v => v.boss) || alive(1)[0]) : alive(1).find(v => v.boss) || alive(1)[0];
       if (foe) addCaptain(1, foe, foe.types.includes('Water') ? 7 : foe.types.includes('Grass') ? 1 : 4, 8, eco || 'you');
     }
@@ -2974,10 +2977,10 @@ function initCampaignLessons(mapDef, opts) {
   }
 }
 const CHAPTER_LESSONS = [
-  ['YOUR FIRST TEAM', 'Your starter is the captain. Pidgey scouts ahead.', 'Move, attack, then catch Oak\'s Caterpie at half HP.', 'The practice ball is free and guaranteed. Caterpie cannot faint.', 'Win to bring your catch to the next mission.'],
-  ['TEAM POWER UNLOCKED', 'Your captain now commands a shared team power.', 'Open POWER or press P. Normal costs 50 charge.', 'Combat and completed captures refill the bar.', 'Claim the outpost: capture twice at full HP, then heal there.'],
-  ['BUILD A BALANCED TEAM', 'Your captain leads; choose companions for this map.', 'Geodude holds ground. Clefairy heals. Fliers cross rubble.', 'Your collection trains and recovers after each victory.'],
-  ['SUPERPOWER UNLOCKED', 'Spend 50 on a power, or save 100 for its super version.', 'The rival has powers too. Watch both charge bars.', 'Capture the bridge outpost, then occupy and capture the gym.', 'Capturing uses an action. Leaving resets your progress.'],
+  ['YOUR FIRST FRONT', 'Your partner wears the crown. Pidgey scouts ahead.', 'Move, attack, then catch Oak\'s Caterpie at half HP: the practice ball is free.', 'Your Poké Center pays ₽1,000 a day. Open the PC there to deploy from your Box.', 'Catches wait in your Box: their first deployment is free.'],
+  ['TEAM POWER UNLOCKED', 'Your partner now commands a shared team power.', 'Open POWER or press P. Normal costs 50 charge.', 'Combat, catches and captures refill the bar.', 'Claim the outpost: capture twice at full HP, then heal there.'],
+  ['ENEMY COMMANDERS', 'Brock leads the other side: his Ace, Onix, wears the crown.', 'A commander\'s passive helps allies within 2 tiles of the Ace.', 'The Rocket center deploys his army each day. Capture it to stop them.', 'Fainted Pokémon go back to the Box and recover in two days.'],
+  ['SUPERPOWER UNLOCKED', 'Spend 50 on a power, or save 100 for its super version.', 'Freed Gym Leaders can command your side: pick one in the briefing.', 'Capture the bridge outpost, then occupy and capture the gym.', 'Capturing uses an action. Leaving resets your progress.'],
 ];
 // ============================================================================
 // battle.js — the tactics board: camera, cursor, ranges, path arrow, menus,
@@ -4800,13 +4803,14 @@ const STARTERS = [1, 4, 7];
 const CHAPTERS = [
   {
     id: 'meadow', title: 'Pallet Meadow', num: 1, level: 5, slots: 3, par: 6, music: 'calm',
+    foe: 'Youngster Joey', brief: 'Team Rocket pays me to keep trainers away from this Center. Easy money!',
     intro: [
-      { who: 'Prof. Oak', mon: 143, text: 'So you want to be a Tactician? Then remember: a battle is won with position, not power.' },
-      { who: 'Prof. Oak', mon: 143, text: 'Pick a Pokémon, walk to a tile, then Attack. Blue tiles are where you can go, red is where you can hit.' },
-      { who: 'Youngster Joey', mon: 19, text: 'Hey! My Rattata is in the top percentage of Rattata! Let\'s battle!' },
-      { who: 'Prof. Oak', mon: 143, text: 'Your captain and Pidgey are ready. Caterpie is here for catching practice: weaken it, stand next to it, then Catch.' },
+      { who: 'Prof. Oak', text: 'This meadow\'s Poké Center is the only one Rocket *has not locked*. Your PC Box works here.' },
+      { who: 'Prof. Oak', text: 'Pick a Pokémon, walk to a tile, then *Attack*. Blue tiles are where you can go, red is where you can hit.' },
+      { who: 'Youngster Joey', mon: 19, text: 'Hey! Rocket pays me to guard this meadow. And my Rattata is in the *top percentage* of Rattata!' },
+      { who: 'Prof. Oak', text: 'Caterpie is here for catching practice: *weaken it*, stand next to it, then *Catch*. Catches wait in your Box.' },
     ],
-    outro: [{ who: 'Youngster Joey', mon: 19, text: 'Nooo! My top-percentage Rattata!' }, { who: 'Prof. Oak', mon: 143, text: 'Well done. Head north through Viridian Forest. Mind the bugs.' }],
+    outro: [{ who: 'Youngster Joey', mon: 19, text: 'Nooo! My top-percentage Rattata!' }, { who: 'Bill', text: 'Nice work! I patched this Center back into my network. Next stop: *Viridian Forest*. Rocket is moving north.' }],
     rewards: { pokeball: 3 },
     map: {
       name: 'Pallet Meadow', seed: 11, objective: { type: 'rout' },
@@ -4828,12 +4832,13 @@ const CHAPTERS = [
   },
   {
     id: 'forest', title: 'Viridian Forest', num: 2, level: 7, slots: 4, par: 8, music: 'calm',
+    foe: 'Bug Catcher Timmy', brief: 'Rocket gave me a whole Field Center to guard. And my bugs to guard it with!',
     intro: [
-      { who: 'Bug Catcher Timmy', mon: 11, text: 'Halt! Nobody crosses my forest without smelling my bug collection!' },
-      { who: 'Prof. Oak', mon: 143, text: 'Forests give 20% defence and slow walkers down. Bugs and grass types stroll right through.' },
-      { who: 'Prof. Oak', mon: 143, text: 'I heard a Pikachu lives here. Catching one would be... electrifying.' },
+      { who: 'Bug Catcher Timmy', mon: 11, text: 'Halt! Team Rocket gave me a *Field Center* to guard, and all these bugs to guard it with!' },
+      { who: 'Prof. Oak', text: 'Take that *outpost*: capture it twice at full health and it heals your team for good.' },
+      { who: 'Prof. Oak', text: 'Forests give 20% defence and slow walkers down. And I hear a *Pikachu* lives here... electrifying.' },
     ],
-    outro: [{ who: 'Bug Catcher Timmy', mon: 11, text: 'My beautiful cocoons! Fine, take the road to Mt. Moon. Team Rocket is digging there.' }],
+    outro: [{ who: 'Bug Catcher Timmy', mon: 11, text: 'My beautiful cocoons! Fine, go on. Rocket is digging in *Mt. Moon*... and they have Brock.' }, { who: 'Bill', text: 'Brock? The Pewter Gym Leader? If Rocket is holding his family, he has *no choice* but to fight you.' }],
     rewards: { pokeball: 3 },
     map: {
       name: 'Viridian Forest', seed: 22, objective: { type: 'rout' },
@@ -4858,12 +4863,14 @@ const CHAPTERS = [
   },
   {
     id: 'moon', title: 'Mt. Moon', num: 3, level: 10, slots: 4, par: 9, music: 'player',
+    co: 'brock', brief: 'Team Rocket has my family. I am sorry, kid. I have to hold this mountain.',
     intro: [
-      { who: 'Rocket Grunt', mon: 41, text: 'Team Rocket is mining moon stones here. Scram, kid, or the bats eat well tonight.' },
-      { who: 'Prof. Oak', mon: 143, text: 'Their boss is a Raticate hiding deep in the cave. Beat it and the grunts will scatter.' },
-      { who: 'Prof. Oak', mon: 143, text: 'Zubat fly over rubble. Geodude climb it. A wild Geodude lives here: Rock and Ground types will matter later, hint hint.' },
+      { who: 'Brock', mon: 95, text: 'You are the Tactician? Rocket has my *brothers and sisters*. I cannot let you through.' },
+      { who: 'Rocket Grunt', mon: 41, text: 'That\'s right, Brock. And our *Raticate* is keeping an eye on you too.' },
+      { who: 'Prof. Oak', text: 'Defeat that Raticate and Brock is free. Their *Field Center* keeps calling in Rock types: capture it and the flow stops.' },
+      { who: 'Prof. Oak', text: 'Brock commands now: his *Onix* wears the crown, and his Rock types near it shrug off hits.' },
     ],
-    outro: [{ who: 'Rocket Grunt', mon: 41, text: 'Raticate down?! The boss will hear about this... run!' }, { who: 'Prof. Oak', mon: 143, text: 'A Clefairy waved at you on the way out. What a night. Next: Cerulean and its famous bridge.' }],
+    outro: [{ who: 'Rocket Grunt', mon: 41, text: 'Raticate down?! Abort! Everybody out!' }, { who: 'Brock', mon: 95, text: 'My family is safe... thank you. From now on my *Rock Tomb* is yours to call. Count me in, Tactician.' }, { who: 'Bill', text: 'Rocket\'s next checkpoint is *Nugget Bridge*. Word is they have Misty guarding it.' }],
     rewards: { pokeball: 4 },
     map: {
       name: 'Mt. Moon', seed: 33, objective: { type: 'boss', bossName: 'Raticate' },
@@ -4876,11 +4883,12 @@ const CHAPTERS = [
         'WccWWccccrcccWcccW',
         'WcccccWWccccccccrW',
         'WcrcccWcccrccWWccW',
-        'WccccccccccccWcccW',
+        'WccccccccccccWcKcW',
         'WWWWWWWWWWWWWWWWWW',
       ],
+      war: { owners: { '15,8': 1 }, names: { '15,8': 'ROCKET CENTER' } },
       deploy: [{ x: 2, y: 2 }, { x: 1, y: 3 }, { x: 2, y: 4 }, { x: 1, y: 5 }],
-      units: [{ mon: 41, level: 8, x: 8, y: 2 }, { mon: 41, level: 8, x: 9, y: 6 }, { mon: 41, level: 9, x: 13, y: 3, ai: 'guard' }, { mon: 74, level: 9, x: 7, y: 4, ai: 'guard' }, { mon: 74, level: 9, x: 11, y: 7, ai: 'guard' }, { mon: 23, level: 9, x: 12, y: 1 }, { mon: 27, level: 9, x: 10, y: 8, ai: 'guard' }, { mon: 20, level: 11, x: 15, y: 5, ai: 'boss', boss: true, nick: 'Boss Raticate' }, { mon: 109, level: 10, x: 15, y: 2, ai: 'guard' },
+      units: [{ mon: 41, level: 8, x: 8, y: 2 }, { mon: 41, level: 8, x: 9, y: 6 }, { mon: 41, level: 9, x: 13, y: 3, ai: 'guard' }, { mon: 74, level: 9, x: 7, y: 4, ai: 'guard' }, { mon: 74, level: 9, x: 11, y: 7, ai: 'guard' }, { mon: 23, level: 9, x: 12, y: 1 }, { mon: 27, level: 9, x: 10, y: 8, ai: 'guard' }, { mon: 95, level: 11, x: 14, y: 6, ai: 'guard' }, { mon: 20, level: 11, x: 15, y: 5, ai: 'boss', boss: true, nick: 'Boss Raticate' }, { mon: 109, level: 10, x: 15, y: 2, ai: 'guard' },
         { mon: 35, level: 9, team: 2, x: 5, y: 7, ai: 'aggro' }, { mon: 74, level: 8, team: 2, x: 5, y: 1, ai: 'aggro' }],
       items: [{ x: 16, y: 8, item: 'pokeball' }, { x: 3, y: 8, item: 'pokeball' }],
       reinforce: [{ turn: 4, units: [{ mon: 41, level: 9, x: 16, y: 1 }, { mon: 41, level: 9, x: 16, y: 7 }] }],
@@ -4888,30 +4896,33 @@ const CHAPTERS = [
   },
   {
     id: 'bridge', title: 'Nugget Bridge', num: 4, level: 13, slots: 5, par: 10, music: 'player',
+    co: 'misty', brief: 'They took my Gym. Until I get it back, this bridge stays shut!',
     intro: [
+      { who: 'Misty', mon: 121, text: 'Team Rocket seized my *Cerulean Gym*. If I don\'t keep this bridge shut, I never get it back!' },
       { who: 'Swimmer Ana', mon: 55, text: 'Nobody crosses Nugget Bridge without a swim! Water types, get \'em!' },
-      { who: 'Prof. Oak', mon: 143, text: 'Take the bridge and SEIZE the Gym on the far side. Water types swim, fliers glide over everything.' },
-      { who: 'Prof. Oak', mon: 143, text: 'Something big sleeps in the lake. Do not poke it unless you mean it.' },
+      { who: 'Prof. Oak', text: 'Take the bridge and *seize the Gym* on the far side. That frees it, and Misty with it.' },
+      { who: 'Prof. Oak', text: 'Something big sleeps in the lake. Do not poke it unless you mean it.' },
     ],
-    outro: [{ who: 'Swimmer Ana', mon: 55, text: 'You seized my gym?! Ugh. Fine. Rumour says Team Rocket has a hideout under the Game Corner.' }],
+    outro: [{ who: 'Misty', mon: 121, text: 'You got my Gym back? Okay... you are not bad. My *Rain Dance* is yours when you need it.' }, { who: 'Bill', text: 'A Rocket hideout under the *Celadon Game Corner*! Erika has not been seen since they moved in.' }],
     rewards: { pokeball: 4 },
     map: {
       name: 'Nugget Bridge', seed: 44, objective: { type: 'seize', what: 'Gym' }, seize: { x: 17, y: 4 }, par: 10,
       outposts: [{ x: 8, y: 4, name: 'BRIDGE OUTPOST' }, { x: 17, y: 4, name: 'GYM', owner: 1, goal: true }],
+      war: { owners: { '16,6': 1 }, names: { '16,6': 'ROCKET CENTER' } },
       rows: [
         '..t..~~~~~~~~..TT.',
-        '.,...~~~~~~~~~..T.',
+        '.C...~~~~~~~~~..T.',
         '.....s~~~~~~~s..,.',
         '#####s~~~~~~~s####',
         '.....===C=====...G',
         '.....s~~~~~~~s.#..',
-        '..,..s~~~~~~s~.#..',
+        '..,..s~~~~~~s~.#C.',
         '.t..s~~~~~~~~~.#..',
         '....~~~~~~~~~~..#.',
         'TT..~~~~~~~~~~..TT',
       ],
       deploy: [{ x: 1, y: 3 }, { x: 1, y: 5 }, { x: 2, y: 4 }, { x: 0, y: 4 }, { x: 2, y: 2 }],
-      units: [{ mon: 60, level: 10, x: 8, y: 3, ai: 'aggro' }, { mon: 60, level: 10, x: 8, y: 5, ai: 'aggro' }, { mon: 118, level: 11, x: 10, y: 6, ai: 'guard' }, { mon: 120, level: 11, x: 11, y: 2, ai: 'guard' }, { mon: 72, level: 10, x: 6, y: 8, ai: 'aggro' }, { mon: 55, level: 12, x: 12, y: 4, ai: 'guard' }, { mon: 54, level: 11, x: 15, y: 5, ai: 'guard' }, { mon: 79, level: 12, x: 16, y: 3, ai: 'guard' }, { mon: 130, level: 15, x: 9, y: 1, ai: 'guard', boss: true, nick: 'Lake Gyarados' },
+      units: [{ mon: 60, level: 10, x: 8, y: 3, ai: 'aggro' }, { mon: 60, level: 10, x: 8, y: 5, ai: 'aggro' }, { mon: 118, level: 11, x: 10, y: 6, ai: 'guard' }, { mon: 120, level: 11, x: 11, y: 2, ai: 'guard' }, { mon: 72, level: 10, x: 6, y: 8, ai: 'aggro' }, { mon: 55, level: 12, x: 12, y: 4, ai: 'guard' }, { mon: 121, level: 12, x: 16, y: 7, ai: 'guard' }, { mon: 54, level: 11, x: 15, y: 5, ai: 'guard' }, { mon: 79, level: 12, x: 16, y: 3, ai: 'guard' }, { mon: 130, level: 15, x: 9, y: 1, ai: 'guard', boss: true, nick: 'Lake Gyarados' },
         { mon: 129, level: 6, team: 2, x: 4, y: 8, ai: 'aggro' }, { mon: 98, level: 11, team: 2, x: 5, y: 2, ai: 'aggro' }, { mon: 116, level: 11, team: 2, x: 13, y: 7, ai: 'aggro' }],
       items: [{ x: 16, y: 1, item: 'pokeball' }, { x: 17, y: 8, item: 'pokeball' }],
       reinforce: [{ turn: 4, units: [{ mon: 72, level: 11, x: 13, y: 1 }, { mon: 72, level: 11, x: 13, y: 8 }] }],
@@ -4919,22 +4930,25 @@ const CHAPTERS = [
   },
   {
     id: 'hideout', title: 'Rocket Hideout', num: 5, level: 16, slots: 5, par: 10, music: 'enemy',
+    co: 'giovanni', brief: 'A child playing general. Let us see how you fare against a professional.',
     intro: [
-      { who: 'Giovanni', mon: 53, text: 'So the meddling Tactician found my hideout. Persian, show them how a professional plays.' },
-      { who: 'Prof. Oak', mon: 143, text: 'Their Pokémon love Poison. Pack a Full Heal. Crates give cover, pillars block the way.' },
+      { who: 'Giovanni', mon: 53, text: 'So the meddling Tactician found my hideout. *Persian*, show them how a professional plays.' },
+      { who: 'Erika', text: 'Tactician! They locked me in the back office... please, *hurry*!' },
+      { who: 'Prof. Oak', text: 'Their Pokémon love *Poison*. Crates give cover, pillars block the way. Beat Persian and the hideout falls.' },
       { who: 'Giovanni', mon: 53, text: 'Zubat, seal the doors in four turns. Nobody leaves.' },
     ],
-    outro: [{ who: 'Giovanni', mon: 53, text: 'Tch. A tactician indeed. We will meet again, and I will have something... legendary.' }, { who: 'Prof. Oak', mon: 143, text: 'Legendary? The Power Plant reported strange lightning. Go look, and bring an umbrella.' }],
+    outro: [{ who: 'Giovanni', mon: 53, text: 'Tch. A tactician indeed. We will meet again, and I will have something... *legendary*.' }, { who: 'Erika', text: 'Thank you... my garden is yours to call on. *Aromatherapy* will keep your team standing.' }, { who: 'Bill', text: 'The *Power Plant* is throwing lightning, and Lt. Surge is running its defence. Something is very wrong there.' }],
     rewards: { pokeball: 5 },
     map: {
       name: 'Rocket Hideout', seed: 55, objective: { type: 'boss', bossName: 'Persian' }, music: 'enemy',
+      war: { owners: { '14,5': 1 }, names: { '14,5': 'ROCKET CENTER' } },
       rows: [
         'bbbbbbbbbbbbbbbbbb',
         'bffffxfbfffffpffbb',
         'bffffxfbffxfffffbb',
         'bfffffffffxffpffbb',
         'bKpfffbbbfffffffbb',
-        'bfffffbxxffffxffbb',
+        'bfffffbxxffffxKfbb',
         'bffxffffffpfffffbb',
         'bffxfffbfffffffffb',
         'bfffffpbffxffffffb',
@@ -4949,15 +4963,17 @@ const CHAPTERS = [
   },
   {
     id: 'plant', title: 'Power Plant', num: 6, level: 20, slots: 6, par: 10, music: 'player',
+    co: 'surge', brief: 'Rocket has a legendary bird in my reactor and my crew as hostages. Orders are orders, kid!',
     intro: [
-      { who: 'Engineer Watt', mon: 81, text: 'The turbines are spinning backwards! Something in the reactor room is throwing lightning!' },
-      { who: 'Prof. Oak', mon: 143, text: 'Zapdos. A legendary bird. Ground types are immune to Electric; Rock and Ice hurt it. It will wait for you, so choose the moment.' },
-      { who: 'Engineer Watt', mon: 81, text: 'Careful with the Voltorbs, they look like Poké Balls. They are NOT Poké Balls.' },
+      { who: 'Lt. Surge', mon: 26, text: 'Hey, kid! Rocket has *Zapdos* caged in this plant and my Vermilion crew held hostage. Orders are orders!' },
+      { who: 'Engineer Watt', mon: 81, text: 'The turbines are spinning backwards! Careful with the Voltorbs: they are *not* Poké Balls.' },
+      { who: 'Prof. Oak', text: 'Defeat *Zapdos* and the plant is free. Ground types are immune to Electric; Rock and Ice hurt it. It waits for you, so choose the moment.' },
     ],
-    outro: [{ who: 'Engineer Watt', mon: 81, text: 'The lights are back! You... you fought Zapdos and lived. Legends say a fire bird nests in the Cinnabar volcano.' }],
+    outro: [{ who: 'Engineer Watt', mon: 81, text: 'The lights are back! You fought Zapdos and lived!' }, { who: 'Lt. Surge', mon: 26, text: 'Ha! My crew is free and you have my respect, soldier. *Thunder Wave* on your call!' }, { who: 'Bill', text: 'Blaine\'s lab on *Cinnabar* went dark. Rocket is after the fire bird nesting in the volcano.' }],
     rewards: { pokeball: 5 },
     map: {
       name: 'Power Plant', seed: 66, objective: { type: 'boss', bossName: 'Zapdos' },
+      war: { owners: { '16,7': 1 }, names: { '16,7': 'ROCKET CENTER' } },
       rows: [
         'bbbbbbbbbbbbbbbbbbbb',
         'bffffpfffbfffxffffpb',
@@ -4966,7 +4982,7 @@ const CHAPTERS = [
         'bfffxfffbfbffxffpffb',
         'bffffffpbfbfffffffbb',
         'bfxfffffffffpfffxffb',
-        'bfffpffbbbffffffffbb',
+        'bfffpffbbbffffffKfbb',
         'bKfffffffffxffpffffb',
         'bbbbbbbbbbbbbbbbbbbb',
       ],
@@ -4978,14 +4994,17 @@ const CHAPTERS = [
   },
   {
     id: 'volcano', title: 'Cinnabar Volcano', num: 7, level: 24, slots: 6, par: 8, music: 'boss',
+    co: 'blaine', brief: 'Rocket wants my Moltres. They will have to get past me... and so will you!',
     intro: [
-      { who: 'Blaine', mon: 126, text: 'My volcano, my rules! Moltres is nesting and my fire team will keep you off the rim. Survive seven turns... if you can!' },
-      { who: 'Prof. Oak', mon: 143, text: 'Lava burns anything that is not Fire or flying. Hold the rubble, it gives cover. Water and Rock are your friends here.' },
+      { who: 'Blaine', mon: 59, text: 'My volcano, my rules! Rocket has my lab and they want *Moltres*. Nobody reaches the rim. Not them, not you!' },
+      { who: 'Prof. Oak', text: 'Blaine thinks you are with Rocket. *Survive seven turns* and he will see you are not.' },
+      { who: 'Prof. Oak', text: 'Lava burns anything that is not Fire or flying. Hold the rubble, it gives cover. Water and Rock are your friends here.' },
     ],
-    outro: [{ who: 'Blaine', mon: 126, text: 'Seven turns! Hah! You have fire in you after all. Go, the last riddle waits in Cerulean Cave.' }, { who: 'Moltres', mon: 146, text: '*screeches and flies away, dropping a feather*' }],
+    outro: [{ who: 'Blaine', mon: 59, text: 'Seven turns! Hah! You have fire in you after all. My *Sunny Day* is yours, kid.' }, { who: 'Koga', text: 'Well fought. Rocket forced my hand too, from the shadows. My *poison* serves you now.' }, { who: 'Moltres', mon: 146, text: '*screeches and flies away, dropping a feather*' }, { who: 'Bill', text: 'One last front: *Cerulean Cave*. Giovanni is there... with something he made.' }],
     rewards: { pokeball: 5 },
     map: {
       name: 'Cinnabar Volcano', seed: 77, objective: { type: 'survive', turns: 7 }, music: 'boss',
+      war: { owners: { '15,6': 1 }, names: { '15,6': 'ROCKET CENTER' } },
       rows: [
         'WWWWWWWWWWWWWWWWWW',
         'WKccLLLcccLLcccrcW',
@@ -4993,7 +5012,7 @@ const CHAPTERS = [
         'WcccLccccccLLcLLLW',
         'WrcccccrccccccLLcW',
         'WccrccLLccrccccccW',
-        'WcccLLLLcccLLcrccW',
+        'WcccLLLLcccLLcrKcW',
         'WcrccLLccrcLLLccrW',
         'WccccLccccccLccccW',
         'WWWWWWWWWWWWWWWWWW',
@@ -5007,12 +5026,14 @@ const CHAPTERS = [
   },
   {
     id: 'cave', title: 'Cerulean Cave', num: 8, level: 30, slots: 7, par: 12, music: 'boss',
+    co: 'giovanni', brief: 'My greatest creation waits for you, Tactician. It will be the last thing you see.',
     intro: [
-      { who: 'Giovanni', mon: 53, text: 'You again. Meet my greatest creation. It does not obey me, but it hates you plenty.' },
+      { who: 'Giovanni', mon: 34, text: 'You again. Meet my greatest creation. It does not obey me, but it hates you *plenty*.' },
       { who: 'Mewtwo', mon: 150, text: '...I was made to fight. Show me a reason not to.' },
-      { who: 'Prof. Oak', mon: 143, text: 'Mewtwo resists Psychic and shreds Fighting and Poison. Bug, Ghost and Dark bite it. Wear it down and strike together!' },
+      { who: 'Sabrina', text: 'I foresaw this battle, Tactician. Win it, and every PC in Kanto *comes back online*.' },
+      { who: 'Prof. Oak', text: 'Mewtwo resists Psychic and shreds Fighting and Poison. *Bug and Ghost* bite it. Wear it down and strike together!' },
     ],
-    outro: [{ who: 'Mewtwo', mon: 150, text: '...So this is what a team is. Go. I have thinking to do.' }, { who: 'Prof. Oak', mon: 143, text: 'You did it. The region is safe, the Rockets are scattered, and you owe me a Pokédex. Congratulations, Tactician!' }],
+    outro: [{ who: 'Mewtwo', mon: 150, text: '...So this is what a team is. Go. I have thinking to do.' }, { who: 'Giovanni', mon: 34, text: 'Team Rocket... is finished. For now.' }, { who: 'Bill', text: 'Every Poké Center in Kanto is back online! Trainers are getting their Pokémon back as we speak!' }, { who: 'Prof. Oak', text: 'You did it, Tactician. Kanto is free, every Gym Leader stands with you... and so does *Blue*, I hear.' }],
     rewards: { pokeball: 6 },
     map: {
       name: 'Cerulean Cave', seed: 88, objective: { type: 'boss', bossName: 'Mewtwo' }, music: 'boss',
@@ -5026,11 +5047,12 @@ const CHAPTERS = [
         'WccccwccrcccwcWcrccW',
         'WcccccccwwcccwccccrW',
         'WcrccwccccwwcccwcccW',
-        'WccccccrcccccccccccW',
+        'WccccccrccccccccKccW',
         'WWWWWWWWWWWWWWWWWWWW',
       ],
+      war: { owners: { '16,9': 1 }, names: { '16,9': 'ROCKET CENTER' } },
       deploy: [{ x: 1, y: 2 }, { x: 2, y: 3 }, { x: 1, y: 4 }, { x: 2, y: 6 }, { x: 1, y: 7 }, { x: 2, y: 8 }, { x: 3, y: 9 }],
-      units: [{ mon: 64, level: 27, x: 8, y: 2, ai: 'aggro' }, { mon: 75, level: 27, x: 7, y: 5, ai: 'guard' }, { mon: 76, level: 28, x: 12, y: 3, ai: 'guard' }, { mon: 93, level: 27, x: 11, y: 6, ai: 'guard' }, { mon: 94, level: 29, x: 14, y: 8, ai: 'guard' }, { mon: 148, level: 28, x: 13, y: 1, ai: 'guard' }, { mon: 68, level: 29, x: 15, y: 5, ai: 'guard' }, { mon: 65, level: 30, x: 17, y: 2, ai: 'guard' }, { mon: 150, level: 34, x: 17, y: 5, ai: 'boss', boss: true, nick: 'Mewtwo' },
+      units: [{ mon: 64, level: 27, x: 8, y: 2, ai: 'aggro' }, { mon: 75, level: 27, x: 7, y: 5, ai: 'guard' }, { mon: 76, level: 28, x: 12, y: 3, ai: 'guard' }, { mon: 93, level: 27, x: 11, y: 6, ai: 'guard' }, { mon: 94, level: 29, x: 14, y: 8, ai: 'guard' }, { mon: 148, level: 28, x: 13, y: 1, ai: 'guard' }, { mon: 34, level: 27, x: 15, y: 3, ai: 'guard' }, { mon: 68, level: 29, x: 15, y: 5, ai: 'guard' }, { mon: 65, level: 30, x: 17, y: 2, ai: 'guard' }, { mon: 150, level: 34, x: 17, y: 5, ai: 'boss', boss: true, nick: 'Mewtwo' },
         { mon: 147, level: 26, team: 2, x: 5, y: 8, ai: 'aggro' }, { mon: 42, level: 27, team: 2, x: 6, y: 1, ai: 'aggro' }],
       items: [{ x: 18, y: 9, item: 'pokeball' }, { x: 9, y: 1, item: 'pokeball' }, { x: 4, y: 5, item: 'pokeball' }],
       reinforce: [{ turn: 5, units: [{ mon: 42, level: 28, x: 18, y: 1 }, { mon: 42, level: 28, x: 18, y: 9 }] }],
@@ -5609,7 +5631,7 @@ const SPEAKERS = {
   'Lt. Surge': { tr: 'ltsurge', side: 1, col: '#ffd24a', voice: 180 }, 'Erika': { tr: 'erika', side: 1, col: '#8cd058', voice: 440 }, 'Koga': { tr: 'koga', side: 1, col: '#b070d0', voice: 210 }, 'Sabrina': { tr: 'sabrina', side: 1, col: '#ff70b0', voice: 400 }, 'Blaine': { tr: 'blaine', side: 1, col: '#ff7040', voice: 190 },
   'Mewtwo': { mon: 150, side: 1, col: '#c890f0', voice: 90, cry: true }, 'Moltres': { mon: 146, side: 1, col: '#ff8a2c', voice: 130, cry: true },
 };
-function speakerOf(line) { return SPEAKERS[line.who] || (line.mon ? { mon: line.mon, side: 1, col: UI.gold, voice: 300 } : { side: 0, col: UI.gold, voice: 300 }); }
+function speakerOf(line) { const S = SPEAKERS[line.who] || (line.mon ? { mon: line.mon, side: 1, col: UI.gold, voice: 300 } : { side: 0, col: UI.gold, voice: 300 }); return line.side != null && line.side !== S.side ? Object.assign({}, S, { side: line.side }) : S; } // a line may put its speaker on the other side
 const TRAINERS = { img: {}, state: {}, cache: {} };
 function trainerImg(tr) {
   if (!TRAINERS.state[tr] && typeof Image !== 'undefined') { TRAINERS.state[tr] = 'loading'; const img = new Image(); img.onload = () => { TRAINERS.img[tr] = img; TRAINERS.state[tr] = 'ok'; }; img.onerror = () => { TRAINERS.state[tr] = 'fail'; }; img.src = 'assets/trainers/' + tr + '.png'; }
@@ -5638,20 +5660,21 @@ function trainerBust(tr, flip) {
 // A commander card, Advance Wars style: the trainer's bust over bands of their colour, the name on a strip below;
 // side 1 faces left. Tapping it runs `run` (cycling the choice on setup screens).
 function coCard(x, y, w, h, id, side, run, opt = {}) {
-  const co = COS[id] || COS.you, col = opt.col || co.col, t = SC.t; trainerImg(co.tr);
+  const co = opt.as || COS[id] || COS.you, col = opt.col || co.col, t = SC.t; trainerImg(co.tr); // opt.as: any trainer { tr, name, col }
   rrect(x, y, w, h, opt.hot ? UI.gold : UI.inset, 2); ctx.save(); ctx.beginPath(); ctx.rect(x + 1, y + 1, w - 2, h - 2); ctx.clip();
   rect(x + 1, y + 1, w - 2, h - 2, shade(col, -.62)); ctx.fillStyle = shade(col, -.35); const drift = REDUCED ? 0 : Math.floor(t * 8) % 12;
   for (let k = -h - 12 + (side ? -drift : drift); k < w + 12; k += 12) { ctx.beginPath(); ctx.moveTo(x + k, y + h); ctx.lineTo(x + k + h, y); ctx.lineTo(x + k + h + 5, y); ctx.lineTo(x + k + 5, y + h); ctx.fill(); }
   const bust = trainerBust(co.tr, side === 1), by = y + h - 10 - 48 + (opt.pop ? Math.round((1 - easeOutBack(clamp(opt.pop / .25, 0, 1), 2)) * 10) : 0);
   if (bust) { ctx.globalAlpha = .5; ctx.drawImage(bust, x + Math.round((w - 48) / 2) + (side ? 2 : -2), by + 1); ctx.globalAlpha = 1; ctx.drawImage(bust, x + Math.round((w - 48) / 2), by); }
   ctx.restore(); rect(x + 1, y + h - 10, w - 2, 9, '#07061ae0'); hline(x + 1, y + h - 11, w - 2, col);
-  textC(fitLabel(id === 'you' ? 'TACTICIAN' : co.name.toUpperCase(), w - 6), x + w / 2, y + h - 9, opt.hot ? UI.gold : '#ffffff');
+  textC(fitLabel(id === 'you' && !opt.as ? 'TACTICIAN' : co.name.toUpperCase(), w - 6), x + w / 2, y + h - 9, opt.hot ? UI.gold : '#ffffff');
   if (opt.tag) { const tw = textWidth(opt.tag) + 6, tx = side ? x + w - tw - 2 : x + 2; rrect(tx, y + 2, tw, 9, side ? teamColorD(1) : teamColorD(0), 1); text(opt.tag, tx + 3, y + 3, '#ffffff'); }
   if (run) hit(x, y, w, h, run, opt.label || (side ? 'FOE CO' : 'YOUR CO'));
 }
 // A line's text with its *emphasis* resolved: the plain text and which letters to colour.
 function richLine(line) { if (line._rich) return line._rich; const em = []; let plain = '', on = false; for (const c of line.text) { if (c === '*') { on = !on; continue; } if (on) em[plain.length] = true; plain += c; } return (line._rich = { plain, em }); }
-function startDialog(lines, done) { for (const l of lines) { const Sp = SPEAKERS[l.who]; if (Sp && Sp.tr) trainerImg(Sp.tr); } SC.dialog = { lines, i: 0, chars: 0, t: 0, T: 0, pause: 0, done, cast: [null, null], since: [0, 0] }; goScene('story'); }
+// opt.stage: draws the scene behind the dialogue when there is no battle board (the prologue)
+function startDialog(lines, done, opt = {}) { for (const l of lines) { const Sp = SPEAKERS[l.who]; if (Sp && Sp.tr) trainerImg(Sp.tr); } SC.dialog = { lines, i: 0, chars: 0, t: 0, T: 0, pause: 0, done, cast: [null, null], since: [0, 0], stage: opt.stage || null }; goScene('story'); }
 function storyUpdate(dt) {
   const d = SC.dialog; if (!d) return; d.t += dt; d.T += dt; const line = d.lines[d.i], R = richLine(line), S = speakerOf(line), total = R.plain.length;
   if (d.cast[S.side] !== line.who) { d.cast[S.side] = line.who; d.since[S.side] = d.T; if (d.T > .1) Audio.sfx('whoosh'); }
@@ -5659,6 +5682,7 @@ function storyUpdate(dt) {
   if (d.pause > 0) d.pause -= dt;
   else if (d.chars < total) { const before = Math.floor(d.chars); d.chars = Math.min(total, d.chars + dt * 48); const now = Math.floor(d.chars);
     if (now !== before) { const c = R.plain[now - 1]; if ('.!?'.includes(c) && R.plain[now] === ' ') d.pause = .2; else if (c === ',' || c === ':') d.pause = .08; if (now % 2 === 0 && c !== ' ') Audio.voice(S.voice, S.cry); } }
+  if (d.stage || !B) { Audio.tick(); BT.time += dt; return; }
   CAM.x += (CAM.tx - CAM.x) * Math.min(1, dt * 6); CAM.y += (CAM.ty - CAM.y) * Math.min(1, dt * 6); for (const u of B.units) { u.fx.sx += (1 - u.fx.sx) * dt * 10; u.fx.sy += (1 - u.fx.sy) * dt * 10; } updateFX(dt); Audio.tick(); BT.time += dt;
 }
 // One speaker on their side, behind the box (the box hides their legs): they slide in when they first speak, bob while
@@ -5675,7 +5699,7 @@ function drawSpeaker(who, side, active, since, d, line, sc, box) {
   if (!active) ctx.globalAlpha = .55; if (animReady(num)) drawAnim(num, cx + shout, by - bob, BT.time, { flip: side === 0, sx: sc, sy: sc }); else if (bigReady(num)) drawBig(num, cx + shout, by + 8 - bob, { flip: side === 0, sx: sc, sy: sc }); else drawMon(num, cx, by - bob, { flip: side === 0, sx: sc, sy: sc }); ctx.globalAlpha = 1;
 }
 function storyDraw() {
-  battleDraw(); const d = SC.dialog; if (!d) return; const W = VIEW.w, H = VIEW.h, line = d.lines[d.i], t = d.t, R = richLine(line), S = speakerOf(line), wide = W >= 480 && H >= 280, sc = wide ? 2 : 1;
+  const d = SC.dialog; if (d && d.stage) d.stage(d); else battleDraw(); if (!d) return; const W = VIEW.w, H = VIEW.h, line = d.lines[d.i], t = d.t, R = richLine(line), S = speakerOf(line), wide = W >= 480 && H >= 280, sc = wide ? 2 : 1;
   // cinematic: the board dims and black bars close in from the top and the bottom
   const intro = REDUCED ? 1 : easeOut(clamp(d.T / .3, 0, 1)); ctx.globalAlpha = .3 * intro; rect(0, 0, W, H, '#05041a'); ctx.globalAlpha = 1; const bar = Math.round((wide ? 14 : 8) * intro); rect(0, 0, W, bar, '#000000'); rect(0, H - bar, W, bar, '#000000');
   const bh = wide ? 64 : 62, rise = REDUCED ? 0 : Math.round((1 - easeOutBack(clamp(appear('story') / .3, 0, 1), 2)) * 30), box = { x: 6, y: H - bar - bh - 4 + rise, w: W - 12, h: bh };
@@ -5691,7 +5715,7 @@ function storyDraw() {
   const hint = [(d.i + 1) + ' / ' + d.lines.length, ['X', 'skip']], hw = hintWidth(hint), nameR = line.who ? nx + nameW : -1, nameL = line.who ? nx : 1e9;
   if (S.side === 0 && box.x + box.w - 4 - hw > nameR + 4) hintLine(hint, box.x + box.w - 4, box.y - 12, { right: true }); else if (S.side === 1 && box.x + 8 + hw < nameL - 4) hintLine(hint, box.x + 8, box.y - 12, { left: true }); else textR((d.i + 1) + '/' + d.lines.length, box.x + box.w - 20, box.y + box.h - 11, UI.muted);
   // focus the camera on the speaker's Pokémon if it is on the board
-  const spk = B.units.find(u => u.num === line.mon && u.hp > 0); if (spk && !d.focused) { d.focused = true; centerCam(spk.x, spk.y); spk.fx.sy = .8; spk.fx.sx = 1.2; }
+  const spk = !d.stage && B && B.units.find(u => u.num === line.mon && u.hp > 0); if (spk && !d.focused) { d.focused = true; centerCam(spk.x, spk.y); spk.fx.sy = .8; spk.fx.sx = 1.2; }
 }
 function storyInput(ev) { const d = SC.dialog; if (!d) return; if (ev.type === 'key' && ev.key === 'back') { finishDialog(); return; } if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) { const line = d.lines[d.i]; if (d.chars < richLine(line).plain.length) { d.chars = richLine(line).plain.length; d.pause = 0; return; } d.i++; d.chars = 0; d.t = 0; d.pause = 0; d.focused = false; Audio.sfx('ok'); if (d.i >= d.lines.length) finishDialog(); } }
 function finishDialog() { const d = SC.dialog; SC.dialog = null; if (d && d.done) d.done(); }
@@ -5790,9 +5814,9 @@ function resultsDraw() {
     return;
   }
   const rc = Math.max(1, Math.floor((w - 16) / 96)), cc = Math.max(1, Math.floor((w - 16) / 70)); // rewards / catches per row
-  const nRew = R.rewards ? Object.keys(R.rewards).length : 0, nC = R.caught ? R.caught.length : 0, nT = R.trained ? Math.min(6, R.trained.length) : 0, nE = R.evolved ? R.evolved.length : 0, stars = win && R.stars != null;
+  const nRew = R.rewards ? Object.keys(R.rewards).length : 0, nC = R.caught ? R.caught.length : 0, nT = R.trained ? Math.min(6, R.trained.length) : 0, nE = R.evolved ? R.evolved.length : 0, nCo = R.newCos ? R.newCos.length : 0, stars = win && R.stars != null;
   const lose = wrap('The team limps back to the Poké Center. Everyone is fine. Mostly.', w - 16);
-  const ph = 36 + (stars ? 30 : 0) + (win ? 10 : (lose.length - 1) * 9) + (nRew ? 14 + Math.ceil(nRew / rc) * 10 : (win && !R.skirmish ? 12 : 0)) + (nC ? 14 + Math.ceil(nC / cc) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + 8;
+  const ph = 36 + (stars ? 30 : 0) + (win ? 10 : (lose.length - 1) * 9) + (nRew ? 14 + Math.ceil(nRew / rc) * 10 : (win && !R.skirmish ? 12 : 0)) + (nC ? 14 + Math.ceil(nC / cc) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + (nCo ? 12 + nCo * 22 : 0) + 8;
   const phh = Math.min(H - 44, Math.max(60, ph)); y = Math.max(8, Math.round((H - 30 - phh) / 2));
   const tok = unfold('results', x, y, w, phh, .25);
   const p = panel(x, y, w, phh, { header: win ? (R.skirmish ? 'SKIRMISH WON!' : 'CHAPTER CLEAR!') : 'RETREAT', headerRight: stars && R.stars > (R.best || 0) && !R.skirmish ? 'NEW BEST' : null, headerRightCol: UI.gold, headerFill: win ? '#2a2470' : '#4a1626' });
@@ -5808,6 +5832,9 @@ function resultsDraw() {
   if (nC) { sectionLabel('New team members', x + 8, y, w - 16, UI.gold); y += 10; R.caught.forEach((c, i) => { const cx = x + 10 + (i % cc) * 70; const cy = y + Math.floor(i / cc) * 26; drawMon(c.num, cx + 16, cy + 22 + Math.round(Math.abs(Math.sin(SC.t * 6 + i)) * -3), { outline: teamColor(0) }); text(DEX[c.num].name, cx + 32, cy + 6, UI.ink); text('Lv' + c.level, cx + 32, cy + 14, UI.gold); }); y += Math.ceil(R.caught.length / cc) * 26 + 4; }
   if (R.trained && R.trained.length) { sectionLabel('Training at the Center', x + 8, y, w - 16, UI.gold); y += 10; R.trained.forEach((t, i) => { if (i > 5) return; let s2 = t; while (textWidth(s2) > w - 20 && s2.length > 8) s2 = s2.slice(0, -1); text(s2, x + 10, y, '#98d8f8'); y += 9; }); y += 2; }
   if (R.evolved && R.evolved.length) { R.evolved.forEach(e => { let s2 = e; while (textWidth(s2) > w - 20 && s2.length > 8) s2 = s2.slice(0, -1); text(s2, x + 10, y, UI.gold); y += 9; }); }
+  if (nCo) { sectionLabel(nCo > 1 ? 'New commanders' : 'New commander', x + 8, y + 2, w - 16, UI.gold); y += 12; R.newCos.forEach((id, i) => { const co = COS[id], face = trainerFace(co.tr), a = clamp((appear('res:co' + i) - .6 - i * .2) / .25, 0, 1); if (a <= 0) { y += 22; return; } ctx.globalAlpha = a;
+      rect(x + 10, y, 20, 20, shade(co.col, -.4)); if (face) ctx.drawImage(face, x + 11, y + 1); outline(x + 9, y - 1, 22, 22, co.col); text(co.name.toUpperCase() + ' JOINS YOU!', x + 36, y + 2, co.col, { outline: UI.inset }); text(fitLabel(co.passive.text, w - 48), x + 36, y + 11, UI.muted); ctx.globalAlpha = 1;
+      if (!R['coSfx' + i] && a > 0) { R['coSfx' + i] = true; Audio.sfx('levelup'); } y += 22; }); }
   unfoldEnd(tok);
   { const fy = footerBand(30) + 6; if (R.route) { const bw = Math.min(100, Math.floor((W - 18) / 2)); bigButton(W / 2 - bw - 4, fy, bw, 18, 'ROUTE', () => { Audio.sfx('cancel'); R.route(); }, { variant: 'ghost' }); bigButton(W / 2 + 4, fy, bw, 18, R.nextLabel || 'CONTINUE', () => { Audio.sfx('ok'); R.next(); }, { variant: 'primary' }); } else bigButton(W / 2 - 50, fy, 100, 18, R.nextLabel || 'CONTINUE', () => { Audio.sfx('ok'); R.next(); }, { variant: 'primary' }); }
 }
@@ -5890,10 +5917,10 @@ const SK_RULES = [
 ];
 function skirmishRoot() { return typeof SAVE !== 'undefined' && SAVE && SAVE.starter && !(SC.data && SC.data.preset) ? SAVE.starter : 4; }
 // The battlefield in miniature: deploy tiles, each property under its owner's colour (HQs flagged), every Pokémon.
-function drawWarPreview(map, bd, px0, py0, pw, ph) {
+function drawWarPreview(map, bd, px0, py0, pw, ph, centers = -1) {
   const cell = pw / bd.canvas.width * TILE, c = Math.max(3, Math.ceil(cell)), owners = (map.war && map.war.owners) || {}, W = bd.map.w;
   for (const d of map.deploy) { const ux = Math.round(px0 + d.x * cell), uy = Math.round(py0 + d.y * cell); ctx.globalAlpha = .22; rect(ux, uy, c, c, '#8ab4ff'); ctx.globalAlpha = .8; outline(ux + 1, uy + 1, c - 2, c - 2, teamColor(0)); ctx.globalAlpha = 1; }
-  map.rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const ch = row[x]; if (!PROP_KIND[ch]) continue; const k = x + ',' + y, owner = owners[k] != null ? owners[k] : ch === 'Q' ? (x < W / 2 ? 0 : 1) : -1, col = owner < 0 ? '#d8d8e8' : teamColor(owner);
+  map.rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const ch = row[x]; if (!PROP_KIND[ch]) continue; const k = x + ',' + y, owner = owners[k] != null ? owners[k] : ch === 'Q' ? (x < W / 2 ? 0 : 1) : centers, col = owner < 0 ? '#d8d8e8' : teamColor(owner);
     const ux = Math.round(px0 + x * cell), uy = Math.round(py0 + y * cell); outline(ux, uy, c, c, col); outline(ux + 1, uy + 1, c - 2, c - 2, UI.inset);
     if (ch === 'Q') { const fx = ux + Math.round(c / 2), fy = uy - 5; vline(fx, fy, 7, '#e8e0d0'); rect(fx + 1, fy, 4, 3, col); } } });
   for (const u of map.units) { const d = DEX[u.mon], ux = px0 + (u.x + .5) * cell, uy = py0 + (u.y + 1) * cell, iw = Math.max(12, Math.round(cell * 1.1)); ellipse(Math.round(ux), Math.round(uy), Math.round(iw / 3), 2, teamColor(u.team == null ? 1 : u.team)); ctx.drawImage(monIcon(d.num, true), Math.round(ux - iw / 2), Math.round(uy - iw * .75), iw, Math.round(iw * .75)); }
@@ -6341,7 +6368,7 @@ function routeSelect(i) {
   const cells = []; const a = Math.min(S.sel, i), b = Math.max(S.sel, i); for (let s = a; s < b; s++) { const c = routeCells(s); cells.push(...(cells.length ? c.slice(1) : c)); }
   if (i < S.sel) cells.reverse(); S.walk = { cells, k: 0, pos: routeNodePx(S.sel), to: i }; S.sel = i; Audio.sfx('cursor');
 }
-function routePlay() { const S = SC.data; if (S.reveal || S.walk) return; Audio.sfx('select'); prepChapter(S.sel); }
+function routePlay() { const S = SC.data; if (S.reveal || S.walk) return; Audio.sfx('select'); briefChapter(S.sel); }
 function routeUpdate(dt) {
   const S = SC.data; if (!S) return; S.t0 += dt;
   if (S.walk) { const w = S.walk; w.k += dt * 11; const i = Math.min(w.cells.length - 1, Math.floor(w.k)), f = w.k - i, a = w.cells[i], b = w.cells[Math.min(w.cells.length - 1, i + 1)]; w.pos = { x: (a.x + (b.x - a.x) * f) * TILE + TILE / 2, y: (a.y + (b.y - a.y) * f) * TILE + TILE / 2 }; if (Math.floor(w.k) !== Math.floor(w.k - dt * 11)) Audio.sfx('step'); if (w.k >= w.cells.length - 1) { S.walk = null; S.hop = .35; Audio.sfx('ok'); } }
@@ -6668,6 +6695,76 @@ function territorySetupDraw() {
   bigButton(x0, by, Math.floor(colW * .3), bh, 'BACK', () => goScene('quick'), { variant: 'ghost', hot: SC.i === 3 });
   bigButton(x0 + Math.floor(colW * .3) + 4, by, (wide ? colW * 2 + 8 : colW) - Math.floor(colW * .3) - 4, bh, 'START', () => launchTerritory(S.seed, false, [S.captain, S.captain]), { variant: 'primary', hot: SC.i === 4 });
 }
+
+// ---------------------------------------------------------------- the briefing before a front
+// Who holds this front and what they said, the mission (goal, level, par, the enemy forces and the wild Pokémon), and
+// who commands your side: the Tactician, or a Gym Leader freed on the route. PREPARE picks the squad.
+function briefChapter(idx) { if (SAVE) migrateCaptain(SAVE); const cos = coUnlocked(SAVE); goScene('brief', { idx, cos, co: SAVE && cos.includes(SAVE.co) ? SAVE.co : 'you' }); }
+function briefGo(S) { if (SAVE) { SAVE.co = S.co; writeSave(); } Audio.sfx('select'); prepChapter(S.idx); }
+function briefDraw() {
+  const S = SC.data, ch = CHAPTERS[S.idx], W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), bh = btnH(); if (!S.bd) S.bd = makeBackdrop(ch.map);
+  rect(0, 0, W, H, UI.bg); drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 - t * 3, (H - S.bd.canvas.height) / 2, .8); SC.hits = [];
+  const top = screenTitle('CHAPTER ' + ch.num + ' · ' + ch.title.toUpperCase(), narrow ? null : objectiveTextFor(ch.map.objective), 4), foot = narrow ? H - 2 * (bh + 4) - 8 : footerBand(bh + 12);
+  const co = ch.co ? COS[ch.co] : null, sp = ch.foe ? SPEAKERS[ch.foe] : null, as = co ? null : { tr: sp ? sp.tr : 'rocketgrunt', name: ch.foe || 'Rocket', col: sp ? sp.col : UI.red };
+  const lw = narrow ? W - 12 : Math.min(250, Math.floor(W * .42)), lx = 6, ly = top + 2, cardW = narrow ? 70 : 84, cardH = narrow ? 60 : 76;
+  // the enemy commander and their words
+  const fp = panel(lx, ly, lw, narrow ? cardH + 18 : Math.min(foot - 6 - ly, cardH + (co ? 110 : 44)), { header: co ? 'ENEMY COMMANDER' : 'ENEMY TRAINER', headerFill: shade(co ? co.col : as.col, -.55) });
+  coCard(lx + 6, fp.cy, cardW, cardH, co ? ch.co : 'you', 1, null, { as, tag: 'FOE', pop: t });
+  const qx = lx + 12 + cardW, qw = lw - (qx - lx) - 8, ql = wrap('"' + (ch.brief || '') + '"', qw - 8).slice(0, Math.floor((cardH - 6) / 9)); rrect(qx, fp.cy + 2, qw, ql.length * 9 + 8, '#fff6d8', 2); outline(qx, fp.cy + 2, qw, ql.length * 9 + 8, UI.inset); for (let k = 0; k < 3; k++) px(qx - 1 - k, fp.cy + 10 + k, '#fff6d8');
+  ql.forEach((l, k) => { const a = REDUCED ? 1 : clamp((t - .3 - k * .25) / .2, 0, 1); ctx.globalAlpha = a; text(l, qx + 4, fp.cy + 6 + k * 9, '#3a2a18'); ctx.globalAlpha = 1; });
+  const foes0 = ch.map.units.filter(u => u.team == null || u.team === 1), lead = co && (foes0.find(u => u.mon === co.ace) || foes0.find(u => u.boss) || foes0[0]); // who wears their crown on this front
+  if (!narrow && co) { let y = fp.cy + cardH + 8; const c = coOf({ co: ch.co }); sectionLabel('HOW THEY FIGHT', lx + 8, y, lw - 16, co.col); y += 11;
+    for (const [k, v] of [['Ace', DEX[lead ? lead.mon : co.ace].name], ['Passive', c.passive.text], ['Power', c.power.name + ': ' + c.power.text], ['Super', c.super.name + ': ' + c.super.text]]) { if (y + 9 > fp.y + fp.h - 4) break; text(k, lx + 8, y, UI.muted); const ls = wrap(v, lw - 62); ls.slice(0, 2).forEach((l, i) => text(l, lx + 52, y + i * 9, k === 'Super' ? UI.gold : UI.ink)); y += Math.min(2, ls.length) * 9 + 3; } }
+  else if (!narrow) { const y = fp.cy + cardH + 10; wrap('A local trainer paid by Team Rocket. No commander powers yet: those start at Mt. Moon.', lw - 16).forEach((l, i) => text(l, lx + 8, y + i * 9, UI.muted)); }
+  // the mission
+  const mx = narrow ? 6 : lx + lw + 6, my = narrow ? ly + cardH + 24 : ly, mw = narrow ? W - 12 : W - mx - 6, mh = foot - 6 - my;
+  const mp = panel(mx, my, mw, mh, { header: 'MISSION', headerRight: 'Lv ' + ch.level + ' · par ' + ch.par + ' days', headerRightCol: UI.gold }); let y = mp.cy;
+  const goal = objectiveTextFor(ch.map.objective).replace('Objective: ', ''); iconAt('flag', mx + 6, y - 1, UI.gold); text(fitLabel(goal[0].toUpperCase() + goal.slice(1), mw - 22), mx + 17, y, UI.ink); y += 12;
+  const foes = ch.map.units.filter(u => u.team == null || u.team === 1), wild = ch.map.units.filter(u => u.team === 2), rocket = ch.map.war && ch.map.war.owners ? Object.keys(ch.map.war.owners).length : 0, per = Math.max(1, Math.floor((mw - 12) / 20));
+  const row = (label, list, col, flip) => { if (!list.length || y + 26 > my + mh - 4) return; sectionLabel(label, mx + 8, y, mw - 16, col); y += 10; list.slice(0, per).forEach((n, k) => { const bob = !REDUCED && k === Math.floor(t * 3) % Math.min(per, list.length) ? -1 : 0; ctx.drawImage(monIcon(n, flip), mx + 4 + k * 20, y + bob, 24, 18); if (k === 0 && label.startsWith('ENEMY') && co) drawCrown(mx + 17 + k * 20, y); }); y += 20; };
+  row('ENEMY FORCES · ' + foes.length, (lead ? [lead.mon] : []).concat(foes.filter(u => u !== lead).map(u => u.mon)), '#ff9a9a', true); // their Ace first
+  if (rocket && y + 9 <= my + mh - 4) { text(fitLabel((rocket > 1 ? rocket + ' Rocket centers deploy ' : 'A Rocket center deploys ') + (co ? co.name + '\'s' : 'their') + ' army each day: take ' + (rocket > 1 ? 'them' : 'it') + '!', mw - 16), mx + 8, y, UI.red); y += 12; }
+  row('WILD POKéMON', wild.map(u => u.mon), '#fff0a0', true);
+  if (SAVE && y + 9 <= my + mh - 4) { text(fitLabel('Your collection: ' + SAVE.party.length + ' · ' + ch.slots + ' open the battle, the rest wait in the PC Box', mw - 16), mx + 8, y, UI.muted); y += 12; }
+  // your commander
+  if (y + 16 <= my + mh - 2) { if (S.cos.length > 1) { vsRuleRows(S, mx + 4, y, mw - 8, 14, [{ k: 'co', label: 'YOUR COMMANDER', vals: X => X.cos, show: v => v === 'you' ? 'Tactician' : COS[v].name }], 0); y += 16; if (S.co !== 'you' && y + 9 <= my + mh - 4) { text(fitLabel(COS[S.co].name + ' leads: ' + DEX[COS[S.co].ace].name + ' joins your team', mw - 16), mx + 8, y, UI.info); y += 10; } }
+    else { text(fitLabel('Your commander: the Tactician. Freed Gym Leaders can lead too.', mw - 16), mx + 8, y + 2, UI.dim); y += 13; } }
+  // the battlefield: your deploy tiles and center, the Rocket-held ones, every Pokémon on it
+  const room = my + mh - 6 - y; if (room >= 40) { const sc = Math.min((mw - 16) / S.bd.canvas.width, room / S.bd.canvas.height), pw = Math.floor(S.bd.canvas.width * sc), ph = Math.floor(S.bd.canvas.height * sc), px0 = mx + Math.round((mw - pw) / 2), py0 = y + 2;
+    rect(px0 - 2, py0 - 2, pw + 4, ph + 4, UI.inset); ctx.drawImage(S.bd.canvas, px0, py0, pw, ph); drawWarPreview(ch.map, S.bd, px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); }
+  const back = () => { Audio.sfx('cancel'); openRoute({ sel: S.idx }); };
+  if (narrow) { footerBand(2 * (bh + 4) + 4); bigButton(6, H - 2 * (bh + 4), W - 12, bh, 'PREPARE', () => briefGo(S), { variant: 'primary' }); bigButton(6, H - bh - 4, W - 12, bh, 'ROUTE', back, { variant: 'ghost' }); return; }
+  const fy = foot + 6; bigButton(W - 96, fy, 90, bh, 'PREPARE', () => briefGo(S), { variant: 'primary' }); bigButton(6, fy, 70, bh, 'ROUTE', back, { variant: 'ghost' });
+  if (W > 360) hintLine(S.cos.length > 1 ? [['◂▸', 'commander'], ['Z', 'prepare']] : [['Z', 'prepare'], ['X', 'route']], W / 2, fy + (bh - 7) / 2, { pill: false });
+}
+function briefInput(ev) {
+  const S = SC.data; if (ev.type === 'key') { if (ev.key === 'left' || ev.key === 'right') { if (S.cos.length > 1) vsCycle(S, { k: 'co', vals: X => X.cos }, ev.key === 'left' ? -1 : 1); } else if (ev.key === 'ok' || ev.key === 'next') briefGo(S); else if (ev.key === 'back') { Audio.sfx('cancel'); openRoute({ sel: S.idx }); } else if (ev.key === 'mute') Audio.toggle(); return; }
+  if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
+}
+
+// ---------------------------------------------------------------- the prologue
+// A new journey opens on a town at night: the Poké Center's PC sign flickers dead red in the rain while Prof. Oak and
+// Bill explain what Team Rocket did and what a Tactician is, before the walk to the lab and the choice of a partner.
+const PROLOGUE = [
+  { who: 'Prof. Oak', text: 'You made it through the rain. Good. Listen closely: *Kanto has a problem*.' },
+  { who: 'Bill', side: 1, text: 'Team Rocket hijacked my *Pokémon Storage System*. Every Poké Center is locked, and every Pokémon stored in a PC is out of reach.' },
+  { who: 'Prof. Oak', text: 'Trainers without their Pokémon cannot fight back. But a *Tactician* can command any Pokémon linked to their PC Box.' },
+  { who: 'Bill', side: 1, text: 'Free a Poké Center and it reconnects the PC around it. From there you *deploy* Pokémon from your Box, and every Center you hold *pays funds* each day.' },
+  { who: 'Prof. Oak', text: 'Catch wild Pokémon and they wait in your Box, ready to fight. And the Gym Leaders... Rocket is *blackmailing* them. Free their towns and they will command beside you.' },
+  { who: 'Bill', side: 1, text: 'Somebody has to lead this. Oak says it should be you.' },
+  { who: 'Prof. Oak', text: 'Every Tactician needs a partner. Come to the lab and *choose yours*.' },
+];
+function prologueStage(d) {
+  const W = VIEW.w, H = VIEW.h, t = d.T, hz = Math.round(H * .5), gy = Math.round(H * .78), S = sceneFor('town', W, H, hz, gy, 5, 'center'), drift = REDUCED ? 0 : Math.round(Math.sin(t * .15) * 8);
+  ctx.drawImage(S.sky, -SCENE_PAD + drift * .2, 0); ctx.drawImage(S.far, -SCENE_PAD + drift * .4, 0); ctx.drawImage(S.mid, -SCENE_PAD + drift, 0); ctx.drawImage(S.ground, -SCENE_PAD + drift, 0);
+  // night falls over it, the Center's sign flickers red (the PC is down), rain
+  ctx.globalAlpha = .55; rect(0, 0, W, H, '#0a0c2e'); ctx.globalAlpha = 1;
+  const flick = REDUCED ? .5 : (Math.sin(t * 9) > .2 || Math.sin(t * 23) > .7 ? .9 : .25), b = S.fx.building || { x: W / 2 + SCENE_PAD, y: hz + 2 }, cx = Math.round(b.x - SCENE_PAD + drift), cy = b.y - 20; ctx.globalAlpha = .22 * flick; circle(cx, cy, 30, '#ff3040'); ctx.globalAlpha = .12 * flick; circle(cx, cy, 52, '#ff3040'); ctx.globalAlpha = 1;
+  const sign = 'PC OFFLINE', sw = textWidth(sign) + 8; rrect(cx - sw / 2, cy - 5, sw, 11, '#1a0610', 1); textC(sign, cx, cy - 3, flick > .5 ? '#ff5a6a' : '#6a2030');
+  drawWeather('rain', W, H, t);
+  const cap = 'KANTO · THE NIGHT THE PCs WENT DARK', a = REDUCED ? 1 : clamp(t / .8, 0, 1) * clamp((6 - t) / 1, 0, 1); if (a > 0) { ctx.globalAlpha = a; bigC(cap, W / 2, 18, '#ffe2a8', { outline: '#0a0820' }); ctx.globalAlpha = 1; }
+}
+function startPrologue(next) { trainerImg('oak'); trainerImg('bill'); startDialog(PROLOGUE, next, { stage: prologueStage }); Audio.playMusic('calm'); }
 // ============================================================================
 // modes.js — the Battle Tower (ten floors, one commander on each, ranked S to C with records) and the Safari Zone
 // (a catch race against a rival). Both play on the war rules (war.js) over generated battlefields (skirmishMap).
@@ -6961,8 +7058,8 @@ function clearSuspend() { if (PARAMS.has('nosave')) return; try { localStorage.r
 function partyUnit(num, level, hpBonus = BOND_HP) { const u = makeUnit(num, level, 0, { hpBonus }); let evo; while ((evo = evolutionFor(u))) evolve(u, evo); u.hp = u.maxHp; return serializeUnit(u); }
 
 // ---------------------------------------------------------------- campaign flow
-function startNewGame() { clearSuspend(); SAVE = { chapter: 0, party: [], bag: { pokeball: 5 }, stars: {}, beaten: false, journey: { version: 1, firstCatch: false } }; goScene('starter'); }
-function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; SAVE.starter = num; SAVE.captainPid = 0; writeSave(); showJourney(['YOUR CAPTAIN, YOUR TEAM', DEX[num].name + ' leads your team. Pidgey joins as your scout.', 'Eight stops on the route. Each one has a goal and three stars to earn.', 'Catch weakened wild Pokemon: they join your team after the battle.', 'Team powers unlock in chapter 2; superpowers in chapter 4.'], () => openRoute({ sel: 0 })); }
+function startNewGame() { clearSuspend(); SAVE = { chapter: 0, party: [], bag: { pokeball: 5 }, stars: {}, beaten: false, co: 'you', journey: { version: 1, firstCatch: false } }; if (PARAMS.has('nostory')) goScene('starter'); else startPrologue(() => goScene('starter')); }
+function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; SAVE.starter = num; SAVE.captainPid = 0; writeSave(); showJourney(['YOUR PARTNER, YOUR PC BOX', DEX[num].name + ' is your partner: it wears the crown and leads your army. Pidgey joins as your scout.', 'Every Pokémon you catch waits in your PC Box, ready to deploy.', 'Hold Poké Centers: each pays ₽1,000 a day, and your Box deploys there.', 'Eight fronts to free across Kanto, each with a goal and three stars.'], () => openRoute({ sel: 0 })); }
 function continueCampaign() { SAVE = loadSave(); if (!SAVE) { startNewGame(); return; } openRoute(); }
 function prepChapter(idx) {
   migrateCaptain(SAVE);
@@ -6971,10 +7068,16 @@ function prepChapter(idx) {
   P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, SAVE.party[i], { pid: i })); goScene('card', { chapter: ch, next: () => launchChapter(idx, deployed) }); };
   goScene('prep', P);
 }
+// A front's battle options: your collection's Box, your commander (the Tactician or a freed Gym Leader), and the enemy
+// commander with their army waiting at the Rocket-held centers (from Mt. Moon on).
+function chapterOpts(idx, box, seed) {
+  const ch = CHAPTERS[idx], onMap = ch.map.units.filter(u => u.team == null || u.team === 1).map(u => u.mon);
+  return { chapter: idx, seed, defer: true, box, captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx }, co: SAVE.co, enemyCo: ch.co || null, box2: ch.co ? coTeam(ch.co, Math.max(3, ch.level - 1), 5, ch.num, onMap) : [], war: { funds: [0, 0] }, lesson: idx === 0 && SAVE.journey && !SAVE.journey.firstCatch };
+}
 function launchChapter(idx, deployed) {
   const ch = CHAPTERS[idx]; BACKDROP = makeBackdrop(ch.map);
   const box = SAVE.party.map((p, i) => Object.assign({}, p, { pid: i })).filter(p => !deployed.some(d => d.pid === p.pid));
-  startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: (Date.now() & 0xffff) | 1, defer: true, box, captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx }, lesson: idx === 0 && SAVE.journey && !SAVE.journey.firstCatch });
+  startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), chapterOpts(idx, box, (Date.now() & 0xffff) | 1));
   for (const u of alive(0)) { const src = deployed.find(d => d.pid != null && d.num === u.num && d.level === u.level && !d._used); if (src) { src._used = true; u.pid = src.pid; } }
   const go = () => { const start = () => { goScene('battle'); beginPhase(0, true); }; if (CHAPTER_LESSONS[idx]) showJourney(CHAPTER_LESSONS[idx], start); else start(); };
   if (ch.intro && !PARAMS.has('nostory')) { goScene('battle'); startDialog(ch.intro, go); } else go();
@@ -7004,7 +7107,8 @@ function onBattleEnd(result) {
     // training: everyone below the next chapter's level catches up
     const nextCh = CHAPTERS[idx + 1]; const target = nextCh ? nextCh.level - 1 : ch.level + 4;
     SAVE.party = SAVE.party.map(p => { const u = restoreUnit(p); let msg = null; if (u.level < target) { const from = u.level; while (u.level < target) { levelUp(u); const evo = evolutionFor(u); if (evo) { R.evolved.push(u.name + ' evolved into ' + evo.name + '!'); evolve(u, evo); } } msg = u.name + ' trained from Lv' + from + ' to Lv' + u.level; } if (msg) R.trained.push(msg); u.hp = u.maxHp; u.status = null; return serializeUnit(u); });
-    SAVE.stars[ch.id] = Math.min(SAVE.stars[ch.id] || 99, B.turn); SAVE.chapter = Math.max(SAVE.chapter || 0, idx + 1); if (SAVE.chapter >= CHAPTERS.length) SAVE.beaten = true; writeSave();
+    const coBefore = coUnlocked(SAVE); SAVE.stars[ch.id] = Math.min(SAVE.stars[ch.id] || 99, B.turn); SAVE.chapter = Math.max(SAVE.chapter || 0, idx + 1); if (SAVE.chapter >= CHAPTERS.length) SAVE.beaten = true; writeSave();
+    R.newCos = coUnlocked(SAVE).filter(c => !coBefore.includes(c)); // Gym Leaders freed on this front join as commanders
     const unlocked = first && idx + 1 < CHAPTERS.length ? idx + 1 : null;
     R.next = () => { if (first && idx + 1 >= CHAPTERS.length) goScene('credits', { party: SAVE.party }); else openRoute({ reveal: { cleared: idx, stars, unlocked } }); };
     goScene('results', R);
@@ -7105,7 +7209,7 @@ function frame(t) {
     if (ev.type === 'key' && ev.key === 'mute' && SC.name !== 'battle') { Audio.toggle(); continue; }
     switch (SC.name) {
       case 'journey': journeyInput(ev); break; case 'territory': case 'territoryResults': territorySceneInput(ev); break; case 'title': titleInput(ev); break; case 'starter': starterInput(ev); break; case 'card': cardInput(ev); break; case 'story': storyInput(ev); break;
-      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break; case 'route': routeInput(ev); break; case 'tower': towerInput(ev); break; case 'rank': rankInput(ev); break;
+      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break; case 'route': routeInput(ev); break; case 'tower': towerInput(ev); break; case 'rank': rankInput(ev); break; case 'brief': briefInput(ev); break;
     }
   }
   // update
@@ -7115,7 +7219,7 @@ function frame(t) {
   switch (SC.name) {
     case 'loading': rect(0, 0, VIEW.w, VIEW.h, '#0e0c10'); textC('loading sprites…', VIEW.w / 2, VIEW.h / 2, UI.muted); break;
     case 'journey': journeyDraw(); break; case 'territory': territorySetupDraw(); break; case 'territoryResults': territoryResultsDraw(); break; case 'title': titleDraw(); break; case 'starter': starterDraw(); break; case 'card': cardDraw(); break; case 'story': storyDraw(); break;
-    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break; case 'route': routeDraw(); break; case 'tower': towerDraw(); break; case 'rank': rankDraw(); break;
+    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break; case 'route': routeDraw(); break; case 'tower': towerDraw(); break; case 'rank': rankDraw(); break; case 'brief': briefDraw(); break;
   }
   // every scene change closes and reopens a Poké Ball over the screen (see captureTransition)
   drawTransition(dt);
@@ -7129,9 +7233,11 @@ function boot() {
     const idx = clamp(parseInt(PARAMS.get('ch')) - 1, 0, CHAPTERS.length - 1); const ch = CHAPTERS[idx]; const L = ch.level;
     SAVE = { chapter: idx, party: [partyUnit(4, L), partyUnit(7, L), partyUnit(1, L), partyUnit(25, L), partyUnit(133, L - 1), partyUnit(66, L - 1), partyUnit(74, L - 1), partyUnit(16, L - 2)], bag: { pokeball: 5 }, stars: {}, beaten: false };
     if (PARAMS.has('prep')) { prepChapter(idx); return; }
+    if (PARAMS.has('brief')) { briefChapter(idx); return; }
     migrateCaptain(SAVE);
     const deployed = SAVE.party.slice(0, ch.slots).map((p, i) => Object.assign({}, p, { pid: i })); BACKDROP = makeBackdrop(ch.map);
-    startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: parseInt(PARAMS.get('seed') || '7'), defer: true, box: SAVE.party.slice(ch.slots).map((p, i) => Object.assign({}, p, { pid: ch.slots + i })), captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx } }); alive(0).forEach((u, i) => u.pid = i); goScene('battle'); beginPhase(0, true); return;
+    if (PARAMS.has('co')) SAVE.co = PARAMS.get('co');
+    startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), Object.assign(chapterOpts(idx, SAVE.party.slice(ch.slots).map((p, i) => Object.assign({}, p, { pid: ch.slots + i })), parseInt(PARAMS.get('seed') || '7')), { lesson: false })); alive(0).forEach((u, i) => { if (u.pid == null && !u.loaned) u.pid = i; }); goScene('battle'); beginPhase(0, true); return;
   }
   if (PARAMS.has('skirmish')) { startSkirmishSetup(); SC.data.seed = parseInt(PARAMS.get('skirmish')) || 1; return; }
   if (PARAMS.has('safari')) { startSafari(); return; }

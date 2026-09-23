@@ -74,7 +74,7 @@ function routeSelect(i) {
   const cells = []; const a = Math.min(S.sel, i), b = Math.max(S.sel, i); for (let s = a; s < b; s++) { const c = routeCells(s); cells.push(...(cells.length ? c.slice(1) : c)); }
   if (i < S.sel) cells.reverse(); S.walk = { cells, k: 0, pos: routeNodePx(S.sel), to: i }; S.sel = i; Audio.sfx('cursor');
 }
-function routePlay() { const S = SC.data; if (S.reveal || S.walk) return; Audio.sfx('select'); prepChapter(S.sel); }
+function routePlay() { const S = SC.data; if (S.reveal || S.walk) return; Audio.sfx('select'); briefChapter(S.sel); }
 function routeUpdate(dt) {
   const S = SC.data; if (!S) return; S.t0 += dt;
   if (S.walk) { const w = S.walk; w.k += dt * 11; const i = Math.min(w.cells.length - 1, Math.floor(w.k)), f = w.k - i, a = w.cells[i], b = w.cells[Math.min(w.cells.length - 1, i + 1)]; w.pos = { x: (a.x + (b.x - a.x) * f) * TILE + TILE / 2, y: (a.y + (b.y - a.y) * f) * TILE + TILE / 2 }; if (Math.floor(w.k) !== Math.floor(w.k - dt * 11)) Audio.sfx('step'); if (w.k >= w.cells.length - 1) { S.walk = null; S.hop = .35; Audio.sfx('ok'); } }

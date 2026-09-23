@@ -138,11 +138,13 @@ function initBattleCaptains(opts) {
   } else if (opts.cos && (opts.cos[0] || opts.cos[1])) { // Skirmish and the Tower name both commanders
     for (const team of [0, 1]) { const co = COS[opts.cos[team]] ? opts.cos[team] : null; if (!co) continue; const lvl = alive(team)[0] ? alive(team)[0].level : 12; const u = co !== 'you' ? coAce(team, co, lvl) : alive(team).find(v => v.leader) || alive(team)[0]; if (u) { for (const a of alive(team)) a.leader = a === u; addCaptain(team, u, co === 'you' ? (opts.captain && opts.captain.root) || captainRoot(u.num) || 7 : 7, 8, co); } }
   } else if (opts.captain) {
-    const u = alive(0).find(u => u.pid === opts.captain.pid) || alive(0)[0];
+    // a Gym Leader freed on the route can lead instead of you: their Ace joins at the front's level
+    const pco = opts.co && opts.co !== 'you' && COS[opts.co] && opts.captain.chapter >= 3 ? opts.co : null, lvl = (CHAPTERS[opts.captain.chapter] || {}).level || (alive(0)[0] || {}).level || 10;
+    const u = (pco && coAce(0, pco, lvl)) || alive(0).find(u => u.pid === opts.captain.pid) || alive(0)[0];
     for (const a of alive(0)) a.leader = a === u;
-    addCaptain(0, u, opts.captain.root, opts.captain.chapter);
-    // Rival/boss commands are introduced alongside the player's superpower.
-    if (opts.captain.chapter >= 3) {
+    addCaptain(0, u, opts.captain.root, opts.captain.chapter, pco && u && u.num === COS[pco].ace ? pco : 'you');
+    // Enemy commanders lead from Mt. Moon (Brock) on; a front without one gives its boss a command from chapter 4.
+    if (opts.enemyCo || opts.captain.chapter >= 3) {
       const eco = opts.enemyCo && COS[opts.enemyCo] ? opts.enemyCo : null, foe = eco ? (alive(1).find(v => v.num === COS[eco].ace) || alive(1).find(v => v.boss) || alive(1)[0]) : alive(1).find(v => v.boss) || alive(1)[0];
       if (foe) addCaptain(1, foe, foe.types.includes('Water') ? 7 : foe.types.includes('Grass') ? 1 : 4, 8, eco || 'you');
     }
@@ -257,8 +259,8 @@ function initCampaignLessons(mapDef, opts) {
   }
 }
 const CHAPTER_LESSONS = [
-  ['YOUR FIRST TEAM', 'Your starter is the captain. Pidgey scouts ahead.', 'Move, attack, then catch Oak\'s Caterpie at half HP.', 'The practice ball is free and guaranteed. Caterpie cannot faint.', 'Win to bring your catch to the next mission.'],
-  ['TEAM POWER UNLOCKED', 'Your captain now commands a shared team power.', 'Open POWER or press P. Normal costs 50 charge.', 'Combat and completed captures refill the bar.', 'Claim the outpost: capture twice at full HP, then heal there.'],
-  ['BUILD A BALANCED TEAM', 'Your captain leads; choose companions for this map.', 'Geodude holds ground. Clefairy heals. Fliers cross rubble.', 'Your collection trains and recovers after each victory.'],
-  ['SUPERPOWER UNLOCKED', 'Spend 50 on a power, or save 100 for its super version.', 'The rival has powers too. Watch both charge bars.', 'Capture the bridge outpost, then occupy and capture the gym.', 'Capturing uses an action. Leaving resets your progress.'],
+  ['YOUR FIRST FRONT', 'Your partner wears the crown. Pidgey scouts ahead.', 'Move, attack, then catch Oak\'s Caterpie at half HP: the practice ball is free.', 'Your Poké Center pays ₽1,000 a day. Open the PC there to deploy from your Box.', 'Catches wait in your Box: their first deployment is free.'],
+  ['TEAM POWER UNLOCKED', 'Your partner now commands a shared team power.', 'Open POWER or press P. Normal costs 50 charge.', 'Combat, catches and captures refill the bar.', 'Claim the outpost: capture twice at full HP, then heal there.'],
+  ['ENEMY COMMANDERS', 'Brock leads the other side: his Ace, Onix, wears the crown.', 'A commander\'s passive helps allies within 2 tiles of the Ace.', 'The Rocket center deploys his army each day. Capture it to stop them.', 'Fainted Pokémon go back to the Box and recover in two days.'],
+  ['SUPERPOWER UNLOCKED', 'Spend 50 on a power, or save 100 for its super version.', 'Freed Gym Leaders can command your side: pick one in the briefing.', 'Capture the bridge outpost, then occupy and capture the gym.', 'Capturing uses an action. Leaving resets your progress.'],
 ];
