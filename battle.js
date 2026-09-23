@@ -174,8 +174,8 @@ function updateAnim(dt) {
     const p = q.path; if (p.length < 2) { q.unit.x = p[0].x; q.unit.y = p[0].y; q.unit.fx.walk = false; nextAnim(); return; }
     const total = (p.length - 1) * q.dur; const k = Math.min(1, q.t / total); const seg = Math.min(p.length - 2, Math.floor(k * (p.length - 1))); const f = k * (p.length - 1) - seg;
     const a = p[seg], b = p[seg + 1]; const h = Math.abs(Math.sin(f * Math.PI)) * 5; q.unit.x = a.x; q.unit.y = a.y; q.unit.fx.dx = (b.x - a.x) * f * TILE; q.unit.fx.air = h; q.unit.fx.dy = (b.y - a.y) * f * TILE - h; q.unit.fx.sy = 1 + h * .02; q.unit.fx.sx = 1 - h * .015; q.unit.fx.facing = b.x - a.x !== 0 ? Math.sign(b.x - a.x) : q.unit.fx.facing;
-    if (seg !== q.i) { q.i = seg; Audio.sfx('step'); spawnParts(a.x * TILE + TILE / 2, a.y * TILE + TILE - 4, 3, ['#d8c8a0', '#ffffff'], { speed: 20, life: .35, grav: -10, flat: true }); }
-    if (k >= 1) { const l = p[p.length - 1]; q.unit.x = l.x; q.unit.y = l.y; q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.unit.fx.air = 0; q.unit.fx.walk = false; q.unit.fx.sy = .86; q.unit.fx.sx = 1.12; Audio.sfx('step'); for (let i = 0; i < 3; i++) spawnSprite('poof', l.x * TILE + TILE / 2 + (i - 1) * 9, l.y * TILE + TILE - 5, { size: 3, life: .3, col: '#e8e0d0', col2: '#ffffff', vx: (i - 1) * 24, vy: -8, delay: 0 }); nextAnim(); }
+    if (seg !== q.i) { q.i = seg; Audio.sfx('step'); stepFx(q.unit, a.x, a.y, false); }
+    if (k >= 1) { const l = p[p.length - 1]; q.unit.x = l.x; q.unit.y = l.y; q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.unit.fx.air = 0; q.unit.fx.walk = false; q.unit.fx.sy = .86; q.unit.fx.sx = 1.12; Audio.sfx('step'); stepFx(q.unit, l.x, l.y, true); nextAnim(); }
     return;
   }
   if (q.kind === 'strike') {
@@ -200,6 +200,18 @@ function updateAnim(dt) {
     return;
   }
   if (q.kind === 'msg' || q.kind === 'wait') { if (q.t >= q.dur) nextAnim(); return; }
+}
+// What a step kicks up, by the ground under it: a splash on water (or a ripple under a flier), sand, snow, embers over
+// lava, grey dust in caves and on floors, green bits on grass. `land` is the last step, which puffs a little wider.
+function stepFx(u, x, y, land) {
+  const t = terrAt(x, y), id = t.id, cx = x * TILE + TILE / 2, fy = y * TILE + TILE - 4, air = !!(u && u.fly);
+  if (id === 'water' || id === 'lava') { const lava = id === 'lava', c = lava ? ['#ffd25a', '#ff8a2c', '#ffffff'] : ['#a2d8ff', '#edf9ff', '#62acf0'];
+    spawnSprite('ring', cx, fy, { size: land ? 11 : 8, life: .4, col: lava ? '#ffb040' : '#edf9ff' }); if (!air || lava) spawnParts(cx, fy - 2, land ? 8 : 5, c, { speed: 34, life: .45, grav: lava ? -40 : 140, vy: lava ? -10 : -40 }); return; }
+  if (air) return;
+  const col = id === 'sand' ? ['#f2e2a4', '#cfb266'] : id === 'snow' || id === 'ice' ? ['#ffffff', '#c8d4ea'] : id === 'road' || id === 'bridge' ? ['#dec792', '#ffffff'] : id === 'cave' || id === 'rubble' || id === 'floor' || id === 'center' || id === 'crate' ? ['#a29bad', '#6e6278'] : ['#a3e07c', '#63b84c', '#ffffff'];
+  if (land) for (let i = 0; i < 3; i++) spawnSprite('poof', cx + (i - 1) * 9, fy - 1, { size: 3, life: .3, col: col[0], col2: '#ffffff', vx: (i - 1) * 24, vy: -8 });
+  else spawnParts(cx, fy, 3, col, { speed: 20, life: .35, grav: -10, flat: true });
+  if (id === 'tall' && !REDUCED) for (let i = 0; i < (land ? 3 : 2); i++) spawnSprite('leaf', cx + (i - 1) * 6, fy - 8, { size: 3, life: .6, col: '#3d8a3c', col2: '#a6dc7c', vx: (i - 1) * 20 + (vrnd() - .5) * 10, vy: -34 - vrnd() * 16, grav: 90, rot: i, spin: 10 });
 }
 function spawnProjectile(A, D, move) { const ax = A.x * TILE + TILE / 2, ay = A.y * TILE + 12, bx = D.x * TILE + TILE / 2, by = D.y * TILE + 12; projectileFX(move.type, ax, ay, bx, by, (BT.fast ? .5 : 1) * .15 * .9); }
 function impact(q) {

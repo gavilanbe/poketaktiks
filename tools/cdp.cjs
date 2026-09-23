@@ -1,5 +1,5 @@
 // Headless test harness: node tools/cdp.cjs <script> — drives index.html over the Chrome DevTools Protocol,
-// logs console errors and saves screenshots to artifacts/. Scripts: smoke, flow, enemy, mobile, skirmish, full, art.
+// logs console errors and saves screenshots to artifacts/. Scripts: smoke, flow, enemy, mobile, skirmish, full, art, tiles.
 const { spawn } = require('child_process');
 const http = require('http');
 const WebSocket = require('/Users/gavilanbe/gavilanbe/page/node_modules/ws');
@@ -10,7 +10,7 @@ const PORT = parseInt(process.env.PK_PORT || '9337'); const ROOT = path.join(__d
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function main() {
   const script = process.argv[2] || 'smoke'; const mobile = script === 'mobile' || script.endsWith('-m');
-  const W = +(process.env.PK_VW || (mobile ? 390 : 1280)), H = +(process.env.PK_VH || (mobile ? 844 : 720));
+  const W = +(process.env.PK_VW || (mobile ? 390 : script === 'tiles' ? 1700 : 1280)), H = +(process.env.PK_VH || (mobile ? 844 : script === 'tiles' ? 1400 : 720));
   const chrome = spawn(CHROME, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', `--remote-debugging-port=${PORT}`, `--window-size=${W},${H}`, '--user-data-dir=/tmp/pk-cdp-profile-' + PORT, 'about:blank'], { stdio: 'ignore' });
   const out = [];
   try {
@@ -180,7 +180,7 @@ async function main() {
       await key('h', 'KeyH'); await sleep(200); await shot('ui2-help'); await key('z', 'KeyZ'); await sleep(200); await shot('ui2-help-2'); await key('x', 'KeyX'); await sleep(200);
       await ev('__pk.BT.cx=8; __pk.BT.cy=3'); await key('c', 'KeyC'); await sleep(200); await shot('ui2-unitsheet'); await key('x', 'KeyX'); await sleep(200);
       await ev('(function(){const c=__pk.B.units.find(u=>u.name==="Charmander"); c.x=7; c.y=3; __pk.BT.cx=7; __pk.BT.cy=3;})()'); await sleep(200); await shot('ui2-hover');
-      await tapTile(7, 3); await waitMode('move', 3000); await tapTile(7, 3); await waitMode('menu', 4000); await key('ArrowDown'); await key('ArrowDown'); await key('z', 'KeyZ'); await sleep(200); await shot('ui2-bag'); await key('x', 'KeyX'); await sleep(100); await key('x', 'KeyX'); await sleep(100); await key('x', 'KeyX'); await waitMode('idle', 3000);
+      await tapTile(7, 3); await waitMode('move', 3000); await tapTile(7, 3); await waitMode('menu', 4000); await sleep(300); await shot('ui2-menu'); await key('x', 'KeyX'); await sleep(150); await key('x', 'KeyX'); await waitMode('idle', 3000); // the action menu (there is no bag any more), then back out
       await ev('__pk.B.units.filter(u=>u.team!==0).forEach(u=>u.hp=0); __pk.endTurn()'); await waitMode('end', 8000); await sleep(1000); await shot('ui2-victory'); await key('z', 'KeyZ'); await waitScene('story', 8000); await sleep(1200); await shot('ui2-story'); await key('x', 'KeyX'); await waitScene('results', 8000); await sleep(300); await shot('ui2-results');
     }
     if (script === 'duel' || script === 'duel-m') {
@@ -214,6 +214,10 @@ async function main() {
       await key('ArrowRight', 'ArrowRight'); await sleep(300); await shot('quick-2');
       await ev("localStorage.setItem('pk_save', JSON.stringify({chapter:2,party:[],bag:{},stars:{}})); __pk.goScene('title')"); await sleep(2600); await ev("__pk.SC.titleItems.find(i=>i.label==='NEW GAME').run()"); await sleep(400); await shot('title-confirm');
       await ev("localStorage.removeItem('pk_save')");
+    }
+    if (script === 'tiles') {
+      // every terrain tile and two sample maps, drawn by the game's own tile code (see tools/tile-gallery.js)
+      await nav('silent&nosave'); await sleep(1500); out.push('gallery: ' + await ev(fs.readFileSync(path.join(__dirname, 'tile-gallery.js'), 'utf8').replace(/^\/\/.*\n/gm, ''))); await sleep(300); await shot('tiles');
     }
     if (script === 'page' || script === 'page-m') {
       // ad-hoc: PK_Q query string, optional PK_EXPR run after PK_WAIT ms, screenshot as artifacts/PK_NAME.png

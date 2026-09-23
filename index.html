@@ -976,6 +976,8 @@ const ANIM_META = {"1":{"w":37,"h":38,"n":49,"cols":7,"d":[300,100,100,100,100,1
 'use strict';
 const TILESET = {}; // key ch+variant+frame → canvas (base tiles)
 const VARIANTS = 4, WATER_FRAMES = 4;
+// Tiles with animation frames (water, cave pools, the bridge's water, lava, swaying flowers).
+function tileFrames(ch) { return ch === '~' || ch === 'w' || ch === '=' || ch === 'L' || ch === ',' ? WATER_FRAMES : 1; }
 function tileCanvas(w = TILE, h = TILE) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 // Mini drawing API bound to an offscreen context.
 function painter(g) {
@@ -999,7 +1001,6 @@ function painter(g) {
 const PAL = {
   grass: { dd: '#347436', d: '#4a9a40', dm: '#5aae47', m: '#63b84c', l: '#7ecf5e', ll: '#a3e07c' },
   tall: { dd: '#2b6a32', d: '#3f8a3c', m: '#54a646', l: '#74c45c', ll: '#9ad878' },
-  tree: { dd: '#1c4a2c', d: '#2a6b38', m: '#3d9046', l: '#5ab258', ll: '#88d06c', out: '#143622' },
   trunk: { d: '#4a2c16', m: '#7a4f2c', l: '#a0703e' },
   rock: { dd: '#463c46', d: '#665858', m: '#8a7c74', l: '#ada090', ll: '#cfc4b2', out: '#2e2630' },
   snow: { d: '#b9c9de', m: '#e2eaf4', l: '#f8fafd' },
@@ -1119,15 +1120,10 @@ function drawTallTerrainForeground(g, m, x, y, X, Y, time) {
 
 // ---------------------------------------------------------------- shared stamps
 const ST = {
-  tuftL: ['L..L', '.LL.'], tuftD: ['D.D', '.D.'], blade: ['H', 'L', 'L'],
-  flower: ['.P.', 'PYP', '.P.', '.S.'],
-  stone: ['.LL.', 'LMMD', '.DD.'],
-  mushroom: ['.RR.', 'RWRR', '.SS.', '.SS.'],
   crownGold: ['O.O.O', 'OYOYO', 'OYYYO', 'OOOOO'],
   skull: ['.OOO.', 'OWWWO', 'OWOWO', 'OWWWO', '.OWO.', '.OOO.'],
   hand: ['..OO....', '.OWWO...', '.OWWOOO.', 'OOWWWWWO', 'OWWWWWWO', 'OWWWWWWO', '.OWWWWO.', '..OOOO..'],
   heart: ['.P.P.', 'PLPPP', 'PPPPP', '.PPP.', '..P..'],
-  pokeEmblem: ['.OOO.', 'ORRRO', 'OOWOO', 'OWWWO', '.OOO.'],
 };
 
 // ---------------------------------------------------------------- tile painting helpers
@@ -1291,21 +1287,19 @@ function drawTile(ch, variant, frame, g, owner = null) {
   const glassDoor = (x, y, w, h) => { p.R(x - 1, y - 1, w + 2, h + 1, BOUT); p.R(x, y, w, h, '#5a8ec8'); p.R(x + 1, y + 1, w - 2, h - 1, '#8ccaf4'); p.V(x + (w >> 1), y, h, '#3a5a80'); for (let i = 0; i < 3; i++) p.P(x + 2 + i, y + 2 + i, '#e8f8ff'); p.P(x + (w >> 1) + 2, y + 2, '#e8f8ff'); p.R(x - 2, y + h, w + 4, 2, '#d84040'); p.H(x - 2, y + h, w + 4, '#ff7a6a'); p.H(x - 2, y + h + 2, w + 4, '#5e5866'); };
   const flag = (x, y, col) => { p.V(x, y, 9, '#e8e0d0'); p.V(x + 1, y + 1, 8, '#8a8290'); p.P(x, y - 1, '#ffd24a'); p.R(x + 1, y, 6, 4, col); p.H(x + 1, y, 6, shade(col, .35)); p.H(x + 1, y + 3, 6, shade(col, -.35)); p.P(x + 7, y + 1, col); p.P(x + 7, y + 2, shade(col, -.2)); };
   const chimney = (x, y) => { p.R(x - 1, y - 1, 6, 8, BOUT); p.R(x, y, 4, 7, '#a0584a'); p.V(x, y, 7, '#c07262'); p.V(x + 3, y, 7, '#6a3a30'); p.H(x, y + 3, 4, '#6a3a30'); p.R(x - 1, y - 2, 6, 2, '#5e5866'); p.H(x - 1, y - 2, 6, '#8a8290'); };
-  const boulder = (x, y, w, h) => { const R = PAL.rock; p.E(x + w / 2, y + h / 2 + 1, w / 2 + 1, h / 2 + 1, R.out); p.E(x + w / 2, y + h / 2, w / 2, h / 2, R.m); p.E(x + w / 2 - 1, y + h / 2 - 1, Math.max(1, w / 2 - 1), Math.max(1, h / 2 - 1), R.l); p.P(x + 1, y + 1, R.ll); p.H(x + 2, y + h - 1, w - 3, R.d); p.P(x + w - 2, y + h - 2, R.dd); };
   // Crate in three-quarter view: a lit top face, a front of planks with a cross brace, iron corners, a shadow to the east.
   const crate = (x, y, s) => { const K = PAL.plank, top = Math.max(3, Math.round(s * .3)); for (let j = 2; j < s + 2; j++) for (let i = s; i < s + 3; i++) if (dith(x + i, y + j) < .6) p.P(x + i, y + j, mix(PAL.floor.m, PAL.floor.grout, .8));
     p.R(x - 1, y - 1, s + 2, s + 2, PAL.outW); p.R(x, y, s, top, K.l); p.H(x, y, s, K.ll); p.H(x, y + top - 1, s, K.m);
     p.R(x, y + top, s, s - top, K.m); for (let k = y + top + 2; k < y + s - 1; k += 3) p.H(x, k, s, mix(K.m, K.d, .5)); p.V(x, y + top, s - top, K.l); p.V(x + s - 1, y + top, s - top, K.d); p.H(x, y + s - 1, s, K.d);
     const fh = s - top - 2; for (let k = 0; k < fh; k++) { const t = k / Math.max(1, fh - 1); p.P(x + 1 + Math.round(t * (s - 3)), y + top + 1 + k, K.d); p.P(x + s - 2 - Math.round(t * (s - 3)), y + top + 1 + k, K.d); }
     for (const [nx, ny] of [[0, top], [s - 2, top], [0, s - 2], [s - 2, s - 2]]) { p.R(x + nx, y + ny, 2, 2, PAL.metal.m); p.P(x + nx, y + ny, PAL.metal.ll); } };
-  const grassEdgeNoise = () => { for (let i = 0; i < 3; i++) p.S(rr(0, 28), rr(0, 29), ST.tuftD, { D: PAL.tall.dd }); };
 
   switch (ch) {
     case '.': grassBase(); break;
     case ',': { grassBase(1); const fam = [['#f05a5a', '#ffb0a0', '#a82c3c'], ['#ffffff', '#ffffff', '#b8c4dc'], ['#ffd83a', '#fff0a0', '#c88a1a'], ['#ff8ac0', '#ffd0e4', '#b04a80']][variant];
       // a small cluster: four-petal flowers with a warm centre, a shaded lower petal and a leaf, never cut by the tile edge
       const spots = [[6, 6], [19, 5], [25, 15], [11, 17], [22, 25], [6, 25]]; for (let i = 0; i < spots.length; i++) { if (r() < .4) continue; const x = spots[i][0] + rr(-2, 2), y = spots[i][1] + rr(-2, 2);
-        const bloom = (x, y) => { p.P(x - 1, y + 3, G.l); p.P(x + 2, y + 3, G.l); p.H(x, y + 3, 2, G.d); p.P(x + 1, y + 4, G.dd); p.S(x - 2, y - 2, ['..H..', '.HHP.', 'HHYPP', '.PPD.', '..D..'], { H: fam[1], P: fam[0], D: fam[2], Y: '#ffd24a' }); };
+        const bloom = (x, y) => { const sw = [0, 1, 0, 0][(frame + i + variant) % 4]; p.P(x - 1, y + 3, G.l); p.P(x + 2, y + 3, G.l); p.H(x, y + 3, 2, G.d); p.P(x + 1, y + 4, G.dd); p.S(x - 2 + sw, y - 2, ['..H..', '.HHP.', 'HHYPP', '.PPD.', '..D..'], { H: fam[1], P: fam[0], D: fam[2], Y: '#ffd24a' }); };
         bloom(x, y); if (r() < .45) bloom(x + 4 + rr(0, 1), y + 3 + rr(0, 1)); }
       break; }
     case 't': { const T = PAL.tall; p.R(0, 0, 32, 32, T.m); for (let i = 0; i < 2; i++) { const x = rr(-4, 26), y = rr(-2, 26); p.E(x + 6, y + 3, 6, 3, T.d); }
@@ -1439,14 +1433,14 @@ function drawTile(ch, variant, frame, g, owner = null) {
 }
 function buildTileset() {
   for (const ch in TERRAIN) for (let v = 0; v < VARIANTS; v++) {
-    const frames = (ch === '~' || ch === 'w' || ch === '=' || ch === 'L') ? WATER_FRAMES : 1;
+    const frames = tileFrames(ch);
     for (let f = 0; f < frames; f++) { const c = tileCanvas(); drawTile(ch, v, f, c.getContext('2d')); TILESET[ch + v + f] = c; }
   }
   loadTallTerrainSprites();
 }
 function tileImg(ch, v, f, owner = null) {
   if (ch === 't' && TALL_ART.ready && TALL_ART.enabled) return tallTerrainImg(v, 0, f);
-  const frames = (ch === '~' || ch === 'w' || ch === '=' || ch === 'L') ? WATER_FRAMES : 1; const key = ch + (v % VARIANTS) + (f % frames);
+  const frames = tileFrames(ch); const key = ch + (v % VARIANTS) + (f % frames);
   if (owner == null || !(ch === 'C' || ch === 'Q')) return TILESET[key] || TILESET['.00'];
   const ok = key + 'o' + owner; if (!TILESET[ok]) { const c = tileCanvas(); drawTile(ch, v % VARIANTS, f % frames, c.getContext('2d'), owner); TILESET[ok] = c; } return TILESET[ok];
 }
@@ -2672,8 +2666,8 @@ function updateAnim(dt) {
     const p = q.path; if (p.length < 2) { q.unit.x = p[0].x; q.unit.y = p[0].y; q.unit.fx.walk = false; nextAnim(); return; }
     const total = (p.length - 1) * q.dur; const k = Math.min(1, q.t / total); const seg = Math.min(p.length - 2, Math.floor(k * (p.length - 1))); const f = k * (p.length - 1) - seg;
     const a = p[seg], b = p[seg + 1]; const h = Math.abs(Math.sin(f * Math.PI)) * 5; q.unit.x = a.x; q.unit.y = a.y; q.unit.fx.dx = (b.x - a.x) * f * TILE; q.unit.fx.air = h; q.unit.fx.dy = (b.y - a.y) * f * TILE - h; q.unit.fx.sy = 1 + h * .02; q.unit.fx.sx = 1 - h * .015; q.unit.fx.facing = b.x - a.x !== 0 ? Math.sign(b.x - a.x) : q.unit.fx.facing;
-    if (seg !== q.i) { q.i = seg; Audio.sfx('step'); spawnParts(a.x * TILE + TILE / 2, a.y * TILE + TILE - 4, 3, ['#d8c8a0', '#ffffff'], { speed: 20, life: .35, grav: -10, flat: true }); }
-    if (k >= 1) { const l = p[p.length - 1]; q.unit.x = l.x; q.unit.y = l.y; q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.unit.fx.air = 0; q.unit.fx.walk = false; q.unit.fx.sy = .86; q.unit.fx.sx = 1.12; Audio.sfx('step'); for (let i = 0; i < 3; i++) spawnSprite('poof', l.x * TILE + TILE / 2 + (i - 1) * 9, l.y * TILE + TILE - 5, { size: 3, life: .3, col: '#e8e0d0', col2: '#ffffff', vx: (i - 1) * 24, vy: -8, delay: 0 }); nextAnim(); }
+    if (seg !== q.i) { q.i = seg; Audio.sfx('step'); stepFx(q.unit, a.x, a.y, false); }
+    if (k >= 1) { const l = p[p.length - 1]; q.unit.x = l.x; q.unit.y = l.y; q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.unit.fx.air = 0; q.unit.fx.walk = false; q.unit.fx.sy = .86; q.unit.fx.sx = 1.12; Audio.sfx('step'); stepFx(q.unit, l.x, l.y, true); nextAnim(); }
     return;
   }
   if (q.kind === 'strike') {
@@ -2698,6 +2692,18 @@ function updateAnim(dt) {
     return;
   }
   if (q.kind === 'msg' || q.kind === 'wait') { if (q.t >= q.dur) nextAnim(); return; }
+}
+// What a step kicks up, by the ground under it: a splash on water (or a ripple under a flier), sand, snow, embers over
+// lava, grey dust in caves and on floors, green bits on grass. `land` is the last step, which puffs a little wider.
+function stepFx(u, x, y, land) {
+  const t = terrAt(x, y), id = t.id, cx = x * TILE + TILE / 2, fy = y * TILE + TILE - 4, air = !!(u && u.fly);
+  if (id === 'water' || id === 'lava') { const lava = id === 'lava', c = lava ? ['#ffd25a', '#ff8a2c', '#ffffff'] : ['#a2d8ff', '#edf9ff', '#62acf0'];
+    spawnSprite('ring', cx, fy, { size: land ? 11 : 8, life: .4, col: lava ? '#ffb040' : '#edf9ff' }); if (!air || lava) spawnParts(cx, fy - 2, land ? 8 : 5, c, { speed: 34, life: .45, grav: lava ? -40 : 140, vy: lava ? -10 : -40 }); return; }
+  if (air) return;
+  const col = id === 'sand' ? ['#f2e2a4', '#cfb266'] : id === 'snow' || id === 'ice' ? ['#ffffff', '#c8d4ea'] : id === 'road' || id === 'bridge' ? ['#dec792', '#ffffff'] : id === 'cave' || id === 'rubble' || id === 'floor' || id === 'center' || id === 'crate' ? ['#a29bad', '#6e6278'] : ['#a3e07c', '#63b84c', '#ffffff'];
+  if (land) for (let i = 0; i < 3; i++) spawnSprite('poof', cx + (i - 1) * 9, fy - 1, { size: 3, life: .3, col: col[0], col2: '#ffffff', vx: (i - 1) * 24, vy: -8 });
+  else spawnParts(cx, fy, 3, col, { speed: 20, life: .35, grav: -10, flat: true });
+  if (id === 'tall' && !REDUCED) for (let i = 0; i < (land ? 3 : 2); i++) spawnSprite('leaf', cx + (i - 1) * 6, fy - 8, { size: 3, life: .6, col: '#3d8a3c', col2: '#a6dc7c', vx: (i - 1) * 20 + (vrnd() - .5) * 10, vy: -34 - vrnd() * 16, grav: 90, rot: i, spin: 10 });
 }
 function spawnProjectile(A, D, move) { const ax = A.x * TILE + TILE / 2, ay = A.y * TILE + 12, bx = D.x * TILE + TILE / 2, by = D.y * TILE + 12; projectileFX(move.type, ax, ay, bx, by, (BT.fast ? .5 : 1) * .15 * .9); }
 function impact(q) {
