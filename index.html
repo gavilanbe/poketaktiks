@@ -3427,7 +3427,7 @@ function drawHandoff() {
   panel(W / 2 - w / 2, y, w, 96, { fill: t === 0 ? '#17264a' : '#3a1a22', border: col });
   ctx.save(); ctx.translate(W / 2, y + 12); ctx.scale(2, 2); bigC(teamName(t), 0, 0, teamColorL(t), { outline: '#000' }); ctx.restore();
   textC('Turn ' + B.turn + (B.map.turnLimit ? ' / ' + B.map.turnLimit : '') + '  ·  ' + alive(t).length + ' Pokémon ready', W / 2, y + 36, UI.ink);
-  const list = alive(t).slice(0, 6); list.forEach((u, i) => drawMon(u.num, W / 2 - (list.length - 1) * 12 + i * 24, y + 78 + Math.round(Math.sin(BT.time * 8 + i) * 1), { flip: t === 1 }));
+  const list = alive(t).slice(0, 6); list.forEach((u, i) => { const ux = W / 2 - (list.length - 1) * 13 + i * 26, uy = y + 78 - (REDUCED ? 0 : Math.round(Math.abs(Math.sin(BT.time * 6 + i)) * 2)); drawMon(u.num, ux, uy, { flip: t === 1, outline: u.leader ? UI.gold : teamColor(t) }); if (u.leader) drawCrown(ux - 4, uy - 30); });
   if (h.t > .4 && Math.floor(BT.time * 2) % 2) hintLine(VIEW.touch ? ['pass the device', 'tap to start'] : ['pass the controls', ['Z', 'start']], W / 2, y + 102, { col: UI.gold }); ctx.globalAlpha = 1;
 }
 // ---------------------------------------------------------------- the end of a battle

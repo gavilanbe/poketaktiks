@@ -10,7 +10,7 @@ const PORT = parseInt(process.env.PK_PORT || '9337'); const ROOT = path.join(__d
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function main() {
   const script = process.argv[2] || 'smoke'; const mobile = script === 'mobile' || script.endsWith('-m');
-  const W = mobile ? 390 : 1280, H = mobile ? 844 : 720;
+  const W = +(process.env.PK_VW || (mobile ? 390 : 1280)), H = +(process.env.PK_VH || (mobile ? 844 : 720));
   const chrome = spawn(CHROME, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', `--remote-debugging-port=${PORT}`, `--window-size=${W},${H}`, '--user-data-dir=/tmp/pk-cdp-profile-' + PORT, 'about:blank'], { stdio: 'ignore' });
   const out = [];
   try {
