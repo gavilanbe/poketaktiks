@@ -524,7 +524,7 @@ function drawArrow(path, sx, sy, t = performance.now()) {
 const FX = { parts: [], texts: [], sprites: [], shake: 0, shakeX: 0, shakeY: 0, flash: 0, flashCol: '#ffffff', zoom: 0, hitstop: 0, slow: 0 };
 function spawnParts(x, y, n, col, opt = {}) {
   if (REDUCED) n = Math.min(n, 4);
-  for (let i = 0; i < n; i++) { const a = vrnd() * Math.PI * 2, sp = (opt.speed || 60) * (0.4 + vrnd()); FX.parts.push({ x, y, vx: Math.cos(a) * sp + (opt.vx || 0), vy: Math.sin(a) * sp * (opt.flat ? .4 : 1) + (opt.vy || 0), life: (opt.life || .5) * (0.6 + vrnd() * .6), t: 0, col: Array.isArray(col) ? vpick(col) : col, size: opt.size || 2, grav: opt.grav == null ? 120 : opt.grav, shape: opt.shape || 'sq' }); }
+  for (let i = 0; i < n; i++) { const a = vrnd() * Math.PI * 2, sp = (opt.speed || 60) * (0.4 + vrnd()); FX.parts.push({ x, y, vx: Math.cos(a) * sp + (opt.vx || 0), vy: Math.sin(a) * sp * (opt.flat ? .4 : 1) + (opt.vy || 0), life: (opt.life || .5) * (0.6 + vrnd() * .6), t: -(opt.delay || 0), col: Array.isArray(col) ? vpick(col) : col, size: opt.size || 2, grav: opt.grav == null ? 120 : opt.grav, shape: opt.shape || 'sq' }); }
 }
 // Shaped effect sprite. kinds: burst flash slash flame drop bolt leaf bubble shard rock wisp psy poof spark heart wind star
 function spawnSprite(kind, x, y, o = {}) {
@@ -532,9 +532,11 @@ function spawnSprite(kind, x, y, o = {}) {
   const s = { kind, x, y, vx: o.vx || 0, vy: o.vy || 0, t: -(o.delay || 0), life: o.life || .5, col: o.col || '#ffffff', col2: o.col2 || '#ffffff', size: o.size || 6, grav: o.grav || 0, rot: o.rot || 0, spin: o.spin || 0, seed: Math.floor(vrnd() * 1e6), arc: o.arc || 0, x0: x, y0: y, tx: o.tx, ty: o.ty, trail: o.trail || null, len: o.len || 0, orbit: o.orbit || null, dir: o.dir || 1 };
   FX.sprites.push(s); return s;
 }
-function floatText(x, y, s, col = '#ffffff', opt = {}) { FX.texts.push({ x, y, s, col, t: 0, life: opt.life || 1, big: !!opt.big, outline: opt.outline || UI.shadow, vy: opt.vy == null ? -26 : opt.vy, delay: opt.delay || 0, pop: opt.pop !== false }); }
+// Hurry the texts on screen off within `t` seconds (a KO stamp should not land on top of the damage numbers).
+function fadeFloatTexts(t) { for (const f of FX.texts) f.life = f.delay > 0 ? 0 : Math.min(f.life, f.t + t); }
+function floatText(x, y, s, col = '#ffffff', opt = {}) { FX.texts.push({ x, y, s, col, t: 0, life: opt.life || 1, big: !!opt.big || !!opt.huge, huge: opt.huge || 0, outline: opt.outline || UI.shadow, vy: opt.vy == null ? -26 : opt.vy, delay: opt.delay || 0, pop: opt.pop !== false }); }
 function updateFX(dt) {
-  for (const p of FX.parts) { p.t += dt; p.vy += p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+  for (const p of FX.parts) { p.t += dt; if (p.t < 0) continue; p.vy += p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
   FX.parts = FX.parts.filter(p => p.t < p.life);
   for (const s of FX.sprites) { s.t += dt; if (s.t < 0) continue; if (s.orbit) { const o = s.orbit, k = Math.min(1, s.t / s.life), a = o.a0 + s.t * o.speed, r = o.r * (o.shrink ? 1 - k * .8 : 1); s.x = s.x0 + Math.cos(a) * r; s.y = s.y0 + Math.sin(a) * r * (o.squash || .45); } else if (s.tx != null) { const k = Math.min(1, s.t / s.life); s.x = lerp(s.x0, s.tx, k); s.y = lerp(s.y0, s.ty, k) - Math.sin(k * Math.PI) * s.arc; } else { s.vy += s.grav * dt; s.x += s.vx * dt; s.y += s.vy * dt; } s.rot += s.spin * dt; if (s.trail && vrnd() < .6) spawnParts(s.x, s.y, 1, s.trail, { speed: 12, life: .25, grav: 0, size: 2 }); }
   FX.sprites = FX.sprites.filter(s => s.t < s.life);
@@ -592,16 +594,21 @@ function drawSprite(s, ox, oy) {
 // Particles and effect sprites in world space (offset by ox, oy). Floating texts are drawn separately by
 // drawFXTexts so the board can draw them unscaled when it is zoomed out.
 function drawFX(ox, oy, texts = true) {
-  for (const p of FX.parts) { const k = 1 - p.t / p.life; const s = Math.max(1, Math.round(p.size * (k < .4 ? k / .4 : 1))); ctx.fillStyle = p.col; if (p.shape === 'ring') { const r = Math.round(p.size * (1 - k) * 3) + 2; ctx.globalAlpha = k; outline(p.x + ox - r, p.y + oy - r, 2 * r, 2 * r, p.col); ctx.globalAlpha = 1; } else ctx.fillRect(Math.round(p.x + ox - s / 2), Math.round(p.y + oy - s / 2), s, s); }
+  for (const p of FX.parts) { if (p.t < 0) continue; const k = 1 - p.t / p.life; const s = Math.max(1, Math.round(p.size * (k < .4 ? k / .4 : 1))); ctx.fillStyle = p.col; if (p.shape === 'ring') { const r = Math.round(p.size * (1 - k) * 3) + 2; ctx.globalAlpha = k; outline(p.x + ox - r, p.y + oy - r, 2 * r, 2 * r, p.col); ctx.globalAlpha = 1; } else ctx.fillRect(Math.round(p.x + ox - s / 2), Math.round(p.y + oy - s / 2), s, s); }
   for (const s of FX.sprites) if (s.t >= 0) drawSprite(s, ox, oy);
   if (texts) drawFXTexts(ox, oy);
 }
 // Floating texts: world position (x + ox, y + oy) times `sc` gives the screen position; the text itself keeps its pixel size.
 function drawFXTexts(ox, oy, sc = 1) {
-  for (const f of FX.texts) { if (f.delay > 0) continue; const k = f.t / f.life; ctx.globalAlpha = k > .7 ? 1 - (k - .7) / .3 : 1; const pop = f.pop && f.t < .15 ? 1 + (1 - f.t / .15) * .5 : 1; const x = (f.x + ox) * sc, y = (f.y + oy) * sc - (pop - 1) * 6;
+  // every text is nudged sideways to stay whole on the canvas, whatever camera transform it is drawn under
+  const m = ctx.getTransform && ctx.getTransform(), cw = ctx.canvas && ctx.canvas.width;
+  const keep = (x, w) => { if (!m || !(m.a > 0) || !cw) return x; const pad = 2 * m.a, a0 = m.a * (x - w / 2) + m.e, a1 = m.a * (x + w / 2) + m.e; return a0 < pad ? x + (pad - a0) / m.a : a1 > cw - pad ? x - (a1 - cw + pad) / m.a : x; };
+  for (const f of FX.texts) { if (f.delay > 0) continue; const k = f.t / f.life; ctx.globalAlpha = k > .7 ? 1 - (k - .7) / .3 : 1; const pop = f.pop && f.t < .15 ? 1 + (1 - f.t / .15) * .5 : 1; let x = (f.x + ox) * sc; const y = (f.y + oy) * sc - (pop - 1) * 6;
+    // huge numbers (the duel's damage): drawn at a whole-pixel scale, one step bigger as they land, with a short wobble
+    if (f.huge) { const s2 = f.huge + (f.t < .09 && !REDUCED ? 1 : 0), wob = REDUCED ? 0 : Math.round(Math.sin(f.t * 55) * 3 * Math.max(0, 1 - f.t / .25)); x = keep(x, (textWidth(String(f.s).toUpperCase(), BIG) + 2) * s2); ctx.save(); ctx.translate(Math.round(x) + wob, Math.round(y)); ctx.scale(s2, s2); bigC(f.s, 0, -4.5, f.t < .05 ? '#ffffff' : f.col, { outline: f.outline }); ctx.restore(); ctx.globalAlpha = 1; continue; }
     // big numbers land: two frames at double size, then their own size (whole-pixel scales keep the glyphs crisp)
-    if (f.big && f.pop && f.t < .1 && !REDUCED) { ctx.save(); ctx.translate(Math.round(x), Math.round(y + 4)); ctx.scale(2, 2); bigC(f.s, 0, -4.5, '#ffffff', { outline: f.outline }); ctx.restore(); }
-    else if (f.big) bigC(f.s, x, y, f.col, { outline: f.outline }); else textC(f.s, x, y, f.col, { outline: f.outline }); ctx.globalAlpha = 1; }
+    if (f.big && f.pop && f.t < .1 && !REDUCED) { x = keep(x, (textWidth(String(f.s).toUpperCase(), BIG) + 2) * 2); ctx.save(); ctx.translate(Math.round(x), Math.round(y + 4)); ctx.scale(2, 2); bigC(f.s, 0, -4.5, '#ffffff', { outline: f.outline }); ctx.restore(); }
+    else if (f.big) bigC(f.s, keep(x, textWidth(String(f.s).toUpperCase(), BIG) + 2), y, f.col, { outline: f.outline }); else textC(f.s, keep(x, textWidth(f.s) + 2), y, f.col, { outline: f.outline }); ctx.globalAlpha = 1; }
 }
 function shake(n) { FX.shake = Math.max(FX.shake, n); }
 function flashScreen(col = '#ffffff', a = 1) { FX.flash = a; FX.flashCol = col; }

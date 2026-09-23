@@ -5,9 +5,11 @@
 // battlefield with the big sprites, two HP panels, each side's terrain and the
 // attack name. The script is a pure function of the events: nothing is
 // rerolled, the model is never touched, and skipping only moves the clock.
+// Everything else here is presentation: stripes, VS, charge-ups, impact
+// frames, focus lines, huge numbers, ghost HP, the faint and the victory hop.
 // ============================================================================
 'use strict';
-const DUEL_T = { intro: .55, windup: .22, contact: .16, ranged: .3, hold: .4, drop: .35, gap: .2, miss: .45, ko: .75, thaw: .3, outro: .3 };
+const DUEL_T = { intro: .72, windup: .26, contact: .16, ranged: .3, hold: .46, drop: .35, gap: .18, miss: .45, ko: 1.05, thaw: .3, outro: .34 };
 const DUEL_FAMILIES = { Fire: 'fire', Water: 'water', Ice: 'water', Electric: 'electric', Grass: 'grass', Psychic: 'psychic', Ghost: 'psychic', Fairy: 'psychic', Poison: 'psychic', Dragon: 'psychic' };
 // Attack family: melee-only moves are contact whatever their type; ranged ones go by type, else a generic projectile or beam.
 function duelFamily(move) { if (move.rng[1] <= 1) return 'contact'; return DUEL_FAMILIES[move.type] || 'neutral'; }
@@ -16,16 +18,17 @@ function duelLaunchTime(fam) { return fam === 'contact' ? DUEL_T.contact : fam =
 // ---------------------------------------------------------------- script (pure)
 // events: the hit/miss/ko/thaw events of one exchange, in resolver order. hp0: {unitId: hp before the exchange}.
 // Returns {beats, total, intro, outro, hp0, hpEnd}. Every impact beat records the HP it starts from and
-// ends at, so the displayed HP never depends on the (already final) model HP.
+// ends at, so the displayed HP never depends on the (already final) model HP. Wind-ups carry the event they lead to
+// (so the charge can be sized to it) and whether the strike is the attacker's follow-up.
 function duelScript(events, hp0, T = DUEL_T) {
-  const beats = [], hp = Object.assign({}, hp0); let t = 0, first = true;
+  const beats = [], hp = Object.assign({}, hp0); let t = 0, first = true, lastAtt = null;
   beats.push({ t, kind: 'intro' }); t += T.intro;
   for (const e of events) {
     if (e.type === 'hit' || e.type === 'miss') {
-      if (!first) t += T.gap; first = false; const fam = duelFamily(e.move);
-      beats.push({ t, kind: 'windup', att: e.att, def: e.def, move: e.move, counter: !!e.counter, fam }); t += T.windup;
-      beats.push({ t, kind: 'launch', att: e.att, def: e.def, move: e.move, fam }); t += duelLaunchTime(fam);
-      if (e.type === 'miss') { beats.push({ t, kind: 'miss', att: e.att, def: e.def, move: e.move, ev: e }); t += T.miss; continue; }
+      if (!first) t += T.gap; first = false; const fam = duelFamily(e.move), follow = lastAtt === e.att; lastAtt = e.att;
+      beats.push({ t, kind: 'windup', att: e.att, def: e.def, move: e.move, counter: !!e.counter, fam, ev: e, follow }); t += T.windup;
+      beats.push({ t, kind: 'launch', att: e.att, def: e.def, move: e.move, fam, ev: e }); t += duelLaunchTime(fam);
+      if (e.type === 'miss') { beats.push({ t, kind: 'miss', att: e.att, def: e.def, move: e.move, ev: e, fam }); t += T.miss; continue; }
       beats.push({ t, kind: 'impact', att: e.att, def: e.def, move: e.move, ev: e, fam, hpFrom: hp[e.def.id], hpTo: e.hpAfter, attFrom: hp[e.att.id], attTo: e.attHpAfter, drop: T.drop });
       hp[e.def.id] = e.hpAfter; hp[e.att.id] = e.attHpAfter; t += T.hold;
     } else if (e.type === 'ko') { beats.push({ t, kind: 'ko', unit: e.unit, by: e.by }); t += T.ko; }
@@ -74,6 +77,7 @@ function startDuel(q) {
   q.script = duelScript(q.events, q.hp0); q.t = 0; q.i = 0; q.boost = false; q.skipped = false; q.done = false; q.started = true;
   q.view = JSON.parse(JSON.stringify(q.view || duelView([q.att, q.def]))); // a private copy: replaying the item starts from the snapshot again
   q.sides = duelSides(q.att, q.def); q.pose = null; q.hitFx = null; q.missFx = null; q.koFx = null; q.banner = null; q.big = null; q.focus = null; q.entered = {};
+  q.flash = null; q.lines = null; q.victor = null; q.stamp = null; q.shakePanel = {}; q.cues = {};
   q.terr = { [q.att.id]: terrAt(q.att.x, q.att.y), [q.def.id]: terrAt(q.def.x, q.def.y) }; q.biome = duelBiome(q); q.seed = (q.att.id * 31 + q.def.id * 7 + B.turn * 3) | 0;
   for (const u of [q.att, q.def]) { requestBigSprite(q.view[u.id].num); requestAnim(q.view[u.id].num); BT.hpShow.set(u.id, { from: q.hp0[u.id], to: q.hp0[u.id], t: 0, hold: true }); }
   q.cam = { zoom: 1, x: 0, y: 0, tz: 1, tx: 0, ty: 0 };
@@ -81,18 +85,23 @@ function startDuel(q) {
   FX.parts = []; FX.sprites = []; FX.texts = []; centerCamBetween(q.att, q.def); Audio.sfx('wipe');
 }
 function duelRate(q) { let r = PREF.battle === 'quick' ? 1.7 : 1; if (BT.fast) r *= 1.6; if (q.boost) r *= 3.5; return r; }
+// One-shot cues keyed by name: fires the callback the first time the scene clock passes `at`.
+function duelCue(q, key, at, fn) { if (!q.cues[key] && q.t >= at) { q.cues[key] = true; fn(); } }
 function updateDuel(q, dt) {
   const S = q.script; q.t += dt * duelRate(q);
   if (!q.big && q.t >= S.intro * .5) q.big = { [q.att.id]: duelSpriteKind(q.view[q.att.id].num), [q.def.id]: duelSpriteKind(q.view[q.def.id].num) }; // decide once: no pop-in mid-scene
   if (q.cam) { const c = q.cam, k = Math.min(1, dt * 9); c.zoom += (c.tz - c.zoom) * k; c.x += (c.tx - c.x) * k; c.y += (c.ty - c.y) * k; }
+  // the VS emblem lands with a thud a moment after the dioramas meet
+  if (!q.skipped) duelCue(q, 'vs', .34, () => { if (!REDUCED) { Audio.sfx('stamp'); shake(3); } });
   while (q.i < S.beats.length && S.beats[q.i].t <= q.t) duelBeat(q, S.beats[q.i++]);
-  if (q.t >= S.total) q.done = true;
+  if (q.stamp && !q.stamp.landed && q.t >= q.stamp.t0 + .07) { q.stamp.landed = true; Audio.sfx('stamp'); if (!REDUCED) shake(4); }
+  if (q.t >= S.total) { q.done = true; DUEL_WIPE.t0 = BT.time; duelAftermath(q); }
 }
 // Jump to the outro: the HP shown is the script's end state, identical to what playing it out reaches.
 function skipDuel(q) {
   if (q.skipped) return; q.skipped = true; q.boost = true; const S = q.script, outroAt = S.total - S.outro;
   if (q.t < outroAt) { q.t = outroAt; while (q.i < S.beats.length && S.beats[q.i].t <= q.t) { const b = S.beats[q.i++]; if (b.kind === 'outro') duelBeat(q, b); else duelApplyBeat(q, b); } }
-  q.pose = q.hitFx = q.missFx = q.banner = q.focus = null; FX.parts = []; FX.sprites = []; FX.texts = []; FX.hitstop = 0; if (q.cam) { q.cam.tz = 1; q.cam.tx = q.cam.ty = 0; }
+  q.pose = q.hitFx = q.missFx = q.banner = q.focus = q.flash = q.lines = q.victor = q.stamp = null; FX.parts = []; FX.sprites = []; FX.texts = []; FX.hitstop = 0; if (q.cam) { q.cam.tz = 1; q.cam.tx = q.cam.ty = 0; }
 }
 // First press speeds the scene up, a second press (or X / right click) skips to the result.
 function duelInput(q, ev) {
@@ -100,58 +109,103 @@ function duelInput(q, ev) {
   const hard = (ev.type === 'key' && ev.key === 'back') || (ev.type === 'down' && ev.btn === 2);
   if (hard || q.boost) skipDuel(q); else q.boost = true;
 }
+// Heavy moments: an impact frame (the scene flips to silhouettes on a bright field for a few frames) and manga focus
+// lines converging on the point. Crits, KOs and super-effective hits get them; reduced motion never does.
+function duelHeavy(q, x, y, col, frame, lines, dur = .5) {
+  if (REDUCED) return; if (frame) q.flash = { t0: q.t, dur: frame, col, x, y }; if (lines) q.lines = { t0: q.t, until: q.t + dur, x, y, col: lines };
+}
 function duelBeat(q, b) {
   const L = duelLayout(q), z = L.z, P = id => ({ x: L.pos[id].x / z, y: L.pos[id].y / z, dir: L.pos[id].dir }); duelApplyBeat(q, b);
   switch (b.kind) {
-    case 'windup': { q.pose = { unit: b.att, kind: 'windup', t0: q.t, fam: b.fam }; q.banner = { move: b.move, counter: b.counter, t0: q.t, until: q.t + DUEL_T.windup + duelLaunchTime(b.fam) + .5 }; q.focus = { t0: q.t, until: q.t + DUEL_T.windup + duelLaunchTime(b.fam) + .45 }; duelCamTo(q, P(b.att.id), 1.1); if (b.fam === 'contact') Audio.sfx('swing'); break; }
-    case 'launch': { q.pose = { unit: b.att, kind: b.fam === 'contact' ? 'lunge' : 'cast', t0: q.t, fam: b.fam, dur: duelLaunchTime(b.fam) }; duelLaunchFx(b, P(b.att.id), P(b.def.id)); break; }
-    case 'impact': {
-      const e = b.ev, d = P(b.def.id), a = P(b.att.id), cx = d.x, cy = d.y - 44; q.hitFx = { unit: b.def, t0: q.t };
-      duelImpactFx(b.fam, b.move.type, cx, cy, d, e); hitEffect(b.move.type, cx, cy, e.crit, e.eff); duelCamTo(q, d, e.crit ? 1.22 : 1.15); q.jolt = { t0: q.t, dir: -d.dir, n: e.crit ? 6 : e.dmg > 0 ? 4 : 0 }; Audio.sfx(e.dmg === 0 ? 'miss' : e.crit ? 'crit' : e.eff > 1 ? 'hit2' : 'hit');
-      if (e.dmg > 0) { shake(e.crit ? 7 : e.eff > 1 ? 5 : 3); if (!q.boost) FX.hitstop = e.crit ? .1 : .04; flashScreen(e.crit ? '#fff2c0' : '#ffffff', e.crit ? .5 : .22); }
-      if (e.crit) spawnSprite('burst', cx, cy, { size: 30, life: .4, col: UI.gold, delay: .05 });
-      floatText(cx, cy - 18, String(e.dmg), e.crit ? UI.gold : '#ffffff', { big: true, life: 1 });
-      floatText(cx, cy - 36, e.crit ? 'CRITICAL!' : MOVE_POP[b.move.type], e.crit ? UI.gold : TYPE_COL[b.move.type], { life: .9, delay: .05, outline: '#000', vy: -12 });
-      if (e.eff > 1) floatText(cx, cy + 10, e.eff >= 2 ? 'SUPER EFFECTIVE!!' : 'Super effective!', '#ffd24a', { delay: .22, life: 1.1, outline: '#402000', vy: -8 });
-      else if (e.eff === 0) floatText(cx, cy + 10, 'No effect...', '#c0c0c0', { delay: .22, life: 1.1, vy: -8 });
-      else if (e.eff < 1) floatText(cx, cy + 10, 'Not very effective', '#a0d0ff', { delay: .22, life: 1, vy: -8 });
-      if (e.status) floatText(cx, cy + 22, STATUS[e.status].text.toUpperCase() + '!', STATUS[e.status].col, { delay: .42, life: 1.1, outline: '#000', vy: -8 });
-      if (e.drain) floatText(a.x, a.y - 66, '+' + e.drain, UI.green, { delay: .3, outline: '#0a3a10' });
+    case 'windup': {
+      const a = P(b.att.id), col = TYPE_COL[b.move.type] || '#ffffff', F = fxFor(b.move.type);
+      q.pose = { unit: b.att, kind: 'windup', t0: q.t, fam: b.fam }; q.banner = { move: b.move, counter: b.counter, follow: b.follow, t0: q.t, until: q.t + DUEL_T.windup + duelLaunchTime(b.fam) + .55 }; q.focus = { t0: q.t, until: q.t + DUEL_T.windup + duelLaunchTime(b.fam) + .45 }; duelCamTo(q, a, 1.12);
+      if (b.fam === 'contact') { Audio.sfx('swing'); for (let i = 0; i < 3; i++) spawnSprite('poof', a.x - a.dir * (6 + i * 6), a.y, { size: 4 + i, life: .35, col: '#d8d0b8', col2: '#f4f0e0', vx: -a.dir * (18 + i * 8), vy: -6, delay: i * .04 }); }
+      else { Audio.sfx('charge'); for (let i = 0; i < 10; i++) { const an = i / 10 * Math.PI * 2 + vrnd(), r = 34 + vrnd() * 18; spawnSprite('spark', a.x + Math.cos(an) * r, a.y - 44 + Math.sin(an) * r * .7, { tx: a.x + a.dir * 8, ty: a.y - 44, life: DUEL_T.windup * .95, col: F.parts[0] || col, delay: i * .015 }); } spawnSprite('ring', a.x, a.y - 44, { size: 26, life: DUEL_T.windup, col: shade(col, .35) }); }
       break;
     }
-    case 'miss': { const d = P(b.def.id); q.missFx = { unit: b.def, t0: q.t }; duelCamTo(q, d, 1.08); Audio.sfx('miss'); floatText(d.x, d.y - 70, 'MISS', '#c0c0c0', { big: true, life: .9 }); break; }
-    case 'ko': { const p = P(b.unit.id); q.koFx = { unit: b.unit, t0: q.t }; Audio.sfx('faint'); shake(5); duelCamTo(q, p, 1.18); q.focus = { t0: q.t, until: q.t + DUEL_T.ko }; const cy = p.y - 40; spawnSprite('blast', p.x, cy, { size: 34, life: .55, col: '#ffd24a', col2: '#ffffff', delay: .2 }); for (let i = 0; i < 5; i++) spawnSprite('poof', p.x + (i - 2) * 12, cy + 10 + (i % 2) * 8, { size: 8, life: .7, col: '#6a6a78', col2: '#b0b0c0', vy: -14, delay: .25 + i * .05 }); spawnParts(p.x, cy, 22, ['#ffffff', '#ffd24a', '#ff8a2c'], { speed: 110, life: .7, grav: 80, delay: .2 }); spawnSprite('ring', p.x, cy, { size: 46, life: .5, col: '#ffffff', delay: .2 }); floatText(p.x, p.y - 84, isHuman(b.unit.team) ? 'FAINTED!' : 'KO!', isHuman(b.unit.team) ? UI.red : UI.gold, { big: true, life: 1.2 }); break; }
-    case 'thaw': { const p = P(b.unit.id); floatText(p.x, p.y - 70, 'Thawed!', '#98d8f8'); break; }
-    case 'outro': { FX.parts = []; FX.sprites = []; FX.texts = []; FX.hitstop = 0; q.banner = null; q.focus = null; if (q.cam) { q.cam.tz = 1; q.cam.tx = q.cam.ty = 0; } for (const u of [q.att, q.def]) BT.hpShow.delete(u.id); Audio.sfx('wipe'); break; }
+    case 'launch': { const a = P(b.att.id); q.pose = { unit: b.att, kind: b.fam === 'contact' ? 'lunge' : 'cast', t0: q.t, fam: b.fam, dur: duelLaunchTime(b.fam) }; if (b.fam === 'contact') Audio.sfx('whoosh'); duelLaunchFx(b, a, P(b.def.id)); break; }
+    case 'impact': {
+      const e = b.ev, d = P(b.def.id), a = P(b.att.id), cx = d.x, cy = d.y - 44, lethal = e.hpAfter <= 0, heavy = e.crit || lethal, col = TYPE_COL[b.move.type] || '#ffffff';
+      q.hitFx = { unit: b.def, t0: q.t, crit: e.crit, lethal }; q.shakePanel[b.def.id] = q.t;
+      duelImpactFx(b.fam, b.move.type, cx, cy, d, e); hitEffect(b.move.type, cx, cy, e.crit, e.eff); duelCamTo(q, d, heavy ? 1.26 : e.eff > 1 ? 1.2 : 1.15);
+      q.jolt = { t0: q.t, dir: -d.dir, n: e.crit ? 7 : lethal ? 6 : e.dmg > 0 ? 4 : 0 };
+      Audio.sfx(e.dmg === 0 ? 'miss' : e.crit ? 'crit' : e.eff > 1 ? 'hit2' : 'hit'); if (heavy && e.dmg > 0) Audio.sfx('thud');
+      if (e.dmg > 0) {
+        shake(e.crit ? 8 : lethal ? 7 : e.eff > 1 ? 5 : 3); if (!q.boost) FX.hitstop = e.crit ? .16 : lethal ? .14 : e.eff > 1 ? .08 : .05;
+        flashScreen(e.crit ? '#fff2c0' : e.eff > 1 ? shade(col, .5) : '#ffffff', e.crit ? .45 : e.eff > 1 ? .35 : .2);
+        if (heavy) duelHeavy(q, cx, cy, e.crit ? '#fff4c8' : '#ffffff', e.crit ? .07 : .05, e.crit ? UI.gold : '#ffffff', .55);
+        else if (e.eff > 1) duelHeavy(q, cx, cy, null, 0, shade(col, .4), .35);
+        // knockback dust at the feet
+        for (let i = 0; i < 4; i++) spawnSprite('poof', d.x + d.dir * (4 + i * 7), d.y, { size: 3 + (i % 2) * 2, life: .4, col: '#d8d0b8', col2: '#f4f0e0', vx: -d.dir * (30 + i * 10), vy: -8, delay: i * .03 });
+      }
+      if (e.crit) spawnSprite('burst', cx, cy, { size: 34, life: .45, col: UI.gold, delay: .04 });
+      // the number: huge, gold on a critical, orange when super effective; the tags above and below it fade before any KO stamp
+      const numCol = e.crit ? UI.gold : e.eff > 1 ? '#ffb040' : e.eff === 0 ? '#c0c0c0' : '#ffffff';
+      floatText(cx, cy - 20, String(e.dmg), numCol, { huge: e.crit || e.dmg >= 20 ? 3 : 2, life: .95, vy: -18, outline: '#1a0a14' });
+      // the tags stack under the number: the top of the screen belongs to the panels and the move banner
+      let ty = cy + 4;
+      if (e.crit) { floatText(cx, ty, 'CRITICAL!', UI.gold, { big: true, life: .75, delay: .03, outline: '#3a2000', vy: -10 }); ty += 13; }
+      else floatText(cx + d.dir * -18, cy - 44, MOVE_POP[b.move.type], col, { life: .6, delay: .05, outline: '#000', vy: -12 });
+      if (e.eff > 1) { floatText(cx, ty + 4, e.eff >= 2 ? 'SUPER EFFECTIVE!!' : 'Super effective!', '#ffd24a', { big: e.eff >= 2, delay: .18, life: .8, outline: '#402000', vy: -8 }); ty += 12; }
+      else if (e.eff === 0) { floatText(cx, ty + 4, 'No effect...', '#c0c0c0', { delay: .18, life: .8, vy: -8 }); ty += 10; }
+      else if (e.eff < 1) { floatText(cx, ty + 4, 'Not very effective', '#a0d0ff', { delay: .18, life: .8, vy: -8 }); ty += 10; }
+      if (e.status) { floatText(cx, ty + 6, STATUS[e.status].text.toUpperCase() + '!', STATUS[e.status].col, { delay: .38, life: .9, outline: '#000', vy: -8 }); duelStatusFx(e.status, d, q); }
+      if (e.drain) { floatText(a.x, a.y - 70, '+' + e.drain, UI.green, { delay: .45, outline: '#0a3a10', big: true }); for (let i = 0; i < 7; i++) spawnSprite('bubble', cx + (vrnd() - .5) * 16, cy + (vrnd() - .5) * 16, { tx: a.x + (vrnd() - .5) * 10, ty: a.y - 40 + (vrnd() - .5) * 14, life: .45, arc: 14 + i * 3, size: 2 + (i % 2), col: '#7cf0a0', col2: '#ffffff', delay: .1 + i * .04 }); }
+      break;
+    }
+    case 'miss': { const d = P(b.def.id); q.missFx = { unit: b.def, t0: q.t }; duelCamTo(q, d, 1.08); Audio.sfx('miss'); Audio.sfx('whoosh'); floatText(d.x, d.y - 74, 'MISS', '#d8d8e8', { huge: 2, life: .8, outline: '#1a1a2a', vy: -14 }); for (let i = 0; i < 3; i++) spawnSprite('wind', d.x - d.dir * 10, d.y - 30 - i * 10, { size: 14, life: .3, col: '#ffffff', vx: -d.dir * 90, delay: i * .03 }); break; }
+    case 'ko': {
+      const p = P(b.unit.id), cy = p.y - 40, own = isHuman(b.unit.team); q.koFx = { unit: b.unit, t0: q.t }; q.focus = { t0: q.t, until: q.t + DUEL_T.ko - .1 }; duelCamTo(q, p, 1.24);
+      Audio.sfx('faint'); fadeFloatTexts(.28); if (!REDUCED) { shake(5); if (!q.boost) FX.hitstop = .12; } duelHeavy(q, p.x, cy, null, 0, own ? '#ff8080' : '#ffffff', .8);
+      // the faint: blink, then sink into the ground; dust where it went down; the stamp over its half of the field
+      for (let i = 0; i < 6; i++) spawnSprite('poof', p.x + (i - 2.5) * 10, p.y - 2, { size: 6 + (i % 2) * 2, life: .7, col: '#6a6a78', col2: '#b0b0c0', vy: -10, vx: (i - 2.5) * 6, delay: .38 + i * .04 });
+      spawnParts(p.x, cy, 18, own ? ['#ff8080', '#ffffff'] : ['#ffffff', '#ffd24a', '#ff8a2c'], { speed: 90, life: .7, grav: 80, delay: .3 });
+      q.stamp = { unit: b.unit, text: own ? 'FAINTED!' : 'K.O.!', col: own ? '#ff6a6a' : UI.gold, ink: own ? '#2a0008' : '#3a2000', t0: q.t + .3, dur: DUEL_T.ko - .32 };
+      if (b.by && b.by.hp > 0 && b.by !== b.unit) q.victor = { unit: b.by, t0: q.t + .62 };
+      break;
+    }
+    case 'thaw': { const p = P(b.unit.id); floatText(p.x, p.y - 70, 'Thawed!', '#98d8f8', { big: true }); for (let i = 0; i < 8; i++) { const an = vrnd() * Math.PI * 2; spawnSprite('shard', p.x, p.y - 30, { life: .5, col: '#bde4f8', vx: Math.cos(an) * 60, vy: Math.sin(an) * 40 - 30, grav: 160, rot: i, spin: 8 }); } break; }
+    case 'outro': { FX.parts = []; FX.sprites = []; FX.texts = []; FX.hitstop = 0; q.banner = null; q.focus = null; q.lines = null; q.flash = null; q.stamp = null; if (q.cam) { q.cam.tz = 1; q.cam.tx = q.cam.ty = 0; } for (const u of [q.att, q.def]) BT.hpShow.delete(u.id); Audio.sfx('wipe'); break; }
   }
+}
+// What an inflicted status looks like on the Pokémon it lands on (field space).
+function duelStatusFx(st, d, q) {
+  const x = d.x, y = d.y - 30;
+  if (st === 'brn') { Audio.sfx('burn'); for (let i = 0; i < 8; i++) spawnSprite('flame', x + (vrnd() - .5) * 30, y + 10 + (vrnd() - .5) * 20, { size: 2 + Math.round(vrnd() * 2), life: .6, col: '#ffd25a', col2: '#ff4a20', vy: -40 - vrnd() * 30, delay: .35 + vrnd() * .2 }); }
+  else if (st === 'par') { Audio.sfx('para'); for (let i = 0; i < 5; i++) spawnSprite('bolt', x + (vrnd() - .5) * 34, y + (vrnd() - .5) * 24, { size: 9, life: .25, col: '#ffe94a', delay: .35 + i * .06 }); }
+  else if (st === 'psn') { Audio.sfx('poison'); for (let i = 0; i < 9; i++) spawnSprite('bubble', x + (vrnd() - .5) * 30, y + 16, { size: 2 + (i % 3), life: .7, col: '#b060d0', col2: '#e0a0ff', vy: -30 - vrnd() * 20, delay: .35 + i * .04 }); }
+  else if (st === 'frz') { Audio.sfx('water'); for (let i = 0; i < 5; i++) spawnSprite('crystal', x + (i - 2) * 11, d.y, { size: 18 + (i % 2) * 10, life: .8, col: '#bde4f8', col2: '#ffffff', delay: .35 + i * .05 }); }
 }
 // The travelling part of each family, from the attacker's front to the defender's chest (field space).
 function duelLaunchFx(b, a, d) {
   const type = b.move.type, F = fxFor(type), c1 = F.parts[0], c2 = F.parts[1], dur = duelLaunchTime(b.fam);
-  const ax = a.x + a.dir * 26, ay = a.y - 44, tx = d.x + d.dir * 6, ty = d.y - 44, dir = a.dir;
+  const ax = a.x + a.dir * 26, ay = a.y - 44, tx = d.x + d.dir * 6, ty = d.y - 44, dir = a.dir, miss = b.ev && b.ev.type === 'miss';
+  const ex = miss ? tx - dir * 40 : tx; // a miss flies past the dodging target
   switch (b.fam) {
-    case 'contact': for (let i = 0; i < 2; i++) spawnSprite('speed', a.x - dir * 20, ay + 6, { size: 26, life: dur + .1, col: '#ffffff', dir, delay: i * .05 }); spawnSprite('poof', a.x - dir * 10, a.y, { size: 5, life: .35, col: '#d8d0b8', col2: '#f4f0e0', vx: -dir * 20 }); break;
-    case 'fire': Audio.sfx('fire'); spawnSprite('fireball', ax, ay, { tx, ty, life: dur, arc: 6, size: type === 'Fire' ? 7 : 6, col: c1, col2: type === 'Fire' ? '#ff4a20' : '#4a3ad0', dir, trail: [c1, c2] }); for (let i = 0; i < 4; i++) spawnSprite('flame', ax, ay + (vrnd() - .5) * 10, { tx: tx + (vrnd() - .5) * 14, ty: ty + (vrnd() - .5) * 18, life: dur - i * .03, arc: 10 + i * 4, col: c1, col2: type === 'Fire' ? '#ff4a20' : '#4a3ad0', size: 2 + (i % 2), delay: .04 + i * .03 }); spawnSprite('flash', ax - dir * 8, ay, { size: 8, life: .12, col: '#ffe9a0' }); break;
-    case 'water': Audio.sfx('water'); for (let i = 0; i < 3; i++) spawnSprite('wave', ax, ay + 10 + i * 6, { tx: tx, ty: ty + 10 + i * 6, life: dur + .08, size: 16 - i * 3, col: c1, col2: c2, dir, delay: i * .05 }); for (let i = 0; i < 8; i++) spawnSprite(type === 'Ice' ? 'shard' : 'drop', ax, ay + (vrnd() - .5) * 10, { tx: tx + (vrnd() - .5) * 10, ty: ty + (vrnd() - .5) * 18, life: dur - i * .02, arc: 8 + i * 2, col: c1, col2: c2, trail: [c1], rot: i, spin: 8, delay: i * .02 }); break;
-    case 'grass': Audio.sfx('grass'); for (let i = 0; i < 8; i++) spawnSprite('leaf', tx, ty, { orbit: { r: 34, speed: 9 * (i % 2 ? 1 : -1), a0: i * Math.PI / 4, shrink: true }, life: dur + .25, col: '#2a6b38', col2: '#c8f0a0', rot: i, spin: 14, delay: i * .02 }); for (let i = 0; i < 5; i++) spawnSprite('leaf', ax, ay + (vrnd() - .5) * 12, { tx: tx + (vrnd() - .5) * 12, ty: ty + (vrnd() - .5) * 20, life: dur - i * .02, arc: 6 + i * 3, col: '#2a6b38', col2: '#c8f0a0', rot: i, spin: 12, delay: i * .025 }); break;
-    case 'electric': Audio.sfx('elec'); spawnSprite('flash', ax - dir * 10, ay, { size: 10, life: .15, col: '#ffe94a' }); for (let i = 0; i < 3; i++) spawnSprite('bolt', ax + (tx - ax) * (i + 1) / 4, ay - 6, { size: 12, life: .12, col: c1, delay: i * dur / 4 }); spawnSprite('lightning', tx, ty + 30, { size: ty + 30 + 60, life: .32, col: c1, delay: dur * .55 }); spawnSprite('lightning', tx + dir * 6, ty + 30, { size: ty + 30 + 60, life: .22, col: '#fff7b0', delay: dur * .55 + .12 }); break;
-    case 'psychic': Audio.sfx('psy'); for (let i = 0; i < 4; i++) spawnSprite('psy', tx, ty, { size: 16 + i * 6, life: .35, col: c1, col2: c2, delay: dur * .25 + i * .07 }); for (let i = 0; i < 3; i++) spawnSprite('wisp', ax, ay + (i - 1) * 8, { tx, ty: ty + (i - 1) * 6, life: dur, size: 4, col: c1, col2: c2, delay: i * .04 }); spawnSprite('ring', tx, ty, { size: 30, life: .4, col: c2, delay: dur * .3 }); break;
-    default: if (type === 'Normal' || type === 'Steel') { Audio.sfx('beam'); spawnSprite('beam', ax, ay, { len: tx - ax, life: dur + .1, col: TYPE_COL[type], col2: '#ffffff', size: 6 }); spawnSprite('flash', ax, ay, { size: 9, life: .15, col: '#ffffff' }); } else { Audio.sfx('swing'); projectileFX(type, ax, ay, tx, ty, dur); } if (type === 'Ice') for (let i = 0; i < 4; i++) spawnSprite('crystal', tx + (i - 1.5) * 12, d.y, { size: 22 + (i % 2) * 8, life: .55, col: '#bde4f8', col2: '#ffffff', delay: dur * .6 + i * .04 });
+    case 'contact': for (let i = 0; i < 3; i++) spawnSprite('speed', a.x - dir * 20, ay + 6 - i * 6, { size: 30, life: dur + .12, col: '#ffffff', dir, delay: i * .04 }); spawnSprite('poof', a.x - dir * 10, a.y, { size: 6, life: .35, col: '#d8d0b8', col2: '#f4f0e0', vx: -dir * 30 }); break;
+    case 'fire': Audio.sfx('fire'); spawnSprite('fireball', ax, ay, { tx: ex, ty, life: dur, arc: 6, size: type === 'Fire' ? 8 : 7, col: c1, col2: type === 'Fire' ? '#ff4a20' : '#4a3ad0', dir, trail: [c1, c2] }); for (let i = 0; i < 6; i++) spawnSprite('flame', ax, ay + (vrnd() - .5) * 10, { tx: ex + (vrnd() - .5) * 14, ty: ty + (vrnd() - .5) * 18, life: dur - i * .025, arc: 10 + i * 4, col: c1, col2: type === 'Fire' ? '#ff4a20' : '#4a3ad0', size: 2 + (i % 2), delay: .04 + i * .025 }); spawnSprite('flash', ax - dir * 8, ay, { size: 10, life: .14, col: '#ffe9a0' }); break;
+    case 'water': Audio.sfx('water'); for (let i = 0; i < 3; i++) spawnSprite('wave', ax, ay + 10 + i * 6, { tx: ex, ty: ty + 10 + i * 6, life: dur + .08, size: 18 - i * 3, col: c1, col2: c2, dir, delay: i * .05 }); for (let i = 0; i < 10; i++) spawnSprite(type === 'Ice' ? 'shard' : 'drop', ax, ay + (vrnd() - .5) * 10, { tx: ex + (vrnd() - .5) * 10, ty: ty + (vrnd() - .5) * 18, life: dur - i * .02, arc: 8 + i * 2, col: c1, col2: c2, trail: [c1], rot: i, spin: 8, delay: i * .02 }); break;
+    case 'grass': Audio.sfx('grass'); for (let i = 0; i < 10; i++) spawnSprite('leaf', tx, ty, { orbit: { r: 38, speed: 9 * (i % 2 ? 1 : -1), a0: i * Math.PI / 5, shrink: true }, life: dur + .25, col: '#2a6b38', col2: '#c8f0a0', rot: i, spin: 14, delay: i * .02 }); for (let i = 0; i < 6; i++) spawnSprite('leaf', ax, ay + (vrnd() - .5) * 12, { tx: ex + (vrnd() - .5) * 12, ty: ty + (vrnd() - .5) * 20, life: dur - i * .02, arc: 6 + i * 3, col: '#2a6b38', col2: '#c8f0a0', rot: i, spin: 12, delay: i * .025 }); break;
+    case 'electric': Audio.sfx('elec'); spawnSprite('flash', ax - dir * 10, ay, { size: 12, life: .15, col: '#ffe94a' }); for (let i = 0; i < 4; i++) spawnSprite('bolt', ax + (ex - ax) * (i + 1) / 5, ay - 6, { size: 13, life: .12, col: c1, delay: i * dur / 5 }); spawnSprite('lightning', ex, ty + 30, { size: ty + 30 + 60, life: .34, col: c1, delay: dur * .55 }); spawnSprite('lightning', ex + dir * 6, ty + 30, { size: ty + 30 + 60, life: .24, col: '#fff7b0', delay: dur * .55 + .12 }); break;
+    case 'psychic': Audio.sfx('psy'); for (let i = 0; i < 5; i++) spawnSprite('psy', ex, ty, { size: 16 + i * 6, life: .38, col: c1, col2: c2, delay: dur * .2 + i * .06 }); for (let i = 0; i < 4; i++) spawnSprite('wisp', ax, ay + (i - 1.5) * 8, { tx: ex, ty: ty + (i - 1.5) * 6, life: dur, size: 4, col: c1, col2: c2, delay: i * .035 }); spawnSprite('ring', ex, ty, { size: 32, life: .42, col: c2, delay: dur * .3 }); break;
+    default: if (type === 'Normal' || type === 'Steel') { Audio.sfx('beam'); spawnSprite('beam', ax, ay, { len: ex - ax, life: dur + .1, col: TYPE_COL[type], col2: '#ffffff', size: 7 }); spawnSprite('flash', ax, ay, { size: 10, life: .15, col: '#ffffff' }); } else { Audio.sfx('swing'); projectileFX(type, ax, ay, ex, ty, dur); } if (type === 'Ice' && !miss) for (let i = 0; i < 4; i++) spawnSprite('crystal', tx + (i - 1.5) * 12, d.y, { size: 22 + (i % 2) * 8, life: .55, col: '#bde4f8', col2: '#ffffff', delay: dur * .6 + i * .04 });
   }
 }
 // The impact: one large, family-flavoured burst on top of the regular hit effect (field space).
 function duelImpactFx(fam, type, cx, cy, d, e) {
-  const F = fxFor(type), c1 = F.parts[0], c2 = F.parts[1], big = e.crit ? 1.4 : e.eff > 1 ? 1.2 : 1;
+  const F = fxFor(type), c1 = F.parts[0], c2 = F.parts[1], big = e.crit ? 1.5 : e.eff > 1 ? 1.25 : 1;
   switch (fam) {
-    case 'contact': spawnSprite('impact', cx + d.dir * 6, cy, { size: Math.round(20 * big), life: .3, col: TYPE_COL[type] || '#ffd24a', rot: vrnd() * 3 }); spawnSprite('poof', d.x, d.y, { size: 6, life: .4, col: '#d8d0b8', col2: '#f4f0e0', vx: -d.dir * 20 }); break;
-    case 'fire': spawnSprite('blast', cx, cy, { size: Math.round(28 * big), life: .5, col: type === 'Fire' ? '#ff4a20' : '#4a3ad0', col2: c1 }); break;
-    case 'water': spawnSprite('ring', cx, cy + 8, { size: Math.round(30 * big), life: .45, col: c2 }); for (let i = 0; i < 6; i++) spawnSprite('bubble', cx + (vrnd() - .5) * 20, cy + (vrnd() - .5) * 16, { size: 2 + (i % 3), life: .5, col: c2, col2: c1, vy: -20, delay: vrnd() * .1 }); break;
-    case 'electric': spawnSprite('ring', cx, cy, { size: Math.round(26 * big), life: .35, col: c1 }); break;
-    case 'grass': spawnSprite('ring', cx, cy, { size: Math.round(24 * big), life: .35, col: '#c8f0a0' }); break;
-    case 'psychic': spawnSprite('ring', cx, cy, { size: Math.round(36 * big), life: .5, col: c1 }); break;
-    default: spawnSprite('impact', cx, cy, { size: Math.round(16 * big), life: .28, col: TYPE_COL[type] || '#ffffff', rot: vrnd() * 3 });
+    case 'contact': spawnSprite('impact', cx + d.dir * 6, cy, { size: Math.round(22 * big), life: .32, col: TYPE_COL[type] || '#ffd24a', rot: vrnd() * 3 }); spawnSprite('impact', cx + d.dir * 6, cy, { size: Math.round(12 * big), life: .22, col: '#ffffff', rot: vrnd() * 3, delay: .02 }); break;
+    case 'fire': spawnSprite('blast', cx, cy, { size: Math.round(30 * big), life: .55, col: type === 'Fire' ? '#ff4a20' : '#4a3ad0', col2: c1 }); break;
+    case 'water': spawnSprite('ring', cx, cy + 8, { size: Math.round(32 * big), life: .45, col: c2 }); for (let i = 0; i < 8; i++) spawnSprite('bubble', cx + (vrnd() - .5) * 22, cy + (vrnd() - .5) * 16, { size: 2 + (i % 3), life: .5, col: c2, col2: c1, vy: -20, delay: vrnd() * .1 }); break;
+    case 'electric': spawnSprite('ring', cx, cy, { size: Math.round(28 * big), life: .35, col: c1 }); for (let i = 0; i < 4; i++) spawnSprite('bolt', cx + (vrnd() - .5) * 30, cy + (vrnd() - .5) * 20, { size: 10, life: .2, col: c1, delay: i * .04 }); break;
+    case 'grass': spawnSprite('ring', cx, cy, { size: Math.round(26 * big), life: .35, col: '#c8f0a0' }); break;
+    case 'psychic': spawnSprite('ring', cx, cy, { size: Math.round(38 * big), life: .5, col: c1 }); spawnSprite('ring', cx, cy, { size: Math.round(24 * big), life: .4, col: c2, delay: .06 }); break;
+    default: spawnSprite('impact', cx, cy, { size: Math.round(18 * big), life: .3, col: TYPE_COL[type] || '#ffffff', rot: vrnd() * 3 });
   }
-  if (e.eff > 1) spawnSprite('ring', cx, cy, { size: Math.round(40 * big), life: .5, col: '#ffd24a', delay: .06 });
+  if (e.eff > 1) spawnSprite('ring', cx, cy, { size: Math.round(44 * big), life: .5, col: '#ffd24a', delay: .06 });
+  spawnParts(cx, cy, e.crit ? 26 : 14, [TYPE_COL[type] || '#ffffff', c1, c2, '#ffffff'], { speed: e.crit ? 150 : 100, life: .6, grav: 120 });
 }
 
 // ---------------------------------------------------------------- layout & drawing
@@ -220,42 +274,83 @@ function duelDiorama(q, u, L) {
   hline(0, gy - 40, W, '#ffffff40'); rect(0, gy, W, 5, shade('#4a3a28', -.1)); rect(0, gy + 5, W, 3, '#1c1410'); ctx.globalAlpha = .55; rect(0, gy + 8, W, H - gy - 8, '#0b1020'); ctx.globalAlpha = 1;
   ctx.globalAlpha = .35; hline(0, gy - 1, W, '#ffffff'); ctx.globalAlpha = 1;
 }
-function duelDrawUnit(q, u, L, t) {
+// One combatant: pose (wind-up with its aura, lunge with after-images, cast), the hit reaction, a dodge, the faint (blink,
+// then sink into the ground) and the victory hop. `sil` draws it as a flat silhouette for the impact frame.
+function duelDrawUnit(q, u, L, t, sil = null) {
   const f = L.f, p = f.pos[u.id], v = q.view[u.id]; let dx = 0, dy = 0, sx = 1, sy = 1, tint = null, alpha = 1, breath = 0, speed = 1; const flip = p.dir === 1; const soft = REDUCED ? .3 : 1;
-  const pose = q.pose && q.pose.unit === u ? q.pose : null; const ghosts = [];
+  const pose = q.pose && q.pose.unit === u ? q.pose : null; const ghosts = []; let aura = 0;
   if (pose) {
     const k = t - pose.t0;
-    if (pose.kind === 'windup') { const e = Math.min(1, k / DUEL_T.windup); dx = -p.dir * 6 * easeOut(e) * soft; speed = 2.4; if (pose.fam === 'contact') { sy = 1 - .08 * e; sx = 1 + .06 * e; } else { sy = 1 + .05 * e; sx = 1 - .03 * e; } if (Math.floor(k * 20) % 2 === 0 && e < .8) tint = shade(TYPE_COL[q.banner ? q.banner.move.type : 'Normal'] || '#ffffff', .3); }
-    else if (pose.kind === 'lunge') { const e = Math.min(1, k / pose.dur); const reach = f.stacked ? 26 : 44; if (e < 1) { dx = p.dir * lerp(-6, reach, easeIn(e)) * soft; sx = 1.08; sy = .95; speed = 2; if (e > .3) ghosts.push([dx - p.dir * 8, .3], [dx - p.dir * 16, .15]); } else dx = p.dir * lerp(reach, 0, easeOut(Math.min(1, (k - pose.dur) / .35))) * soft; }
-    else if (pose.kind === 'cast') { const e = Math.min(1, k / pose.dur); dx = p.dir * (e < 1 ? lerp(-6, 8, e) : lerp(8, 0, Math.min(1, (k - pose.dur) / .3))) * soft; if (e < 1) { sy = 1.04; speed = 2; } }
+    if (pose.kind === 'windup') { const e = Math.min(1, k / DUEL_T.windup); dx = -p.dir * 7 * easeOut(e) * soft; speed = 2.6; aura = e; if (pose.fam === 'contact') { sy = 1 - .1 * e; sx = 1 + .08 * e; } else { sy = 1 + .06 * e; sx = 1 - .04 * e; } if (Math.floor(k * 20) % 2 === 0 && e < .85) tint = shade(TYPE_COL[q.banner ? q.banner.move.type : 'Normal'] || '#ffffff', .3); }
+    else if (pose.kind === 'lunge') { const e = Math.min(1, k / pose.dur); const reach = f.stacked ? 28 : 48; if (e < 1) { dx = p.dir * lerp(-7, reach, easeIn(e)) * soft; sx = 1.1; sy = .94; speed = 2; if (e > .2) ghosts.push([dx - p.dir * 8, .35], [dx - p.dir * 17, .2], [dx - p.dir * 27, .1]); } else dx = p.dir * lerp(reach, 0, easeOut(Math.min(1, (k - pose.dur) / .35))) * soft; }
+    else if (pose.kind === 'cast') { const e = Math.min(1, k / pose.dur); dx = p.dir * (e < 1 ? lerp(-7, 9, e) : lerp(9, 0, Math.min(1, (k - pose.dur) / .3))) * soft; if (e < 1) { sy = 1.05; sx = .97; speed = 2; } }
   }
   const hit = q.hitFx && q.hitFx.unit === u ? t - q.hitFx.t0 : -1;
-  if (hit >= 0 && hit < .3) { dx += -p.dir * 10 * (1 - hit / .3) * soft; if (hit < .14 && Math.floor(hit * 30) % 2 === 0) tint = '#ffffff'; speed = 0; }
+  if (hit >= 0 && hit < .34) { const kb = q.hitFx.crit ? 18 : q.hitFx.lethal ? 16 : 11; dx += -p.dir * kb * (1 - easeOut(hit / .34)) * soft; if (hit < .16 && Math.floor(hit * 30) % 2 === 0) tint = '#ffffff'; speed = 0; sx *= 1 + (1 - hit / .34) * .06; sy *= 1 - (1 - hit / .34) * .05; }
   const miss = q.missFx && q.missFx.unit === u ? t - q.missFx.t0 : -1;
-  if (miss >= 0 && miss < .4) { const h = Math.sin(miss / .4 * Math.PI); dx += -p.dir * 14 * h * soft; dy -= 10 * h * soft; }
+  if (miss >= 0 && miss < .42) { const h = Math.sin(miss / .42 * Math.PI); dx += -p.dir * 16 * h * soft; dy -= 12 * h * soft; if (h > .2) ghosts.push([dx + p.dir * 8, .25], [dx + p.dir * 15, .12]); }
   const ko = q.koFx && q.koFx.unit === u ? t - q.koFx.t0 : -1;
-  if (ko >= .28) return; // gone in the blast
-  if (ko >= 0) { tint = Math.floor(ko * 30) % 2 ? '#ffffff' : null; sx = 1 + ko * .3; sy = 1 - ko * .2; }
-  const idle = !pose && hit < 0 && ko < 0;
+  let sink = 0; if (ko >= 0) { if (ko < .34) { tint = Math.floor(ko * 24) % 2 ? '#ffffff' : null; dx += Math.round(Math.sin(ko * 70) * 2) * soft; speed = 0; } else { const e = Math.min(1, (ko - .34) / .42); sink = Math.round(easeIn(e) * 90); speed = 0; if (e >= 1) return; } }
+  const vic = q.victor && q.victor.unit === u ? t - q.victor.t0 : -1;
+  if (vic >= 0 && vic < .7 && !REDUCED) { const h = Math.abs(Math.sin(vic / .35 * Math.PI)); dy -= Math.round(h * 10); sy *= 1 + h * .05; sx *= 1 - h * .04; }
+  const idle = !pose && hit < 0 && ko < 0 && vic < 0;
   if (!REDUCED && idle) { if (v.fly) dy -= 3 + Math.round(Math.sin(BT.time * 3 + u.id) * 3); else breath = Math.sin(BT.time * 2.2 + u.id) > 0 ? 1 : 0; }
-  const shadowW = Math.round(28 * sx * (1 - Math.max(0, -dy) / 40)); ctx.globalAlpha = .32 * alpha * (v.fly ? .7 : 1); ellipse(Math.round(p.x + dx), p.y + 1, Math.max(6, shadowW), 5, '#000000'); ctx.globalAlpha = 1;
+  if (!sil) { const shadowW = Math.round(28 * sx * (1 - Math.max(0, -dy) / 40) * (1 - sink / 90)); ctx.globalAlpha = .32 * alpha * (v.fly ? .7 : 1); ellipse(Math.round(p.x + dx), p.y + 1, Math.max(4, shadowW), 5, '#000000'); ctx.globalAlpha = 1; }
+  // the charge aura: a pulsing disc of the move's colour behind a winding-up Pokémon
+  if (aura > 0 && !sil && !REDUCED) { const col = TYPE_COL[q.banner ? q.banner.move.type : 'Normal'] || '#ffffff', r = Math.round(18 + aura * 14 + Math.sin(t * 40) * 2); ctx.globalAlpha = .22 * aura; circle(Math.round(p.x + dx), p.y - 36, r, col); ctx.globalAlpha = .35 * aura; circle(Math.round(p.x + dx), p.y - 36, Math.round(r * .55), shade(col, .5)); ctx.globalAlpha = 1; }
   const num = v.num, kind = q.big ? q.big[u.id] : duelSpriteKind(num); const at = BT.time * (speed || 1e-6);
-  const draw = (x, o) => { if (kind === 'anim') drawAnim(num, x, p.y + dy, at, o); else if (kind === 'big') drawBig(num, x, p.y + dy, Object.assign({ breath }, o)); else drawMon(num, x, p.y + dy, Object.assign({}, o, { sx: 2 * (o.sx || 1), sy: 2 * (o.sy || 1) })); };
-  for (const [gx, ga] of ghosts) draw(p.x + gx, { flip, tint: '#ffffff', alpha: ga * alpha, sx, sy });
-  draw(p.x + dx, { flip, tint, alpha, sx, sy });
+  const draw = (x, o) => { if (kind === 'anim') drawAnim(num, x, p.y + dy + sink, at, o); else if (kind === 'big') drawBig(num, x, p.y + dy + sink, Object.assign({ breath }, o)); else drawMon(num, x, p.y + dy + sink, Object.assign({}, o, { sx: 2 * (o.sx || 1), sy: 2 * (o.sy || 1) })); };
+  if (sink > 0) { ctx.save(); ctx.beginPath(); ctx.rect(-60, -60, f.Wf + 120, p.y + 64); ctx.clip(); }
+  if (!sil) for (const [gx, ga] of ghosts) draw(p.x + gx, { flip, tint: '#ffffff', alpha: ga * alpha, sx, sy });
+  draw(p.x + dx, { flip, tint: sil || tint, alpha, sx, sy });
+  if (sink > 0) ctx.restore();
 }
-// Header panel: portrait, name and level, HP counter and bar, tags and types, terrain defence as stars.
+// Header panel: portrait, name and level, HP counter and bar (with the ghost of the HP just lost draining after it),
+// tags and types, terrain defence as stars. A hit shakes the panel of the Pokémon that took it.
 function duelPanel(q, u, L, dy) {
-  const f = L.f, P = f.panels[u.id], v = q.view[u.id], hp = duelHpAt(q.script, q.t, u.id), t = q.terr[u.id], col = teamColor(u.team), ko = q.koFx && q.koFx.unit === u && q.t - q.koFx.t0 > .3;
-  const y0 = P.y + dy; panel(P.x, y0, P.w, P.h, { border: col, fill: ko ? '#1a1a22' : (u.team === 0 ? '#182440' : u.team === 1 ? '#2a1a22' : UI.panel) });
-  const x = P.x + 6, y = y0 + 5;
+  const f = L.f, P = f.panels[u.id], v = q.view[u.id], hp = duelHpAt(q.script, q.t, u.id), ghost = Math.max(hp, duelHpAt(q.script, q.t - .5, u.id)), t = q.terr[u.id], col = teamColor(u.team), ko = q.koFx && q.koFx.unit === u && q.t - q.koFx.t0 > .3;
+  const sh = q.shakePanel[u.id] != null && !REDUCED ? q.t - q.shakePanel[u.id] : 9, jx = sh < .3 ? Math.round(Math.sin(sh * 70) * 3 * (1 - sh / .3)) : 0, jy = sh < .3 ? Math.round(Math.cos(sh * 50) * 2 * (1 - sh / .3)) : 0;
+  const x0 = P.x + jx, y0 = P.y + dy + jy; panel(x0, y0, P.w, P.h, { border: col, fill: ko ? '#1a1a22' : (u.team === 0 ? '#182440' : u.team === 1 ? '#2a1a22' : UI.panel) });
+  const x = x0 + 6, y = y0 + 5;
   ctx.save(); ctx.beginPath(); ctx.rect(x, y, 26, 24); ctx.clip(); portraitBg(x, y, 26, 24, u.team); ctx.drawImage(monIcon(v.num, u.team !== 0), x + 1, y + 4, 24, 18); ctx.restore(); teamGlyph(x + 2, y + 2, u.team, teamColorL(u.team));
   const tx = x + 31; let name = v.name; while (textWidth(name) > P.w - 76 && name.length > 3) name = name.slice(0, -1);
-  text(name, tx, y, ko ? UI.dim : UI.ink); textR('Lv' + v.level, P.x + P.w - 6, y, ko ? UI.dim : UI.gold);
-  const ratio = clamp(hp / v.maxHp, 0, 1); const hs = String(Math.max(0, hp)), hw = textWidth(hs, BIG) + textWidth('/' + v.maxHp) + 3;
-  bar(tx, y + 11, P.w - 37 - hw - 6, 6, ratio, hpColor(ratio), UI.hpBack, { notch: true }); bigText(hs, P.x + P.w - 6 - hw, y + 9, hp <= 0 ? UI.red : UI.ink, { outline: '#000' }); textR('/' + v.maxHp, P.x + P.w - 6, y + 11, UI.muted);
+  text(name, tx, y, ko ? UI.dim : UI.ink); textR('Lv' + v.level, x0 + P.w - 6, y, ko ? UI.dim : UI.gold);
+  const ratio = clamp(hp / v.maxHp, 0, 1), gRatio = clamp(ghost / v.maxHp, 0, 1); const hs = String(Math.max(0, hp)), hw = textWidth(hs, BIG) + textWidth('/' + v.maxHp) + 3, bw = P.w - 37 - hw - 6;
+  bar(tx, y + 11, bw, 6, ratio, hpColor(ratio), UI.hpBack, { notch: true });
+  if (gRatio > ratio) { const fx0 = tx + 1 + Math.round(ratio * (bw - 2)), gw = Math.round(gRatio * (bw - 2)) - Math.round(ratio * (bw - 2)); rect(fx0, y + 12, gw, 4, sh < .12 ? '#ffffff' : '#ff9a8a'); hline(fx0, y + 12, gw, '#ffd8d0'); }
+  const dropping = hp < ghost; bigText(hs, x0 + P.w - 6 - hw, y + 9 + (dropping && !REDUCED ? Math.round(Math.sin(q.t * 40)) : 0), hp <= 0 ? UI.red : dropping ? '#ffb0a0' : UI.ink, { outline: '#000' }); textR('/' + v.maxHp, x0 + P.w - 6, y + 11, UI.muted);
   let bx = tx; bx += tagBadge(duelTeamTag(u), col, bx, y + 20) + 3; v.types.forEach((tp, i) => { typeBadge(tp, bx, y + 19, 24); bx += 26; }); if (v.status) { statusBadge(v.status, bx, y + 20); bx += 17; } if (v.brace) { miniBadge('BRC', BRACE_COL, bx, y + 20); bx += 17; } else if (v.root) { miniBadge('RT', ROOT_COL, bx, y + 20); bx += 17; }
-  const stars = Math.min(4, Math.round(terrainDef(t, u) / 10)); const ds = 'DEF ' + '★'.repeat(stars) + (stars ? '' : '-'); textR(ds, P.x + P.w - 6, y + 20, stars ? UI.gold : UI.dim);
+  const stars = Math.min(4, Math.round(terrainDef(t, u) / 10)); const ds = 'DEF ' + '★'.repeat(stars) + (stars ? '' : '-'); textR(ds, x0 + P.w - 6, y + 20, stars ? UI.gold : UI.dim);
+}
+// Manga focus lines: thin rays from beyond the screen edges toward the point, re-rolled a few times a second.
+function duelFocusLines(q, W, H, t) {
+  const Fl = q.lines; if (!Fl || t > Fl.until) return; const k = t < Fl.t0 + .08 ? (t - Fl.t0) / .08 : Math.min(1, (Fl.until - t) / .2); if (k <= 0) return;
+  const R = mulberry32(Math.floor(t * 18) * 131 + 7), outer = Math.hypot(W, H), n = 34;
+  ctx.globalAlpha = .55 * k; for (let i = 0; i < n; i++) { const a = (i + R() * .8) / n * Math.PI * 2, r1 = outer * (.34 + R() * .22), w = R() < .25 ? 2 : 1; pline(Fl.x + Math.cos(a) * outer, Fl.y + Math.sin(a) * outer * .7, Fl.x + Math.cos(a) * r1, Fl.y + Math.sin(a) * r1 * .7, Fl.col, w); } ctx.globalAlpha = 1;
+}
+// A starburst of rays (for the impact frame): crisp lines from the centre out.
+function duelStar(x, y, r, col) { for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2, rr = i % 2 ? r : r * .55; pline(x, y, x + Math.cos(a) * rr, y + Math.sin(a) * rr, col, 3); } circle(Math.round(x), Math.round(y), Math.round(r * .22), col); }
+// The KO stamp, in screen space over the fallen Pokémon's half (never under a panel or the banner): it slams in two
+// sizes too big, lands on a dark plaque with a shockwave, holds, then fades before the outro.
+function duelStamp(q, L, t) {
+  const s = q.stamp; if (!s) return; const k = t - s.t0; if (k < 0 || k > s.dur) return;
+  const f = L.f, W = f.Wf, p = f.pos[s.unit.id], sc = W >= 300 ? 3 : 2, tw = textWidth(s.text.toUpperCase(), BIG) * sc, th = 9 * sc;
+  const x = Math.round(clamp(p.x, tw / 2 + 10, W - tw / 2 - 10)), y = Math.round(clamp(p.y - 58, f.top + th / 2 + 8, p.y - 24));
+  const a = k > s.dur - .2 ? Math.max(0, (s.dur - k) / .2) : 1, land = REDUCED ? 1 : Math.min(1, k / .07);
+  const pw = Math.round((tw + 26) * (REDUCED ? 1 : easeOut(Math.min(1, k / .12)))), ph = th + 10;
+  ctx.globalAlpha = .72 * a; rect(x - (pw >> 1), y - (ph >> 1), pw, ph, '#070a14'); ctx.globalAlpha = a;
+  if (pw > 4) { hline(x - (pw >> 1), y - (ph >> 1), pw, s.col); hline(x - (pw >> 1), y + (ph >> 1) - 1, pw, s.col); hline(x - (pw >> 1) + 2, y - (ph >> 1) + 2, pw - 4, shade(s.col, -.45)); hline(x - (pw >> 1) + 2, y + (ph >> 1) - 3, pw - 4, shade(s.col, -.45)); }
+  const rk = (k - .06) / .3; if (!REDUCED && rk > 0 && rk < 1) { ctx.globalAlpha = a * (1 - rk); ellipseRing(x, y, Math.round(tw / 2 + 8 + rk * 34), Math.round(ph / 2 + 2 + rk * 14), 2, s.col); ctx.globalAlpha = a; }
+  const s2 = sc + (land < .5 ? 2 : land < 1 ? 1 : 0), wob = REDUCED ? 0 : Math.round(Math.sin(k * 60) * 3 * Math.max(0, 1 - (k - .07) / .2) * (k > .07 ? 1 : 0));
+  ctx.save(); ctx.translate(x + wob, y); ctx.scale(s2, s2); bigC(s.text, 0, -4.5, land < 1 ? '#ffffff' : s.col, { outline: s.ink }); ctx.restore();
+  // a glint crosses the letters once they land
+  const gx = (k - .2) / .3; if (!REDUCED && gx > 0 && gx < 1) { ctx.save(); ctx.beginPath(); ctx.rect(x - tw / 2, y - th / 2, tw, th); ctx.clip(); ctx.globalAlpha = .55 * a; const sx = Math.round(x - tw / 2 - 8 + (tw + 16) * gx); for (let i = 0; i < th; i++) rect(sx - Math.round(i / 2), y - th / 2 + i, 4, 1, '#ffffff'); ctx.restore(); }
+  ctx.globalAlpha = 1;
+}
+// Back on the board: a puff where each fainted Pokémon stood, so the map shows where the scene's KO happened.
+function duelAftermath(q) {
+  if (REDUCED) return;
+  for (const e of q.events) if (e.type === 'ko') { const x = e.unit.x * TILE + TILE / 2, y = e.unit.y * TILE + TILE - 6; for (let i = 0; i < 5; i++) spawnSprite('poof', x + (i - 2) * 6, y - 2, { size: 5, life: .55, col: '#e8e0d0', col2: '#ffffff', vy: -14, vx: (i - 2) * 10, delay: .1 + i * .03 }); spawnParts(x, y - 8, 12, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 60, life: .6, grav: 60, delay: .1 }); }
 }
 function drawDuel(q) {
   const L = duelLayout(q), f = L.f, t = q.t, W = f.Wf, H = f.Hf, z = L.z, S = q.script, outAt = S.total - S.outro;
@@ -271,27 +366,45 @@ function drawDuel(q) {
   }
   // the split line
   { const [a, b] = f.split; pline(a[0] + 1, a[1], b[0] + 1, b[1], '#ffffff60', 2); pline(a[0], a[1], b[0], b[1], '#070a14', 3); }
-  if (q.focus && !REDUCED) { const fo = q.focus, kf = t < fo.t0 + .15 ? (t - fo.t0) / .15 : t > fo.until - .25 ? Math.max(0, (fo.until - t) / .25) : 1; if (kf > 0) { ctx.globalAlpha = .3 * kf; rect(-40, -40, W + 80, H + 80, '#050815'); ctx.globalAlpha = 1; } }
+  if (q.focus && !REDUCED) { const fo = q.focus, kf = t < fo.t0 + .15 ? (t - fo.t0) / .15 : t > fo.until - .25 ? Math.max(0, (fo.until - t) / .25) : 1; if (kf > 0) { ctx.globalAlpha = .34 * kf; rect(-40, -40, W + 80, H + 80, '#050815'); ctx.globalAlpha = 1; } }
+  duelFocusLines(q, W, H, t);
   const order = [q.sides.right, q.sides.left]; if (q.pose && q.pose.unit === q.sides.right) order.reverse();
   for (const u of order) { const e = f.entry[u.id], off = (1 - k) * (e[0] ? W * .6 : H * .5); ctx.save(); ctx.translate(e[0] * off, e[1] * off); duelDrawUnit(q, u, L, t); ctx.restore(); }
-  drawFX(0, 0, false); drawFXTexts(0, 0); ctx.restore();
+  drawFX(0, 0, false);
+  // the impact frame: for a few frames the field turns bright and both fighters become flat ink silhouettes
+  if (q.flash && t - q.flash.t0 < q.flash.dur) { rect(-60, -60, W + 120, H + 120, q.flash.col); for (const u of order) duelDrawUnit(q, u, L, t, '#0c0a1c'); duelStar(q.flash.x, q.flash.y, 26, '#0c0a1c'); }
+  drawFXTexts(0, 0); ctx.restore();
   if (FX.flash > 0) { ctx.globalAlpha = FX.flash * .7; rect(0, 0, W, H, FX.flashCol); ctx.globalAlpha = 1; }
   for (const u of [q.sides.left, q.sides.right]) { const P = f.panels[u.id]; const fromTop = P.y < H / 2; duelPanel(q, u, L, Math.round((1 - k) * (fromTop ? -(P.h + 8) : P.h + 8))); }
+  duelStamp(q, L, t);
+  // VS: slams onto the split as the two halves meet, then fades
+  if (!REDUCED && t > .28 && t < .82) { const kv = t - .28, [a, b] = f.split, vx = Math.round((a[0] + b[0]) / 2), vy = Math.round((f.pos[q.sides.left.id].y + f.pos[q.sides.right.id].y) / 2 - 60), s2 = (W >= 300 ? 3 : 2) + (kv < .06 ? 2 : kv < .12 ? 1 : 0); ctx.globalAlpha = kv > .42 ? Math.max(0, 1 - (kv - .42) / .12) : 1; if (kv < .1) { ctx.globalAlpha *= .5; circle(vx, vy, 30 - Math.round(kv * 100), '#ffffff'); ctx.globalAlpha = kv > .42 ? Math.max(0, 1 - (kv - .42) / .12) : 1; } ctx.save(); ctx.translate(vx, vy); ctx.scale(s2, s2); bigC('VS', 0, -4.5, UI.gold, { outline: UI.goldDark }); ctx.restore(); ctx.globalAlpha = 1; }
   const b = q.banner;
   if (b && t < b.until) {
-    const kb = Math.min(1, (t - b.t0) / .12), name = b.move.name.toUpperCase(), col = TYPE_COL[b.move.type] || UI.ink; const w = textWidth(name, BIG) + 44, x = Math.round(W / 2 - w / 2), y = Math.round(f.bannerY - (1 - easeOut(kb)) * 6);
+    const kb = Math.min(1, (t - b.t0) / .12), name = b.move.name.toUpperCase(), col = TYPE_COL[b.move.type] || UI.ink; const w = textWidth(name, BIG) + 44, x = Math.round(W / 2 - w / 2), y = Math.round(f.bannerY - (1 - easeOutBack(kb, 2)) * 10);
     rrect(x + 1, y + 2, w, 17, UI.shadow, 2); rrect(x, y, w, 17, UI.inset, 2); rrect(x + 1, y + 1, w - 2, 15, '#101a30', 1); hline(x + 2, y + 1, w - 4, shade(col, -.2)); hline(x + 2, y + 15, w - 4, shade(col, -.5)); rect(x + 1, y + 2, 2, 13, col);
     typeBadge(b.move.type, x + 7, y + 4, 24); bigText(name, x + 35, y + 4, col, { outline: '#000' });
-    if (b.counter) { const cw = textWidth('COUNTER!') + 10; rrect(Math.round(W / 2 - cw / 2), y - 11, cw, 10, UI.red, 1); textC('COUNTER!', W / 2, y - 10, '#ffffff'); }
+    // a shine sweeps across the banner as it lands
+    const sw = (t - b.t0 - .05) / .35; if (!REDUCED && sw > 0 && sw < 1) { ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2, w - 4, 13); ctx.clip(); ctx.globalAlpha = .45; const sx = x + Math.round((w + 10) * sw) - 6; rect(sx, y + 2, 3, 13, '#ffffff'); rect(sx + 5, y + 2, 1, 13, '#ffffff'); ctx.restore(); ctx.globalAlpha = 1; }
+    const tag = b.counter ? 'COUNTER!' : b.follow ? 'FOLLOW-UP!' : null; if (tag) { const cw = textWidth(tag) + 10, tb = Math.min(1, (t - b.t0) / .1), ty = y - 11 - Math.round((1 - easeOutBack(tb, 3)) * 6); rrect(Math.round(W / 2 - cw / 2), ty, cw, 10, b.counter ? UI.red : '#d8991f', 1); textC(tag, W / 2, ty + 1, '#ffffff'); }
   }
   if (k >= .99) hintLine(q.boost ? (VIEW.touch ? ['tap again: skip'] : [['X', 'skip']]) : (VIEW.touch ? ['tap: faster', 'tap twice: skip'] : [['any key', 'faster'], ['X', 'skip']]), W / 2, f.hintY);
   ctx.restore();
 }
-// The whole frame: a short dip to black from the board, the scene (its dioramas slide in and out), and back.
-function drawDuelFrame(q) {
-  const S = q.script, W = VIEW.w, H = VIEW.h, t = q.t, outAt = S.total - S.outro, dip = .1;
-  const kIn = t < dip ? t / dip : 1, kOut = t >= S.total - dip ? (S.total - t) / dip : 1; const k = Math.min(kIn, kOut);
-  if (k >= 1) { drawDuel(q); return; }
-  drawBoard();
-  ctx.globalAlpha = clamp(k, 0, 1); rect(0, 0, W, H, '#070a14'); ctx.globalAlpha = 1;
+// Battle-transition stripes (Pokémon style): bands slide in from alternating sides to cover the screen (k 0 → 1).
+function duelStripes(k, W, H) {
+  const n = 10, bh = Math.ceil(H / n);
+  for (let i = 0; i < n; i++) { const w = Math.round(W * clamp(k * 1.5 - i * .05, 0, 1)); if (w <= 0) continue; const y = i * bh, x = i % 2 ? W - w : 0; rect(x, y, w, bh, '#070a14'); rect(i % 2 ? x : x + w - 2, y, 2, bh, '#3a3a64'); }
 }
+// Where the board meets the scene: the stripes close over the board, the scene plays, and after it the stripes open
+// again over the board (drawn by the board through DUEL_WIPE).
+const DUEL_WIPE = { t0: -9 };
+function drawDuelFrame(q) {
+  const S = q.script, W = VIEW.w, H = VIEW.h, t = q.t, dip = .14;
+  if (t < dip && !REDUCED) { drawBoard(); duelStripes(t / dip, W, H); return; }
+  drawDuel(q);
+  if (t < dip + .14 && !REDUCED) duelStripes(1 - (t - dip) / .14, W, H);
+  if (t > S.total - .12 && !REDUCED) duelStripes((t - (S.total - .12)) / .12, W, H);
+}
+// Called by the board after a duel: the stripes open over the map again.
+function drawDuelWipeOut() { const k = (BT.time - DUEL_WIPE.t0) / .16; if (k < 0 || k >= 1 || REDUCED) return; duelStripes(1 - k, VIEW.w, VIEW.h); }

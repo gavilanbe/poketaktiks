@@ -188,8 +188,12 @@ async function main() {
       await nav('ch=1&silent&nosave&seed=3'); await waitMode('idle', 6000); await ev("setPref('battle','full')");
       await ev('(function(){const c=__pk.B.units.find(u=>u.name==="Charmander"); c.x=7; c.y=3; __pk.BT.cx=7; __pk.BT.cy=3;})()');
       if (process.env.PK_KO) await ev('__pk.B.units.find(u=>u.x===8&&u.y===3).hp=1');
-      await tapTile(7, 3); await waitMode('move', 3000); await tapTile(8, 3); await waitMode('target', 3000); await key('z', 'KeyZ');
-      const t0 = Date.now(); let i = 0; while (Date.now() - t0 < 4200) { await shot((mobile ? 'duelm-' : 'duel-') + String(i).padStart(2, '0')); i++; await sleep(60); }
+      await tapTile(7, 3); await waitMode('move', 3000); await tapTile(8, 3); await waitMode('target', 3000);
+      // zoomed-out phones can miss the tap on the foe: stay put, then Attack from the action menu
+      if (await ev('__pk.BT.mode') === 'move') { await key('z', 'KeyZ'); await waitMode('menu', 3000); }
+      if (await ev('__pk.BT.mode') === 'menu') { await key('z', 'KeyZ'); await waitMode('target', 3000); }
+      await key('z', 'KeyZ');
+      const t0 = Date.now(); let i = 0; while (Date.now() - t0 < +(process.env.PK_DUEL_MS || 5600)) { await shot((mobile ? 'duelm-' : 'duel-') + (process.env.PK_KO ? 'ko-' : '') + String(i).padStart(2, '0')); i++; await sleep(40); }
       out.push('mode after: ' + await ev('__pk.BT.mode'));
     }
     if (script === 'vs' || script === 'vs-m') {

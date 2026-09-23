@@ -63,3 +63,7 @@ Done (2026-09-23):
   coach marks, a boss-battle cut-in, indoor moods (embers, dust, sparks) and outdoor cloud shadows,
   an animated power menu, Conquest HUD and results, Skirmish setup, story portraits, an ending
   over the title landscape, a route theme.
+- Attack pass: aim line, lock-on ring and damage bubble on the board; the duel scene gets stripe
+  transitions, a VS slam, charge-ups, impact frames with focus lines, huge damage numbers, ghost HP,
+  status effects on the hit, a K.O. stamp in screen space, the faint into the ground and a victory
+  hop; map strikes share the numbers, impact stars and KO stamp; float texts stay on screen.

@@ -142,7 +142,7 @@ function setupEvent(q) {
   switch (e.type) {
     case 'bossAlert': q.dur = REDUCED || BT.fast ? .8 : 1.7; Audio.sfx('boss'); Audio.playMusic('boss'); if (!REDUCED) { flashScreen('#ff3040', .3); shake(5); } break;
     case 'power': q.dur = REDUCED || BT.fast ? .7 : 1.65; Audio.sfx(e.superPower ? 'evolve' : 'phase'); if (!REDUCED) flashScreen(CAPTAINS[e.root].col, .22); break;
-    case 'ko': q.dur = BT.fast ? .45 : .8; Audio.sfx('ko'); shake(4); spawnParts(ux(e.unit), uy(e.unit) + 8, 18, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 90, life: .7, grav: 60 }); noteKo(e); floatText(ux(e.unit), uy(e.unit) - 14, e.unit.team === 0 ? 'FAINTED!' : 'KO!', e.unit.team === 0 ? UI.red : UI.gold, { big: true, life: 1.3 }); break;
+    case 'ko': q.dur = BT.fast ? .45 : .8; Audio.sfx('ko'); shake(4); spawnParts(ux(e.unit), uy(e.unit) + 8, 18, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 90, life: .7, grav: 60 }); noteKo(e); fadeFloatTexts(.12); floatText(ux(e.unit), uy(e.unit) - 14, e.unit.team === 0 ? 'FAINTED!' : 'KO!', e.unit.team === 0 ? UI.red : UI.gold, { huge: 2, life: 1.3, vy: -14, outline: e.unit.team === 0 ? '#2a0008' : '#3a2000' }); break;
     case 'xp': q.dur = BT.fast ? .35 : .6; q.from = e.unit.xp - e.amount; break;
     case 'levelup': q.dur = BT.fast ? .8 : 1.6; Audio.sfx('levelup'); spawnParts(ux(e.unit), uy(e.unit), 24, ['#ffd24a', '#ffffff', '#5ee06a'], { speed: 70, life: .9, grav: -30, shape: 'ring' }); break;
     case 'evolve': q.dur = BT.fast ? 1.4 : 3.2; Audio.sfx('evolve'); requestBigSprite(e.to.num); break;
@@ -205,12 +205,15 @@ function spawnProjectile(A, D, move) { const ax = A.x * TILE + TILE / 2, ay = A.
 function impact(q) {
   const A = q.att, D = q.def, e = q.ev; const cx = D.x * TILE + TILE / 2, cy = D.y * TILE + 10; const col = TYPE_COL[q.move.type];
   if (e.type === 'miss') { Audio.sfx('miss'); floatText(cx, cy - 10, 'MISS', '#c0c0c0', { big: true }); D.fx.dx = (D.x - A.x) * 6; D.fx.dodge = .25; return; }
-  D.fx.flash = 1; D.fx.dx = Math.sign(D.x - A.x) * 5; D.fx.dy = Math.sign(D.y - A.y) * 5 - 2; D.fx.hit = .3;
-  Audio.sfx(e.crit ? 'crit' : e.eff > 1 ? 'hit2' : 'hit'); shake(e.crit ? 7 : e.eff > 1 ? 5 : 3); if (!BT.fast) FX.hitstop = e.crit ? .12 : .05;
+  const kb = e.crit ? 8 : e.eff > 1 ? 6 : 5; D.fx.flash = 1; D.fx.dx = Math.sign(D.x - A.x) * kb; D.fx.dy = Math.sign(D.y - A.y) * kb - 2; D.fx.hit = .3; D.fx.sx = 1.18; D.fx.sy = .84;
+  Audio.sfx(e.crit ? 'crit' : e.eff > 1 ? 'hit2' : 'hit'); if (e.crit || e.hpAfter <= 0) Audio.sfx('thud'); shake(e.crit ? 7 : e.eff > 1 ? 5 : 3); if (!BT.fast) FX.hitstop = e.crit ? .12 : e.eff > 1 ? .07 : .05;
   hitEffect(q.move.type, cx, cy, e.crit, e.eff);
-  if (e.crit) { flashScreen('#ffffff', .5); FX.zoom = 1; spawnSprite('burst', cx, cy, { size: 24, life: .4, col: UI.gold, delay: .05 }); }
-  floatText(cx, cy - 12, String(e.dmg), e.crit ? UI.gold : '#ffffff', { big: true, life: 1.1 });
-  const pop = e.crit ? 'CRITICAL!' : MOVE_POP[q.move.type]; floatText(cx + 14, cy - 26, pop, e.crit ? UI.gold : col, { life: .9, delay: .05, outline: '#000', vy: -14 });
+  // an ink star under the type effect, a ring when it is super effective, dust kicked back from the defender's feet
+  if (e.dmg > 0) { spawnSprite('impact', cx, cy, { size: e.crit ? 20 : 14, life: .26, col: col || '#ffffff', rot: vrnd() * 3 }); spawnSprite('impact', cx, cy, { size: e.crit ? 11 : 8, life: .18, col: '#ffffff', rot: vrnd() * 3, delay: .02 }); const fx = Math.sign(D.x - A.x), fy = Math.sign(D.y - A.y); for (let i = 0; i < 3; i++) spawnSprite('poof', cx - fx * (4 + i * 4), D.y * TILE + TILE - 5, { size: 3, life: .32, col: '#e8e0d0', col2: '#ffffff', vx: fx * (20 + i * 8), vy: -6 + fy * 10, delay: i * .03 }); }
+  if (e.eff > 1) { spawnSprite('ring', cx, cy, { size: 22, life: .4, col: '#ffd24a', delay: .04 }); flashScreen(shade(col || '#ffffff', .5), .25); }
+  if (e.crit) { flashScreen('#fff2c0', .5); FX.zoom = 1; spawnSprite('burst', cx, cy, { size: 26, life: .42, col: UI.gold, delay: .05 }); }
+  floatText(cx, cy - 12, String(e.dmg), e.crit ? UI.gold : e.eff > 1 ? '#ffb040' : '#ffffff', e.crit || e.dmg >= 20 ? { huge: 2, life: 1.1, vy: -16, outline: '#1a0a14' } : { big: true, life: 1.1 });
+  if (e.crit) floatText(cx, cy - 34, 'CRITICAL!', UI.gold, { big: true, life: .9, delay: .04, outline: '#3a2000', vy: -12 }); else floatText(cx + 14, cy - 26, MOVE_POP[q.move.type], col, { life: .9, delay: .05, outline: '#000', vy: -14 });
   if (e.eff > 1) floatText(cx, cy + 4, e.eff >= 2 ? 'SUPER EFFECTIVE!!' : 'Super effective!', '#ffd24a', { delay: .25, life: 1.2, outline: '#402000', vy: -10 });
   else if (e.eff === 0) floatText(cx, cy + 4, 'No effect...', '#c0c0c0', { delay: .25, life: 1.2, vy: -10 });
   else if (e.eff < 1) floatText(cx, cy + 4, 'Not very effective', '#a0d0ff', { delay: .25, life: 1.1, vy: -10 });
@@ -544,14 +547,47 @@ function battleUpdate(dt) {
 // ---------------------------------------------------------------- drawing
 function battleDraw() {
   const d = duelActive(); if (d) { drawDuelFrame(d); return; }
-  drawBoard(); drawHUD();
+  drawBoard(); drawHUD(); drawDuelWipeOut();
 }
 // The board layer is drawn in board space under ctx.scale(BT.zoom); floating texts and the screen flash are
 // drawn afterwards at screen scale so they stay legible when zoomed out.
 function drawBoard() {
   ctx.save(); ctx.scale(BT.zoom, BT.zoom); drawBoardLayer(); ctx.restore();
   drawFXTexts(-CAM.x + FX.shakeX, -CAM.y + FX.shakeY, BT.zoom);
+  if (BT.mode === 'target') drawAimBubble();
   if (FX.flash > 0) { ctx.globalAlpha = FX.flash * .7; rect(0, 0, VIEW.w, VIEW.h, FX.flashCol); ctx.globalAlpha = 1; }
+}
+// ---------------------------------------------------------------- aiming
+// Target mode on the board: dots march from the attacker to the chosen target (arcing for ranged moves), a lock-on
+// ring closes in whenever the target changes, and a bubble over the target says what the attack will do to it.
+function aimState() { const t = BT.targets[BT.tIdx]; if (!t) return null; if (BT.aimId !== t.id) { BT.aimId = t.id; BT.aimT0 = BT.time; } const raw = (BT.time - BT.aimT0) / .18; return { t, raw, k: REDUCED ? 1 : Math.min(1, raw) }; }
+function drawAimLine() {
+  const u = BT.sel, a = aimState(); if (!u || !a) return; const t = a.t, d = Math.abs(u.x - t.x) + Math.abs(u.y - t.y);
+  const ax = tileX(u.x) + TILE / 2, ay = tileY(u.y) + TILE / 2 - 4, bx = tileX(t.x) + TILE / 2, by = tileY(t.y) + TILE / 2 - 4;
+  const n = Math.max(3, Math.round(Math.hypot(bx - ax, by - ay) / 6)), h = d > 1 ? Math.min(22, 4 + d * 4) : 0, march = REDUCED ? 0 : (BT.time * 2.4) % 1;
+  for (let i = 0; i < n; i++) { const f = (i + march) / n; if (f < .16 || f > .84 || f > a.k) continue; const x = Math.round(lerp(ax, bx, f)), y = Math.round(lerp(ay, by, f) - Math.sin(f * Math.PI) * h); rect(x - 2, y - 2, 4, 4, '#2a0a10'); rect(x - 1, y - 1, 2, 2, '#ff6a6a'); px(x - 1, y - 1, '#ffd0c8'); }
+}
+function drawAimLock() {
+  const a = aimState(); if (!a) return; const cf = currentForecast(), ko = cf && cf.fc.koD; const t = a.t, cx = tileX(t.x) + TILE / 2, cy = tileY(t.y) + TILE / 2 + 1;
+  const col = ko ? UI.gold : '#ff5a5a', r = Math.round(lerp(30, 19, easeOut(a.k)) + (a.k >= 1 && !REDUCED ? Math.sin(BT.time * 6) : 0)), flash = !REDUCED && a.raw >= 1 && a.raw < 1.7;
+  ctx.globalAlpha = .4 + .6 * a.k; ellipseRing(cx, cy, r + 1, r + 1, 3, '#1a0508'); ellipseRing(cx, cy, r, r, 1, flash ? '#ffffff' : col);
+  // four ticks: diagonal while the ring closes in, square to the tile once it has locked
+  const locked = a.k >= 1; for (let i = 0; i < 4; i++) { const an = i * Math.PI / 2 + (locked ? 0 : Math.PI / 4), ox = Math.round(Math.cos(an) * (r + 3)), oy = Math.round(Math.sin(an) * (r + 3)); if (locked) { const hz = i % 2 === 0; rect(cx + ox - (hz ? (ox > 0 ? 0 : 5) : 1), cy + oy - (hz ? 1 : (oy > 0 ? 0 : 5)), hz ? 6 : 3, hz ? 3 : 6, '#1a0508'); rect(cx + ox - (hz ? (ox > 0 ? -1 : 4) : 0), cy + oy - (hz ? 0 : (oy > 0 ? -1 : 4)), hz ? 4 : 1, hz ? 1 : 4, flash ? '#ffffff' : col); } else { rect(cx + ox - 2, cy + oy - 2, 4, 4, '#1a0508'); rect(cx + ox - 1, cy + oy - 1, 2, 2, col); } }
+  ctx.globalAlpha = 1;
+}
+// The bubble (screen space, so it keeps its size at any zoom): the HP the attack takes, or KO!, coloured by the matchup.
+function drawAimBubble() {
+  const cf = currentForecast(), a = aimState(); if (!cf || !a) return; const t = cf.target, fc = cf.fc, eff = fc.a.eff, lost = Math.max(0, t.hp - fc.hpD);
+  const s = fc.koD ? 'KO!' : eff === 0 ? 'IMMUNE' : '-' + lost, arrow = fc.koD || eff === 0 ? '' : eff > 1 ? '▲' : eff < 1 ? '▼' : '';
+  const ink = fc.koD ? UI.gold : eff > 1 ? '#ffb040' : eff < 1 ? '#a0d0ff' : '#ffffff', fill = fc.koD ? '#8a1c24' : '#101a30', edge = fc.koD ? UI.gold : '#ff5a5a';
+  const w = textWidth(s, BIG) + 10 + (arrow ? textWidth(arrow) + 3 : 0), h = 15, z = BT.zoom, sx = toScreenX(tileX(t.x) + TILE / 2), top = toScreenY(tileY(t.y)), bot = toScreenY(tileY(t.y) + TILE);
+  const pop = REDUCED ? 0 : Math.round((1 - easeOutBack(a.k, 2.4)) * 6), below = top - h - 9 < 2, x = Math.round(clamp(sx - w / 2, 2, VIEW.w - w - 2));
+  const y = below ? bot + 7 + pop : top - h - 6 - pop + (REDUCED ? 0 : Math.round(Math.sin(BT.time * 4)));
+  rrect(x, y + 1, w, h, '#000000', 2); rrect(x - 1, y - 1, w + 2, h + 1, '#1a0508', 2); rrect(x, y, w, h - 1, fill, 2); hline(x + 2, y, w - 4, edge); hline(x + 2, y + h - 2, w - 4, shade(fill, -.3));
+  const tx = Math.round(clamp(sx, x + 4, x + w - 4)); // the tail points at the target even when the bubble is pushed off-centre
+  if (below) { rect(tx - 2, y - 3, 5, 2, '#1a0508'); rect(tx - 1, y - 5, 3, 2, '#1a0508'); rect(tx - 1, y - 2, 3, 2, fill); px(tx, y - 4, fill); }
+  else { rect(tx - 2, y + h - 1, 5, 2, '#1a0508'); rect(tx - 1, y + h + 1, 3, 2, '#1a0508'); rect(tx - 1, y + h - 1, 3, 2, fill); px(tx, y + h + 1, fill); }
+  bigText(s, x + 5, y + 3, ink, { outline: '#000' }); if (arrow) text(arrow, x + w - 5 - textWidth(arrow), y + 4, ink, { outline: '#000' });
 }
 function drawBoardLayer() {
   const m = B.map; const f = Math.floor(BT.time * 3) % WATER_FRAMES;
@@ -595,6 +631,7 @@ function drawBoardLayer() {
   if (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget') for (const t of BT.targets) { const X = tileX(t.x), Y = tileY(t.y); const k = Math.floor(BT.time * 8) % 2; const friendly = !hostile(t.team, HT()); outline(X + 1 + k, Y + 1 + k, TILE - 2 - 2 * k, TILE - 2 - 2 * k, t === BT.targets[BT.tIdx] ? '#ffffff' : friendly ? '#60e070' : '#ff6060'); }
   if (BT.mode === 'skillTarget' && BT.sel && BT.sel.skill && BT.sel.skill.rng[1] > 0) { const rc = ring(BT.sel.x, BT.sel.y, BT.sel.skill.rng[0], BT.sel.skill.rng[1]); rangeOverlay(rc, (x, y) => rc.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, BT.sel.skill.target === 'foe' ? '#e03030' : '#30a050', BT.sel.skill.target === 'foe' ? '#ffa0a0' : '#a0ffb0', Math.floor(BT.time * 6)); }
   if (BT.mode === 'move' && BT.path.length > 1) drawArrow(BT.path, -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, BT.time * 1000);
+  if (BT.mode === 'target') drawAimLine();
   if (['idle', 'move', 'target', 'catchTarget', 'skillTarget', 'unitinfo'].includes(BT.mode)) drawCursorGlow(tileX(BT.cx), tileY(BT.cy), BT.time * 1000);
   // units (sorted by y so southern sprites overlap northern ones)
   // a unit whose KO the duel scene has not shown yet stays on the board (its HP bar is held at the pre-exchange value)
@@ -603,6 +640,7 @@ function drawBoardLayer() {
   for (const u of units) { if (fogHides(u, HT())) continue; drawUnit(u); const fl = B.flags && flagCarriedBy(u); if (fl) drawFlag(tileX(u.x) + u.fx.dx + TILE - 9, tileY(u.y) + u.fx.dy - 10 + Math.round(Math.sin(BT.time * 5) * 1), fl.team, Math.floor(BT.time * 6) % 2); }
   // fog of war: unseen tiles fall into darkness
   if (B.fog && B.vis) { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (!B.vis.has(key(x, y))) { ctx.globalAlpha = .55; rect(tileX(x), tileY(y), TILE, TILE, '#060a16'); ctx.globalAlpha = .35; dither(tileX(x), tileY(y), TILE, TILE, '#0b1020', (x + y) & 1); } ctx.globalAlpha = 1; }
+  if (BT.mode === 'target') drawAimLock();
   // cursor
   if (['idle', 'move', 'target', 'catchTarget', 'skillTarget', 'unitinfo'].includes(BT.mode)) { const hostileCur = unitAt(BT.cx, BT.cy) && hostile(unitAt(BT.cx, BT.cy).team, HT()); drawCursor(tileX(BT.cx), tileY(BT.cy), BT.time * 1000, '#ffffff', (BT.mode === 'target' || hostileCur) ? '#ff5a5a' : BT.mode === 'skillTarget' ? '#60e070' : '#ffd24a'); }
   if (BT.anim && BT.anim.ball) { const b = BT.anim.ball; drawBall(Math.round(b.x - CAM.x), Math.round(b.y - CAM.y), ITEMS[BT.anim.ev.ball].col, 5); }

@@ -136,9 +136,15 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
   dust or sparks, outdoor maps cloud shadows and butterflies. The first battles
   point at what to do next. Every one of these respects reduced motion.
 - **Ending**: the credits play over the title landscape with your own team.
-- The lateral **duel scene** splits the screen on a diagonal with the Black/White
-  animated sprites; any key speeds it up, X skips. The menu offers full, quick
-  or map-only battles.
+- **Attacks**: aiming draws a marching line to the target, a lock-on ring and a
+  bubble with the damage it will take (or KO!). The lateral **duel scene**
+  closes over the board in stripes, splits the screen on a diagonal with the
+  Black/White animated sprites and slams a VS between them; each move charges
+  with an aura, a heavy hit freezes on an impact frame with focus lines, the
+  damage lands as a huge number, the HP bar leaves a ghost that drains, and a
+  KO is stamped over the fallen Pokémon while the winner hops. Any key speeds
+  it up, X skips. The menu offers full, quick or map-only battles; map strikes
+  get the same numbers, impact stars and KO stamp.
 
 ## Controls and saves
 
