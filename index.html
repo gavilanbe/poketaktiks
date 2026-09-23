@@ -5647,7 +5647,7 @@ function cardDraw() {
   const W = VIEW.w, H = VIEW.h, ch = SC.data.chapter, t = SC.t; rect(0, 0, W, H, '#0e0c10');
   if (!SC.data.bd) SC.data.bd = makeBackdrop(ch.map); const bd = SC.data.bd; drawBackdrop(bd, (W - bd.canvas.width) / 2 - t * 8, (H - bd.canvas.height) / 2, .7);
   const bars = Math.round(H * .2 * easeOut(clamp(t / .35, 0, 1))); rect(0, 0, W, bars, '#05040f'); rect(0, H - bars, W, bars, '#05040f'); hline(0, bars, W, UI.goldDark); hline(0, H - bars - 1, W, UI.goldDark);
-  const cy = Math.round(H * .46), label = ch.num ? 'CHAPTER ' + ch.num : 'SKIRMISH';
+  const cy = Math.round(H * .46), label = ch.num ? 'FRONT ' + ch.num : ch.label || 'SKIRMISH';
   const rib = REDUCED ? 0 : Math.round((1 - easeOut(clamp((t - .15) / .3, 0, 1))) * -W * .6), rw = textWidth(label) + 16; ribbonTab(label, Math.round(W / 2 - rw / 2) + rib, cy - 34);
   const tw = textWidth(ch.title.toUpperCase(), BIG), scale = W >= tw * 3 + 24 ? 3 : W >= tw * 2 + 16 ? 2 : 1;
   drawStampWordAt(ch.title, W / 2, cy - Math.round(4.5 * scale) - 4, t - .25, UI.gold, UI.goldDark, scale);
@@ -5777,7 +5777,7 @@ function prepLayout(P) {
 function prepDraw() {
   const P = SC.data, ch = P.chapter, L = prepLayout(P), W = L.W, H = L.H, t = SC.t; rect(0, 0, W, H, UI.bg); if (!P.bd) P.bd = makeBackdrop(ch.map); drawBackdrop(P.bd, (W - P.bd.canvas.width) / 2 - t * 3, (H - P.bd.canvas.height) / 2, .8);
   SC.hits = []; const cap = prepCaptain(P);
-  screenTitle((ch.num ? 'CHAPTER ' + ch.num + ' · ' : '') + ch.title.toUpperCase(), H >= 240 && !L.narrow ? objectiveTextFor(ch.map.objective) : null, 4);
+  screenTitle((ch.num ? 'FRONT ' + ch.num + ' · ' : '') + ch.title.toUpperCase(), H >= 240 && !L.narrow ? objectiveTextFor(ch.map.objective) : null, 4);
   // TEAM bar: one box per slot, filled in deploy order
   const S = L.slots, bw = Math.max(20, Math.min(34, Math.floor((S.w - 60) / ch.slots) - 3));
   panel(S.x, S.y, S.w, S.h, { fill: UI.panelDark, flat: true }); text('TEAM', S.x + 7, S.y + Math.round(S.h / 2) - 4, UI.gold); text(P.deploy.length + '/' + ch.slots, S.x + 7, S.y + Math.round(S.h / 2) + 4, P.deploy.length ? UI.ink : UI.muted);
@@ -5862,7 +5862,7 @@ function resultsDraw() {
   const ph = 36 + (stars ? 30 : 0) + (win ? 10 : (lose.length - 1) * 9) + (nRew ? 14 + Math.ceil(nRew / rc) * 10 : (win && !R.skirmish ? 12 : 0)) + (nC ? 14 + Math.ceil(nC / cc) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + (nCo ? 12 + nCo * 22 : 0) + 8;
   const phh = Math.min(H - 44, Math.max(60, ph)); y = Math.max(8, Math.round((H - 30 - phh) / 2));
   const tok = unfold('results', x, y, w, phh, .25);
-  const p = panel(x, y, w, phh, { header: win ? (R.skirmish ? 'SKIRMISH WON!' : 'CHAPTER CLEAR!') : 'RETREAT', headerRight: stars && R.stars > (R.best || 0) && !R.skirmish ? 'NEW BEST' : null, headerRightCol: UI.gold, headerFill: win ? '#2a2470' : '#4a1626' });
+  const p = panel(x, y, w, phh, { header: win ? (R.skirmish ? 'SKIRMISH WON!' : 'FRONT CLEARED!') : 'RETREAT', headerRight: stars && R.stars > (R.best || 0) && !R.skirmish ? 'NEW BEST' : null, headerRightCol: UI.gold, headerFill: win ? '#2a2470' : '#4a1626' });
   y = p.cy;
   if (stars) { // three stars pop in one after another, then the goals they stand for
     for (let s2 = 0; s2 < 3; s2++) { const t0 = appear('res:star' + s2) - .25 - s2 * .3, u = clamp(t0 / .25, 0, 1), on = s2 < R.stars && u > 0, sc = on ? 1 + Math.round((1 - easeOutBack(u, 3)) * 1.5) : 1; drawBigStar(x + w / 2 + (s2 - 1) * 20, y + 7, sc, on); if (u > 0 && CLOCK.frame && (R.starSfx || 0) <= s2) { R.starSfx = s2 + 1; Audio.sfx(s2 < R.stars ? 'chime' : 'tick'); } }
@@ -6477,11 +6477,13 @@ function routeDraw() {
 // The card for the selected stop: chapter, place, objective, the three star goals, the first-clear reward, PLAY.
 function drawRouteCard(S, L) {
   const c = L.card, i = S.sel, ch = CHAPTERS[i], o = ch.map.objective, stars = routeStars(i), cleared = SAVE && (SAVE.chapter > i), tok = unfold('routecard' + i, c.x, c.y, c.w, c.h, .18);
-  const p = panel(c.x, c.y, c.w, c.h, { title: 'CHAPTER ' + ch.num, fill: UI.panel });
+  const p = panel(c.x, c.y, c.w, c.h, { title: 'FRONT ' + ch.num, fill: UI.panel });
   let y = p.cy + 2; const x = c.x + 8, w = c.w - 16;
   bigText(fitLabel(ch.title.toUpperCase(), w), x, y, UI.gold, { shadow: UI.goldDark }); y += 13;
   const goal = objectiveTextFor(o).replace('Objective: ', ''); iconAt('flag', x, y - 1, UI.gold); text(fitLabel(goal[0].toUpperCase() + goal.slice(1), w - 12), x + 12, y, UI.ink); y += 11;
   text('Foes Lv ' + ch.level + ' · Deploy ' + ch.slots, x, y, UI.muted); y += 12;
+  // who holds the front (a Gym Leader shown as freed once the front is cleared)
+  { const co = ch.co ? COS[ch.co] : null, sp = ch.foe ? SPEAKERS[ch.foe] : null, tr = co ? co.tr : sp && sp.tr, face = tr && trainerFace(tr), col = co ? co.col : sp ? sp.col : UI.red, freed = cleared && co && CO_UNLOCK[ch.co]; if (face) { rect(x, y - 3, 14, 14, shade(col, -.4)); ctx.save(); ctx.beginPath(); ctx.rect(x, y - 3, 14, 14); ctx.clip(); ctx.drawImage(face, x - 2, y - 4); ctx.restore(); outline(x - 1, y - 4, 16, 16, col); } text(fitLabel((freed ? 'Freed: ' : 'Held by ') + (co ? co.name : ch.foe || 'Team Rocket'), w - 20), x + 19, y, freed ? UI.green : col); y += 15; }
   const goals = [['Win the battle', stars >= 1], ['Win within ' + ch.par + ' turns', stars >= 2], ['Nobody faints', stars >= 3]];
   if (c.h - (y - c.y) > 60 || L.side) { sectionLabel('Stars', x, y, w, UI.muted); y += 10; goals.forEach(([g, on], k) => { drawRouteStar(x, y - 1, on, true); text(g, x + 10, y, on ? UI.ink : UI.muted); y += 10; }); y += 2; }
   else { goals.forEach(([, on], k) => drawRouteStar(x + k * 9, y - 1, on, true)); text(stars + '/3 stars', x + 30, y, UI.muted); y += 11; }
@@ -6747,7 +6749,7 @@ function briefGo(S) { if (SAVE) { SAVE.co = S.co; writeSave(); } Audio.sfx('sele
 function briefDraw() {
   const S = SC.data, ch = CHAPTERS[S.idx], W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), bh = btnH(); if (!S.bd) S.bd = makeBackdrop(ch.map);
   rect(0, 0, W, H, UI.bg); drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 - t * 3, (H - S.bd.canvas.height) / 2, .8); SC.hits = [];
-  const top = screenTitle('CHAPTER ' + ch.num + ' · ' + ch.title.toUpperCase(), narrow ? null : objectiveTextFor(ch.map.objective), 4), foot = narrow ? H - 2 * (bh + 4) - 8 : footerBand(bh + 12);
+  const top = screenTitle('FRONT ' + ch.num + ' · ' + ch.title.toUpperCase(), narrow ? null : objectiveTextFor(ch.map.objective), 4), foot = narrow ? H - 2 * (bh + 4) - 8 : footerBand(bh + 12);
   const co = ch.co ? COS[ch.co] : null, sp = ch.foe ? SPEAKERS[ch.foe] : null, as = co ? null : { tr: sp ? sp.tr : 'rocketgrunt', name: ch.foe || 'Rocket', col: sp ? sp.col : UI.red };
   const lw = narrow ? W - 12 : Math.min(250, Math.floor(W * .42)), lx = 6, ly = top + 2, cardW = narrow ? 70 : 84, cardH = narrow ? 60 : 76;
   // the enemy commander and their words
@@ -6852,7 +6854,7 @@ function startTower(sel) {
 function launchTowerFloor(T) {
   const i = T.i, F = TOWER[i], map = towerMap(i), level = F.level, R = loadRecords(); R.towerCo = T.co; writeRecords(R);
   const army = TOWER_RENTALS.map(n => Object.assign(partyUnit(n, level, 1), { loaner: true }));
-  const ch = { title: 'Battle Tower ' + (i + 1) + 'F', num: 0, level, slots: 4, par: F.par, map, rewards: {} };
+  const ch = { title: 'Battle Tower ' + (i + 1) + 'F', num: 0, label: 'BATTLE TOWER · ' + (i + 1) + 'F', level, slots: 4, par: F.par, map, rewards: {} };
   const P = { chapter: ch, party: army, bag: {}, deploy: [], preset: true, back: () => goScene('tower', T) }; autoDeploy(P);
   P.start = () => {
     const deployed = P.deploy.map(k => Object.assign({}, army[k], { pid: null })), box = army.filter((p, k) => !P.deploy.includes(k)).map(p => Object.assign({}, p, { pid: null }));
@@ -7021,7 +7023,7 @@ function startSafari() {
   SAVE = save; const level = clamp(Math.round(party.reduce((a, p) => a + p.level, 0) / party.length), 5, 50), seed = Math.floor(Math.random() * 1000), map = safariMap(seed, level);
   // a small collection is topped up to four with loaners (plain stats, never kept)
   const team = party.concat(skirmishLoaners(party, level, 4 - party.length).map(l => Object.assign(partyUnit(l.num, l.level, 1), { loaner: true })));
-  const ch = { title: 'Safari Zone', num: 0, level, slots: 4, par: SAFARI.days, map, rewards: {} };
+  const ch = { title: 'Safari Zone', num: 0, label: 'SAFARI ZONE', level, slots: 4, par: SAFARI.days, map, rewards: {} };
   const P = { chapter: ch, party: team, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: { pokeball: SAFARI.balls }, deploy: [], preset, back: () => goScene('quick') }; autoDeploy(P);
   P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, team[i], { pid: preset || i >= party.length ? null : i })); goScene('card', { chapter: ch, next: () => {
     BACKDROP = makeBackdrop(map);
@@ -7206,7 +7208,7 @@ function startSkirmishSetup() {
   const level = SKIRMISH.levels.reduce((b, l) => Math.abs(l - avg) < Math.abs(b - avg) ? l : b, SKIRMISH.levels[0]);
   const S = { seed: Math.floor(Math.random() * 1000), level, party, preset, cos, co: cos.includes(last.co) ? last.co : 'you', foe: CO_FOES.includes(last.foe) ? last.foe : pick(CO_FOES.slice(0, 4)), funds: SKIRMISH.funds.includes(last.funds) ? last.funds : 1000, weather: SKIRMISH.weather.includes(last.weather) ? last.weather : 'none', biome: SKIRMISH.biomes.includes(last.biome) ? last.biome : 'field', go: null };
   S.go = () => {
-    const map = S.map, ch = { title: map.name, num: 0, level: S.level, slots: SKIRMISH.slots, par: map.par, map, rewards: {} };
+    const map = S.map, ch = { title: map.name, num: 0, label: 'SKIRMISH', level: S.level, slots: SKIRMISH.slots, par: map.par, map, rewards: {} };
     if (SAVE && !preset) { SAVE.skirmishSetup = { co: S.co, foe: S.foe, funds: S.funds, weather: S.weather, biome: S.biome }; writeSave(); }
     // loaners (plain stats, never saved to the collection) make up an army of twelve
     const army = party.concat(skirmishLoaners(party, S.level, SKIRMISH.slots + SKIRMISH.box - party.length).map(l => Object.assign(partyUnit(l.num, l.level, 1), { loaner: true })));

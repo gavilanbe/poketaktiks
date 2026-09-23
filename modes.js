@@ -42,7 +42,7 @@ function startTower(sel) {
 function launchTowerFloor(T) {
   const i = T.i, F = TOWER[i], map = towerMap(i), level = F.level, R = loadRecords(); R.towerCo = T.co; writeRecords(R);
   const army = TOWER_RENTALS.map(n => Object.assign(partyUnit(n, level, 1), { loaner: true }));
-  const ch = { title: 'Battle Tower ' + (i + 1) + 'F', num: 0, level, slots: 4, par: F.par, map, rewards: {} };
+  const ch = { title: 'Battle Tower ' + (i + 1) + 'F', num: 0, label: 'BATTLE TOWER · ' + (i + 1) + 'F', level, slots: 4, par: F.par, map, rewards: {} };
   const P = { chapter: ch, party: army, bag: {}, deploy: [], preset: true, back: () => goScene('tower', T) }; autoDeploy(P);
   P.start = () => {
     const deployed = P.deploy.map(k => Object.assign({}, army[k], { pid: null })), box = army.filter((p, k) => !P.deploy.includes(k)).map(p => Object.assign({}, p, { pid: null }));
@@ -211,7 +211,7 @@ function startSafari() {
   SAVE = save; const level = clamp(Math.round(party.reduce((a, p) => a + p.level, 0) / party.length), 5, 50), seed = Math.floor(Math.random() * 1000), map = safariMap(seed, level);
   // a small collection is topped up to four with loaners (plain stats, never kept)
   const team = party.concat(skirmishLoaners(party, level, 4 - party.length).map(l => Object.assign(partyUnit(l.num, l.level, 1), { loaner: true })));
-  const ch = { title: 'Safari Zone', num: 0, level, slots: 4, par: SAFARI.days, map, rewards: {} };
+  const ch = { title: 'Safari Zone', num: 0, label: 'SAFARI ZONE', level, slots: 4, par: SAFARI.days, map, rewards: {} };
   const P = { chapter: ch, party: team, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: { pokeball: SAFARI.balls }, deploy: [], preset, back: () => goScene('quick') }; autoDeploy(P);
   P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, team[i], { pid: preset || i >= party.length ? null : i })); goScene('card', { chapter: ch, next: () => {
     BACKDROP = makeBackdrop(map);
