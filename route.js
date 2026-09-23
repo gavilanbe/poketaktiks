@@ -100,7 +100,7 @@ function routeDraw() {
   const ox = -Math.round(S.cam.x), oy = -Math.round(S.cam.y);
   ctx.save(); ctx.beginPath(); ctx.rect(L.view.x, L.view.y, L.view.w, L.view.h); ctx.clip();
   ctx.drawImage(C.bare, ox, oy);
-  if (!REDUCED) { const f = Math.floor(t * 3) % WATER_FRAMES; for (const c of C.water) { const X = ox + c.x * TILE, Y = oy + c.y * TILE; if (X > L.view.x + L.view.w || Y > L.view.y + L.view.h || X + TILE < L.view.x || Y + TILE < L.view.y) continue; drawTerrain(ctx, C.m, c.x, c.y, X, Y, f); } }
+  if (!REDUCED) { const f = Math.floor(t * 3) % WATER_FRAMES; for (const c of C.water) { const X = ox + c.x * TILE, Y = oy + c.y * TILE; if (X > L.view.x + L.view.w || Y > L.view.y + L.view.h || X + TILE < L.view.x || Y + TILE < L.view.y) continue; drawTerrain(ctx, C.m, c.x, c.y, X, Y, f); } for (const h of mapHouses(C.m)) drawChimneySmoke(ox + h.x * TILE + h.cx, oy + h.y * TILE, t, h.x * .13 + h.y * .07); }
   // roads: every stretch up to the furthest open stop, and the one being revealed tile by tile
   const R = S.reveal; const roadsOpen = R && R.unlocked != null ? R.cleared : open;
   for (let s = 0; s < ROUTE_ROADS.length; s++) { const cells = routeCells(s); let n = s < roadsOpen ? cells.length : 0; if (R && R.unlocked != null && s === R.cleared) n = Math.floor(cells.length * (R.road || 0)); for (let i = 0; i < cells.length; i++) { const c = cells[i]; if (i < n) ctx.drawImage(C.roads, c.x * TILE, c.y * TILE, TILE, TILE, ox + c.x * TILE, oy + c.y * TILE, TILE, TILE); else if (i % 2 === 0) { ctx.globalAlpha = .45; rect(ox + c.x * TILE + 14, oy + c.y * TILE + 14, 4, 4, '#1a1426'); ctx.globalAlpha = 1; } } }

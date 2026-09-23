@@ -666,6 +666,8 @@ function drawBoardAmbience(m) {
   const ox = -CAM.x + FX.shakeX, oy = -CAM.y + FX.shakeY, mw = m.w * TILE, mh = m.h * TILE, t = BT.time;
   ctx.save(); ctx.beginPath(); ctx.rect(tileX(0), tileY(0), mw, mh); ctx.clip();
   ctx.globalAlpha = .075; for (let i = 0; i < 3; i++) { const rx = 70 + i * 18, ry = 30 + i * 6, span = mw + rx * 4, x = ((i * 347 + t * (7 + i * 2)) % span) - rx * 2, y = ((i * 211 + t * 3) % (mh + ry * 4)) - ry * 2; ellipse(Math.round(ox + x), Math.round(oy + y), rx, ry, '#06101a'); ellipse(Math.round(ox + x - rx * .5), Math.round(oy + y + 8), Math.round(rx * .6), Math.round(ry * .6), '#06101a'); } ctx.globalAlpha = 1;
+  // chimney smoke: three puffs per cottage rise from its chimney, drift east, swell and fade
+  for (const h of mapHouses(m)) { const X = tileX(h.x) + h.cx, Y = tileY(h.y); if (X < -20 || Y < -30 || X > bvW() + 20 || Y > bvH() + 20) continue; drawChimneySmoke(X, Y, t, h.x * .13 + h.y * .07); }
   const cols = ['#ffffff', '#ffe36a', '#ffb3d0']; for (let i = 0; i < 3; i++) { const k = t * (.05 + i * .01) + i * .31, x = (Math.sin(k * 2.3 + i) * .45 + .5) * mw, y = (Math.cos(k * 1.7 + i * 2) * .45 + .5) * mh + Math.sin(t * 6 + i) * 3, flap = Math.floor(t * 10 + i * 3) % 2, X = Math.round(ox + x), Y = Math.round(oy + y);
     if (flap) { px(X - 1, Y, cols[i]); px(X + 1, Y, cols[i]); px(X - 2, Y - 1, cols[i]); px(X + 2, Y - 1, cols[i]); } else { px(X - 1, Y - 1, cols[i]); px(X + 1, Y - 1, cols[i]); } px(X, Y, '#3a2a20'); }
   ctx.restore();

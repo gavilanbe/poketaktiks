@@ -838,6 +838,10 @@ const TYPE_FX = {
 };
 function fxFor(type) { return TYPE_FX[type] || TYPE_FX.Normal; }
 // Hit effect at (x,y) in world pixels.
+// Cottages on a parsed map with the x of their chimney inside the tile (it swaps sides with the variant, see drawTile 'H').
+function mapHouses(m) { if (!m.houses) { m.houses = []; for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) if (m.tiles[y][x].id === 'house') m.houses.push({ x, y, cx: (m.variants[y][x] % 2 === 1 ? 8 : 20) + 2 }); } return m.houses; }
+// Smoke from a chimney top at (x, y): three puffs rise, drift east, swell and fade.
+function drawChimneySmoke(x, y, t, seed = 0) { if (REDUCED) return; for (let i = 0; i < 3; i++) { const k = (t * .42 + i / 3 + seed) % 1, r = 1 + Math.round(k * 2.5); ctx.globalAlpha = (1 - k) * .5; circle(Math.round(x + Math.sin(k * 5 + seed * 7) * 1.5 + k * 5), Math.round(y - k * 16), r, k < .3 ? '#f4f4fa' : '#d8dae6'); } ctx.globalAlpha = 1; }
 // A Poké Ball lying on the map (board space): it rests on a soft shadow, hops every few seconds (the shadow shrinks
 // while it is up) and a four-point star twinkles on its cap. Reduced motion keeps it still.
 function drawPickup(x, y, t, seed = 0) {

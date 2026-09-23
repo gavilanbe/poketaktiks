@@ -1805,6 +1805,10 @@ const TYPE_FX = {
 };
 function fxFor(type) { return TYPE_FX[type] || TYPE_FX.Normal; }
 // Hit effect at (x,y) in world pixels.
+// Cottages on a parsed map with the x of their chimney inside the tile (it swaps sides with the variant, see drawTile 'H').
+function mapHouses(m) { if (!m.houses) { m.houses = []; for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) if (m.tiles[y][x].id === 'house') m.houses.push({ x, y, cx: (m.variants[y][x] % 2 === 1 ? 8 : 20) + 2 }); } return m.houses; }
+// Smoke from a chimney top at (x, y): three puffs rise, drift east, swell and fade.
+function drawChimneySmoke(x, y, t, seed = 0) { if (REDUCED) return; for (let i = 0; i < 3; i++) { const k = (t * .42 + i / 3 + seed) % 1, r = 1 + Math.round(k * 2.5); ctx.globalAlpha = (1 - k) * .5; circle(Math.round(x + Math.sin(k * 5 + seed * 7) * 1.5 + k * 5), Math.round(y - k * 16), r, k < .3 ? '#f4f4fa' : '#d8dae6'); } ctx.globalAlpha = 1; }
 // A Poké Ball lying on the map (board space): it rests on a soft shadow, hops every few seconds (the shadow shrinks
 // while it is up) and a four-point star twinkles on its cap. Reduced motion keeps it still.
 function drawPickup(x, y, t, seed = 0) {
@@ -3160,6 +3164,8 @@ function drawBoardAmbience(m) {
   const ox = -CAM.x + FX.shakeX, oy = -CAM.y + FX.shakeY, mw = m.w * TILE, mh = m.h * TILE, t = BT.time;
   ctx.save(); ctx.beginPath(); ctx.rect(tileX(0), tileY(0), mw, mh); ctx.clip();
   ctx.globalAlpha = .075; for (let i = 0; i < 3; i++) { const rx = 70 + i * 18, ry = 30 + i * 6, span = mw + rx * 4, x = ((i * 347 + t * (7 + i * 2)) % span) - rx * 2, y = ((i * 211 + t * 3) % (mh + ry * 4)) - ry * 2; ellipse(Math.round(ox + x), Math.round(oy + y), rx, ry, '#06101a'); ellipse(Math.round(ox + x - rx * .5), Math.round(oy + y + 8), Math.round(rx * .6), Math.round(ry * .6), '#06101a'); } ctx.globalAlpha = 1;
+  // chimney smoke: three puffs per cottage rise from its chimney, drift east, swell and fade
+  for (const h of mapHouses(m)) { const X = tileX(h.x) + h.cx, Y = tileY(h.y); if (X < -20 || Y < -30 || X > bvW() + 20 || Y > bvH() + 20) continue; drawChimneySmoke(X, Y, t, h.x * .13 + h.y * .07); }
   const cols = ['#ffffff', '#ffe36a', '#ffb3d0']; for (let i = 0; i < 3; i++) { const k = t * (.05 + i * .01) + i * .31, x = (Math.sin(k * 2.3 + i) * .45 + .5) * mw, y = (Math.cos(k * 1.7 + i * 2) * .45 + .5) * mh + Math.sin(t * 6 + i) * 3, flap = Math.floor(t * 10 + i * 3) % 2, X = Math.round(ox + x), Y = Math.round(oy + y);
     if (flap) { px(X - 1, Y, cols[i]); px(X + 1, Y, cols[i]); px(X - 2, Y - 1, cols[i]); px(X + 2, Y - 1, cols[i]); } else { px(X - 1, Y - 1, cols[i]); px(X + 1, Y - 1, cols[i]); } px(X, Y, '#3a2a20'); }
   ctx.restore();
@@ -5526,7 +5532,7 @@ function routeDraw() {
   const ox = -Math.round(S.cam.x), oy = -Math.round(S.cam.y);
   ctx.save(); ctx.beginPath(); ctx.rect(L.view.x, L.view.y, L.view.w, L.view.h); ctx.clip();
   ctx.drawImage(C.bare, ox, oy);
-  if (!REDUCED) { const f = Math.floor(t * 3) % WATER_FRAMES; for (const c of C.water) { const X = ox + c.x * TILE, Y = oy + c.y * TILE; if (X > L.view.x + L.view.w || Y > L.view.y + L.view.h || X + TILE < L.view.x || Y + TILE < L.view.y) continue; drawTerrain(ctx, C.m, c.x, c.y, X, Y, f); } }
+  if (!REDUCED) { const f = Math.floor(t * 3) % WATER_FRAMES; for (const c of C.water) { const X = ox + c.x * TILE, Y = oy + c.y * TILE; if (X > L.view.x + L.view.w || Y > L.view.y + L.view.h || X + TILE < L.view.x || Y + TILE < L.view.y) continue; drawTerrain(ctx, C.m, c.x, c.y, X, Y, f); } for (const h of mapHouses(C.m)) drawChimneySmoke(ox + h.x * TILE + h.cx, oy + h.y * TILE, t, h.x * .13 + h.y * .07); }
   // roads: every stretch up to the furthest open stop, and the one being revealed tile by tile
   const R = S.reveal; const roadsOpen = R && R.unlocked != null ? R.cleared : open;
   for (let s = 0; s < ROUTE_ROADS.length; s++) { const cells = routeCells(s); let n = s < roadsOpen ? cells.length : 0; if (R && R.unlocked != null && s === R.cleared) n = Math.floor(cells.length * (R.road || 0)); for (let i = 0; i < cells.length; i++) { const c = cells[i]; if (i < n) ctx.drawImage(C.roads, c.x * TILE, c.y * TILE, TILE, TILE, ox + c.x * TILE, oy + c.y * TILE, TILE, TILE); else if (i % 2 === 0) { ctx.globalAlpha = .45; rect(ox + c.x * TILE + 14, oy + c.y * TILE + 14, 4, 4, '#1a1426'); ctx.globalAlpha = 1; } } }
