@@ -43,3 +43,19 @@ into a game with a clear sense of play.
   open, buttons press, numbers count, scenes change through a Poké Ball wipe.
 - Board: team outlines on units, a flood-fill reveal of move ranges, bouncier cursor, stronger
   phase banners, an Advance Wars style power cut-in, capture and victory celebrations.
+
+## Status
+
+Done (2026-09-23):
+
+- Pixel title (`title.js`), Poké Ball scene wipe, restyled design system with motion helpers
+  (`appear`, `unfold`, `countUp`, raised buttons, ribbon tabs, shiny headlines).
+- Quick Battle hub (Skirmish / Conquest); in-game confirmation for replacing a save.
+- The bag is gone; one counted Poké Ball; map pickups and rewards are balls.
+- Captains in Versus; Versus setup trimmed to Mode, Arena, Map, Fog and the captains.
+- Five help pages.
+- Campaign route map (`route.js`) with stars, replays and the reveal of the next stop.
+- Battle: team outlines, flooding ranges, ready wave, objective tracker, power meter, tilted
+  phase banner, power cut-in, capture celebration, big-number pops, stamped victory with stars.
+- Screens: Oak's lab partner choice, team preparation, chapter card, lesson cards, results,
+  Conquest setup.
