@@ -20,21 +20,27 @@ function dist(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
 // Paralysis cuts two tiles (never below one); a rooted unit cannot move at all.
 function effMov(u, status = u.status, root = u.root) { if (root > 0) return 0; let m = u.mov; if (status === 'par') m = Math.max(1, m - 2); return Math.max(1, m + coMove(u)); }
 // Dijkstra movement: returns Map key→{x,y,cost,prev}. Passing through friends allowed; ending on anyone not allowed.
+// Costs are small integers, so the frontier is a bucket per cost: nodes expand cheapest first, ties in the order they
+// were found (the same result as a stably sorted list, without sorting it every step).
 function reachable(u, fromX = u.x, fromY = u.y, mov = effMov(u), opt = {}) {
-  const out = new Map(); const open = [{ x: fromX, y: fromY, cost: 0, prev: null }]; out.set(key(fromX, fromY), open[0]);
-  while (open.length) {
-    open.sort((a, b) => a.cost - b.cost); const c = open.shift();
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = c.x + dx, ny = c.y + dy; if (!inMap(nx, ny)) continue;
-      const t = terrAt(nx, ny); const mc = moveCost(t, u); if (mc >= 99) continue;
-      const occ = unitAt(nx, ny); if (occ && hostile(occ.team, u.team) && !(opt.through && opt.through(occ))) continue; // fog: hidden foes do not block planning
-      const nc = c.cost + mc; if (nc > mov) continue;
-      const k = key(nx, ny); const ex = out.get(k); if (ex && ex.cost <= nc) continue;
-      const node = { x: nx, y: ny, cost: nc, prev: c }; out.set(k, node); open.push(node);
+  const out = new Map(), start = { x: fromX, y: fromY, cost: 0, prev: null }, buckets = [[start]]; out.set(key(fromX, fromY), start);
+  for (let cost = 0; cost < buckets.length; cost++) {
+    const b = buckets[cost]; if (!b) continue;
+    for (let i = 0; i < b.length; i++) {
+      const c = b[i]; if (out.get(key(c.x, c.y)) !== c) continue; // superseded by a cheaper way here
+      for (const [dx, dy] of DIRS4) {
+        const nx = c.x + dx, ny = c.y + dy; if (!inMap(nx, ny)) continue;
+        const t = terrAt(nx, ny); const mc = moveCost(t, u); if (mc >= 99) continue;
+        const occ = unitAt(nx, ny); if (occ && hostile(occ.team, u.team) && !(opt.through && opt.through(occ))) continue; // fog: hidden foes do not block planning
+        const nc = cost + mc; if (nc > mov) continue;
+        const k = key(nx, ny); const ex = out.get(k); if (ex && ex.cost <= nc) continue;
+        const node = { x: nx, y: ny, cost: nc, prev: c }; out.set(k, node); (buckets[nc] || (buckets[nc] = [])).push(node);
+      }
     }
   }
   return out;
 }
+const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 function canStand(u, x, y) { const o = unitAt(x, y); return !o || o === u; }
 function pathTo(reach, x, y) { let n = reach.get(key(x, y)); if (!n) return null; const p = []; while (n) { p.unshift({ x: n.x, y: n.y }); n = n.prev; } return p; }
 // Cells within Manhattan [min,max] of (x,y)
@@ -60,8 +66,9 @@ function dangerZones(team, vis = null) {
   const zones = { trainer: new Set(), wild: new Set() };
   for (const e of B.units) {
     if (e.hp <= 0 || !hostile(e.team, team) || e.recharge) continue; if (vis && !vis.has(key(e.x, e.y))) continue; // fog: unseen foes are not on the map yet
-    const set = e.team === 2 ? zones.wild : zones.trainer; const r = reachable(e, e.x, e.y, effMov(e, statusAfterUpkeep(e), rootAfterUpkeep(e)));
-    for (const n of r.values()) { if (unitAt(n.x, n.y) && unitAt(n.x, n.y) !== e) continue; for (const c of ring(n.x, n.y, e.rngMin, e.rngMax)) set.add(key(c.x, c.y)); }
+    const set = e.team === 2 ? zones.wild : zones.trainer; const r = reachable(e, e.x, e.y, effMov(e, statusAfterUpkeep(e), rootAfterUpkeep(e))), mn = e.rngMin, mx = e.rngMax, W = B.map.w, H = B.map.h;
+    for (const n of r.values()) { const o = unitAt(n.x, n.y); if (o && o !== e) continue; // the ring of cells it can hit from there, without building it
+      for (let dy = -mx; dy <= mx; dy++) { const y = n.y + dy; if (y < 0 || y >= H) continue; const ady = Math.abs(dy); for (let dx = -mx; dx <= mx; dx++) { const d = ady + Math.abs(dx); if (d < mn || d > mx) continue; const x = n.x + dx; if (x < 0 || x >= W) continue; set.add(x + ',' + y); } } }
   }
   return zones;
 }
@@ -328,7 +335,13 @@ function versusObjectiveText() { const m = B.map.objective.mode || 'elim'; retur
 
 // ---------------------------------------------------------------- AI
 // BFS distance field over terrain the unit can enter (ignores units) from a set of goal cells.
+// Steps from the goals over the terrain this unit can enter (units ignored). Only fliers and swimmers pass different
+// tiles, so the field is cached per battle by that and the goals.
 function distField(u, goals) {
+  const ck = (u.fly ? 1 : 0) + (u.swim ? 2 : 0) + '|' + goals.map(g => g.x + ',' + g.y).join(';'), cache = B._dist || (B._dist = new Map()); let d = cache.get(ck); if (d) return d;
+  d = distFieldBuild(u, goals); if (cache.size > 400) cache.clear(); cache.set(ck, d); return d;
+}
+function distFieldBuild(u, goals) {
   const d = new Map(); const q = []; for (const g of goals) { d.set(key(g.x, g.y), 0); q.push(g); }
   while (q.length) { const c = q.shift(); const cd = d.get(key(c.x, c.y)); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = c.x + dx, ny = c.y + dy; if (!inMap(nx, ny)) continue; if (moveCost(terrAt(nx, ny), u) >= 99) continue; const k = key(nx, ny); if (d.has(k)) continue; d.set(k, cd + 1); q.push({ x: nx, y: ny }); } }
   return d;
