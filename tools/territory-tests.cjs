@@ -190,7 +190,7 @@ test('Safari Zone: weighted rarity pool, a race both sides play (weaken, throw, 
   const r = g.simWar(12); assert(['win', 'lose', 'draw'].includes(r.result), json(r.result)); assert(B.turn >= 9 || !g.alive(0).length);
   const caught = B.safari.catches[0].length + B.safari.catches[1].length; assert(caught > 0, 'somebody caught something');
   for (const t of [0, 1]) assert.equal(B.safari.score[t], B.safari.catches[t].reduce((a, c) => a + c.pts, 0)); assert(B.bag.pokeball <= 12 && B.safari.balls[1] <= 12);
-  assert(r.log.some(l => /throws at/.test(l)), 'the AI throws Safari Balls'); assert(!r.log.some(l => /KO .* by .*\(1\)/.test(l) && false));
+  assert(B.bag.pokeball < 12 && B.safari.balls[1] < 12, 'both sides threw Safari Balls'); assert(!r.log.some(l => /KO .* by .*\(1\)/.test(l) && false));
   g.safariEnd(B.result); assert.equal(G('SC.name'), 'rank'); g.rankDraw(); const rec = JSON.parse(T.store.get('pk_records') || '{}'); assert.equal(rec.safari || 0, Math.max(0, B.safari.score[0]));
   console.log('       race: ' + B.result + ' ' + B.safari.score.join('-') + ', ' + caught + ' catches');
 });

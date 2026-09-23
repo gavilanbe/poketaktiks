@@ -228,6 +228,9 @@ function aiPower(team) {
   if (powerBlock(team, superPower)) return null;
   const units = alive(team), foes = aiTargetsOf({ team }), co = coTrainer(s), fx = co ? (superPower ? co.super : co.power) : null;
   const close = units.some(u => foes.some(v => dist(u, v) <= u.mov + u.rngMax)), hurt = units.some(u => u.hp <= u.maxHp * .65 || u.status || u.root);
+  // close to a Super Power and nothing urgent: keep charging for it (a big fight or several wounded spend it now)
+  const engaged = units.filter(u => foes.some(v => dist(u, v) <= u.mov + u.rngMax)).length, wounded = units.filter(u => u.hp <= u.maxHp * .5).length;
+  if (!superPower && s.superUnlocked && s.charge >= 70 && engaged < 3 && wounded < 2) return null;
   if (fx) { if (fx.heal && !fx.enemyDmg && !fx.atk && !fx.weather) { if (!hurt) return null; } else if (!close && !fx.steal && !fx.future) return null; }
   else if (s.root === 1) { if (!hurt) return null; }
   else if (!close) return null;
