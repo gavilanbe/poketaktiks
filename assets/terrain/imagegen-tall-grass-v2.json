@@ -1,0 +1,258 @@
+{
+  "generator": "ImageGen (built-in)",
+  "source": "source/imagegen-tall-grass-v2-original.png",
+  "sourceSHA256": "d4a99c4f8e49b5908f7e26e96075dbc8fe1b8ad1007b7f0a4907f7c432b6cf61",
+  "sourceSize": [
+    1254,
+    1254
+  ],
+  "processing": [
+    "crop each original cell",
+    "nearest-neighbor resize to 32x32",
+    "map to game palette without dithering"
+  ],
+  "tileSize": 32,
+  "columns": 4,
+  "rows": 4,
+  "states": [
+    "idle",
+    "rustle",
+    "occupied",
+    "recover"
+  ],
+  "image": "imagegen-tall-grass-v2.png",
+  "foreground": "imagegen-tall-grass-front-v2.png",
+  "palette": [
+    "#2b6a32",
+    "#3f8a3c",
+    "#54a646",
+    "#74c45c",
+    "#9ad878"
+  ],
+  "frames": [
+    {
+      "state": "idle",
+      "frame": 0,
+      "x": 0,
+      "y": 0,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        0,
+        0,
+        314,
+        314
+      ]
+    },
+    {
+      "state": "idle",
+      "frame": 1,
+      "x": 32,
+      "y": 0,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        314,
+        0,
+        627,
+        314
+      ]
+    },
+    {
+      "state": "idle",
+      "frame": 2,
+      "x": 64,
+      "y": 0,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        627,
+        0,
+        940,
+        314
+      ]
+    },
+    {
+      "state": "idle",
+      "frame": 3,
+      "x": 96,
+      "y": 0,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        940,
+        0,
+        1254,
+        314
+      ]
+    },
+    {
+      "state": "rustle",
+      "frame": 0,
+      "x": 0,
+      "y": 32,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        0,
+        314,
+        314,
+        627
+      ]
+    },
+    {
+      "state": "rustle",
+      "frame": 1,
+      "x": 32,
+      "y": 32,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        314,
+        314,
+        627,
+        627
+      ]
+    },
+    {
+      "state": "rustle",
+      "frame": 2,
+      "x": 64,
+      "y": 32,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        627,
+        314,
+        940,
+        627
+      ]
+    },
+    {
+      "state": "rustle",
+      "frame": 3,
+      "x": 96,
+      "y": 32,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        940,
+        314,
+        1254,
+        627
+      ]
+    },
+    {
+      "state": "occupied",
+      "frame": 0,
+      "x": 0,
+      "y": 64,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        0,
+        627,
+        314,
+        940
+      ]
+    },
+    {
+      "state": "occupied",
+      "frame": 1,
+      "x": 32,
+      "y": 64,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        314,
+        627,
+        627,
+        940
+      ]
+    },
+    {
+      "state": "occupied",
+      "frame": 2,
+      "x": 64,
+      "y": 64,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        627,
+        627,
+        940,
+        940
+      ]
+    },
+    {
+      "state": "occupied",
+      "frame": 3,
+      "x": 96,
+      "y": 64,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        940,
+        627,
+        1254,
+        940
+      ]
+    },
+    {
+      "state": "recover",
+      "frame": 0,
+      "x": 0,
+      "y": 96,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        0,
+        940,
+        314,
+        1254
+      ]
+    },
+    {
+      "state": "recover",
+      "frame": 1,
+      "x": 32,
+      "y": 96,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        314,
+        940,
+        627,
+        1254
+      ]
+    },
+    {
+      "state": "recover",
+      "frame": 2,
+      "x": 64,
+      "y": 96,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        627,
+        940,
+        940,
+        1254
+      ]
+    },
+    {
+      "state": "recover",
+      "frame": 3,
+      "x": 96,
+      "y": 96,
+      "w": 32,
+      "h": 32,
+      "sourceRect": [
+        940,
+        940,
+        1254,
+        1254
+      ]
+    }
+  ]
+}

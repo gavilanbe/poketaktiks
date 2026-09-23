@@ -1,0 +1,17 @@
+Use case: style-transfer.
+Edit target: the tall-grass TERRAIN TILE in the SECOND COLUMN of input image 1. Redesign that tile and expand it into a new 4-column by 4-row sprite sheet. Image 1's other columns are existing plain grass, forest and water tiles; these are ONLY style and scale references. Input image 2 is the ACTUAL POKETAKTIKS GAME MAP, only a context reference. Output only the new grass terrain sprite sheet.
+The user wants ImageGen itself to draw the finished terrain tiles, which will be cropped and placed directly into this game's map.
+
+CRITICAL: this is TOP-DOWN MAP TERRAIN, a whole square ground tile full of short, dense tall-grass blades. It is NOT a single isolated grass bush, a side-view battle prop, a landscape, a board mockup, or a perspective grass island. Every cell fills its complete square with green ground, with several small clumps distributed across it. It must look natural repeated next to the forest and water in the provided game screenshot.
+
+Create a square sheet with an EXACT 4x4 equal grid, no gutters, borders or margins. All 16 cells are opaque green ground, meeting edge to edge. Each cell is designed on a native 32x32 pixel grid; the complete sheet is natively 128x128 pixels, shown enlarged 8 times. Every visible pixel must be a large, sharp, solid square. Flat clusters, clear stair-step outlines, no antialiasing, no texture noise, no gradients, no illustration-like detail. The visual pixel size must match the existing reference tiles.
+
+Use ONLY this coordinated five-green palette: darkest roots #2b6a32, leaf shadows #3f8a3c, continuous ground and mid green #54a646, illuminated leaves #74c45c, small highlights #9ad878. Ground is predominantly #54a646 all the way to the four edges so adjacent cells join seamlessly. Gentle top-left lighting.
+Design small upright V-shaped and pointed grass clusters in roughly three staggered rows per tile, with readable blades and a calm ground between them. Blades are about 6-8 native pixels high, not a huge plant filling the whole cell. Draw this original design consistently across all 16 cells. The ground texture and planted positions stay fixed; only the grass pose changes.
+
+ROW 1: UNoccupied idle animation, four subtly different wind poses of the SAME intact grass tile, tips moving one pixel left/center/right/center. Continuous full terrain.
+ROW 2: ENTRY/RUSTLE, four frames of grass blades bending and parting around the central area as a unit steps onto the tile.
+ROW 3: OCCUPIED, four gentle sway frames; the central 16x16-pixel area has shorter flattened grass so a Pokemon mini icon remains legible above it. Keep taller grass around the edges and a low fringe in the bottom 5 pixel rows. The center is ordinary opaque green ground, NOT a hole and NOT transparent.
+ROW 4: EXIT/RECOVERY, four frames returning from flattened grass to the exact original idle tile.
+
+No Pokemon, characters, tree, water, rock, labels, text, symbols, grid lines, checkerboard, external background, empty cells, shadows cast outside a tile, or UI. Keep the subtle pixel-art palette and map perspective faithful to the supplied actual game. Output the terrain artwork itself.

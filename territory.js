@@ -12,12 +12,13 @@ function territoryProperty(x, y) { return B && B.territory ? B.territory.propert
 function territoryCenters(team) { return B.territory.properties.filter(p => p.owner === team); }
 function territoryControl(team) { return territoryCenters(team).filter(p => p.hq < 0).length; }
 function territoryIncome(team) { return territoryCenters(team).length * TERRITORY.income; }
-function territoryHeals(u) { return !B.territory || !!territoryProperty(u.x, u.y) && territoryProperty(u.x, u.y).owner === u.team; }
-function territoryInit() {
+function territoryHeals(u) { if (!B.territory) { const p = campaignProperty(u.x, u.y); return !p || p.owner === u.team; } return !!territoryProperty(u.x, u.y) && territoryProperty(u.x, u.y).owner === u.team; }
+function territoryRoster(root = 7) { return TERRITORY_ROSTER.map(([n, cost], i) => [i === 2 ? root : i === 3 && root === 1 ? 7 : n, cost]); }
+function territoryInit(captains = [7, 7]) {
   const properties = [[1, 5, 'WEST HQ', 0], [13, 5, 'EAST HQ', 1], [7, 2, 'NORTH', -1], [7, 5, 'BRIDGE', -1], [7, 8, 'SOUTH', -1]].map(([x, y, name, hq]) => ({ x, y, name, hq, owner: hq, captor: null, progress: 0 }));
-  B.territory = { version: 1, points: [4, 4], properties, hold: [0, 0], stamp: [-1, -1], reserves: [0, 1].map(() => TERRITORY_ROSTER.map(([num, cost]) => ({ num, cost, unitId: null, recovery: 0 }))), captures: [0, 0], deployments: [0, 0], reason: '' };
+  B.territory = { version: 1, captains: captains.slice(), points: [4, 4], properties, hold: [0, 0], stamp: [-1, -1], reserves: [0, 1].map(team => territoryRoster(captains[team]).map(([num, cost]) => ({ num, cost, unitId: null, recovery: 0 }))), captures: [0, 0], deployments: [0, 0], reason: '' };
   for (const team of [0, 1]) for (let i = 0; i < 3; i++) {
-    const u = makeUnit(TERRITORY_ROSTER[i][0], TERRITORY.level, team, { x: team ? 12 : 2, y: team ? 6 - i : 4 + i });
+    const u = makeUnit(B.territory.reserves[team][i].num, TERRITORY.level, team, { x: team ? 12 : 2, y: team ? 6 - i : 4 + i });
     u.reserveSlot = i; B.units.push(u); B.territory.reserves[team][i].unitId = u.id; requestBigSprite(u.num);
   }
 }
@@ -48,7 +49,7 @@ function territoryCapture(u) {
   if (p.captor !== u.id) { p.captor = u.id; p.progress = 0; }
   p.progress = Math.min(TERRITORY.capture, p.progress + territoryCaptureGain(u));
   const done = p.progress >= TERRITORY.capture;
-  if (done) { p.owner = u.team; p.captor = null; p.progress = 0; B.territory.captures[u.team]++; }
+  if (done) { p.owner = u.team; p.captor = null; p.progress = 0; B.territory.captures[u.team]++; powerCharge(u.team, 20); }
   u.acted = u.moved = true; territorySettle();
   return { type: 'property', unit: u, property: p, done, progress: p.progress };
 }
@@ -65,7 +66,7 @@ function territoryDeployBlock(team, slot, p) {
 function territoryDeploy(team, slot, p) {
   if (territoryDeployBlock(team, slot, p)) return null;
   const r = B.territory.reserves[team][slot], u = makeUnit(r.num, TERRITORY.level, team, { x: p.x, y: p.y });
-  u.reserveSlot = slot; u.acted = u.moved = true; r.unitId = u.id; B.territory.points[team] -= r.cost;
+  u.reserveSlot = slot; if (slot === 2 && powerState(team)) { powerState(team).captainId = u.id; u.leader = true; } u.acted = u.moved = true; r.unitId = u.id; B.territory.points[team] -= r.cost;
   B.territory.deployments[team]++; B.units.push(u); requestBigSprite(u.num); return u;
 }
 // Deduplicated by round and side. beginPhase increments the round BEFORE this for territory battles.
@@ -141,15 +142,15 @@ function territoryDecide(u) {
   }
   return best;
 }
-function launchTerritory(seed = 7, defer = false) {
-  BACKDROP = makeBackdrop(TERRITORY_MAP); startBattle(TERRITORY_MAP, [], {}, { territory: true, seed, defer: true }); B.map.ownerAt = territoryOwnerAt;
+function launchTerritory(seed = 7, defer = false, captains = [7, 7]) {
+  BACKDROP = makeBackdrop(TERRITORY_MAP); startBattle(TERRITORY_MAP, [], {}, { territory: true, captains, seed, defer: true }); B.map.ownerAt = territoryOwnerAt;
   BT.territoryGuide = !defer && PREF.territoryGuide === 'show' && !PARAMS.has('noguide');
   goScene('battle'); if (!defer) beginPhase(0, true);
 }
-function startTerritorySetup(seed = 7) { goScene('territory', { seed, bd: makeBackdrop(TERRITORY_MAP) }); }
+function startTerritorySetup(seed = 7) { goScene('territory', { seed, captain: 7, bd: makeBackdrop(TERRITORY_MAP) }); SC.i = 2; }
 function territorySceneInput(ev) {
   if (ev.type === 'key') {
-    if (['left', 'up', 'right', 'down'].includes(ev.key)) SC.i = (SC.i + 1) % Math.max(1, SC.hits.length);
+    if (['left', 'up', 'right', 'down'].includes(ev.key)) { const count = Math.max(1, SC.hits.length); SC.i = (SC.i + (ev.key === 'left' || ev.key === 'up' ? count - 1 : 1)) % count; if (SC.name === 'territory' && SC.i < 3) SC.data.captain = STARTERS[SC.i]; Audio.sfx('cursor'); }
     else if (ev.key === 'ok' && SC.hits[SC.i]) SC.hits[SC.i].run();
     else if (ev.key === 'back') goScene('title');
   } else if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
@@ -166,26 +167,6 @@ function drawTerritoryGuide() {
   r.lines.forEach((s, i) => text(s, r.x + 8, p.cy + i * 10, UI.ink));
   button(r.x + 8, r.y + r.h - 28, r.w - 16, 20, 'GOT IT · H FOR RULES', closeTerritoryGuide, { variant: 'primary' });
 }
-function territorySetupDraw() {
-  const W = VIEW.w, H = VIEW.h, S = SC.data, portrait = H > W; rect(0, 0, W, H, '#0d1526'); SC.hits = [];
-  screenTitle('TERRITORY', 'THREE BRIDGES  ·  Lv12', 6);
-  const pw = portrait ? Math.min(W - 24, 220) : Math.min(W * .42, Math.max(50, (H - 100) * 15 / 11));
-  const ph = Math.round(pw * 11 / 15), x = portrait ? (W - pw) / 2 : 10, y = 38;
-  panel(x - 5, y - 5, pw + 10, ph + 10, { flat: true, fill: UI.panelDark }); ctx.drawImage(S.bd.canvas, x, y, pw, ph);
-  const top = portrait ? y + ph + 23 : 38, cw = Math.min(150, (W - 16) / 2);
-  if (!portrait) { const rx = Math.round(W * .54) - 8, rw = Math.min(W - rx - 10, 170); panel(rx, top - 8, rw, 6 * 14 + 30, { header: 'YOUR TEAM', headerRight: '3 start · 6 total' }); }
-  if (portrait) textC('3 start · 6 teammates · 5 on map', W / 2, y + ph + 8, UI.green);
-  TERRITORY_ROSTER.forEach(([n, cost], i) => {
-    const xx = portrait ? W / 2 - cw + (i % 2) * cw : W * .54, yy = top + (portrait ? Math.floor(i / 2) * 16 : i * 14);
-    const yy2 = portrait ? yy : yy + 17; ctx.drawImage(monIcon(n, false), xx, yy2 - 4, 24, 18); text(DEX[n].name, xx + 25, yy2, UI.ink); if (portrait) text(i < 3 ? 'START' : cost + ' CP', xx + 25, yy2 + 8, UI.muted); else textR(i < 3 ? 'STARTS' : cost + ' CP', Math.round(W * .54) + Math.min(W - Math.round(W * .54) - 2, 162) - 8, yy2, i < 3 ? UI.green : UI.gold);
-  });
-  const info = ['Capture the enemy HQ, or hold', '2 of 3 centers for 3 own turns.', 'Centers earn 2 CP each turn.'];
-  const iy = portrait ? top + 54 : H - 76; if (portrait || iy >= top + 112) info.forEach((s, i) => textC(s, W / 2, iy + i * 10, UI.muted)); // short landscapes keep the rules in HELP
-  const by = portrait ? Math.max(iy + 34, H - 30) : H - 29;
-  footerBand(H - by + 6); bigButton(W / 2 - 82, by, 108, 22, 'START', () => launchTerritory(S.seed), { hot: SC.i === 0, variant: 'primary' });
-  bigButton(W / 2 + 32, by, 50, 22, 'BACK', () => goScene('title'), { hot: SC.i === 1, variant: 'ghost' });
-}
-
 // Buildings show their owner on the roof (the tile itself, see ROOFS); the overlay only adds a capture-progress bar
 // and a soft pulse on the tile under the cursor.
 function drawTerritoryProperties() {
@@ -230,16 +211,17 @@ function territoryResultsDraw() {
   textC('Turn ' + S.turn + ' · Centers ' + S.centers.join('-'), W / 2, y + 64, UI.muted);
   textC('Deployed ' + S.deployments.join(' / '), W / 2, y + 78, UI.muted);
   textC('Fixed level · campaign kept separate', W / 2, y + 100, UI.muted);
-  bigButton(W / 2 - 82, y + 136, 108, 22, 'REMATCH', () => launchTerritory(S.seed + 1), { hot: SC.i === 0, variant: 'danger' });
+  bigButton(W / 2 - 82, y + 136, 108, 22, 'REMATCH', () => launchTerritory(S.seed + 1, false, S.captains || [7, 7]), { hot: SC.i === 0, variant: 'danger' });
   bigButton(W / 2 + 32, y + 136, 50, 22, 'TITLE', () => goScene('title'), { hot: SC.i === 1, variant: 'ghost' });
 }
 // Deterministic model smoke. Real beginPhase/nextPhase is separately exercised by the UI-flow tests.
-function simTerritory(seed = 7, maxTurns = TERRITORY.turns + 1) {
-  launchTerritory(seed, true); const actions = [];
+function simTerritory(seed = 7, maxTurns = TERRITORY.turns + 1, captains = [7, 7]) {
+  launchTerritory(seed, true, captains); const actions = [];
   for (B.turn = 1; B.turn <= maxTurns && !B.result; B.turn++) {
     for (const team of [0, 1]) {
       B.phase = team; upkeep(team); territoryUpkeep(team); if (checkObjective()) break;
       territoryAiDeploy(team);
+      const power = aiPower(team); if (power) actions.push({ turn: B.turn, team, kind: 'power', name: power[0].name });
       for (const u of alive(team).slice().sort((a, b) => b.level - a.level)) {
         if (u.acted || u.status === 'frz') continue;
         const d = territoryDecide(u);

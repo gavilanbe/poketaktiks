@@ -22,17 +22,65 @@ Open `http://127.0.0.1:8765/`. The build concatenates the source modules into
 loading uses relative asset paths, but its runtime behavior was not verified
 in this pass because the supported browser blocked file URLs.
 
+## Campaign: your captain and collection
+
+Choose Bulbasaur, Charmander or Squirtle. That starter becomes your captain;
+Pidgey always joins as your first companion. The captain always deploys and
+keeps its identity and power family through evolution. Every other slot can
+be filled from your collection, regardless of type. Existing saves migrate
+without replacing their collection or levels.
+
+Chapter 1 teaches movement, combat and a protected Caterpie catch. Oak's
+practice target stays put, cannot faint and cannot gain status. Weaken it to
+half HP, approach with a ready teammate and choose **Catch → Practice Ball**:
+the ball is free and guaranteed. Catch it and defeat the trainers to win.
+Captures join your collection after victory; your whole collection recovers
+and weaker companions receive the existing catch-up training before the next
+mission. Losing a campaign mission keeps the prior mission's save.
+
+Chapter 2 introduces the normal team power and a capturable outpost. Chapter 3
+explains team roles. Chapter 4 introduces superpowers and enemy captains;
+claim the bridge outpost, then capture the gym over multiple actions. Campaign
+outposts follow Territory's HP-based capture rules and heal only their owner.
+They grant power charge, while Territory also has income and reserves.
+
+## Shared team powers
+
+Press **P** or tap **POWER** to see both powers, their costs, duration and any
+reason they cannot be used. Every ally benefits, including other types.
+
+| Captain family | Normal: 50 charge | Super: 100 charge |
+| --- | --- | --- |
+| Charmander | Rally: +25% on each ally's next offensive exchange | Blaze Rush: +50% |
+| Squirtle | Shell Guard: all allies take 20% less damage | Tidal Shield: 40% less |
+| Bulbasaur | Life Link: heal 20% max HP and cure status/Root | Verdant Bloom: heal 40%, cure, block new status/Root |
+
+The shared bar caps at 100. Actual hostile combat damage charges both teams
+(dealing up to 20 per hit, receiving up to 25); catching gives 15 and completing
+a building capture gives 20. Healing, status ticks and overkill give no charge.
+An active team power pauses that team's charge gain until its next own turn.
+Only one power can activate per own turn. Effects expire at the next own turn;
+healing is immediate and never restores spent actions or bypasses recharge.
+Fire applies to the whole offensive exchange, including a follow-up; it is
+consumed even if the exchange misses, and does not boost enemy-turn counters.
+
+A fainted captain prevents activation, while surviving teammates can still
+win. End turns manually so you can activate a defensive power after moving
+everyone. Normal powers unlock in chapter 2 (with 50 starting charge for that
+lesson); supers unlock in chapter 4. Territory has both from the start. Enemy
+captains use the same costs and restrictions. Local draft Versus retains its
+existing rules without captain powers.
+
 ## Territory: Three Bridges
 
 Choose **TERRITORY** from the title. A short guide appears on first use;
 **H / HELP** always opens the full rules.
 
-- Each side has six teammates: Pidgey, Geodude, Squirtle, Bulbasaur, Abra and
-  Clefairy. The first three start on the map. Both sides stay at level 12,
-  with equal stats and no XP. At most five teammates can be active. These six
-  species have board sprites of their own (`mapart.js`, 16x16 pixel maps
-  shown at 2x with an idle and a step frame); other species use their mini
-  icons on the board.
+- Choose a captain before starting. Both sides use the same choice and six
+  unique teammates: Pidgey, Geodude, the captain, a complementary starter,
+  Abra and Clefairy. Pidgey, Geodude and the captain start on the map. Both sides stay at level 12,
+  with equal stats and no XP. At most five teammates can be active. All species use their original
+  Showdown mini icons on the board, in unit cards and in combat forecasts.
 - Buildings show their owner on the roof, as in Advance Wars: grey is neutral,
   blue is yours, red is the enemy's. The two HQs are larger halls with a
   banner; a capture in progress shows a gold bar under the building.
@@ -47,6 +95,8 @@ Choose **TERRITORY** from the title. A short guide appears on first use;
   Costs are shown before spending. An occupied center cannot deploy. Arrivals
   have already acted. Fainted teammates recover after two of their own turn
   starts and must be paid for again. There are no duplicate teammates.
+- Power charge is separate from command points. A recovered, redeployed
+  captain regains access to the team's stored charge.
 - Win by capturing the enemy HQ, or owning at least two of the three contested
   centers at the start of three of your turns. Losing that majority resets
   the hold counter. After 40 turns, the side with more contested centers wins;
@@ -158,6 +208,7 @@ art provenance and its generation prompt are in
 
 - Arrows/WASD: cursor. Z/Enter/Space: confirm. X/Escape: cancel/menu.
 - Q/E: cycle units. C: unit information or switch the forecast move. V: forecast details.
+- P: inspect and activate the shared team power during your turn.
 - F: fast playback. `+` / `-`: zoom. H: help. M: mute.
 - Mouse: point and click; right-click to cancel/open the menu; drag/wheel to pan.
 - Touch: tap to select/confirm, drag to pan; use the on-screen buttons (NEXT
@@ -168,8 +219,9 @@ art provenance and its generation prompt are in
 Campaign progression saves between chapters. A **shared suspend slot** is
 written at the start of each player turn in campaign, skirmish and Territory;
 starting another battle replaces that slot. Resume returns to the saved turn
-start, preserving unit state and the random sequence without repeating upkeep,
-income or recovery. Presentation settings persist separately.
+start, preserving unit state, captain/charge/effects, captures and the random
+sequence without repeating upkeep, income or recovery. Presentation settings
+persist separately.
 
 ## Development and verification
 
@@ -177,19 +229,24 @@ income or recovery. Presentation settings persist separately.
 node tools/model-tests.cjs
 node tools/territory-tests.cjs
 node tools/integration-tests.cjs
+node tools/captain-tests.cjs
 SIM_TURNS=60 node tools/sim.cjs 3,7,19 1-8
 ```
 
 The tests use Node built-ins and the actual game modules. They cover combat,
 scene/skip parity, roles, saves, status-action rules, economy, capture, deployment,
-AI legality, UI bounds and the battle-to-results flow. Fixed-seed simulations
+AI legality, UI bounds and the battle-to-results flow. Captain tests cover the
+starter journey, unlocks, all six powers, forecasts, capture, migration,
+suspend and full Territory matches for all three captains. Fixed-seed simulations
 are smoke checks, not proof of final balance. The campaign simulation proxy
-cannot issue Seize or use items, so a Seize chapter can remain unfinished.
+can capture outposts but cannot catch wild Pokémon or use items, so the guided
+first mission needs interactive play or the dedicated capture integration test.
 Mt. Moon remains difficult for that proxy and still needs human balance
 playtesting.
 
 Browser checks used a local HTTP server at desktop and phone sizes. The
 implementation record and validation limits are in `docs/implementation-plan.md`.
+The captain implementation and verification are in `docs/captain-journey.md`.
 The older CDP/screenshot helper scripts remain in `tools/`; they were not used
 for browser verification in this implementation.
 
@@ -199,12 +256,14 @@ Deep links: `?ch=N`, `?ch=N&prep`, `?skirmish=SEED`, `?versus=SEED`,
 `&noguide` bypasses the territory guide. Presentation preferences are independent.
 
 Source modules: `core.js` (canvas/input/audio/RNG), `font.js`, `dex.js`, `data.js`,
-`animmeta.js` (generated), `art.js`, `mapart.js` (board sprites; preview them with
-`node tools/preview-map-sprites.cjs`, which writes `artifacts/map-sprites.png`), `model.js`, `battle.js`, `duel.js`, `campaign.js`, `territory.js`,
-`scenes.js`, and `main.js`. `build.sh` regenerates the tracked `index.html`.
+`animmeta.js` (generated), `art.js`, `model.js`, `captain.js` (powers and lessons), `battle.js`, `duel.js`, `campaign.js`, `territory.js`,
+`scenes.js`, `journey.js` (captain UI), and `main.js`. `build.sh` regenerates the tracked `index.html`.
 
 Sprites: Pokémon Showdown mini icons and PokeAPI Black/White battle sprites
 (static and animated; `tools/pack-anim.py` repacks the animated GIFs into the
 frame sheets in `assets/battle/anim/` and `animmeta.js`).
 See `assets/battle/ATTRIBUTION.md` for source provenance. Pokémon © Nintendo /
 Game Freak / Creatures.
+
+The experimental redrawn board sprites in `mapart.js` are no longer loaded by
+the game. The original bundled sprite sheets remain the source of unit art.

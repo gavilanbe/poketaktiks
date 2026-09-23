@@ -6,7 +6,7 @@ let SAVE = null;   // { chapter, party:[serialized], bag:{}, stars:{}, beaten }
 const PARAMS = new URLSearchParams(location.search);
 // Saves written before the HP edge became an explicit per-unit field: every campaign party member carries it.
 function migrateParty(list) { if (list) for (const p of list) if (p.hpBonus == null) p.hpBonus = BOND_HP; return list; }
-function loadSave() { try { const s = JSON.parse(localStorage.getItem('pk_save')); if (s) migrateParty(s.party); return s; } catch (e) { return null; } }
+function loadSave() { try { const s = JSON.parse(localStorage.getItem('pk_save')); if (s) { migrateParty(s.party); migrateCaptain(s); } return s; } catch (e) { return null; } }
 function writeSave() { if (PARAMS.has('nosave')) return; try { localStorage.setItem('pk_save', JSON.stringify(SAVE)); } catch (e) { } }
 function loadSuspend() { try { return JSON.parse(localStorage.getItem('pk_suspend')); } catch (e) { return null; } }
 function clearSuspend() { if (PARAMS.has('nosave')) return; try { localStorage.removeItem('pk_suspend'); } catch (e) { } }
@@ -14,10 +14,11 @@ function clearSuspend() { if (PARAMS.has('nosave')) return; try { localStorage.r
 function partyUnit(num, level, hpBonus = BOND_HP) { const u = makeUnit(num, level, 0, { hpBonus }); let evo; while ((evo = evolutionFor(u))) evolve(u, evo); u.hp = u.maxHp; return serializeUnit(u); }
 
 // ---------------------------------------------------------------- campaign flow
-function startNewGame() { clearSuspend(); SAVE = { chapter: 0, party: [], bag: { pokeball: 3, potion: 1 }, stars: {}, beaten: false }; goScene('starter'); }
-function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(pick([16, 19, 21, 10, 13, 133]), 3)]; writeSave(); prepChapter(SAVE.chapter); }
+function startNewGame() { clearSuspend(); SAVE = { chapter: 0, party: [], bag: { pokeball: 3, potion: 1 }, stars: {}, beaten: false, journey: { version: 1, firstCatch: false } }; goScene('starter'); }
+function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; SAVE.starter = num; SAVE.captainPid = 0; writeSave(); showJourney(['YOUR CAPTAIN, YOUR TEAM', DEX[num].name + ' leads your team. Pidgey joins as your scout.', 'Capture more Pokemon and choose companions before each mission.', 'Your captain stays with you through every evolution.', 'Team powers unlock in chapter 2; superpowers in chapter 4.'], () => prepChapter(SAVE.chapter)); }
 function continueCampaign() { SAVE = loadSave(); if (!SAVE) { startNewGame(); return; } if (SAVE.chapter >= CHAPTERS.length) { SAVE.chapter = CHAPTERS.length - 1; } prepChapter(SAVE.chapter); }
 function prepChapter(idx) {
+  migrateCaptain(SAVE);
   const ch = CHAPTERS[idx]; const P = { chapter: ch, party: SAVE.party, bag: SAVE.bag, deploy: [], start: null };
   autoDeploy(P);
   P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, SAVE.party[i], { pid: i })); goScene('card', { chapter: ch, next: () => launchChapter(idx, deployed) }); };
@@ -25,13 +26,13 @@ function prepChapter(idx) {
 }
 function launchChapter(idx, deployed) {
   const ch = CHAPTERS[idx]; BACKDROP = makeBackdrop(ch.map);
-  startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: (Date.now() & 0xffff) | 1, defer: true });
+  startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: (Date.now() & 0xffff) | 1, defer: true, captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx }, lesson: idx === 0 && SAVE.journey && !SAVE.journey.firstCatch });
   for (const u of alive(0)) { const src = deployed.find(d => d.pid != null && d.num === u.num && d.level === u.level && !d._used); if (src) { src._used = true; u.pid = src.pid; } }
-  const go = () => { goScene('battle'); beginPhase(0, true); };
+  const go = () => { const start = () => { goScene('battle'); beginPhase(0, true); }; if (CHAPTER_LESSONS[idx]) showJourney(CHAPTER_LESSONS[idx], start); else start(); };
   if (ch.intro && !PARAMS.has('nostory')) { goScene('battle'); startDialog(ch.intro, go); } else go();
 }
 function onBattleEnd(result) {
-  if (B.territory) { const S = B.territory; clearSuspend(); goScene('territoryResults', { result, reason: S.reason || 'Retreated', turn: B.turn, centers: [territoryControl(0), territoryControl(1)], deployments: S.deployments.slice(), seed: B.seed }); return; }
+  if (B.territory) { const S = B.territory; clearSuspend(); goScene('territoryResults', { result, reason: S.reason || 'Retreated', turn: B.turn, centers: [territoryControl(0), territoryControl(1)], deployments: S.deployments.slice(), seed: B.seed, captains: (S.captains || [7, 7]).slice() }); return; }
   if (B.versus) {
     const S = B.setup; const survivors = t => alive(t).map(u => u.num); const again = teams => { const S2 = Object.assign({}, S, { teams }); S2.go = () => launchVersus(S2); return S2; };
     goScene('results', { versus: true, result: B.result, reason: B.endReason, mode: B.map.objective.mode || 'elim', turns: B.turn, kills: B.kills, teams: [survivors(0), survivors(1)], rosters: [S.teams[0].slice(), S.teams[1].slice()], next: () => goScene('title'), rematch: () => { const S2 = again([S.teams[0].slice(), S.teams[1].slice()]); S2.seed = (S.seed + 1) % 1000; launchVersus(S2); }, setup: () => goScene('versus', again([[], []])) });
@@ -45,6 +46,7 @@ function onBattleEnd(result) {
     const ch = CHAPTERS[idx];
     if (!win) { goScene('results', { win: false, turns: B.turn, kills: B.kills, caught: [], rewards: {}, nextLabel: 'TRY AGAIN', next: () => prepChapter(idx) }); return; }
     const R = { win: true, turns: B.turn, kills: B.kills, par: ch.par, rewards: ch.rewards, caught, trained: [], evolved: [] };
+    if (B.lesson && B.lesson.complete && SAVE.journey) SAVE.journey.firstCatch = true;
     applyBattleToParty(); for (const k in ch.rewards) SAVE.bag[k] = (SAVE.bag[k] || 0) + ch.rewards[k];
     // training: everyone below the next chapter's level catches up
     const nextCh = CHAPTERS[idx + 1]; const target = nextCh ? nextCh.level - 1 : ch.level + 4;
@@ -66,7 +68,7 @@ function applyBattleToParty() {
 // ---------------------------------------------------------------- suspend (mid-battle save at the start of each player phase)
 function saveSuspend() {
   if (!B || PARAMS.has('nosave')) return;
-  const s = { rng: typeof rnd.state === 'function' ? rnd.state() : null, territory: B.territory || null, chapter: B.chapter, skirmish: B.skirmish, skirmishMap: B.skirmish ? B.map.def : null, turn: B.turn, bag: B.bag, captured: B.captured, kills: B.kills, seed: B.seed, items: B.map.items.map(i => !!i.taken), reinforce: B.map.reinforce.map(r => !!r.done), units: B.units.map(u => Object.assign(serializeUnit(u), { pid: u.pid, leader: !!u.leader, provoked: !!u.provoked, maxHpNow: u.maxHp })), cx: BT.cx, cy: BT.cy, party: SAVE ? SAVE.party : null, preset: SC.data && SC.data.preset };
+  const s = { rng: typeof rnd.state === 'function' ? rnd.state() : null, territory: B.territory || null, command: B.command || null, lesson: B.lesson || null, outposts: B.outposts || [], chapter: B.chapter, skirmish: B.skirmish, skirmishMap: B.skirmish ? B.map.def : null, turn: B.turn, bag: B.bag, captured: B.captured, kills: B.kills, seed: B.seed, items: B.map.items.map(i => !!i.taken), reinforce: B.map.reinforce.map(r => !!r.done), units: B.units.map(u => Object.assign(serializeUnit(u), { pid: u.pid, leader: !!u.leader, provoked: !!u.provoked, maxHpNow: u.maxHp })), cx: BT.cx, cy: BT.cy, party: SAVE ? SAVE.party : null, preset: SC.data && SC.data.preset };
   try { localStorage.setItem('pk_suspend', JSON.stringify(s)); BT.savedAt = BT.time; } catch (e) { }
 }
 function resumeSuspend() {
@@ -74,7 +76,7 @@ function resumeSuspend() {
   SAVE = loadSave();
   const mapDef = s.territory ? TERRITORY_MAP : s.skirmish ? s.skirmishMap : CHAPTERS[s.chapter]?.map; if (!mapDef) { clearSuspend(); goScene('title'); return; }
   seedRng(s.rng != null ? s.rng : s.seed ^ (s.turn * 7919)); const map = parseMap(mapDef); map.def = mapDef; UID = 1;
-  B = { territory: s.territory || null, map, units: [], turn: s.turn, phase: 0, bag: s.bag, result: null, seized: false, captured: s.captured || [], kills: s.kills || 0, chapter: s.chapter, log: [], seed: s.seed, skirmish: !!s.skirmish };
+  B = { territory: s.territory || null, command: s.command || null, lesson: s.lesson || null, outposts: s.outposts || [], map, units: [], turn: s.turn, phase: 0, bag: s.bag, result: null, seized: false, captured: s.captured || [], kills: s.kills || 0, chapter: s.chapter, log: [], seed: s.seed, skirmish: !!s.skirmish };
   map.items.forEach((it, i) => { it.taken = !!s.items[i]; }); map.reinforce.forEach((r, i) => { r.done = !!s.reinforce[i]; });
   for (const d of s.units) { if (d.hp <= 0 && !d.leader) continue; if (d.hpBonus == null && d.team === 0 && !B.territory) d.hpBonus = BOND_HP; const u = restoreUnit(d); u.pid = d.pid; u.leader = d.leader; u.provoked = d.provoked; if (u.team === 0 && u.status === 'frz') u.acted = true; if (d.hp <= 0) continue; B.units.push(u); }
   // older suspend saves could hold the same id on a party member and an enemy: renumber the duplicates (UID is already past every saved id)
@@ -82,7 +84,11 @@ function resumeSuspend() {
   BACKDROP = makeBackdrop(mapDef); BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.hpShow.clear(); BT.cx = s.cx; BT.cy = s.cy; BT.zoom = 1; if (narrowView() && canZoom()) setZoom(.5); centerCam(BT.cx, BT.cy, true); BT.hoverAnchor = null; FX.parts = []; FX.texts = [];
   for (const u of B.units) requestBigSprite(u.num);
   if (s.skirmish && s.preset) SC.data = { preset: true };
-  if (B.territory) map.ownerAt = territoryOwnerAt;
+  if (B.territory) {
+    map.ownerAt = territoryOwnerAt;
+    for (const u of B.units) u.reserveSlot = B.territory.reserves[u.team].findIndex(r => r.unitId === u.id);
+  } else if (B.outposts.length) map.ownerAt = (x, y) => { const p = campaignProperty(x, y); return p ? p.owner : null; };
+  if (!s.command) initBattleCaptains(B.territory ? {} : SAVE ? { captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: s.chapter == null ? 8 : s.chapter } } : {});
   // the save was written after this phase's upkeep: resume without applying it again
   goScene('battle'); Audio.playMusic(map.music); beginPhase(0, true, true);
 }
@@ -92,7 +98,7 @@ function startSkirmishSetup() {
   if (!party) { preset = true; party = [partyUnit(25, 12), partyUnit(5, 12), partyUnit(8, 12), partyUnit(2, 12), partyUnit(133, 11), partyUnit(66, 11)]; }
   const avg = Math.round(party.reduce((a, p) => a + p.level, 0) / party.length);
   const S = { seed: Math.floor(Math.random() * 1000), level: clamp(avg, 3, 48), party, preset, go: null };
-  S.go = () => { const ch = { title: S.map.name, num: 0, level: S.level, slots: Math.min(8, Math.max(3, Math.floor(party.length))), par: 10, map: S.map, rewards: {} }; const P = { chapter: ch, party, bag: preset ? { pokeball: 3, greatball: 1, potion: 2 } : SAVE.bag, deploy: [], preset }; autoDeploy(P); P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, party[i], { pid: i })); goScene('card', { chapter: ch, next: () => { BACKDROP = makeBackdrop(S.map); startBattle(S.map, deployed, Object.assign({}, P.bag), { skirmish: true, seed: S.seed * 131 + 7, defer: true }); B.map.def = S.map; for (const u of alive(0)) { const src = deployed.find(d => d.pid != null && d.num === u.num && !d._used); if (src) { src._used = true; u.pid = src.pid; } } SC.data = { preset }; goScene('battle'); SC.data = { preset }; beginPhase(0, true); } }); }; goScene('prep', P); };
+  S.go = () => { const ch = { title: S.map.name, num: 0, level: S.level, slots: Math.min(8, Math.max(3, Math.floor(party.length))), par: 10, map: S.map, rewards: {} }; const P = { chapter: ch, party, bag: preset ? { pokeball: 3, greatball: 1, potion: 2 } : SAVE.bag, deploy: [], preset }; autoDeploy(P); P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, party[i], { pid: i })); goScene('card', { chapter: ch, next: () => { BACKDROP = makeBackdrop(S.map); startBattle(S.map, deployed, Object.assign({}, P.bag), { skirmish: true, seed: S.seed * 131 + 7, defer: true, captain: preset ? { pid: 0, root: 4, chapter: 8 } : { pid: SAVE.captainPid, root: SAVE.starter, chapter: SAVE.chapter } }); B.map.def = S.map; for (const u of alive(0)) { const src = deployed.find(d => d.pid != null && d.num === u.num && !d._used); if (src) { src._used = true; u.pid = src.pid; } } SC.data = { preset }; goScene('battle'); SC.data = { preset }; beginPhase(0, true); } }); }; goScene('prep', P); };
   goScene('skirmish', S);
 }
 
@@ -116,7 +122,7 @@ function frame(t) {
   for (const ev of q) {
     if (ev.type === 'key' && ev.key === 'mute' && SC.name !== 'battle') { Audio.toggle(); continue; }
     switch (SC.name) {
-      case 'territory': case 'territoryResults': territorySceneInput(ev); break; case 'title': titleInput(ev); break; case 'starter': starterInput(ev); break; case 'card': cardInput(ev); break; case 'story': storyInput(ev); break;
+      case 'journey': journeyInput(ev); break; case 'territory': case 'territoryResults': territorySceneInput(ev); break; case 'title': titleInput(ev); break; case 'starter': starterInput(ev); break; case 'card': cardInput(ev); break; case 'story': storyInput(ev); break;
       case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break;
     }
   }
@@ -126,7 +132,7 @@ function frame(t) {
   ctx.setTransform(VIEW.scale, 0, 0, VIEW.scale, 0, 0); ctx.imageSmoothingEnabled = false;
   switch (SC.name) {
     case 'loading': rect(0, 0, VIEW.w, VIEW.h, '#0e0c10'); textC('loading sprites…', VIEW.w / 2, VIEW.h / 2, UI.muted); break;
-    case 'territory': territorySetupDraw(); break; case 'territoryResults': territoryResultsDraw(); break; case 'title': titleDraw(); break; case 'starter': starterDraw(); break; case 'card': cardDraw(); break; case 'story': storyDraw(); break;
+    case 'journey': journeyDraw(); break; case 'territory': territorySetupDraw(); break; case 'territoryResults': territoryResultsDraw(); break; case 'title': titleDraw(); break; case 'starter': starterDraw(); break; case 'card': cardDraw(); break; case 'story': storyDraw(); break;
     case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break;
   }
   // every scene change fades up from black (the story overlay excepted: it sits on the board it follows)
@@ -141,8 +147,9 @@ function boot() {
     const idx = clamp(parseInt(PARAMS.get('ch')) - 1, 0, CHAPTERS.length - 1); const ch = CHAPTERS[idx]; const L = ch.level;
     SAVE = { chapter: idx, party: [partyUnit(4, L), partyUnit(7, L), partyUnit(1, L), partyUnit(25, L), partyUnit(133, L - 1), partyUnit(66, L - 1), partyUnit(74, L - 1), partyUnit(16, L - 2)], bag: { pokeball: 3, greatball: 2, potion: 2, superpotion: 1, fullheal: 1, candy: 1 }, stars: {}, beaten: false };
     if (PARAMS.has('prep')) { prepChapter(idx); return; }
+    migrateCaptain(SAVE);
     const deployed = SAVE.party.slice(0, ch.slots).map((p, i) => Object.assign({}, p, { pid: i })); BACKDROP = makeBackdrop(ch.map);
-    startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: parseInt(PARAMS.get('seed') || '7'), defer: true }); alive(0).forEach((u, i) => u.pid = i); goScene('battle'); beginPhase(0, true); return;
+    startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: parseInt(PARAMS.get('seed') || '7'), defer: true, captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx } }); alive(0).forEach((u, i) => u.pid = i); goScene('battle'); beginPhase(0, true); return;
   }
   if (PARAMS.has('skirmish')) { startSkirmishSetup(); SC.data.seed = parseInt(PARAMS.get('skirmish')) || 1; return; }
   if (PARAMS.has('versus')) { startVersusSetup(parseInt(PARAMS.get('versus')) || 1); if (PARAMS.has('auto')) { const S = SC.data; S.teams = [VS_ROSTER.slice(0, 4), VS_ROSTER.slice(4, 8)]; S.go(); } return; }
@@ -153,15 +160,15 @@ requestAnimationFrame(frame);
 // Debug: play one player phase with the enemy AI (used by tools/cdp.cjs balance script).
 // Model-only action for one AI decision: skill, or attack then dart. Shared by autoTurn and simBattle.
 function aiAct(u, d, log) {
-  u.x = d.x; u.y = d.y;
-  if (d.capture) { const ev = territoryCapture(u); if (log && ev) log.push('T' + B.turn + ' ' + u.name + ' captures ' + ev.property.name); return; }
+  u.x = d.x; u.y = d.y; settleOutposts();
+  if (d.capture) { const ev = boardCapture(u); if (log && ev) log.push('T' + B.turn + ' ' + u.name + ' captures ' + ev.property.name); return; }
   if (d.skill) { const ev = useSkill(u, d.skill, d.target); if (log && ev) log.push('T' + B.turn + ' ' + u.name + '(' + u.team + ') ' + d.skill.name + '→' + d.target.name); return; }
   if (d.target) { const ev = resolveCombat(u, d.target, d.move, u); if (log) for (const e of ev) if (e.type === 'hit' || e.type === 'ko') log.push('T' + B.turn + ' ' + (e.type === 'ko' ? 'KO ' + e.unit.name + ' by ' + e.by.name : e.att.name + '(' + e.att.team + ')L' + e.att.level + ' ' + e.move.name + '→' + e.def.name + 'L' + e.def.level + ' ' + e.dmg + (e.crit ? '!' : '') + ' hp' + e.hpAfter + '/' + e.def.maxHp)); const c = aiDart(u); if (c) { u.x = c.x; u.y = c.y; if (log) log.push('T' + B.turn + ' ' + u.name + ' darts'); } }
 }
-function autoTurn() { if (!B || B.phase !== 0 || BT.mode !== 'idle') return false; for (const u of alive(0)) { if (u.acted) continue; const d = aiDecide(u); if (d) aiAct(u, d); u.acted = true; if (checkObjective()) { endBattle(); return true; } } endTurn(); return true; }
+function autoTurn() { if (!B || B.phase !== 0 || BT.mode !== 'idle') return false; aiPower(0); for (const u of alive(0)) { if (u.acted) continue; const d = aiDecide(u); if (d) aiAct(u, d); u.acted = true; if (checkObjective()) { endBattle(); return true; } } endTurn(); return true; }
 // Debug: simulate a whole battle model-only (no animation), AI on both sides. Returns a summary.
 function simBattle(maxTurns = 30, cautious = true) {
-  const log = B.simLog = []; const act = team => { for (const u of alive(team)) { if (u.status === 'frz' || u.acted) continue; const d = aiDecide(u, team === 0 && cautious); if (d) aiAct(u, d, log); u.acted = true; if (checkObjective()) return true; } return false; };
+  const log = B.simLog = []; const act = team => { B.phase = team; const power = aiPower(team); if (power) log.push('T' + B.turn + ' ' + team + ' uses ' + power[0].name); for (const u of alive(team)) { if (u.status === 'frz' || u.acted) continue; const d = aiDecide(u, team === 0 && cautious); if (d) aiAct(u, d, log); u.acted = true; if (checkObjective()) return true; } return false; };
   while (!B.result && B.turn <= maxTurns) {
     if (act(0)) break;
     let done = false; for (const t of [1, 2, 3]) { if (!alive(t).length) continue; upkeep(t); if (t === 1) spawnReinforcements(); if (act(t)) { done = true; break; } } if (done) break;

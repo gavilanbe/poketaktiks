@@ -85,6 +85,8 @@ function calcDmg(att, def, move, defTerr, crit = false) {
   d = Math.floor(d * (1 - terrainDef(defTerr, def) / 100));
   if (def.brace) d = Math.floor(d * BRACE_MULT);
   if (crit) d = Math.floor(d * 1.5);
+  d = Math.floor(d * powerDamageMultiplier(att, def));
+  if (isPracticeTarget(def)) return Math.min(Math.max(0, def.hp - 1), Math.max(1, d));
   return Math.max(eff > 0 ? 1 : 0, d);
 }
 // Follow-up strike: only roles built for it (scouts and strikers) turn a 10+ SPE lead into a second hit.
@@ -97,7 +99,7 @@ function bestMove(att, def, d, terr, asCounter = false) { let best = null, bd = 
 // Healing a drain move gives back: a share of the HP actually taken, never of overkill. 0 when nothing was taken.
 function drainFor(move, lost) { return move.eff && move.eff.drain && lost > 0 ? Math.max(1, Math.floor(lost * move.eff.drain)) : 0; }
 // Short labels for a move's chance-based or lasting effects, for forecasts and help.
-function moveEffects(move) { const e = move.eff, out = []; if (!e) return out; if (e.status) out.push(e.chance + '% ' + STATUS[e.status].name); if (e.drain) out.push('drains ' + Math.round(e.drain * 100) + '%'); if (e.crit) out.push('high crit'); if (e.recharge) out.push('must recharge'); return out; }
+function moveEffects(move, target) { const e = move.eff, out = []; if (!e) return out; if (e.status && !(target && (powerBlocksStatus(target) || isPracticeTarget(target)))) out.push(e.chance + '% ' + STATUS[e.status].name); if (e.drain) out.push('drains ' + Math.round(e.drain * 100) + '%'); if (e.crit) out.push('high crit'); if (e.recharge) out.push('must recharge'); return out; }
 // Forecast the whole exchange with the attacker standing at `from`. Deterministic and side-effect
 // free: no dice, no unit mutation. The strike order is exactly the one resolveCombat walks, so the
 // preview cannot promise a counter or a double that the resolver would skip.
@@ -118,11 +120,12 @@ function forecast(att, def, move, from) {
   for (const s of order) {
     const isA = s === a; const strikerHp = isA ? hpA : hpD, targetHp = isA ? hpD : hpA; const nominal = strikerHp > 0 && targetHp > 0;
     // critKo: a critical on this strike would drop the target even though the normal hit would not
-    const e = { side: isA ? 'a' : 'c', unit: s.unit, move: s.move, dmg: s.dmg, hit: s.hit, crit: s.crit, critDmg: s.critDmg, critKo: nominal && s.dmg < targetHp && s.critDmg >= targetHp, braced: s.braced, eff: s.eff, drain: 0, nominal, cond: null };
+    const safe = isPracticeTarget(isA ? def : att), damage = safe ? Math.min(s.dmg, Math.max(0, targetHp - 1)) : s.dmg;
+    const e = { side: isA ? 'a' : 'c', unit: s.unit, move: s.move, dmg: damage, hit: s.hit, crit: s.crit, critDmg: s.critDmg, critKo: !safe && nominal && s.dmg < targetHp && s.critDmg >= targetHp, braced: s.braced, eff: s.eff, drain: 0, nominal, cond: null };
     if (nominal) {
       // drain: a share of the HP taken, then capped by what the striker is missing, so the preview promises only real healing
-      const dr = Math.min(drainFor(s.move, Math.min(s.dmg, targetHp)), isA ? att.maxHp - hpA : def.maxHp - hpD); e.drain = dr;
-      if (isA) { hpD = Math.max(0, hpD - s.dmg); hpA += dr; } else { hpA = Math.max(0, hpA - s.dmg); hpD += dr; }
+      const dr = Math.min(drainFor(s.move, Math.min(damage, targetHp)), isA ? att.maxHp - hpA : def.maxHp - hpD); e.drain = dr;
+      if (isA) { hpD = Math.max(0, hpD - damage); hpA += dr; } else { hpA = Math.max(0, hpA - damage); hpD += dr; }
     } else e.cond = 'only if ' + (strikerHp <= 0 ? s.unit : isA ? def : att).name + ' survives';
     strikes.push(e);
   }
@@ -143,14 +146,15 @@ function resolveCombat(att, def, move, from) {
     const crit = rnd() * 100 < calcCrit(A, Dn, s.move); const dmg = calcDmg(A, Dn, s.move, dT, crit);
     const lost = Math.min(dmg, Dn.hp); Dn.hp -= lost; let status = null;
     const ef = s.move.eff; // secondary effects need a damaging hit: immunity blocks them
-    if (ef && ef.status && dmg > 0 && !Dn.status && Dn.hp > 0 && rnd() * 100 < ef.chance) { const st = ef.status; if (!(st === 'brn' && Dn.types.includes('Fire')) && !(st === 'psn' && (Dn.types.includes('Poison') || Dn.types.includes('Steel'))) && !(st === 'par' && Dn.types.includes('Electric')) && !(st === 'frz' && Dn.types.includes('Ice'))) { Dn.status = st; Dn.statusTurns = 0; status = st; } }
+    if (ef && ef.status && !powerBlocksStatus(Dn) && !isPracticeTarget(Dn) && dmg > 0 && !Dn.status && Dn.hp > 0 && rnd() * 100 < ef.chance) { const st = ef.status; if (!(st === 'brn' && Dn.types.includes('Fire')) && !(st === 'psn' && (Dn.types.includes('Poison') || Dn.types.includes('Steel'))) && !(st === 'par' && Dn.types.includes('Electric')) && !(st === 'frz' && Dn.types.includes('Ice'))) { Dn.status = st; Dn.statusTurns = 0; status = st; } }
     const drain = Math.min(drainFor(s.move, lost), A.maxHp - A.hp); A.hp += drain; // the event carries the HP actually restored
-    ev.push({ type: 'hit', att: A, def: Dn, move: s.move, dmg, crit, eff: s.eff, hpAfter: Dn.hp, status, drain, attHpAfter: A.hp, counter: isCounter });
+    ev.push({ type: 'hit', att: A, def: Dn, move: s.move, dmg, lost, crit, eff: s.eff, hpAfter: Dn.hp, status, drain, attHpAfter: A.hp, counter: isCounter });
     if (Dn.hp <= 0) ev.push({ type: 'ko', unit: Dn, by: A });
     if (Dn.status === 'frz' && dmg > 0 && s.move.type === 'Fire') { Dn.status = null; ev.push({ type: 'thaw', unit: Dn }); }
   }
   // firing a recharge move costs the next turn whether it hit or missed
   if (fc.recharge && att.hp > 0) { att.recharge = 1; ev.push({ type: 'recharge', unit: att }); }
+  powerAfterCombat(att, ev); settleOutposts();
   // experience for player-team survivors
   for (const [u, o] of [[att, def], [def, att]]) { if (!isHuman(u.team) || u.hp <= 0) continue; const took = ev.some(e => e.type === 'hit' && e.att === u); if (!took) continue; awardXp(u, xpGain(u, o, o.hp <= 0), ev); }
   return ev;
@@ -163,6 +167,7 @@ function awardXp(u, amount, ev) {
 // Start-of-phase upkeep for one team: recharge, status damage, terrain heals and cures, thaw checks.
 // Returns events. Runs exactly once per phase; a resumed suspend save skips it (see beginPhase).
 function upkeep(team) {
+  powerPhaseStart(team);
   const ev = [];
   for (const u of alive(team)) {
     u.acted = false; u.moved = false;
@@ -188,8 +193,8 @@ function upkeep(team) {
 // Capture attempt. Returns {ok, shakes}
 function tryCapture(target, ball) {
   if (target.team !== 2) return { ok: false, shakes: 0, refused: true };
-  let p = .22 + .68 * (1 - target.hp / target.maxHp); p *= ball.rate; if (target.status) p *= 1.3; if (target.boss) p *= .5; p = clamp(p, .05, .97);
-  const ok = rnd() < p; const shakes = ok ? 3 : Math.floor(rnd() * 3);
+  const p = captureChance(target, ball);
+  const ok = p === 1 || (p > 0 && rnd() < p); const shakes = ok ? 3 : Math.floor(rnd() * 3);
   return { ok, shakes, p };
 }
 function useItem(u, item) {
@@ -209,7 +214,7 @@ function skillTargetsAt(u, sk = u.skill, from = u) {
   for (const v of B.units) {
     if (v.hp <= 0 || v === u) continue; const d = Math.abs(v.x - from.x) + Math.abs(v.y - from.y); if (d < sk.rng[0] || d > sk.rng[1]) continue;
     if (sk.target === 'ally' && !hostile(u.team, v.team) && (v.hp < v.maxHp || v.status || v.root)) out.push(v);
-    if (sk.target === 'foe' && hostile(u.team, v.team) && !v.fly && !v.root) out.push(v);
+    if (sk.target === 'foe' && hostile(u.team, v.team) && !v.fly && !v.root && !powerBlocksStatus(v) && !isPracticeTarget(v)) out.push(v);
   }
   return out;
 }
@@ -278,14 +283,14 @@ function checkObjective() {
     return null;
   }
   if (!alive(0).length) return B.result = 'lose';
-  if (o.type === 'rout' && !alive(1).length) return B.result = 'win';
+  if (o.type === 'rout' && !alive(1).length && (!B.lesson || B.lesson.complete)) return B.result = 'win';
   if (o.type === 'boss' && !B.units.some(u => u.boss && u.hp > 0 && u.team === 1)) return B.result = 'win';
   if (o.type === 'survive' && B.turn > o.turns) return B.result = 'win';
   if (o.type === 'seize' && B.seized) return B.result = 'win';
   if (B.map.turnLimit && o.type !== 'survive' && B.turn > B.map.turnLimit) return B.result = 'lose';
   return null;
 }
-function objectiveText() { const o = B.map.objective; switch (o.type) { case 'rout': return 'Defeat all enemies'; case 'boss': return 'Defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Survive ' + o.turns + ' turns'; case 'seize': return 'Seize the ' + (o.what || 'gym'); case 'versus': return versusObjectiveText(); } return ''; }
+function objectiveText() { if (B.lesson && !B.lesson.complete) return 'Catch Caterpie + defeat foes'; const o = B.map.objective; switch (o.type) { case 'rout': return 'Defeat all enemies'; case 'boss': return 'Defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Survive ' + o.turns + ' turns'; case 'seize': return 'Seize the ' + (o.what || 'gym'); case 'versus': return versusObjectiveText(); } return ''; }
 
 // ---------------------------------------------------------------- versus rules: modes, flags, the hill, fog of war
 const VS_MODES = {
@@ -344,7 +349,7 @@ function aiSkillScore(u, sk, n, t, threat, aT) {
 // Decide an action: {x,y,target,move} to attack, {x,y,skill,target} to use a skill, {x,y} to move, or null to wait.
 function canTakeAction(u) { return !!(u && u.hp > 0 && !u.acted && !u.recharge && u.status !== 'frz'); }
 function aiDecide(u, cautious = false) {
-  if (!canTakeAction(u)) return null;
+  if (!canTakeAction(u) || isPracticeTarget(u)) return null;
   if (B.territory) return territoryDecide(u);
   const reach = reachable(u); const targets = aiTargetsOf(u); if (!targets.length) return null;
   const provoked = u.ai === 'aggro' || u.provoked || targets.some(t => dist(t, u) <= (u.ai === 'guard' ? Math.max(u.rngMax, 1) : 2));
@@ -370,6 +375,7 @@ function aiDecide(u, cautious = false) {
       if (s > bestScore) { bestScore = s; best = { x: n.x, y: n.y, target: t, move: mv }; }
     }
   }
+  const capture = campaignCaptureChoice(u, bestScore); if (capture) return capture;
   if (best && cautious && bestScore <= 0) best = null;
   if (best && (u.ai !== 'boss' || provoked || bestScore > 0)) { return best; }
   if (!provoked) return null;

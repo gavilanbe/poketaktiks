@@ -56,6 +56,63 @@ const GRASSY = new Set(['plain', 'flower', 'tall', 'forest', 'mountain', 'center
 const OPEN = new Set(['plain', 'flower', 'tall', 'road', 'sand', 'cave', 'floor', 'snow', 'ice', 'bridge', 'rubble', 'crate', 'forest', 'mountain', 'center', 'hq', 'gym', 'water', 'lava']);
 const LIQUID = new Set(['water', 'lava']);
 
+// Complete terrain tiles drawn by ImageGen, cropped from its four-state sheet.
+// Rendering state only: never changes terrain rules, unit positions, saves or RNG.
+const TALL_ART = { ready: false, started: false, base: null, front: null, cache: new Map(), map: null, time: 0, occupied: new Set(), states: new Map(), enabled: new URLSearchParams(location.search).get('terrain') !== 'classic' };
+function loadTallTerrainSprites() {
+  if (TALL_ART.started || !TALL_ART.enabled) return; TALL_ART.started = true;
+  let loaded = 0;
+  for (const [part, name] of [['base', 'imagegen-tall-grass-v2.png'], ['front', 'imagegen-tall-grass-front-v2.png']]) {
+    const img = new Image();
+    img.onload = () => { if (img.naturalWidth !== 128 || img.naturalHeight !== 128) return; TALL_ART[part] = img; if (++loaded === 2) TALL_ART.ready = true; };
+    // The existing procedural tile remains available while loading or if an asset is missing.
+    img.src = 'assets/terrain/' + name;
+  }
+}
+function tallTerrainImg(variant, state, frame, foreground = false) {
+  if (!TALL_ART.ready || !TALL_ART.enabled) return null;
+  const f = frame % 4, key = [state, f, foreground ? 1 : 0].join(':');
+  let c = TALL_ART.cache.get(key); if (c) return c;
+  c = tileCanvas(); const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+  g.drawImage(foreground ? TALL_ART.front : TALL_ART.base, f * 32, state * 32, 32, 32, 0, 0, 32, 32);
+  TALL_ART.cache.set(key, c); return c;
+}
+function tallUnitCell(u, m) {
+  if (!u || u.hp <= 0 || (u.fx && u.fx.alpha <= 0)) return null;
+  const x = Math.floor(u.x + (u.fx ? u.fx.dx : 0) / TILE + .5), y = Math.floor(u.y + (u.fx ? u.fx.dy : 0) / TILE + .5);
+  return x >= 0 && y >= 0 && x < m.w && y < m.h && m.tiles[y][x].id === 'tall' ? { x, y } : null;
+}
+function updateTallTerrain(battle, time) {
+  if (!TALL_ART.ready || !TALL_ART.enabled) return;
+  const m = battle.map, initial = TALL_ART.map !== m || time < TALL_ART.time;
+  if (initial) { TALL_ART.map = m; TALL_ART.occupied.clear(); TALL_ART.states.clear(); }
+  TALL_ART.time = time;
+  const current = new Set();
+  for (const u of battle.units) {
+    if (fogHides(u, HT())) continue; // Hidden units must not reveal themselves through the grass.
+    const cell = tallUnitCell(u, m); if (cell) current.add(key(cell.x, cell.y));
+  }
+  for (const k of current) if (!TALL_ART.occupied.has(k)) TALL_ART.states.set(k, { state: initial || REDUCED ? 2 : 1, since: time });
+  for (const k of TALL_ART.occupied) if (!current.has(k)) {
+    if (REDUCED) TALL_ART.states.delete(k); else TALL_ART.states.set(k, { state: 3, since: time });
+  }
+  for (const [k, s] of TALL_ART.states) {
+    if (s.state === 1 && time - s.since >= .44) TALL_ART.states.set(k, { state: 2, since: time });
+    else if (s.state === 3 && time - s.since >= .56) TALL_ART.states.delete(k);
+  }
+  TALL_ART.occupied = current;
+}
+function tallTerrainPose(x, y, variant, time) {
+  const s = TALL_ART.states.get(key(x, y)), state = s ? s.state : 0;
+  const frame = REDUCED ? 0 : state === 1 || state === 3 ? Math.min(3, Math.floor((time - s.since) / (state === 1 ? .11 : .14))) : (Math.floor(time / .24) + variant) % 4;
+  return { state, frame: Math.max(0, frame) };
+}
+function drawTallTerrainForeground(g, m, x, y, X, Y, time) {
+  if (!TALL_ART.ready || !TALL_ART.enabled) return;
+  const v = m.variants[y][x], pose = tallTerrainPose(x, y, v, time), img = tallTerrainImg(v, pose.state, pose.frame, true);
+  g.save(); g.globalAlpha = 1; g.drawImage(img, X, Y); g.restore();
+}
+
 // ---------------------------------------------------------------- shared stamps
 const ST = {
   tuftL: ['L..L', '.LL.'], tuftD: ['D.D', '.D.'], blade: ['H', 'L', 'L'],
@@ -206,8 +263,10 @@ function buildTileset() {
     const frames = (ch === '~' || ch === 'w' || ch === '=' || ch === 'L') ? WATER_FRAMES : 1;
     for (let f = 0; f < frames; f++) { const c = tileCanvas(); drawTile(ch, v, f, c.getContext('2d')); TILESET[ch + v + f] = c; }
   }
+  loadTallTerrainSprites();
 }
 function tileImg(ch, v, f, owner = null) {
+  if (ch === 't' && TALL_ART.ready && TALL_ART.enabled) return tallTerrainImg(v, 0, f);
   const frames = (ch === '~' || ch === 'w' || ch === '=' || ch === 'L') ? WATER_FRAMES : 1; const key = ch + (v % VARIANTS) + (f % frames);
   if (owner == null || !(ch === 'C' || ch === 'Q')) return TILESET[key] || TILESET['.00'];
   const ok = key + 'o' + owner; if (!TILESET[ok]) { const c = tileCanvas(); drawTile(ch, v % VARIANTS, f % frames, c.getContext('2d'), owner); TILESET[ok] = c; } return TILESET[ok];
@@ -234,7 +293,8 @@ function nb(m, x, y, dx, dy) { const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 
 function drawTerrain(g, m, x, y, X, Y, frame, time = 0) {
   const t = m.tiles[y][x]; const v = m.variants[y][x]; const id = t.id;
   const owner = (id === 'center' || id === 'hq') && m.ownerAt ? m.ownerAt(x, y) : null; // capturable buildings wear their owner's roof
-  g.drawImage(tileImg(t.ch, v, frame, owner), X, Y);
+  const grassPose = id === 'tall' && TALL_ART.ready && TALL_ART.enabled ? tallTerrainPose(x, y, v, time) : null;
+  g.drawImage(grassPose ? tallTerrainImg(v, grassPose.state, grassPose.frame) : tileImg(t.ch, v, frame, owner), X, Y);
   const N = nb(m, x, y, 0, -1), S = nb(m, x, y, 0, 1), W = nb(m, x, y, -1, 0), E = nb(m, x, y, 1, 0);
   if (id === 'water' || id === 'lava') {
     const isLand = n => n && !LIQUID.has(n.id) && n.id !== 'bridge';

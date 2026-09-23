@@ -27,7 +27,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges;cursor:pointer;disp
 <body><canvas id="c"></canvas>
 <script>
 H
-cat core.js font.js titlemeta.js dex.js data.js animmeta.js art.js mapart.js model.js battle.js duel.js campaign.js territory.js scenes.js main.js
+cat core.js font.js titlemeta.js dex.js data.js animmeta.js art.js model.js captain.js battle.js duel.js campaign.js territory.js scenes.js journey.js main.js
 cat <<'H'
 </script>
 </body>

@@ -435,39 +435,10 @@ function versusInput(ev) {
 }
 
 // ---------------------------------------------------------------- starter pick
-function starterDraw() {
-  if (!BACKDROP) BACKDROP = makeBackdrop(CHAPTERS[0].map);
-  const W = VIEW.w, H = VIEW.h; drawBackdrop(BACKDROP, 0, 0, .6);
-  const title = W < 200 ? 'YOUR PARTNER' : 'CHOOSE YOUR PARTNER'; screenTitle(title, null, 12);
-  const quote = wrap('Prof. Oak: "Take one. They are all good, I checked."', W - 12); quote.forEach((l, i) => textC(l, W / 2, 28 + i * 9, UI.ink, { outline: UI.shadow }));
-  SC.hits = []; const cw = 96, gap = 10; const x0 = W / 2 - (cw * 3 + gap * 2) / 2; const top = 28 + quote.length * 9 + 7;
-  if (W < cw * 3 + gap * 2 + 8) { // phones: three wide, short cards stacked down the screen; stats on two short rows
-    const w = W - 12, h = Math.min(56, Math.floor((H - top - 26) / 3) - 6);
-    STARTERS.forEach((n, i) => {
-      const d = DEX[n]; const x = 6, y = top + i * (h + 6); const sel = SC.i === i; panel(x, y, w, h, { fill: sel ? '#2a3d6a' : UI.panel, border: sel ? UI.gold : UI.border });
-      const bob = sel ? Math.round(Math.abs(Math.sin(SC.t * 6)) * -3) : 0; rect(x + 6, y + 6, 40, h - 12, teamColorD(0)); drawMon(n, x + 26, y + h - 8 + bob, {});
-      const tx = x + 52, tw = w - 58; text(d.name, tx, y + 6, sel ? UI.gold : UI.ink); d.types.forEach((t, j) => typeBadge(t, tx + textWidth(d.name) + 6 + j * 26, y + 5, 24));
-      const u = makeUnit(n, 5, 0, { hpBonus: BOND_HP }); const fit = s => { if (textWidth(s) <= tw) return s; while (textWidth(s + '…') > tw && s.length > 4) s = s.slice(0, -1); return s.replace(/[ ·/]+$/, '') + '…'; };
-      text(fit('HP ' + u.maxHp + ' · ATK ' + u.atk + ' · DEF ' + u.def + ' · SPA ' + u.spa), tx, y + 17, UI.muted); text(fit('SPD ' + u.spd + ' · SPE ' + u.spe + ' · MOV ' + u.mov + ' · ' + ROLES[u.role].name), tx, y + 27, UI.muted);
-      text(fit(u.moves.map(m => m.name).join(' / ')), tx, y + 37, UI.info);
+function starterDraw() { captainChoiceDraw(); }
 
-      hit(x, y, w, h, () => { if (SC.i === i) { Audio.sfx('select'); pickStarter(n); } else { SC.i = i; Audio.sfx('cursor'); } });
-    });
-    hintLine(VIEW.touch ? ['tap twice to choose'] : [['◂▸', 'browse'], ['Z', 'choose']], W / 2, H - 14); return;
-  }
-  STARTERS.forEach((n, i) => {
-    const d = DEX[n]; const x = x0 + i * (cw + gap), y = 44, h = 150; const sel = SC.i === i; panel(x, y, cw, h, { fill: sel ? '#2a3d6a' : UI.panel, border: sel ? UI.gold : UI.border });
-    const bob = sel ? Math.round(Math.abs(Math.sin(SC.t * 6)) * -4) : 0; rect(x + 8, y + 8, cw - 16, 36, teamColorD(0)); drawMon(n, x + cw / 2, y + 42 + bob, { sy: 1 + (sel ? Math.sin(SC.t * 8) * .05 : 0) });
-    textC(d.name, x + cw / 2, y + 48, sel ? UI.gold : UI.ink); d.types.forEach((t, j) => typeBadge(t, x + cw / 2 - (d.types.length * 26) / 2 + j * 26 + 1, y + 58, 24));
-    const u = makeUnit(n, 5, 0, { hpBonus: BOND_HP }); const st = [['HP', u.maxHp, 40], ['ATK', u.atk, 20], ['DEF', u.def, 20], ['SPA', u.spa, 20], ['SPD', u.spd, 20], ['SPE', u.spe, 20]];
-    st.forEach((s, j) => { const sy = y + 70 + j * 9; text(s[0], x + 8, sy, UI.muted); bar(x + 30, sy + 1, cw - 40, 5, s[1] / s[2], sel ? UI.gold : UI.blue); });
-    hline(x + 6, y + h - 24, cw - 12, UI.inset); text('MOV ' + u.mov + '  ·  ' + ROLES[u.role].name, x + 8, y + h - 21, UI.muted); { let mv = u.moves.map(m => m.name).join(' / '); while (textWidth(mv) > cw - 16 && mv.length > 4) mv = mv.slice(0, -1); text(mv, x + 8, y + h - 12, UI.info); }
-    hit(x, y, cw, h, () => { if (SC.i === i) { Audio.sfx('select'); pickStarter(n); } else { SC.i = i; Audio.sfx('cursor'); } });
-  });
-  hintLine(VIEW.touch ? ['tap twice to choose'] : [['◂▸', 'browse'], ['Z', 'choose']], W / 2, H - 14);
-}
 function starterInput(ev) {
-  if (ev.type === 'key') { if (ev.key === 'left') { SC.i = (SC.i + 2) % 3; Audio.sfx('cursor'); } else if (ev.key === 'right') { SC.i = (SC.i + 1) % 3; Audio.sfx('cursor'); } else if (ev.key === 'ok') { Audio.sfx('select'); pickStarter(STARTERS[SC.i]); } else if (ev.key === 'back') goScene('title'); return; }
+  if (ev.type === 'key') { if (ev.key === 'left' || ev.key === 'up') { SC.i = (SC.i + 2) % 3; Audio.sfx('cursor'); } else if (ev.key === 'right' || ev.key === 'down') { SC.i = (SC.i + 1) % 3; Audio.sfx('cursor'); } else if (ev.key === 'ok') { Audio.sfx('select'); pickStarter(STARTERS[SC.i]); } else if (ev.key === 'back') goScene('title'); return; }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
 
@@ -521,7 +492,7 @@ function prepDraw() {
     panel(x, y, cw, chh, { fill: on ? '#24406a' : UI.panel, border: hot ? UI.gold : on ? '#8fb4ff' : UI.border2, flat: true });
     const u = restoreUnit(p); ctx.save(); ctx.beginPath(); ctx.rect(x + 3, y + 3, 30, chh - 6); ctx.clip(); rect(x + 3, y + 3, 30, chh - 6, on ? '#1c3a8a' : '#101a30'); drawMon(u.num, x + 18, y + chh - 3 + (on ? Math.round(Math.sin(SC.t * 6 + i) * 1) : 0), { sy: 1 }); ctx.restore();
     text(u.name.slice(0, 12), x + 36, y + 4, UI.ink); textR('Lv' + u.level, x + cw - 4, y + 4, UI.gold); u.types.forEach((t, j) => typeBadge(t, x + 36 + j * 26, y + 13, 24)); hpBar(x + 36, y + 24, cw - 42, u.hp, u.maxHp);
-    if (on) { rrect(x + cw - 14, y + 12, 11, 9, UI.gold, 1); textC(String(slot + 1), x + cw - 9, y + 13, '#3a2000'); }
+    if (on) { rrect(x + cw - 14, y + 12, 11, 9, UI.gold, 1); textC(i === prepCaptain(P) ? 'C' : String(slot + 1), x + cw - 9, y + 13, '#3a2000'); }
     hit(x, y, cw, chh, () => { SC.i = i; toggleDeploy(P, i); });
   });
   ctx.restore();
@@ -531,26 +502,30 @@ function prepDraw() {
     panel(rx, ry, rw, 62, { title: 'BAG' }); let i = 0; for (const k in P.bag) { if (P.bag[k] <= 0) continue; const y = ry + 6 + i * 10; drawBall(rx + 9, y + 4, ITEMS[k].col, 3); text(ITEMS[k].name, rx + 16, y + 1, UI.ink); textR('×' + P.bag[k], rx + rw - 5, y + 1, UI.gold); i++; if (i >= 5) break; }
     if (!i) text('empty', rx + 8, ry + 8, UI.muted);
   }
-  const sel = party[SC.i]; if (sel && rx > gx + 200) { const u = restoreUnit(sel); panel(rx, ry + 68, rw, 48, { title: u.name.toUpperCase() }); const st = [['ATK', u.atk], ['DEF', u.def], ['SPA', u.spa], ['SPD', u.spd], ['SPE', u.spe], ['MOV', u.mov]]; st.forEach((s, j) => { const sx = rx + 6 + (j % 3) * 38, sy = ry + 74 + Math.floor(j / 3) * 10; text(s[0], sx, sy, UI.muted); textR(String(s[1]), sx + 34, sy, UI.ink); }); text(u.moves.map(m => m.name).join(', ').slice(0, 28), rx + 6, ry + 96, '#98d8f8'); const ev = u.dex.evos.length ? 'Evolves Lv' + Math.min(...u.dex.evos.map(e => e[1])) : 'Final form'; let rl = ROLES[u.role].name + ' · ' + ev; while (textWidth(rl) > rw - 12 && rl.length > 6) rl = rl.slice(0, -1); text(rl, rx + 6, ry + 106, UI.green); }
+  const sel = party[SC.i]; if (sel && rx > gx + 200) { const u = restoreUnit(sel); panel(rx, ry + 68, rw, 48, { title: u.name.toUpperCase() }); const st = [['ATK', u.atk], ['DEF', u.def], ['SPA', u.spa], ['SPD', u.spd], ['SPE', u.spe], ['MOV', u.mov]]; st.forEach((s, j) => { const sx = rx + 6 + (j % 3) * 38, sy = ry + 74 + Math.floor(j / 3) * 10; text(s[0], sx, sy, UI.muted); textR(String(s[1]), sx + 34, sy, UI.ink); }); text(fitLabel(u.moves.map(m => m.name).join(', '), rw - 12), rx + 6, ry + 96, '#98d8f8'); const ev = u.dex.evos.length ? 'Evolves Lv' + Math.min(...u.dex.evos.map(e => e[1])) : 'Final form'; let rl = ROLES[u.role].name + ' · ' + ev; while (textWidth(rl) > rw - 12 && rl.length > 6) rl = rl.slice(0, -1); text(rl, rx + 6, ry + 106, UI.green); }
   // battlefield preview under the stats: deploy slots, every foe (and the boss) where it starts, the seize target
   if (rx > gx + 200) { const py = ry + 122, avail = H - foot - py - 4; const bd = P.bd; const sc = Math.min((rw - 12) / bd.canvas.width, (avail - 27) / bd.canvas.height);
     if (sc >= .22) { const pw2 = Math.round(bd.canvas.width * sc), ph2 = Math.round(bd.canvas.height * sc); const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2); const lv = foes.map(u => u.level);
-      const p = panel(rx, py, rw, ph2 + 27, { header: 'BATTLEFIELD', headerRight: foes.length + ' foe' + (foes.length === 1 ? '' : 's') + (lv.length ? ' · Lv ' + Math.min(...lv) + (Math.max(...lv) > Math.min(...lv) ? '-' + Math.max(...lv) : '') : '') + (wild.length ? ' · ' + wild.length + ' wild' : '') });
+      const p = panel(rx, py, rw, ph2 + 27, { header: fitLabel(foes.length + ' foes' + (wild.length ? ' · ' + wild.length + ' wild' : '') + (lv.length ? ' · Lv' + Math.min(...lv) : ''), rw - 16) });
       const px0 = rx + Math.round((rw - pw2) / 2), py0 = p.cy; ctx.drawImage(bd.canvas, px0, py0, pw2, ph2); outline(px0 - 1, py0 - 1, pw2 + 2, ph2 + 2, UI.border2);
       for (const d of bd.map.deploy) { const X = px0 + d.x * TILE * sc, Y = py0 + d.y * TILE * sc; rect(X, Y, Math.ceil(TILE * sc), Math.ceil(TILE * sc), '#3d7dff70'); outline(X, Y, Math.ceil(TILE * sc), Math.ceil(TILE * sc), teamColor(0)); }
       if (bd.map.seize) { const X = px0 + bd.map.seize.x * TILE * sc, Y = py0 + bd.map.seize.y * TILE * sc; outline(X, Y, Math.ceil(TILE * sc), Math.ceil(TILE * sc), UI.gold); }
       for (const u of ch.map.units || []) { const team = u.team == null ? 1 : u.team; const ux = px0 + (u.x + .5) * TILE * sc, uy = py0 + (u.y + 1) * TILE * sc; ellipse(ux, uy, 5, 2, teamColor(team)); ctx.drawImage(monIcon(u.mon, true), Math.round(ux - 8), Math.round(uy - 13), 16, 12); if (u.boss) drawSkull(Math.round(ux - 2), Math.round(uy - 19)); }
     } }
   const start = () => { if (!P.deploy.length) { Audio.sfx('error'); return; } Audio.sfx('select'); P.start(); }, auto = () => { Audio.sfx('ok'); autoDeploy(P); }, back = () => { Audio.sfx('cancel'); goScene('title'); };
-  if (narrow) { footerBand(foot); const r1 = H - 2 * (bh + 4), r2 = H - bh - 4; text('Deployed ' + P.deploy.length + '/' + ch.slots + ' · tap a card · first leads', 6, r1 - 10, UI.muted);
+  if (narrow) { footerBand(foot); const r1 = H - 2 * (bh + 4), r2 = H - bh - 4; text('Deployed ' + P.deploy.length + '/' + ch.slots + ' · C: captain locked', 6, r1 - 10, UI.muted);
     bigButton(6, r1, 60, bh, 'BACK', back, { variant: 'ghost' }); bigButton(72, r1, W - 78, bh, 'AUTO PICK', auto); bigButton(6, r2, W - 12, bh, 'START', start, P.deploy.length ? { variant: 'primary' } : { disabled: true }); return; }
   const by = footerBand(28) + 5; bigButton(W - 96, by, 90, 18, 'START', start, P.deploy.length ? { variant: 'primary' } : { disabled: true });
   bigButton(W - 190, by, 88, 18, 'AUTO PICK', auto);
   bigButton(6, by, 70, 18, 'BACK', back, { variant: 'ghost' });
-  hintLine(['Deployed ' + P.deploy.length + '/' + ch.slots, VIEW.touch ? 'tap a card to toggle' : ['Z', 'toggle a card'], 'first slot leads'], 82, by + 5, { left: true, pill: false });
+  text(fitLabel(P.deploy.length + '/' + ch.slots + ' · ' + (prepCaptain(P) == null ? 'Z: toggle' : 'C locked · Z: toggle'), W - 278), 82, by + 5, UI.muted);
 }
-function toggleDeploy(P, i) { const k = P.deploy.indexOf(i); if (k >= 0) { P.deploy.splice(k, 1); Audio.sfx('cancel'); } else if (P.deploy.length < P.chapter.slots) { P.deploy.push(i); Audio.sfx('ok'); } else Audio.sfx('error'); }
-function autoDeploy(P) { const idx = P.party.map((p, i) => i).sort((a, b) => P.party[b].level - P.party[a].level); P.deploy = idx.slice(0, P.chapter.slots); }
+function toggleDeploy(P, i) { if (i === prepCaptain(P)) { Audio.sfx('error'); return; } const k = P.deploy.indexOf(i); if (k >= 0) { P.deploy.splice(k, 1); Audio.sfx('cancel'); } else if (P.deploy.length < P.chapter.slots) { P.deploy.push(i); Audio.sfx('ok'); } else Audio.sfx('error'); }
+function autoDeploy(P) {
+  const captain = prepCaptain(P), idx = P.party.map((p, i) => i).filter(i => i !== captain).sort((a, b) => P.party[b].level - P.party[a].level);
+  P.deploy = (captain == null ? idx : [captain].concat(idx)).slice(0, P.chapter.slots);
+}
+
 function prepInput(ev) {
   const P = SC.data; const cols = narrowView() ? 1 : VIEW.w < 420 ? 2 : 3;
   if (ev.type === 'key') { if (ev.key === 'left') SC.i = Math.max(0, SC.i - 1); else if (ev.key === 'right') SC.i = Math.min(P.party.length - 1, SC.i + 1); else if (ev.key === 'up') SC.i = Math.max(0, SC.i - cols); else if (ev.key === 'down') SC.i = Math.min(P.party.length - 1, SC.i + cols); else if (ev.key === 'ok') toggleDeploy(P, SC.i); else if (ev.key === 'next') { if (P.deploy.length) P.start(); } else if (ev.key === 'back') goScene('title'); else if (ev.key === 'mute') Audio.toggle(); if (['left', 'right', 'up', 'down'].includes(ev.key)) { Audio.sfx('cursor'); const r = Math.floor(SC.i / cols); if (r < SC.scroll) SC.scroll = r; const rowsVisible = Math.floor((VIEW.h - 38 - (narrowView() ? 2 * (btnH() + 4) + 12 : 30)) / 33); if (r >= SC.scroll + rowsVisible) SC.scroll = r - rowsVisible + 1; } return; }
