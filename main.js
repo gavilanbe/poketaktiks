@@ -51,7 +51,7 @@ function onBattleEnd(result) {
   clearSuspend();
   const caught = B.captured.slice();
   const finishChapter = () => {
-    if (skirmish) { const rewards = win ? { pokeball: 3 } : {}; if (SAVE && !SC.data?.preset) { applyBattleToParty(); for (const k in rewards) SAVE.bag[k] = (SAVE.bag[k] || 0) + rewards[k]; SAVE.skirmishWins = (SAVE.skirmishWins || 0) + (win ? 1 : 0); writeSave(); } goScene('results', { win, skirmish: true, turns: B.turn, kills: B.kills, par: B.map.par, rewards, caught, stars: win ? battleStars(B.map.par || 10) : 0, faints: B.faints || 0, next: () => goScene('quick') }); return; }
+    if (skirmish) { const rewards = win ? { pokeball: 3 } : {}; if (SAVE && !SC.data?.preset) { applyBattleToParty(); for (const k in rewards) SAVE.bag[k] = (SAVE.bag[k] || 0) + rewards[k]; SAVE.skirmishWins = (SAVE.skirmishWins || 0) + (win ? 1 : 0); writeSave(); } goScene('results', { win, skirmish: true, turns: B.turn, kills: B.kills, par: B.map.par, rewards, caught, stars: win ? battleStars(B.map.par || 10) : 0, faints: B.faints || 0, war: B.war ? { captures: B.war.stats.captures[0], deployments: B.war.stats.deployments[0], funds: B.war.funds[0], reason: B.war.reason } : null, next: () => goScene('quick') }); return; }
     const ch = CHAPTERS[idx];
     if (!win) { goScene('results', { win: false, turns: B.turn, kills: B.kills, caught: [], rewards: {}, nextLabel: 'TRY AGAIN', next: () => prepChapter(idx), route: () => openRoute({ sel: idx }) }); return; }
     // stars: the win, the win within par, the win with nobody fainted; rewards only on the first clear

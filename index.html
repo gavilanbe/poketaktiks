@@ -5895,7 +5895,7 @@ function resultsDraw() {
   const rc = Math.max(1, Math.floor((w - 16) / 96)), cc = Math.max(1, Math.floor((w - 16) / 70)); // rewards / catches per row
   const nRew = R.rewards ? Object.keys(R.rewards).length : 0, nC = R.caught ? R.caught.length : 0, nT = R.trained ? Math.min(6, R.trained.length) : 0, nE = R.evolved ? R.evolved.length : 0, nCo = R.newCos ? R.newCos.length : 0, stars = win && R.stars != null;
   const lose = wrap('The team limps back to the Poké Center. Everyone is fine. Mostly.', w - 16);
-  const ph = 36 + (stars ? 30 : 0) + (win ? 10 : (lose.length - 1) * 9) + (nRew ? 14 + Math.ceil(nRew / rc) * 10 : (win && !R.skirmish ? 12 : 0)) + (nC ? 14 + Math.ceil(nC / cc) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + (nCo ? 12 + nCo * 22 : 0) + 8;
+  const ph = 36 + (stars ? 30 : 0) + (win ? 10 : (lose.length - 1) * 9) + (nRew ? 14 + Math.ceil(nRew / rc) * 10 : (win && !R.skirmish ? 12 : 0)) + (nC ? 14 + Math.ceil(nC / cc) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + (nCo ? 12 + nCo * 22 : 0) + (R.war ? 11 : 0) + 8;
   const phh = Math.min(H - 44, Math.max(60, ph)); y = Math.max(8, Math.round((H - 30 - phh) / 2));
   const tok = unfold('results', x, y, w, phh, .25);
   const p = panel(x, y, w, phh, { header: win ? (R.skirmish ? 'SKIRMISH WON!' : 'FRONT CLEARED!') : 'RETREAT', headerRight: stars && R.stars > (R.best || 0) && !R.skirmish ? 'NEW BEST' : null, headerRightCol: UI.gold, headerFill: win ? '#2a2470' : '#4a1626' });
@@ -5905,6 +5905,7 @@ function resultsDraw() {
     y += 18; textC('win  ·  ' + (R.turns <= (R.par || 10) ? 'under par' : 'over par') + '  ·  ' + (R.faints ? R.faints + ' fainted' : 'nobody fainted'), x + w / 2, y, UI.muted); y += 12;
   }
   if (win) { const tv = countUp('res:turns', R.turns, .5, .2), kv = countUp('res:kos', R.kills, .5, .35); text('Turns ' + tv + (R.par ? ' / par ' + R.par : ''), x + 8, y, R.par && R.turns <= R.par ? UI.green : UI.ink); textR('KOs ' + kv, x + w - 8, y, UI.ink); y += 12; }
+  if (R.war) { text(fitLabel('Captured ' + R.war.captures + ' · deployed ' + R.war.deployments + ' · left ' + money(R.war.funds) + (R.war.reason ? ' · ' + R.war.reason : ''), w - 16), x + 8, y, UI.info); y += 11; }
   else { lose.forEach(l => { text(l, x + 8, y, UI.ink); y += 9; }); y += 3; }
   if (nRew) { sectionLabel('Rewards', x + 8, y, w - 16, UI.gold); y += 10; let i = 0; for (const k in R.rewards) { const cx = x + 10 + (i % rc) * 96; const cy = y + Math.floor(i / rc) * 10; drawBall(cx + 4, cy + 4, (ITEMS[k] || ITEMS.pokeball).col, 3); text((ITEMS[k] || ITEMS.pokeball).name + ' ×' + countUp('res:rew' + k, R.rewards[k], .4, .6), cx + 12, cy + 1, UI.ink); i++; } y += Math.ceil(i / rc) * 10 + 4; }
   else if (win && !R.skirmish) { text('Replay: rewards come with the first clear', x + 8, y, UI.dim); y += 12; }
@@ -6881,9 +6882,9 @@ function towerScore(par, days, kills, faints) {
   const speed = clamp(100 - Math.max(0, days - par) * 10, 0, 100), power = clamp(Math.round(kills / Math.max(1, faints) * 25), 0, 100), tech = clamp(100 - faints * 15, 0, 100), total = speed + power + tech;
   return { days, kills, faints, speed, power, tech, total, rank: total >= 280 ? 'S' : total >= 240 ? 'A' : total >= 180 ? 'B' : 'C' };
 }
-function startTower(sel) {
+function startTower(sel, opened) {
   const R = loadRecords(), save = loadSave(); let i = 0; while (i < TOWER.length - 1 && towerCleared(R, i)) i++;
-  const cos = coUnlocked(save), T = { i: sel != null ? sel : i, recs: R, cos, co: cos.includes(R.towerCo) ? R.towerCo : 'you', go: null, root: 4 };
+  const cos = coUnlocked(save), T = { i: sel != null ? sel : i, recs: R, cos, co: cos.includes(R.towerCo) ? R.towerCo : 'you', go: null, root: 4, opened: opened != null ? opened : -1 };
   T.go = () => { if (!towerOpen(T.recs, T.i)) { Audio.sfx('error'); return; } Audio.sfx('select'); launchTowerFloor(T); };
   goScene('tower', T);
 }
@@ -6945,6 +6946,8 @@ function towerDraw() {
     else if (!isOpen) iconAt('x', rx - 10, y + Math.round((rowH - 9) / 2), '#5a5480');
     if (rowH >= 16 && !L.narrow) textR(BIOMES[TOWER[f].biome].name + ' · Lv' + TOWER[f].level, rx - (rec || !isOpen ? 18 : 0), y + Math.round((rowH - 7) / 2) + lift, isOpen ? UI.muted : '#4a4470');
     if (sel) { outline(x - 1, y - 1, w + 2, rowH + 1, UI.gold); if (!REDUCED) drawBall(x - 5 + Math.round(Math.sin(t * 5)), y + Math.round(rowH / 2), '#f04848', 3); }
+    // a floor just opened: its lights switch on, with a flash and sparkles
+    if (f === T.opened && !REDUCED && t < 1.6) { const k = clamp((t - .3) / .5, 0, 1); ctx.globalAlpha = (1 - k) * .8 * (t > .3 ? 1 : 0); rect(x, y, w, rowH - 1, '#fff6d0'); ctx.globalAlpha = 1; if (t > .3) for (let q = 0; q < 5; q++) sparkle(x + 20 + ((q * 47 + Math.floor(t * 9) * 13) % (w - 40)), y + 2 + (q * 5) % Math.max(2, rowH - 4), 1 + (q + Math.floor(t * 8)) % 2, '#fff2b0'); if (!T.chimed && t > .3) { T.chimed = true; Audio.sfx('chime'); } }
     hit(x, y, w, rowH, () => { if (T.i === f) T.go(); else { T.i = f; T.at = SC.t; Audio.sfx('cursor'); } }, fl);
   }
   // the chosen floor
@@ -7012,7 +7015,7 @@ function rankDraw() {
   { const line = R.win ? F.beaten : F.won, face = trainerFace(COS[F.co].tr), ly = y + h - 26, lx = x + 30, lw = w - 38, ls = wrap(line, lw - 10).slice(0, 2); rect(x + 8, ly, 20, 20, shade(col, -.4)); if (face) ctx.drawImage(face, x + 9, ly + 1); outline(x + 7, ly - 1, 22, 22, col);
     rrect(lx, ly, lw, 20, '#fff6d8', 2); for (let k = 0; k < 3; k++) px(lx - 1 - k, ly + 7 + k, '#fff6d8'); ls.forEach((l, k) => text(l, lx + 5, ly + (ls.length > 1 ? 2 : 6) + k * 9, '#3a2a18')); }
   unfoldEnd(tok);
-  const bh = btnH(), next = R.win && R.i + 1 < TOWER.length, tower = () => { Audio.sfx('cancel'); startTower(R.i); }, nextFloor = () => { Audio.sfx('select'); startTower(R.i + 1); };
+  const bh = btnH(), next = R.win && R.i + 1 < TOWER.length, tower = () => { Audio.sfx('cancel'); startTower(R.i); }, nextFloor = () => { Audio.sfx('select'); startTower(R.i + 1, R.record && !R.best ? R.i + 1 : -1); }; // a first clear opens the next floor with its lights coming on
   const retry = () => { Audio.sfx('ok'); const T = { i: R.i, recs: loadRecords(), cos: coUnlocked(loadSave()), co: loadRecords().towerCo || 'you' }; if (!T.cos.includes(T.co)) T.co = 'you'; launchTowerFloor(T); };
   if (W < 300) { // phones: the way forward on its own row, the others under it
     footerBand(2 * (bh + 4) + 4); const r1 = H - 2 * (bh + 4), r2 = H - bh - 4, hw = Math.floor((W - 18) / 2);
@@ -7025,7 +7028,7 @@ function rankDraw() {
   if (next) bigButton(x0 + 2 * (bw2 + 6), fy, bw2, bh, 'NEXT FLOOR', nextFloor, { variant: 'primary' });
 }
 function rankInput(ev) {
-  const R = SC.data; if (ev.type === 'key') { if (ev.key === 'ok') { if (R.kind === 'safari') { Audio.sfx('ok'); goScene('quick'); } else startTower(R.win && R.i + 1 < TOWER.length ? R.i + 1 : R.i); } else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick'); } return; }
+  const R = SC.data; if (ev.type === 'key') { if (ev.key === 'ok') { if (R.kind === 'safari') { Audio.sfx('ok'); goScene('quick'); } else { const nx = R.win && R.i + 1 < TOWER.length ? R.i + 1 : R.i; startTower(nx, nx !== R.i && R.record && !R.best ? nx : -1); } } else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick'); } return; }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
 
@@ -7190,7 +7193,7 @@ function onBattleEnd(result) {
   clearSuspend();
   const caught = B.captured.slice();
   const finishChapter = () => {
-    if (skirmish) { const rewards = win ? { pokeball: 3 } : {}; if (SAVE && !SC.data?.preset) { applyBattleToParty(); for (const k in rewards) SAVE.bag[k] = (SAVE.bag[k] || 0) + rewards[k]; SAVE.skirmishWins = (SAVE.skirmishWins || 0) + (win ? 1 : 0); writeSave(); } goScene('results', { win, skirmish: true, turns: B.turn, kills: B.kills, par: B.map.par, rewards, caught, stars: win ? battleStars(B.map.par || 10) : 0, faints: B.faints || 0, next: () => goScene('quick') }); return; }
+    if (skirmish) { const rewards = win ? { pokeball: 3 } : {}; if (SAVE && !SC.data?.preset) { applyBattleToParty(); for (const k in rewards) SAVE.bag[k] = (SAVE.bag[k] || 0) + rewards[k]; SAVE.skirmishWins = (SAVE.skirmishWins || 0) + (win ? 1 : 0); writeSave(); } goScene('results', { win, skirmish: true, turns: B.turn, kills: B.kills, par: B.map.par, rewards, caught, stars: win ? battleStars(B.map.par || 10) : 0, faints: B.faints || 0, war: B.war ? { captures: B.war.stats.captures[0], deployments: B.war.stats.deployments[0], funds: B.war.funds[0], reason: B.war.reason } : null, next: () => goScene('quick') }); return; }
     const ch = CHAPTERS[idx];
     if (!win) { goScene('results', { win: false, turns: B.turn, kills: B.kills, caught: [], rewards: {}, nextLabel: 'TRY AGAIN', next: () => prepChapter(idx), route: () => openRoute({ sel: idx }) }); return; }
     // stars: the win, the win within par, the win with nobody fainted; rewards only on the first clear

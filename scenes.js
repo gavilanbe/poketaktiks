@@ -350,7 +350,7 @@ function resultsDraw() {
   const rc = Math.max(1, Math.floor((w - 16) / 96)), cc = Math.max(1, Math.floor((w - 16) / 70)); // rewards / catches per row
   const nRew = R.rewards ? Object.keys(R.rewards).length : 0, nC = R.caught ? R.caught.length : 0, nT = R.trained ? Math.min(6, R.trained.length) : 0, nE = R.evolved ? R.evolved.length : 0, nCo = R.newCos ? R.newCos.length : 0, stars = win && R.stars != null;
   const lose = wrap('The team limps back to the Poké Center. Everyone is fine. Mostly.', w - 16);
-  const ph = 36 + (stars ? 30 : 0) + (win ? 10 : (lose.length - 1) * 9) + (nRew ? 14 + Math.ceil(nRew / rc) * 10 : (win && !R.skirmish ? 12 : 0)) + (nC ? 14 + Math.ceil(nC / cc) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + (nCo ? 12 + nCo * 22 : 0) + 8;
+  const ph = 36 + (stars ? 30 : 0) + (win ? 10 : (lose.length - 1) * 9) + (nRew ? 14 + Math.ceil(nRew / rc) * 10 : (win && !R.skirmish ? 12 : 0)) + (nC ? 14 + Math.ceil(nC / cc) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + (nCo ? 12 + nCo * 22 : 0) + (R.war ? 11 : 0) + 8;
   const phh = Math.min(H - 44, Math.max(60, ph)); y = Math.max(8, Math.round((H - 30 - phh) / 2));
   const tok = unfold('results', x, y, w, phh, .25);
   const p = panel(x, y, w, phh, { header: win ? (R.skirmish ? 'SKIRMISH WON!' : 'FRONT CLEARED!') : 'RETREAT', headerRight: stars && R.stars > (R.best || 0) && !R.skirmish ? 'NEW BEST' : null, headerRightCol: UI.gold, headerFill: win ? '#2a2470' : '#4a1626' });
@@ -360,6 +360,7 @@ function resultsDraw() {
     y += 18; textC('win  ·  ' + (R.turns <= (R.par || 10) ? 'under par' : 'over par') + '  ·  ' + (R.faints ? R.faints + ' fainted' : 'nobody fainted'), x + w / 2, y, UI.muted); y += 12;
   }
   if (win) { const tv = countUp('res:turns', R.turns, .5, .2), kv = countUp('res:kos', R.kills, .5, .35); text('Turns ' + tv + (R.par ? ' / par ' + R.par : ''), x + 8, y, R.par && R.turns <= R.par ? UI.green : UI.ink); textR('KOs ' + kv, x + w - 8, y, UI.ink); y += 12; }
+  if (R.war) { text(fitLabel('Captured ' + R.war.captures + ' · deployed ' + R.war.deployments + ' · left ' + money(R.war.funds) + (R.war.reason ? ' · ' + R.war.reason : ''), w - 16), x + 8, y, UI.info); y += 11; }
   else { lose.forEach(l => { text(l, x + 8, y, UI.ink); y += 9; }); y += 3; }
   if (nRew) { sectionLabel('Rewards', x + 8, y, w - 16, UI.gold); y += 10; let i = 0; for (const k in R.rewards) { const cx = x + 10 + (i % rc) * 96; const cy = y + Math.floor(i / rc) * 10; drawBall(cx + 4, cy + 4, (ITEMS[k] || ITEMS.pokeball).col, 3); text((ITEMS[k] || ITEMS.pokeball).name + ' ×' + countUp('res:rew' + k, R.rewards[k], .4, .6), cx + 12, cy + 1, UI.ink); i++; } y += Math.ceil(i / rc) * 10 + 4; }
   else if (win && !R.skirmish) { text('Replay: rewards come with the first clear', x + 8, y, UI.dim); y += 12; }

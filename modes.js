@@ -33,9 +33,9 @@ function towerScore(par, days, kills, faints) {
   const speed = clamp(100 - Math.max(0, days - par) * 10, 0, 100), power = clamp(Math.round(kills / Math.max(1, faints) * 25), 0, 100), tech = clamp(100 - faints * 15, 0, 100), total = speed + power + tech;
   return { days, kills, faints, speed, power, tech, total, rank: total >= 280 ? 'S' : total >= 240 ? 'A' : total >= 180 ? 'B' : 'C' };
 }
-function startTower(sel) {
+function startTower(sel, opened) {
   const R = loadRecords(), save = loadSave(); let i = 0; while (i < TOWER.length - 1 && towerCleared(R, i)) i++;
-  const cos = coUnlocked(save), T = { i: sel != null ? sel : i, recs: R, cos, co: cos.includes(R.towerCo) ? R.towerCo : 'you', go: null, root: 4 };
+  const cos = coUnlocked(save), T = { i: sel != null ? sel : i, recs: R, cos, co: cos.includes(R.towerCo) ? R.towerCo : 'you', go: null, root: 4, opened: opened != null ? opened : -1 };
   T.go = () => { if (!towerOpen(T.recs, T.i)) { Audio.sfx('error'); return; } Audio.sfx('select'); launchTowerFloor(T); };
   goScene('tower', T);
 }
@@ -97,6 +97,8 @@ function towerDraw() {
     else if (!isOpen) iconAt('x', rx - 10, y + Math.round((rowH - 9) / 2), '#5a5480');
     if (rowH >= 16 && !L.narrow) textR(BIOMES[TOWER[f].biome].name + ' · Lv' + TOWER[f].level, rx - (rec || !isOpen ? 18 : 0), y + Math.round((rowH - 7) / 2) + lift, isOpen ? UI.muted : '#4a4470');
     if (sel) { outline(x - 1, y - 1, w + 2, rowH + 1, UI.gold); if (!REDUCED) drawBall(x - 5 + Math.round(Math.sin(t * 5)), y + Math.round(rowH / 2), '#f04848', 3); }
+    // a floor just opened: its lights switch on, with a flash and sparkles
+    if (f === T.opened && !REDUCED && t < 1.6) { const k = clamp((t - .3) / .5, 0, 1); ctx.globalAlpha = (1 - k) * .8 * (t > .3 ? 1 : 0); rect(x, y, w, rowH - 1, '#fff6d0'); ctx.globalAlpha = 1; if (t > .3) for (let q = 0; q < 5; q++) sparkle(x + 20 + ((q * 47 + Math.floor(t * 9) * 13) % (w - 40)), y + 2 + (q * 5) % Math.max(2, rowH - 4), 1 + (q + Math.floor(t * 8)) % 2, '#fff2b0'); if (!T.chimed && t > .3) { T.chimed = true; Audio.sfx('chime'); } }
     hit(x, y, w, rowH, () => { if (T.i === f) T.go(); else { T.i = f; T.at = SC.t; Audio.sfx('cursor'); } }, fl);
   }
   // the chosen floor
@@ -164,7 +166,7 @@ function rankDraw() {
   { const line = R.win ? F.beaten : F.won, face = trainerFace(COS[F.co].tr), ly = y + h - 26, lx = x + 30, lw = w - 38, ls = wrap(line, lw - 10).slice(0, 2); rect(x + 8, ly, 20, 20, shade(col, -.4)); if (face) ctx.drawImage(face, x + 9, ly + 1); outline(x + 7, ly - 1, 22, 22, col);
     rrect(lx, ly, lw, 20, '#fff6d8', 2); for (let k = 0; k < 3; k++) px(lx - 1 - k, ly + 7 + k, '#fff6d8'); ls.forEach((l, k) => text(l, lx + 5, ly + (ls.length > 1 ? 2 : 6) + k * 9, '#3a2a18')); }
   unfoldEnd(tok);
-  const bh = btnH(), next = R.win && R.i + 1 < TOWER.length, tower = () => { Audio.sfx('cancel'); startTower(R.i); }, nextFloor = () => { Audio.sfx('select'); startTower(R.i + 1); };
+  const bh = btnH(), next = R.win && R.i + 1 < TOWER.length, tower = () => { Audio.sfx('cancel'); startTower(R.i); }, nextFloor = () => { Audio.sfx('select'); startTower(R.i + 1, R.record && !R.best ? R.i + 1 : -1); }; // a first clear opens the next floor with its lights coming on
   const retry = () => { Audio.sfx('ok'); const T = { i: R.i, recs: loadRecords(), cos: coUnlocked(loadSave()), co: loadRecords().towerCo || 'you' }; if (!T.cos.includes(T.co)) T.co = 'you'; launchTowerFloor(T); };
   if (W < 300) { // phones: the way forward on its own row, the others under it
     footerBand(2 * (bh + 4) + 4); const r1 = H - 2 * (bh + 4), r2 = H - bh - 4, hw = Math.floor((W - 18) / 2);
@@ -177,7 +179,7 @@ function rankDraw() {
   if (next) bigButton(x0 + 2 * (bw2 + 6), fy, bw2, bh, 'NEXT FLOOR', nextFloor, { variant: 'primary' });
 }
 function rankInput(ev) {
-  const R = SC.data; if (ev.type === 'key') { if (ev.key === 'ok') { if (R.kind === 'safari') { Audio.sfx('ok'); goScene('quick'); } else startTower(R.win && R.i + 1 < TOWER.length ? R.i + 1 : R.i); } else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick'); } return; }
+  const R = SC.data; if (ev.type === 'key') { if (ev.key === 'ok') { if (R.kind === 'safari') { Audio.sfx('ok'); goScene('quick'); } else { const nx = R.win && R.i + 1 < TOWER.length ? R.i + 1 : R.i; startTower(nx, nx !== R.i && R.record && !R.best ? nx : -1); } } else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick'); } return; }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
 
