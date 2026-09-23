@@ -118,8 +118,11 @@ function moveCost(terr, unit) {
   if (unit.climb && c.climb != null) best = Math.min(best, c.climb);
   if (unit.forester && c.forester != null) best = Math.min(best, c.forester);
   if (unit.desert && c.desert != null) best = Math.min(best, c.desert);
+  // snow weather: open ground costs one more for walkers (fliers and Ice types are at home in it)
+  if (best < 99 && SNOW_SLOWS.has(terr.id) && typeof weatherKind === 'function' && weatherKind() === 'snow' && !unit.fly && !(unit.types && unit.types.includes('Ice'))) best += 1;
   return best;
 }
+const SNOW_SLOWS = new Set(['plain', 'flower', 'tall', 'road', 'sand']);
 // Water: an amphibious unit is at home there (Tide: DEF 20 / AVO 20); other swimmers get the small swimDef.
 function terrainDef(terr, unit) { if (terr.id === 'water' && unit.swim) return unit.role === 'amphibious' ? TIDE.def : terr.swimDef; if (unit.fly && (terr.id === 'forest' || terr.id === 'mountain' || terr.id === 'tall' || terr.id === 'rubble' || terr.id === 'crate')) return 0; return terr.def; }
 function terrainEva(terr, unit) { if (terr.id === 'water' && unit.swim && unit.role === 'amphibious') return TIDE.eva; if (unit.fly && terr.id !== 'gym' && terr.id !== 'center' && terr.id !== 'hq') return 0; return terr.eva; }

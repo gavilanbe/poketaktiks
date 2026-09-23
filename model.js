@@ -85,7 +85,7 @@ function calcDmg(att, def, move, defTerr, crit = false) {
   d = Math.floor(d * (1 - terrainDef(defTerr, def) / 100));
   if (def.brace) d = Math.floor(d * BRACE_MULT);
   if (crit) d = Math.floor(d * 1.5);
-  d = Math.floor(d * powerDamageMultiplier(att, def, move) * weatherMult(move.type));
+  d = Math.floor(d * powerDamageMultiplier(att, def, move) * weatherMult(move.type) * weatherGuard(def, move));
   if (isPracticeTarget(def)) return Math.min(Math.max(0, def.hp - 1), Math.max(1, d));
   return Math.max(eff > 0 ? 1 : 0, d);
 }
@@ -297,7 +297,7 @@ const VS_MODES = {
   hill: { name: 'King of the Hill', short: 'HILL', blurb: 'Start three of your turns with more Pokémon than the other team on the hill, the 3×3 zone in the middle of the arena.' },
 };
 const VS_ARENAS = { s: { name: 'Small', w: 14, h: 9 }, m: { name: 'Medium', w: 18, h: 11 }, l: { name: 'Large', w: 22, h: 13 } };
-function fogVision(u) { return 3 + (u.fly ? 1 : 0); }
+function fogVision(u) { return 3 + (u.fly ? 1 : 0) - (weatherKind() === 'rain' ? 1 : 0); } // rain shortens sight
 // Tiles a team can see under fog: within each of its units' vision, except tall grass and forest, which need an adjacent unit.
 function computeVision(team) {
   const vis = new Set();

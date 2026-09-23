@@ -106,8 +106,8 @@ storm).
 | Clear | – |
 | Rain | Water moves ×1.5, Fire ×0.5; under fog, vision −1 |
 | Sun | Fire moves ×1.5, Water ×0.5 |
-| Sandstorm | non Rock/Ground/Steel lose 1/16 HP each day (never below 1); ranged reach −1 |
-| Snow | non-Ice lose 1/16 HP each day (never below 1); walking on grass, roads and sand costs +1; Ice defence +20% |
+| Sandstorm | non Rock/Ground/Steel lose 1/16 HP each day (never below 1); Rock types take ×2/3 from special moves (built instead of the planned ranged reach −1) |
+| Snow | non-Ice lose 1/16 HP each day (never below 1); walking on grass, roads and sand costs +1 (not fliers or Ice types); Ice types take ×5/6 |
 
 Maps set a default weather (or random); powers set it for a number of days. The board and the battle
 scenes draw it; the forecast includes it.

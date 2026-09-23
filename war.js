@@ -186,6 +186,8 @@ const WEATHER = { rain: { name: 'Rain', start: 'It started to rain!', end: 'The 
 function setWeather(kind, days) { if (B) B.weather = WEATHER[kind] ? { kind, days: days || 0 } : null; }
 function weatherKind() { return B && B.weather ? B.weather.kind : null; }
 function weatherMult(type) { const k = weatherKind(); if (k === 'rain') return type === 'Water' ? 1.5 : type === 'Fire' ? .5 : 1; if (k === 'sun') return type === 'Fire' ? 1.5 : type === 'Water' ? .5 : 1; return 1; }
+// The defender's side of the weather: a sandstorm hardens Rock types against special moves, snow hardens Ice types.
+function weatherGuard(def, move) { const k = weatherKind(); if (k === 'sand' && move.kind !== 'P' && def.types.includes('Rock')) return 2 / 3; if (k === 'snow' && def.types.includes('Ice')) return 5 / 6; return 1; }
 function weatherSpares(u, k) { return k === 'sand' ? u.types.some(t => t === 'Rock' || t === 'Ground' || t === 'Steel') : k === 'snow' ? u.types.includes('Ice') : true; }
 function weatherDay(ev) { const W = B && B.weather; if (!W || !W.days) return; if (--W.days <= 0) { const kind = W.kind; B.weather = B.map.weather ? { kind: B.map.weather, days: 0 } : null; if (!B.weather || B.weather.kind !== kind) ev.push({ type: 'weatherEnd', kind }); } }
 // Does this unit play the war (capture and roam) rather than a scripted role?

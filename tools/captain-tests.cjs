@@ -220,6 +220,15 @@ test('an Ace that faints halves its commander\'s meter and blocks powers until i
   B.phase = 0; assert(g.powerBlock(0, false), 'no power while the Ace is down');
   const other = g.alive(0).find(u => u !== captain); other.hp = 0; assert.equal(g.coAceDown(other), null, 'any other Pokémon fainting costs nothing');
 });
+test('weather beyond the multipliers: snow slows walkers on open ground and hardens Ice types, sand hardens Rock types, rain shortens sight', () => {
+  const T = field(4), { g, G, ally, foe } = T, plain = G("TERRAIN['.']"), forest = G("TERRAIN['T']");
+  const walker = g.makeUnit(25, 20, 0), ice = g.makeUnit(87, 20, 0), bird = g.makeUnit(16, 20, 0), geo = g.makeUnit(74, 20, 1);
+  g.setWeather('snow', 2); assert.equal(g.moveCost(plain, walker), 2, 'snow: +1 on open ground'); assert.equal(g.moveCost(forest, walker), 2, 'not in the woods'); assert.equal(g.moveCost(plain, ice), 1, 'Ice types walk freely'); assert.equal(g.moveCost(plain, bird), 1, 'fliers too');
+  assert.equal(g.weatherGuard(ice, { kind: 'P', type: 'Normal' }), 5 / 6); assert.equal(g.weatherGuard(geo, { kind: 'S', type: 'Water' }), 1);
+  g.setWeather('sand', 2); assert.equal(g.weatherGuard(geo, { kind: 'S', type: 'Water' }), 2 / 3, 'sand: Rock resists special moves'); assert.equal(g.weatherGuard(geo, { kind: 'P', type: 'Water' }), 1, 'not physical ones'); assert.equal(g.moveCost(plain, walker), 1);
+  const v = g.fogVision(walker); g.setWeather('rain', 2); assert.equal(g.fogVision(walker), v - 1, 'rain: one tile less of sight');
+  g.setWeather(null); assert.equal(g.moveCost(plain, walker), 1);
+});
 let failed = 0;
 for (const [name, fn] of tests) { try { fn(); console.log('  ok   ' + name); } catch (e) { failed++; console.error('  FAIL ' + name + '\n' + e.stack); } }
 console.log(`${tests.length-failed}/${tests.length} captain tests passed`); process.exitCode = failed ? 1 : 0;

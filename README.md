@@ -119,9 +119,11 @@ Brock or Misty.
 
 ## Weather
 
-Rain powers Water (×1.5) and dampens Fire (×0.5); harsh sun the reverse; a
-sandstorm and snow chip 1/16 of max HP a day from everyone they do not spare
-(never below 1). Maps, setup screens and powers set it; it falls over the board
+Rain powers Water (×1.5) and dampens Fire (×0.5) and, under fog, shortens sight
+by a tile; harsh sun the reverse. A sandstorm and snow chip 1/16 of max HP a day
+from everyone they do not spare (never below 1); a sandstorm also hardens Rock
+types against special moves (×2/3), and snow slows walkers on open ground (+1
+move cost; fliers and Ice types are spared) and hardens Ice types (×5/6). Maps, setup screens and powers set it; it falls over the board
 and the battle screen, a chip shows the days left, and a banner marks changes.
 
 ## Campaign: Frente Kanto
