@@ -3107,6 +3107,8 @@ function beginPhase(team, first, resumed = false) {
   const label = phaseLabel(team);
   BT.banner = { text: label, t: 0, team, sub: isHuman(team) ? 'Turn ' + B.turn + (B.map.turnLimit && B.map.objective.type !== 'survive' ? ' / ' + B.map.turnLimit : '') + (B.map.objective.type === 'survive' ? ' / ' + B.map.objective.turns : '') : null };
   BT.mode = 'banner'; Audio.sfx(isHuman(team) ? 'phase' : 'enemyphase');
+  // the opening of a battle between two commanders: their portraits face off before the first phase
+  if (first && !resumed && B.command && B.command.teams[0] && B.command.teams[1] && !B.coVsShown) { B.coVsShown = true; BT.banner.vs = { t: 0 }; if (BT.income) BT.income.t += COVS_DUR; }
   Audio.playMusic(isHuman(team) ? (B.units.some(u => u.boss && u.hp > 0 && u.provoked) ? 'boss' : B.map.music) : 'enemy');
   if (B.versus && isHuman(team)) { BT.mode = 'handoff'; BT.handoff = { team, t: 0 }; }
   BT.queue = ev.map(e => ({ kind: 'event', ev: e }));
@@ -3520,7 +3522,7 @@ function battleInput(ev) {
   if (BT.mode === 'territoryGuide') { if (ev.type === 'key' && (ev.key === 'ok' || ev.key === 'back')) closeTerritoryGuide(); else if (ev.type === 'up') hudHit(ev.x, ev.y); return; }
   if (duelActive()) { duelInput(BT.anim, ev); return; }
   if (ev.type === 'key' && (ev.key === 'zoomin' || ev.key === 'zoomout')) { if (setZoom(ev.key === 'zoomin' ? 1 : .5)) Audio.sfx('menu'); return; }
-  if (BT.mode === 'banner') { if (ev.type === 'down' || (ev.type === 'key' && ev.key === 'ok')) BT.banner.t = Math.max(BT.banner.t, 1.1); return; }
+  if (BT.mode === 'banner') { if (ev.type === 'down' || (ev.type === 'key' && ev.key === 'ok')) { if (BT.banner.vs && BT.banner.vs.t < COVS_DUR) BT.banner.vs.t = Math.max(BT.banner.vs.t, COVS_DUR - .3); else BT.banner.t = Math.max(BT.banner.t, 1.1); } return; }
   if (BT.mode === 'handoff') { if (BT.handoff.t > .4 && (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok'))) { BT.mode = 'banner'; BT.banner.t = 0; Audio.sfx('phase'); } return; }
   if (BT.mode === 'anim') { if (ev.type === 'down' || ev.type === 'key') { BT.fastTap = .4; } return; }
   if (BT.mode === 'end') { if (BT.endTimer > 1.2 && (ev.type === 'down' || (ev.type === 'key' && ev.key === 'ok'))) { BT.endTimer = 99; } return; }
@@ -3621,7 +3623,7 @@ function battleUpdate(dt) {
   for (const [id, h] of BT.hpShow) { if (h.hold) continue; h.t += dt * 2.5; if (h.t >= 1) BT.hpShow.delete(id); }
   if (BT.quip) { BT.quip.t += dt; if (BT.quip.t > 1.6) BT.quip = null; }
   if (BT.mode === 'handoff') BT.handoff.t += dt;
-  if (BT.mode === 'banner') { BT.banner.t += dt; if (!BT.banner.slammed && BT.banner.t > .2) { BT.banner.slammed = true; if (!REDUCED) shake(2); } if (BT.banner.t > (BT.fast ? .9 : 1.5)) { BT.mode = 'anim'; const f = BT.afterBanner; BT.afterBanner = null; f(); } }
+  if (BT.mode === 'banner' && BT.banner.vs && BT.banner.vs.t < COVS_DUR) { coVsStep(BT.banner.vs, dt); } else if (BT.mode === 'banner') { BT.banner.t += dt; if (!BT.banner.slammed && BT.banner.t > .2) { BT.banner.slammed = true; if (!REDUCED) shake(2); } if (BT.banner.t > (BT.fast ? .9 : 1.5)) { BT.mode = 'anim'; const f = BT.afterBanner; BT.afterBanner = null; f(); } }
   if (BT.mode === 'anim') updateAnim(dt);
   if (BT.mode === 'end') { const was = BT.endTimer; BT.endTimer += dt; endSequenceCues(was, BT.endTimer); if (BT.endTimer > 4.4 || BT.endTimer >= 99) { BT.endTimer = 0; onBattleEnd(B.result); } }
   if (BT.autoEnd > 0 && BT.mode === 'idle') { BT.autoEnd -= dt; if (BT.autoEnd <= 0) endTurn(); }
@@ -4275,7 +4277,47 @@ function drawBossAlert(q) {
   if (t > .15 || REDUCED) { ctx.save(); ctx.translate(lx, cy - Math.round(4.5 * sc) - 5); ctx.scale(sc, sc); bigC(label, 0, 0, '#ffffff', { outline: '#300008' }); ctx.restore(); ctx.globalAlpha = clamp((t - .35) / .2, 0, 1) * (1 - out); textC(u.name + '  Lv' + u.level, lx, cy + Math.round(4.5 * big) + 2, '#ffd0d8', { outline: '#300008' }); ctx.globalAlpha = 1; }
   if (W > 300 && bh > 30) { requestAnim(u.num); const bx = Math.round(W * .8 + (REDUCED ? 0 : (1 - easeOut(clamp((t - .1) / .35, 0, 1))) * W * .4) + out * W * .5); ctx.save(); ctx.beginPath(); ctx.rect(0, cy - Math.round(bh / 2), W, bh); ctx.clip(); if (animReady(u.num)) drawAnim(u.num, bx, cy + Math.round(bh / 2) - 4, BT.time, { flip: false }); else drawMon(u.num, bx, cy + Math.round(bh / 2) - 4, { flip: true, sx: 2, sy: 2 }); ctx.restore(); }
 }
+// ---------------------------------------------------------------- commanders face off
+// The screen splits on a diagonal, each half in its commander's colour with bands racing across it; the two trainers
+// slide in large from their sides, their names and passives under them, and VS stamps down in the seam.
+const COVS_DUR = 2.2;
+function coVsStep(V, dt) {
+  const before = V.t; V.t += dt * (BT.fast ? 1.8 : 1); const at = (k) => before < k && V.t >= k;
+  if (at(.02)) Audio.sfx('whoosh'); if (at(.14)) Audio.sfx('whoosh'); if (at(.55)) { Audio.sfx('crit'); if (!REDUCED) { shake(5); flashScreen('#ffffff', .35); } }
+}
+function drawCoVs(V) {
+  const W = VIEW.w, H = VIEW.h, t = V.t, out = t > COVS_DUR - .3 ? easeIn((t - (COVS_DUR - .3)) / .3) : 0, tall = H > W * 1.2, top = Math.round(H * (tall ? .06 : .08)), bot = Math.round(H * (tall ? .9 : .92));
+  ctx.globalAlpha = .78 * (1 - out); rect(0, 0, W, H, '#05041a'); ctx.globalAlpha = 1;
+  // wide screens split left/right on a steep diagonal; tall ones top (the foe) and bottom (you) on a shallow one
+  const seamX = y => Math.round(W * .56 - (y - top) / (bot - top) * W * .12), seamY = x => Math.round(H * .52 - x / W * H * .08);
+  const sc = tall ? (W >= 170 ? 2 : 1) : H >= 330 && W >= 560 ? 3 : H >= 220 && W >= 360 ? 2 : 1, size = 80 * sc;
+  for (const team of [0, 1]) {
+    const s = powerState(team), c = coOf(s), trainer = !!coTrainer(s), k = REDUCED ? 1 : easeOut(clamp((t - team * .12) / .35, 0, 1)), dir = team === 0 ? -1 : 1, off = Math.round((1 - k) * W * .7 * dir + out * W * .8 * dir);
+    ctx.save(); ctx.translate(off, 0); ctx.beginPath();
+    if (!tall) { if (team === 0) { ctx.moveTo(-40, top); ctx.lineTo(seamX(top), top); ctx.lineTo(seamX(bot), bot); ctx.lineTo(-40, bot); } else { ctx.moveTo(seamX(top) + 3, top); ctx.lineTo(W + 40, top); ctx.lineTo(W + 40, bot); ctx.lineTo(seamX(bot) + 3, bot); } }
+    else if (team === 1) { ctx.moveTo(-40, top); ctx.lineTo(W + 40, top); ctx.lineTo(W + 40, seamY(W + 40)); ctx.lineTo(-40, seamY(-40)); } else { ctx.moveTo(-40, seamY(-40) + 3); ctx.lineTo(W + 40, seamY(W + 40) + 3); ctx.lineTo(W + 40, bot); ctx.lineTo(-40, bot); }
+    ctx.closePath(); ctx.clip();
+    rect(-40, top, W + 80, bot - top, shade(c.col, -.6)); ctx.fillStyle = shade(c.col, -.38); const drift = REDUCED ? 0 : Math.floor(t * 60) % 24;
+    for (let x = -bot + (team ? -drift : drift); x < W + 40; x += 24) { ctx.beginPath(); ctx.moveTo(x, bot); ctx.lineTo(x + (bot - top), top); ctx.lineTo(x + (bot - top) + 9, top); ctx.lineTo(x + 9, bot); ctx.fill(); }
+    const img = trainerCanvas(trainer ? c.tr : 'red', team === 1, false), shadow = trainerCanvas(trainer ? c.tr : 'red', team === 1, true);
+    const cx = tall ? (team === 1 ? W - Math.round(size / 2) - 4 : Math.round(size / 2) + 4) : Math.round(team === 0 ? W * .26 : W * .74), feet = tall ? (team === 1 ? Math.min(seamY(cx) - 2, top + 44 + size) : bot - 30) : bot - (sc > 1 ? 34 : 26);
+    if (shadow) { ctx.globalAlpha = .7; ctx.drawImage(shadow, cx - size / 2 + (team ? 3 : -3) * sc, feet - size + 2 * sc, size, size); ctx.globalAlpha = 1; } if (img) ctx.drawImage(img, cx - size / 2, feet - size, size, size);
+    ctx.restore();
+    // the name plate and the passive, sliding with their half
+    const name = trainer ? c.name.toUpperCase() : 'TACTICIAN', big = sc > 1 && !tall ? 2 : 1, px0 = (tall ? W / 2 : cx) + off, pw = Math.min(tall ? W - 16 : W * .42, textWidth(name, BIG) * big + 24), ny = tall ? (team === 1 ? top + 8 : bot - 24) : bot - (big > 1 ? 30 : 22);
+    rect(Math.round(px0 - pw / 2), ny, Math.round(pw), big > 1 ? 20 : 12, '#07061ae0'); hline(Math.round(px0 - pw / 2), ny, Math.round(pw), c.col);
+    ctx.save(); ctx.translate(Math.round(px0), ny + 2); if (big > 1) ctx.scale(2, 2); bigC(name, 0, 0, '#ffffff', { outline: UI.inset }); ctx.restore();
+    if (c.passive) textC(fitLabel(c.passive.text, tall ? W - 16 : W * .44), px0, ny + (big > 1 ? 22 : 14), shade(c.col, .45), { outline: UI.inset });
+    ribbonTab(team === 0 ? (B.versus ? 'P1' : 'YOU') : (B.versus ? 'P2' : 'FOE'), Math.round((tall ? (team === 0 ? W - 36 : 8) : team === 0 ? 8 : W - 40) + off), tall ? (team === 0 ? bot - 42 : top + 36) : top + 6, team === 0 ? '#8ab4ff' : '#ff9a9a');
+  }
+  // the seam and VS
+  if (tall) for (let x = 0; x < W; x++) rect(x, seamY(x), 1, 3, '#ffffff'); else for (let y = top; y < bot; y++) rect(seamX(y), y, 3, 1, '#ffffff');
+  if (t >= .55 || REDUCED) { const k = REDUCED ? 1 : clamp((t - .55) / .18, 0, 1), vs = Math.max(2, 3 * sc / 2) + (1 - easeOutBack(k, 3)) * 5, vx = tall ? Math.round(W * .82) : seamX(Math.round(H / 2)) + 1, vy = tall ? seamY(Math.round(W * .82)) + 1 : Math.round(H / 2);
+    ctx.save(); ctx.globalAlpha = 1 - out; ctx.translate(vx, vy); ctx.scale(vs, vs); bigC('VS', 0, -4.5, UI.gold, { outline: UI.inset }); ctx.restore(); }
+  if (t > .8 && !REDUCED) hintLine(VIEW.touch ? ['tap'] : [['Z', 'go']], W / 2, bot + 4);
+}
 function drawBanner() {
+  if (BT.banner.vs && BT.banner.vs.t < COVS_DUR) { drawCoVs(BT.banner.vs); return; }
   const b = BT.banner, W = VIEW.w, H = VIEW.h, t = b.t, dur = BT.fast ? .9 : 1.5, out = t > dur - .28 ? easeIn((t - (dur - .28)) / .28) : 0;
   const grow = REDUCED ? 1 : easeOutBack(clamp(t / .22, 0, 1), 2), bh = Math.round(46 * clamp(grow, 0, 1.15) * (1 - out)), cy = Math.round(H / 2);
   const col = b.team === 0 ? '#2d58c8' : b.team === 1 ? '#c02c3c' : b.team === 2 ? '#a88a20' : '#2a8a44', dark = shade(col, -.45), lite = shade(col, .4), tilt = .07;
