@@ -420,6 +420,9 @@ const Audio = {
       case 'burn': this.noise(.2, .2, 0, 2000); this.tone('sawtooth', 300, 200, .15, .1); break;
       case 'para': this.tone('square', 1500, 1400, .03, .1); this.tone('square', 1500, 1400, .03, .1, .06); this.tone('square', 1500, 1400, .03, .1, .12); break;
       case 'shake': this.noise(.15, .2, 0, 100); break;
+      case 'pop': this.noise(.08, .25, 0, 1500); this.tone('square', 660, 330, .08, .14); break;
+      case 'absorb': this.tone('sine', 260, 1300, .4, .12); this.tone('square', 520, 2600, .4, .03, .02); break;
+      case 'lock': this.tone('square', 1500, 1500, .03, .14); this.noise(.04, .18, .02, 2000); break;
       case 'error': this.tone('square', 200, 180, .12, .15); break;
       case 'text': this.tone('square', 1200, 1100, .015, .03); break;
       case 'boss': this.tone('sawtooth', 110, 55, .6, .3); this.noise(.5, .2, 0, 80); break;

@@ -443,6 +443,9 @@ const Audio = {
       case 'burn': this.noise(.2, .2, 0, 2000); this.tone('sawtooth', 300, 200, .15, .1); break;
       case 'para': this.tone('square', 1500, 1400, .03, .1); this.tone('square', 1500, 1400, .03, .1, .06); this.tone('square', 1500, 1400, .03, .1, .12); break;
       case 'shake': this.noise(.15, .2, 0, 100); break;
+      case 'pop': this.noise(.08, .25, 0, 1500); this.tone('square', 660, 330, .08, .14); break;
+      case 'absorb': this.tone('sine', 260, 1300, .4, .12); this.tone('square', 520, 2600, .4, .03, .02); break;
+      case 'lock': this.tone('square', 1500, 1500, .03, .14); this.noise(.04, .18, .02, 2000); break;
       case 'error': this.tone('square', 200, 180, .12, .15); break;
       case 'text': this.tone('square', 1200, 1100, .015, .03); break;
       case 'boss': this.tone('sawtooth', 110, 55, .6, .3); this.noise(.5, .2, 0, 80); break;
@@ -1861,6 +1864,22 @@ function projectileFX(type, ax, ay, bx, by, dur) {
 }
 
 // ---------------------------------------------------------------- icons
+// A Poké Ball at any angle, closed or open, its button glowing red while it wobbles: the throw's spin, the capture's
+// open mouth and its shakes. 17×19 (the lifted cap needs headroom); the ball's centre is (8, 10). Cached.
+const BALLSPR = new Map();
+function ballSprite(angle = 0, open = 0, glow = 0, col = '#e83c3c') {
+  const key = Math.round(angle * 20) + ':' + open + ':' + glow + ':' + col; let c = BALLSPR.get(key); if (c) return c;
+  c = tileCanvas(17, 19); const g = c.getContext('2d'), P = (x, y, k) => { g.fillStyle = k; g.fillRect(x, y, 1, 1); };
+  const cx = 8, cy = 10, r = 6.4, sa = Math.sin(angle), ca = Math.cos(angle), lift = open ? 3 : 0, OUT = '#1e1a24';
+  const px = (x, y) => { const d = Math.hypot(x, y), sd = x * sa - y * ca, lit = (-x - y) / (r * 1.4); if (d > r - .5 || Math.abs(sd) < .9) return OUT; return sd > 0 ? (lit > .42 ? mix(col, '#ffffff', .55) : lit < -.28 ? shade(col, -.32) : col) : (lit < -.28 ? '#c4c0cc' : '#f8f6f0'); };
+  for (const top of [false, true]) for (let y = -7; y <= 7; y++) for (let x = -7; x <= 7; x++) { if (Math.hypot(x, y) > r + .5) continue; const sd = x * sa - y * ca; if ((sd > 0) !== top) continue; const ox = top ? Math.round(sa * lift) : 0, oy = top ? Math.round(-ca * lift) : 0; P(cx + x + ox, cy + y + oy, px(x, y)); }
+  if (open) for (let t = -5; t <= 5; t++) { const x = Math.round(ca * t), y = Math.round(sa * t); P(cx + x + Math.round(sa), cy + y - Math.round(ca), '#0c0a10'); P(cx + x + Math.round(sa * 2), cy + y - Math.round(ca * 2), '#3a1010'); }
+  const bx = cx + Math.round(sa * .5), by = cy - Math.round(ca * .5);
+  for (const [dx, dy] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) P(bx + dx, by + dy, OUT);
+  P(bx, by, glow ? '#ff4040' : '#ffffff'); if (glow) for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) P(bx + dx, by + dy, '#ff8a8a');
+  if (!open) { P(cx - 3, cy - 4, '#ffffff'); P(cx - 2, cy - 4, '#ffffff'); P(cx - 3, cy - 3, '#ffffff'); }
+  BALLSPR.set(key, c); return c;
+}
 // The Poké Ball sprite (13×13): a lit cap with a specular glint, a shaded rim, the band and a ringed button, a grey
 // underside. Other ball colours reuse the rows with their own cap.
 const BALL_ROWS = ['....OOOOO....', '..OORRRRROO..', '.ORRHHRRRRRO.', '.ORHHRRRRRDO.', 'ORRHRRRRRRRDO', 'ORRRRROOORRDO', 'OOOOOOWWWOOOO', 'OWWWWWOOOWWSO', 'OWWWWWWWWWWSO', '.OWWWWWWWWSO.', '.OSWWWWWWSSO.', '..OOSSSSSOO..', '....OOOOO....'];
@@ -2980,7 +2999,7 @@ function setupEvent(q) {
         const c = teamColorL(e.unit.team); Audio.sfx('caught'); e.unit.fx.sy = .5; e.unit.fx.sx = 1.4; spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 26, life: .5, col: c }); spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 14, life: .4, col: '#ffffff', delay: .06 }); spawnSprite('flash', ux(e.unit), uy(e.unit) + 6, { size: 12, life: .25, col: '#ffffff' });
         spawnParts(ux(e.unit), uy(e.unit) + 6, 18, [c, '#ffffff', '#ff5a5a'], { speed: 70, life: .6, grav: 60 }); floatText(ux(e.unit), uy(e.unit) - 12, 'Go, ' + e.unit.name + '!', c, { big: true, outline: '#000', life: 1.2 }); break; }
       Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 8, 12, ['#ffffff', '#ff4b4b'], { speed: 50, life: .5, grav: 0 }); floatText(ux(e.unit), uy(e.unit) - 10, 'Reinforcements!', UI.red); break;
-    case 'capture': q.dur = BT.fast ? 1.6 : 2.6 + e.shakes * .5; Audio.sfx('catch'); break;
+    case 'capture': q.dur = (CATCH_T.result + e.shakes * CATCH_T.shake + (e.ok ? 1.35 : .8)) / (BT.fast ? 1.8 : 1); centerCam(e.unit.x, e.unit.y); break; // the catch plays in the middle of the view
     case 'miss': q.dur = BT.fast ? .3 : .55; break;
     case 'status': floatText(ux(e.unit), uy(e.unit) - 6, STATUS[e.status].text.toUpperCase() + '!', STATUS[e.status].col, { outline: '#000' }); Audio.sfx(e.status === 'par' ? 'para' : e.status === 'brn' ? 'burn' : 'poison'); break;
     // role skills: a short card names the skill, then its effect floats over the target
@@ -3061,24 +3080,58 @@ function impact(q) {
   if (e.drain) floatText(A.x * TILE + TILE / 2, A.y * TILE, '+' + e.drain, UI.green, { delay: .3 });
   BT.hpShow.set(D.id, { from: e.hpAfter + e.dmg, to: e.hpAfter, t: 0 }); if (e.drain) BT.hpShow.set(A.id, { from: e.attHpAfter - e.drain, to: e.attHpAfter, t: 0 });
 }
+// The catch, as the games play it: the ball arcs over spinning, pops open above the Pokémon, a red beam pulls it in, the
+// ball snaps shut, drops and bounces, then wobbles with its button glowing while the board dims around it. Caught: a
+// click, stars, GOTCHA! and the ball flies off to the side's nearest PC (+1 BOX there). Broke free: the ball bursts
+// and the Pokémon pops back out, angry. q.cfx holds what drawCatchFx draws; times are in seconds (BT.fast × 1.8).
+const CATCH_T = { throw: .42, open: .5, absorb: .92, land: 1.36, result: 1.42, shake: .62, wobble: .36 };
 function captureAnim(q) {
-  const e = q.ev, k = q.t / q.dur, T = e.unit; const cx = T.x * TILE + TILE / 2, cy = T.y * TILE + 8;
-  // phases: throw (0-.2) → mon sucked in (.2-.3) → shakes → result
-  if (k < .2) { q.ball = { x: lerp(e.from.x * TILE + TILE / 2, cx, easeOut(k / .2)), y: lerp(e.from.y * TILE + 8, cy, k / .2) - Math.sin(k / .2 * Math.PI) * 24 }; T.fx.alpha = 1; }
-  else if (k < .3) { q.ball = { x: cx, y: cy }; T.fx.alpha = 1 - (k - .2) / .1; T.fx.sx = T.fx.sy = 1 - (k - .2) / .1 * .8; if (!q.suck) { q.suck = true; spawnParts(cx, cy, 10, ['#ffffff', '#ff8080'], { speed: 40, life: .3, grav: 0 }); } }
-  else {
-    T.fx.alpha = 0; const sh = Math.floor((k - .3) / (.5 / q.dur)); const shakes = e.shakes;
-    const shakeT = (k - .3) * q.dur / .5; const cur = Math.floor(shakeT); const f = shakeT - cur;
-    q.ball = { x: cx + (cur < shakes ? Math.round(Math.sin(f * Math.PI * 2) * 3) : 0), y: cy + 12 };
-    if (cur !== q.lastShake && cur < shakes) { q.lastShake = cur; Audio.sfx('shake'); }
-    if (cur >= shakes && !q.resolved) {
-      q.resolved = true;
-      if (e.ok) { Audio.sfx('caught'); floatText(cx, cy - 14, 'GOTCHA!', UI.gold, { big: true, life: 1.6 }); spawnParts(cx, cy + 8, 26, ['#ffd24a', '#ffffff', '#ff8080', '#5ee06a'], { speed: 90, life: .9, grav: 40 }); T.fx.alpha = 0; T.caught = true; }
-      else { Audio.sfx('escape'); floatText(cx, cy - 14, 'It broke free!', '#ffffff', { life: 1.3 }); T.fx.alpha = 1; T.fx.sx = T.fx.sy = 1; spawnParts(cx, cy, 12, ['#ffffff', '#ff4040'], { speed: 60, life: .4, grav: 0 }); }
-    }
-    if (q.resolved && !e.ok) { T.fx.alpha = 1; q.ball = null; }
+  const e = q.ev, T = e.unit, t = q.t * (BT.fast ? 1.8 : 1), C = q.cfx || (q.cfx = {}), CT = CATCH_T;
+  const tx = T.x * TILE + TILE / 2, ty = T.y * TILE + 10, fx0 = e.from.x * TILE + TILE / 2, fy0 = e.from.y * TILE + 8, gy = T.y * TILE + TILE - 8, res = CT.result + e.shakes * CT.shake;
+  C.shadow = null;
+  if (t < CT.throw) { const k = t / CT.throw, h = 24 + Math.hypot(tx - fx0, ty - fy0) * .35; C.x = lerp(fx0, tx, k); C.y = lerp(fy0, ty - 14, k) - Math.sin(k * Math.PI) * h; C.angle = t * 24; C.open = 0; T.fx.alpha = 1;
+    if (!C.thrown) { C.thrown = true; Audio.sfx('whoosh'); } if (vrnd() < .6) spawnParts(C.x, C.y, 1, ['#ffffff', '#ffd24a'], { speed: 6, life: .25, grav: 0 }); }
+  else if (t < CT.open) { C.x = tx; C.y = ty - 14 - Math.round(Math.sin((t - CT.throw) / (CT.open - CT.throw) * Math.PI) * 4); C.angle = 0; C.open = 1;
+    if (!C.popped) { C.popped = true; Audio.sfx('pop'); spawnSprite('ring', tx, ty - 4, { size: 18, life: .3, col: '#ffffff' }); spawnSprite('flash', tx, ty - 14, { size: 9, life: .2, col: '#ffffff' }); T.fx.sx = 1.15; T.fx.sy = .85; } }
+  else if (t < CT.absorb) { const k = (t - CT.open) / (CT.absorb - CT.open); C.x = tx; C.y = ty - 14; C.open = 1; C.beam = 1 - Math.max(0, (k - .8) / .2);
+    T.fx.tint = '#ff5a5a'; T.fx.sx = T.fx.sy = Math.max(.1, 1 - easeIn(k) * .9); T.fx.dy = -Math.round(easeIn(k) * 16); T.fx.alpha = 1 - Math.max(0, (k - .7) / .3);
+    if (!C.absorbed) { C.absorbed = true; Audio.sfx('absorb'); } if (vrnd() < .7) spawnParts(tx + (vrnd() - .5) * 18, ty + (vrnd() - .5) * 12, 1, ['#ff8080', '#ffffff'], { speed: 10, life: .3, grav: -70 }); }
+  else if (t < CT.land) { T.fx.alpha = 0; C.beam = 0; C.open = 0; const k = (t - CT.absorb) / (CT.land - CT.absorb);
+    if (!C.shut) { C.shut = true; Audio.sfx('lock'); spawnSprite('flash', tx, ty - 14, { size: 6, life: .15, col: '#ff9a9a' }); }
+    // a fall and two short bounces, a puff of dust each time it lands
+    const hops = [[0, .46, ty - 14 - gy], [.46, .76, -6], [.76, 1, -2]]; C.x = tx; C.angle = Math.sin(k * 9) * .15 * (1 - k);
+    for (let i = 0; i < hops.length; i++) { const [a, b, h] = hops[i]; if (k < a || k > b) continue; const f = (k - a) / (b - a); C.y = i === 0 ? gy + (1 - easeIn(f)) * h : gy + Math.sin(f * Math.PI) * h; if (!C['land' + i] && (i > 0 || f > .98)) { C['land' + i] = true; Audio.sfx('thud'); for (const d of [-1, 1]) spawnSprite('poof', tx + d * 5, gy + 5, { size: 3 - i, life: .3, col: '#e8e0d0', col2: '#ffffff', vx: d * 20, vy: -6 }); } }
+    C.shadow = { x: tx, y: gy + 6, k: 1 - clamp((gy - C.y) / 30, 0, 1) }; }
+  else if (t < res) { const s2 = t - CT.result, i = Math.floor(Math.max(0, s2) / CT.shake), f = Math.max(0, s2) - i * CT.shake; C.x = tx; C.y = gy; C.dim = Math.min(1, (t - CT.land) / .2); C.shadow = { x: tx, y: gy + 6, k: 1 };
+    const wob = s2 >= 0 && f < CT.wobble; C.glow = wob; C.angle = wob ? Math.sin(f / CT.wobble * Math.PI * 2) * .42 : 0; C.x = tx + (wob ? Math.round(Math.sin(f / CT.wobble * Math.PI * 2) * 2) : 0);
+    if (wob && C.shakeI !== i) { C.shakeI = i; Audio.sfx('shake'); } }
+  else { const r = t - res; C.dim = Math.max(0, 1 - r / .35); C.angle = 0; C.glow = false; C.shadow = { x: tx, y: gy + 6, k: 1 };
+    if (e.ok) {
+      if (!C.done) { C.done = true; C.x = tx; C.y = gy; Audio.sfx('lock'); Audio.sfx('caught'); if (!REDUCED) shake(2); flashScreen('#ffffff', .3);
+        for (let i = 0; i < 3; i++) spawnSprite('star', tx, gy - 4, { size: 5, life: .7, col: UI.gold, vx: (i - 1) * 34, vy: -70 + Math.abs(i - 1) * 16, grav: 110 });
+        spawnParts(tx, gy - 4, 22, ['#ffd24a', '#ffffff', '#ff8080', '#8ab4ff'], { speed: 80, life: .8, grav: 60 }); floatText(tx, gy - 22, 'GOTCHA!', UI.gold, { huge: 2, life: 1.4, vy: -10, outline: '#3a2000' }); }
+      // the ball flies to the nearest PC of the catcher's side
+      if (r > .55) { if (C.site === undefined) { const sites = warDeploySites(e.team != null ? e.team : HT()); C.site = sites.length ? sites.slice().sort((a, b) => dist(a, T) - dist(b, T))[0] : null; }
+        const k = Math.min(1, (r - .55) / .6); C.shadow = null; C.small = true;
+        if (C.site) { const sx = C.site.x * TILE + TILE / 2, sy = C.site.y * TILE + 8; C.x = lerp(tx, sx, easeInOut(k)); C.y = lerp(gy, sy, k) - Math.sin(k * Math.PI) * 34; if (vrnd() < .7) spawnParts(C.x, C.y, 1, ['#ffd24a', '#ffffff'], { speed: 6, life: .3, grav: 0 });
+          if (k >= 1 && !C.arrived) { C.arrived = true; C.gone = true; Audio.sfx('item'); spawnSprite('ring', sx, sy + 8, { size: 20, life: .45, col: teamColorL(e.team != null ? e.team : HT()) }); floatText(sx, sy - 6, '+1 BOX', teamColorL(e.team != null ? e.team : HT()), { big: true, outline: '#000', life: 1.2 }); } }
+        else { C.fade = k; if (k >= 1) C.gone = true; } }
+    } else if (!C.done) { C.done = true; C.gone = true; Audio.sfx('pop'); Audio.sfx('escape'); if (!REDUCED) shake(3); T.fx.alpha = 1; T.fx.tint = null; T.fx.sx = 1.45; T.fx.sy = .6; T.fx.dy = 0; T.provoked = true;
+      spawnSprite('flash', tx, gy - 6, { size: 12, life: .25, col: '#ffffff' }); spawnParts(tx, gy - 6, 18, ['#ffffff', '#ff4040', '#ffd24a'], { speed: 90, life: .5, grav: 80 });
+      for (let i = 0; i < 2; i++) spawnSprite('debris', tx, gy - 4, { vx: (i ? 1 : -1) * 60, vy: -90, grav: 400, floor: gy + 4, life: .8, size: 3, col: i ? '#e83c3c' : '#f8f6f0', col2: '#ffffff', rot: i, spin: 10 });
+      floatText(tx, gy - 24, 'It broke free!', '#ffffff', { big: true, outline: '#000', life: 1.3 }); T.fx.anger = BT.time; }
   }
-  if (k >= 1) { if (e.ok) { T.fx.alpha = 1; if (!B.versus) { T.hp = 0; T.captured = true; } } else T.fx.alpha = 1; T.fx.sx = T.fx.sy = 1; q.ball = null; }
+  if (q.t >= q.dur) { T.fx.tint = null; T.fx.sx = T.fx.sy = 1; T.fx.dy = 0; T.fx.alpha = 1; }
+}
+// What the capture shows on the board (board space): a vignette that closes in on the ball while it shakes, the red
+// beam, the ball itself (spinning, open, wobbling) with its shadow, or the small ball on its way to the PC.
+function drawCatchFx(q) {
+  const C = q.cfx; if (!C || C.x == null || C.gone && !C.small) return; const ox = -CAM.x + FX.shakeX, oy = -CAM.y + FX.shakeY, bx = Math.round(C.x + ox), by = Math.round(C.y + oy);
+  if (C.dim > 0 && !REDUCED) { const r = 26, W = bvW() / BT.zoom + 64, H = bvH() / BT.zoom + 64; ctx.globalAlpha = .5 * C.dim; rect(-32, -32, W, by - r + 32, '#050915'); rect(-32, by + r, W, H, '#050915'); rect(-32, by - r, bx - r + 32, 2 * r, '#050915'); rect(bx + r, by - r, W, 2 * r, '#050915'); ctx.globalAlpha = .25 * C.dim; ellipseRing(bx, by, r + 2, r + 2, 3, '#050915'); ctx.globalAlpha = 1; }
+  if (C.beam > 0) { const T = q.ev.unit, px2 = T.x * TILE + TILE / 2 + ox, py = T.y * TILE + 20 + oy; ctx.globalAlpha = C.beam * (.55 + .45 * Math.sin(BT.time * 44)); pline(bx - 3, by + 3, px2 - 9, py, '#ff5050', 2); pline(bx + 3, by + 3, px2 + 9, py, '#ff5050', 2); pline(bx, by + 3, px2, py - 3, '#ffffff', 1); ctx.globalAlpha = 1; }
+  if (C.shadow) { ctx.globalAlpha = .3 * C.shadow.k; ellipse(Math.round(C.shadow.x + ox), Math.round(C.shadow.y + oy), 5, 2, '#000000'); ctx.globalAlpha = 1; }
+  if (C.small) { if (C.gone) return; ctx.globalAlpha = C.fade != null ? 1 - C.fade : 1; drawBall(bx, by, ITEMS[q.ev.ball] ? ITEMS[q.ev.ball].col : ITEMS.pokeball.col, 3); ctx.globalAlpha = 1; return; }
+  ctx.drawImage(ballSprite(C.angle || 0, C.open ? 1 : 0, C.glow ? 1 : 0, ITEMS[q.ev.ball] ? ITEMS[q.ev.ball].col : '#e83c3c'), bx - 8, by - 10);
 }
 BT.hpShow = new Map();
 
@@ -3131,7 +3184,7 @@ function openActionMenu(u) {
 // The PC: deploy a Pokémon from the side's Box onto a free center it owns (without a center given, pick the center
 // first). Each row shows the price (FREE for a fresh catch); the footer says why a row is greyed.
 function openDeployMenu(p) {
-  const team = HT(), W = B.war; BT.sel = null; BT.autoEnd = 0; BT.mode = 'endmenu';
+  const team = HT(), W = B.war; BT.boxNew = false; BT.sel = null; BT.autoEnd = 0; BT.mode = 'endmenu';
   if (!p) { BT.menu = { title: 'DEPLOY WHERE?', i: 0, items: warDeploySites(team).map(q => ({ id: 'site:' + W.props.indexOf(q), label: q.name, icon: 'flag', off: !!unitAt(q.x, q.y), sub: unitAt(q.x, q.y) ? 'Occupied: move that Pokémon first' : 'Open the PC here · arrivals act next turn' })).concat([{ id: 'close', label: 'Close', icon: 'x' }]) }; return; }
   BT.deploySite = p; BT.cx = p.x; BT.cy = p.y; keepCursorVisible();
   BT.menu = { title: 'PC BOX · ' + money(W.funds[team]), i: 0, items: W.box[team].map((e, i) => { const why = warDeployBlock(team, i, p); return { id: 'deploy:' + i, icon: 'ball', label: (e.nick || DEX[e.num].name) + ' Lv' + e.level, right: e.state === 'field' ? 'OUT' : e.fresh ? 'FREE' : money(e.cost), off: !!why, sub: (why || p.name + ' · acts next turn') + ' · ' + ROLES[roleFor(DEX[e.num])].name + ' · ' + DEX[e.num].types.join('/') }; }).concat([{ id: 'close', label: 'Close', icon: 'x' }]) };
@@ -3213,14 +3266,13 @@ function confirmCatch() {
   if (isPracticeTarget(t) && !practiceReady(t)) { Audio.sfx('error'); return; }
   if (ball !== 'practiceball') { if (B.bag.pokeball > 0) B.bag.pokeball--; else if (B.war && B.war.funds[u.team] >= WAR.ball) B.war.funds[u.team] -= WAR.ball; else return; }
   const r = tryCapture(t, ITEMS[ball]);
-  BT.queue = [{ kind: 'event', ev: { type: 'capture', unit: t, ok: r.ok, shakes: r.shakes, from: { x: u.x, y: u.y }, ball } }];
+  BT.queue = [{ kind: 'event', ev: { type: 'capture', unit: t, ok: r.ok, shakes: r.shakes, from: { x: u.x, y: u.y }, ball, team: u.team } }]; BT.boxNew = r.ok ? true : BT.boxNew;
   if (r.ok) BT.queue.push({ kind: 'fn', fn: () => {
     if (isPracticeTarget(t)) B.lesson.complete = true;
     powerCharge(u.team, 15);
     // the catch goes to the catcher's PC Box (its first deployment is free); a campaign catch also joins the collection
     t.hp = 0; t.captured = true; const e = warBoxAdd(u.team, Object.assign({}, t, { ai: null, boss: false, provoked: false }));
-    if (!B.versus && u.team === 0) { B.captured.push(serializeUnit(Object.assign({}, t, { team: 0, hp: Math.max(1, Math.floor(t.maxHp * .5)) }))); if (e) e.captIdx = B.captured.length - 1; }
-    if (e) floatText(t.x * TILE + TILE / 2, t.y * TILE - 20, 'To your PC Box!', teamColorL(u.team), { outline: UI.shadow, life: 1.6, delay: .4 }); } });
+    if (!B.versus && u.team === 0) { B.captured.push(serializeUnit(Object.assign({}, t, { team: 0, hp: Math.max(1, Math.floor(t.maxHp * .5)) }))); if (e) e.captIdx = B.captured.length - 1; } } });
   playQueue(() => { finishUnit(u); });
 }
 function finishUnit(u) {
@@ -3500,7 +3552,7 @@ function drawBoardLayer() {
   if (BT.mode === 'target') drawAimLock();
   // cursor
   if (['idle', 'move', 'target', 'catchTarget', 'skillTarget', 'unitinfo'].includes(BT.mode)) { const hostileCur = unitAt(BT.cx, BT.cy) && hostile(unitAt(BT.cx, BT.cy).team, HT()); drawCursor(tileX(BT.cx), tileY(BT.cy), BT.time * 1000, '#ffffff', (BT.mode === 'target' || hostileCur) ? '#ff5a5a' : BT.mode === 'skillTarget' ? '#60e070' : '#ffd24a'); }
-  if (BT.anim && BT.anim.ball) { const b = BT.anim.ball; drawBall(Math.round(b.x - CAM.x), Math.round(b.y - CAM.y), ITEMS[BT.anim.ev.ball].col, 5); }
+  if (BT.anim && BT.anim.kind === 'event' && BT.anim.ev.type === 'capture') drawCatchFx(BT.anim);
   drawFX(-CAM.x + FX.shakeX, -CAM.y + FX.shakeY, false);
 }
 // Ambient life on outdoor maps: huge soft cloud shadows drifting across the field and a few butterflies. Faint on
@@ -3579,10 +3631,13 @@ function drawUnit(u) {
   else if (!REDUCED && !grey) { if (hovered) { const p = Math.abs(Math.sin(BT.time * 7 + u.id)); hop = p * 1.5; } else if (ready) { const p = Math.abs(Math.sin(BT.time * 3 + u.id * 1.7)); hop = p * 1; } else { const p = .5 + .5 * Math.sin(BT.time * 2.2 + u.id * 2.1); bsy = 1 - p * .02; bsx = 1 + p * .01; } }
   const bob = -Math.round(hop); const air = (f.air || 0) + hop; const gy = by + 1 + (f.air || 0); // ground baseline
   if (u.boss) { ctx.globalAlpha = f.alpha * .9; const k = Math.floor(BT.time * 4) % 2; ellipseRing(cx, gy, 14 + k, 5, 1, '#ffd24a'); ctx.globalAlpha = 1; }
+  // a wild Pokémon weak enough to catch wears a small ball that bobs over it; one that broke free steams for a moment
+  if (u.team === 2 && u.hp > 0 && u.hp <= u.maxHp / 2 && f.alpha > 0 && !u.boss) drawBall(cx + 10, by - 26 + (REDUCED ? 0 : Math.round(Math.sin(BT.time * 5 + u.id) * 1.5)), ITEMS.pokeball.col, 3);
+  if (f.anger != null && BT.time - f.anger < 1.3 && !REDUCED) { const k = Math.floor((BT.time - f.anger) * 8) % 2; stampAt(cx + 7, by - 30 - k, ['R.R.R', '.RRR.', 'RR.RR', '.RRR.', 'R.R.R'], { R: '#ff4a4a' }); }
   const sh = Math.max(.4, 1 - air / 18); ctx.globalAlpha = .3 * f.alpha * sh; ellipse(cx, gy, Math.round(10 * sh), Math.max(1, Math.round(3 * sh)), '#000000'); ctx.globalAlpha = 1;
   if (sel && !REDUCED) { const k = (BT.time * 1.4) % 1; ctx.globalAlpha = (1 - k) * .7 * f.alpha; ellipseRing(cx, gy, Math.round(11 + k * 8), Math.round(4 + k * 3), 1, teamColorL(u.team)); ctx.globalAlpha = 1; }
   const flip = u.team === 1 || u.team === 2 ? f.facing !== 1 : f.facing === -1;
-  let tint = null; if (f.flash) tint = '#ffffff';
+  let tint = null; if (f.flash) tint = '#ffffff'; else if (f.tint) tint = f.tint;
   if (f.alpha > 0) {
     const sx = f.sx * bsx, sy = f.sy * bsy;
     const ol = grey ? '#50546a' : sel || hovered ? teamColorL(u.team) : teamColor(u.team);
@@ -3723,7 +3778,7 @@ function drawButtons(L) {
   if (enemyAnim) items.push({ label: 'FAST', on: BT.fast, run: () => { BT.fast = !BT.fast; } });
   if (idle && VIEW.touch && alive(HT()).some(u => !u.acted)) { const nx = { label: 'NEXT', run: () => keyInput('next') }; if (L.stack) items.splice(1, 0, nx); else items.push(nx); }
   if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
-  if (idle && warHasBox(HT())) items.push({ label: 'PC', run: () => openDeployMenu() });
+  if (idle && warHasBox(HT())) items.push({ label: BT.boxNew ? 'PC!' : 'PC', run: () => openDeployMenu() });
   if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; Audio.sfx('menu'); } }, { label: '♪', on: !Audio.muted, half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
   if (B.territory && L.stack && idle) { const mute = items.findIndex(it => it.label.startsWith('♪')); if (mute >= 0) items.splice(mute, 1); }
   if (!items.length) return;
@@ -3968,13 +4023,18 @@ function skillCardRect() {
   return { x: r.x, y: r.y, w: r.w, h: 40 + cost.length * 9 + 4, effect, cost };
 }
 function drawCatchCard() {
-  const t = BT.targets[BT.tIdx]; if (!t) return; const r = forecastRect(); const practice = isPracticeTarget(t); hudPanel(r.x, r.y, r.w, 50, { title: practice ? 'PRACTICE CATCH' : 'CATCH' });
+  const t = BT.targets[BT.tIdx]; if (!t) return; const r = forecastRect(); const practice = isPracticeTarget(t); const team = HT();
+  hudPanel(r.x, r.y, r.w, 54, { title: practice ? 'PRACTICE CATCH' : 'CATCH' });
   ctx.save(); ctx.beginPath(); ctx.rect(r.x + 6, r.y + 8, 34, 30); ctx.clip(); portraitBg(r.x + 6, r.y + 8, 34, 30, t.team); drawMon(t.num, r.x + 23, r.y + 37, { flip: true }); ctx.restore();
-  text(t.name + '  Lv' + t.level, r.x + 46, r.y + 8, UI.ink); hpBar(r.x + 46, r.y + 18, r.w - 54, t.hp, t.maxHp);
-  const p = captureChance(t, practice ? ITEMS.practiceball : ITEMS.pokeball), left = practice ? 'free ball' : (B.bag.pokeball || 0) + ' ball' + (B.bag.pokeball === 1 ? '' : 's') + ' left';
-  text(practice ? (practiceReady(t) ? 'Ready: a sure catch' : 'Weaken it to half HP') : 'Chance ' + Math.round(p * 100) + '%', r.x + 46, r.y + 27, p > .6 ? UI.green : p > .35 ? UI.gold : UI.red); textR(left, r.x + r.w - 8, r.y + 27, UI.muted);
-  text(fitLabel(practice ? 'Caterpie cannot faint' : 'Weaker foes and statuses help', r.w - 54), r.x + 46, r.y + 37, UI.dim);
-  hintLine(VIEW.touch ? ['tap: throw', 'X: back'] : [['Z', 'throw'], ['X', 'back']], r.x + r.w / 2, r.y + 55);
+  text(t.name + '  Lv' + t.level, r.x + 46, r.y + 8, UI.ink); hpBar(r.x + 46, r.y + 17, r.w - 54, t.hp, t.maxHp);
+  // the chance: a ten-segment gauge that fills to it, green when likely, gold when even, red when long
+  const p = captureChance(t, practice ? ITEMS.practiceball : ITEMS.pokeball), pc = Math.round(p * 100), col = practice ? (practiceReady(t) ? UI.green : UI.red) : p > .6 ? UI.green : p > .35 ? UI.gold : UI.red;
+  const gx = r.x + 46, gy = r.y + 26, gw = r.w - 54 - 26; for (let i = 0; i < 10; i++) { const sx = gx + Math.round(i * gw / 10), sw = Math.round((i + 1) * gw / 10) - Math.round(i * gw / 10) - 1, on = practice ? practiceReady(t) : (i + 1) / 10 <= p + .05; rect(sx, gy, sw, 5, UI.inset); if (on) { rect(sx, gy, sw, 5, col); hline(sx, gy, sw, shade(col, .35)); } }
+  textR(practice ? (practiceReady(t) ? '100%' : '0%') : pc + '%', r.x + r.w - 7, gy - 1, col, { outline: '#000' });
+  // what the throw costs and what it earns
+  const cost = practice ? 'Oak\'s free ball' : B.bag.pokeball > 0 ? 'Poké Ball · ' + B.bag.pokeball + ' left' : 'buys a ball · ' + money(WAR.ball); drawBall(gx + 3, r.y + 38, practice ? ITEMS.practiceball.col : ITEMS.pokeball.col, 3); text(fitLabel(cost, r.w - 62), gx + 9, r.y + 35, UI.muted);
+  text(fitLabel(practice ? (practiceReady(t) ? 'Ready: a sure catch' : 'Weaken it to half HP first') : (t.status ? 'status helps · ' : '') + (B.war ? 'to your PC Box, 1st deploy free' : 'weaker is easier'), r.w - 54), gx, r.y + 44, practice || !B.war ? UI.dim : UI.info);
+  hintLine(VIEW.touch ? ['tap: throw', 'X: back'] : [['Z', 'throw'], ['X', 'back']], r.x + r.w / 2, r.y + 59);
 }
 function drawDuelCard(q) {
   // a compact "who is hitting whom" strip at the top
@@ -3998,7 +4058,11 @@ function drawEventCard(q) {
     if (q.t > 1) { const nm = u.moves.map(m => m.name); let s = 'Moves: ' + nm.join(', '); while (textWidth(s) > w - 12 && s.length > 8) s = s.slice(0, -1); hline(x + 5, p.cy + 32, w - 10, UI.inset); text(s, x + 6, p.cy + 35, UI.info); }
   }
   if (e.type === 'evolve') { const k = q.t / q.dur; const msg = k < .5 ? 'What? ' + e.from.name + ' is evolving!' : e.from.name + ' evolved into ' + e.to.name + '!'; const w = Math.min(W - 12, Math.max(160, textWidth(msg) + 16)), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(msg, W / 2, y + 6, k < .5 ? UI.ink : UI.gold); if (k > .15 && k < .8 && Math.floor(q.t * 14) % 2) { ctx.globalAlpha = .25; rect(0, 0, W, H, '#ffffff'); ctx.globalAlpha = 1; } }
-  if (e.type === 'capture' && q.t > q.dur - .8 && e.ok) { const w = Math.min(150, W - 12), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(e.unit.name + ' was caught!', W / 2, y + 6, UI.gold); }
+  if (e.type === 'capture' && e.ok && q.cfx && q.cfx.done) { // CAUGHT: the portrait, the name and level, and where it went (the PC Box, first deployment free)
+    const u = e.unit, w = Math.min(212, W - 12), h = 44, x = Math.round(W / 2 - w / 2), k = Math.min(1, (q.t * (BT.fast ? 1.8 : 1) - CATCH_T.result - e.shakes * CATCH_T.shake) / .25), y = Math.round(26 - (1 - easeOutBack(k, 2)) * 14);
+    ctx.globalAlpha = Math.min(1, k * 2); const p = panel(x, y, w, h, { header: 'CAUGHT!', headerRight: 'Lv ' + u.level, headerRightCol: UI.gold, fill: '#1f2a5e' });
+    ctx.save(); ctx.beginPath(); ctx.rect(x + 6, p.cy, 30, 22); ctx.clip(); portraitBg(x + 6, p.cy, 30, 22, 0); drawMon(u.num, x + 21, p.cy + 21 + Math.round(Math.sin(q.t * 9) * (k < 1 ? 0 : 1)), {}); ctx.restore(); drawBall(x + 33, p.cy + 18, ITEMS.pokeball.col, 3);
+    text(u.name, x + 42, p.cy + 1, '#ffffff', { outline: '#000' }); text(B.war ? 'Sent to your PC Box' : 'Joins your team', x + 42, p.cy + 11, UI.info); if (B.war) textR('1st deploy FREE', x + w - 7, p.cy + 11, UI.green); ctx.globalAlpha = 1; }
   if (e.type === 'skill') { const msg = e.unit.name + ' uses ' + e.skill.name + (e.target && e.target !== e.unit ? ' on ' + e.target.name : '') + '!'; const w = Math.min(W - 12, Math.max(120, textWidth(msg) + 16)), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20, { border: ROLES[e.unit.role].col }); let s = msg; while (textWidth(s) > w - 12 && s.length > 6) s = s.slice(0, -1); textC(s, W / 2, y + 6, UI.ink); }
 }
 // Phase banner: a slanted band in the team colour sweeps in with speed lines, the phase name slams down (doubled when it

@@ -894,6 +894,22 @@ function projectileFX(type, ax, ay, bx, by, dur) {
 }
 
 // ---------------------------------------------------------------- icons
+// A Poké Ball at any angle, closed or open, its button glowing red while it wobbles: the throw's spin, the capture's
+// open mouth and its shakes. 17×19 (the lifted cap needs headroom); the ball's centre is (8, 10). Cached.
+const BALLSPR = new Map();
+function ballSprite(angle = 0, open = 0, glow = 0, col = '#e83c3c') {
+  const key = Math.round(angle * 20) + ':' + open + ':' + glow + ':' + col; let c = BALLSPR.get(key); if (c) return c;
+  c = tileCanvas(17, 19); const g = c.getContext('2d'), P = (x, y, k) => { g.fillStyle = k; g.fillRect(x, y, 1, 1); };
+  const cx = 8, cy = 10, r = 6.4, sa = Math.sin(angle), ca = Math.cos(angle), lift = open ? 3 : 0, OUT = '#1e1a24';
+  const px = (x, y) => { const d = Math.hypot(x, y), sd = x * sa - y * ca, lit = (-x - y) / (r * 1.4); if (d > r - .5 || Math.abs(sd) < .9) return OUT; return sd > 0 ? (lit > .42 ? mix(col, '#ffffff', .55) : lit < -.28 ? shade(col, -.32) : col) : (lit < -.28 ? '#c4c0cc' : '#f8f6f0'); };
+  for (const top of [false, true]) for (let y = -7; y <= 7; y++) for (let x = -7; x <= 7; x++) { if (Math.hypot(x, y) > r + .5) continue; const sd = x * sa - y * ca; if ((sd > 0) !== top) continue; const ox = top ? Math.round(sa * lift) : 0, oy = top ? Math.round(-ca * lift) : 0; P(cx + x + ox, cy + y + oy, px(x, y)); }
+  if (open) for (let t = -5; t <= 5; t++) { const x = Math.round(ca * t), y = Math.round(sa * t); P(cx + x + Math.round(sa), cy + y - Math.round(ca), '#0c0a10'); P(cx + x + Math.round(sa * 2), cy + y - Math.round(ca * 2), '#3a1010'); }
+  const bx = cx + Math.round(sa * .5), by = cy - Math.round(ca * .5);
+  for (const [dx, dy] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) P(bx + dx, by + dy, OUT);
+  P(bx, by, glow ? '#ff4040' : '#ffffff'); if (glow) for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) P(bx + dx, by + dy, '#ff8a8a');
+  if (!open) { P(cx - 3, cy - 4, '#ffffff'); P(cx - 2, cy - 4, '#ffffff'); P(cx - 3, cy - 3, '#ffffff'); }
+  BALLSPR.set(key, c); return c;
+}
 // The Poké Ball sprite (13×13): a lit cap with a specular glint, a shaded rim, the band and a ringed button, a grey
 // underside. Other ball colours reuse the rows with their own cap.
 const BALL_ROWS = ['....OOOOO....', '..OORRRRROO..', '.ORRHHRRRRRO.', '.ORHHRRRRRDO.', 'ORRHRRRRRRRDO', 'ORRRRROOORRDO', 'OOOOOOWWWOOOO', 'OWWWWWOOOWWSO', 'OWWWWWWWWWWSO', '.OWWWWWWWWSO.', '.OSWWWWWWSSO.', '..OOSSSSSOO..', '....OOOOO....'];
