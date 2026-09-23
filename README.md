@@ -145,9 +145,14 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
   point at what to do next. Every one of these respects reduced motion.
 - **Ending**: the credits play over the title landscape with your own team.
 - **Attacks**: aiming draws a marching line to the target, a lock-on ring and a
-  bubble with the damage it will take (or KO!). The lateral **duel scene**
-  closes over the board in stripes, splits the screen on a diagonal with the
-  Black/White animated sprites and slams a VS between them; each move charges
+  bubble with the damage it will take (or KO!). The lateral **duel scene** is an
+  Advance Wars battle screen: each half is a painted panorama of the terrain its
+  Pokémon stands on (field, meadow, tall grass, forest, mountain, road, beach,
+  sea, bridge, town with its Poké Center, Gym or HQ, cave, base, volcano, snow)
+  in parallax layers with drifting clouds, waves, leaves, snow or embers, and
+  team-coloured HP plates; swimmers float half under the water. It closes over
+  the board in stripes, splits the screen on a diagonal with the Black/White
+  animated sprites and slams a VS between them; each move charges
   with an aura, a heavy hit freezes on an impact frame with focus lines, the
   damage lands as a huge number, the HP bar leaves a ghost that drains, and a
   KO is stamped over the fallen Pokémon while the winner hops. Any key speeds
@@ -191,7 +196,7 @@ Deep links: `?ch=N`, `?ch=N&prep`, `?skirmish=SEED`, `?versus=SEED`,
 
 Source modules: `core.js` (canvas, input, motion helpers, design system,
 audio), `font.js`, `dex.js`, `data.js`, `animmeta.js` (generated), `art.js`
-(tiles, effects), `model.js`, `captain.js`, `battle.js`, `duel.js`,
+(tiles, effects), `scenery.js` (battle-screen panoramas), `model.js`, `captain.js`, `battle.js`, `duel.js`,
 `campaign.js`, `territory.js`, `scenes.js`, `title.js`, `route.js`,
 `journey.js` and `main.js`. `build.sh` regenerates the tracked `index.html`.
 The redesign's rationale is in `docs/redesign.md`.

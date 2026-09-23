@@ -196,6 +196,37 @@ const RAMP = {
   steel: ['#262632', '#3c3c4a', '#565666', '#747486', '#9496a8', '#babccc', '#e2e4ee'],
   crust: ['#140404', '#240806', '#3a0e08', '#58180c', '#7a2a12'],
 };
+// ---------------------------------------------------------------- building kit
+// Buildings in the board's three-quarter view, shared by the map tiles and the battle-screen towns: a hip roof of
+// shingle rows over walls shaded under the eaves, framed windows, panelled doors, flags and chimneys, in a warm outline.
+const BOUT = '#23150f';
+function bldRoof(p, x0, w, top, eave, R, hip = 4) {
+  for (let y = top; y <= eave; y++) { const t = (y - top) / Math.max(1, eave - top), inset = Math.round((1 - t) * hip), xs = x0 - 2 + inset, xe = x0 + w + 1 - inset, band = (y - top) % 3, row = Math.floor((y - top) / 3);
+    for (let x = xs; x <= xe; x++) { let c = band === 0 ? R[4] : band === 1 ? R[3] : R[2]; if (band === 1 && (x + row * 2) % 4 === 0) c = R[2]; if (x <= xs + 1 && band !== 2) c = R[5]; if (x >= xe - 1) c = band === 0 ? R[3] : R[1]; p.P(x, y, c); }
+    p.P(xs - 1, y, R[0]); p.P(xe + 1, y, R[0]); }
+  p.H(x0 - 2 + hip, top - 1, w + 4 - 2 * hip, R[0]); p.H(x0 - 1 + hip, top, w + 2 - 2 * hip, R[5]);
+  p.H(x0 - 3, eave + 1, w + 6, R[0]); p.H(x0 - 2, eave, w + 4, R[1]); p.P(x0 - 2, eave, R[0]); p.P(x0 + w + 1, eave, R[0]);
+}
+function bldWalls(p, x0, w, y0, y1, W, planks = true) {
+  p.R(x0 - 1, y0, w + 2, y1 - y0 + 1, BOUT); p.R(x0, y0, w, y1 - y0, W[2]);
+  if (planks) for (let y = y0 + 3; y < y1 - 1; y += 3) p.H(x0, y, w, W[0]);
+  p.V(x0, y0, y1 - y0, W[3]); p.V(x0 + w - 1, y0, y1 - y0, W[1]); p.H(x0, y0, w, W[1]); p.H(x0, y0 + 1, w, mix(W[2], W[1], .5));
+  p.H(x0, y1 - 2, w, '#8a8290'); p.H(x0, y1 - 1, w, '#5e5866'); p.H(x0, y1 - 2, 1, '#aaa2ae');
+}
+// 6×6 framed window with a cross, a sky reflection and an optional flower box
+function bldWin(p, x, y, lit, box) { const G = PAL.grass;
+  p.R(x - 1, y - 1, 8, 8, BOUT); p.R(x, y, 6, 6, '#f4ecd8'); p.R(x + 1, y + 1, 4, 4, lit ? '#ffe28a' : '#7cc0f0'); p.P(x + 1, y + 1, '#ffffff'); p.P(x + 2, y + 1, lit ? '#fff4c0' : '#c8ecff'); p.R(x + 3, y + 3, 2, 2, lit ? '#f0b040' : '#4a8ed0'); p.V(x + 3, y + 1, 4, '#d8ccb0'); p.H(x + 1, y + 3, 4, '#d8ccb0');
+  if (box) { p.R(x - 1, y + 6, 8, 3, BOUT); p.R(x, y + 7, 6, 1, '#8a5a30'); p.P(x, y + 6, '#e04848'); p.P(x + 2, y + 6, '#ffd24a'); p.P(x + 4, y + 6, '#ff8ac0'); p.P(x + 1, y + 6, G.l); p.P(x + 3, y + 6, G.l); p.P(x + 5, y + 6, G.l); }
+}
+// Panelled door in a frame, a brass knob, a stone step
+function bldDoor(p, x, y, w, h, col, step = true) {
+  p.R(x - 1, y - 1, w + 2, h + 1, BOUT); p.R(x, y, w, h, col); p.V(x, y, h, shade(col, .22)); p.H(x, y, w, shade(col, .3)); p.V(x + w - 1, y, h, shade(col, -.3));
+  p.R(x + 1, y + 2, w - 3, 2, shade(col, -.18)); if (h > 6) p.R(x + 1, y + 5, w - 3, 2, shade(col, -.18)); p.P(x + w - 2, y + Math.floor(h / 2) + 1, '#ffd24a');
+  if (step) { p.R(x - 2, y + h, w + 4, 2, '#b8b0a4'); p.H(x - 2, y + h, w + 4, '#dcd4c8'); p.H(x - 2, y + h + 2, w + 4, '#5e5866'); }
+}
+function bldGlassDoor(p, x, y, w, h) { p.R(x - 1, y - 1, w + 2, h + 1, BOUT); p.R(x, y, w, h, '#5a8ec8'); p.R(x + 1, y + 1, w - 2, h - 1, '#8ccaf4'); p.V(x + (w >> 1), y, h, '#3a5a80'); for (let i = 0; i < 3; i++) p.P(x + 2 + i, y + 2 + i, '#e8f8ff'); p.P(x + (w >> 1) + 2, y + 2, '#e8f8ff'); p.R(x - 2, y + h, w + 4, 2, '#d84040'); p.H(x - 2, y + h, w + 4, '#ff7a6a'); p.H(x - 2, y + h + 2, w + 4, '#5e5866'); }
+function bldFlag(p, x, y, col) { p.V(x, y, 9, '#e8e0d0'); p.V(x + 1, y + 1, 8, '#8a8290'); p.P(x, y - 1, '#ffd24a'); p.R(x + 1, y, 6, 4, col); p.H(x + 1, y, 6, shade(col, .35)); p.H(x + 1, y + 3, 6, shade(col, -.35)); p.P(x + 7, y + 1, col); p.P(x + 7, y + 2, shade(col, -.2)); }
+function bldChimney(p, x, y) { p.R(x - 1, y - 1, 6, 8, BOUT); p.R(x, y, 4, 7, '#a0584a'); p.V(x, y, 7, '#c07262'); p.V(x + 3, y, 7, '#6a3a30'); p.H(x, y + 3, 4, '#6a3a30'); p.R(x - 1, y - 2, 6, 2, '#5e5866'); p.H(x - 1, y - 2, 6, '#8a8290'); }
 // ---------------------------------------------------------------- terrain bases
 // Roof colours of a capturable building by owner (Territory): neutral grey, the player's blue, the enemy's red; a plain
 // Poké Center keeps its classic red roof. [roof, roofD, roofL, flag]
@@ -290,36 +321,10 @@ function drawTile(ch, variant, frame, g, owner = null) {
     for (const [k, c] of cells) { const [x, y] = k.split(',').map(Number); p.P(x, y, c); }
     p.P(cx, tiers[2][0] - tiers[2][1], P[5]);
   };
-  // ---- buildings, in the board's three-quarter view: a hip roof of shingle rows over walls shaded under the eaves,
-  // an outline in a warm dark, a shadow cast east and south onto the grass.
-  const BOUT = '#23150f';
+  // ---- buildings (see the building kit above drawTile); castShadow stays local to the 32 px tile
   const castShadow = (x0, y0, w, h, dens = .7) => { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) if (x >= 0 && y >= 0 && x < 32 && y < 32 && dith(x, y) < dens) p.P(x, y, G.d); };
-  const roof = (x0, w, top, eave, R, hip = 4) => {
-    for (let y = top; y <= eave; y++) { const t = (y - top) / Math.max(1, eave - top), inset = Math.round((1 - t) * hip), xs = x0 - 2 + inset, xe = x0 + w + 1 - inset, band = (y - top) % 3, row = Math.floor((y - top) / 3);
-      for (let x = xs; x <= xe; x++) { let c = band === 0 ? R[4] : band === 1 ? R[3] : R[2]; if (band === 1 && (x + row * 2) % 4 === 0) c = R[2]; if (x <= xs + 1 && band !== 2) c = R[5]; if (x >= xe - 1) c = band === 0 ? R[3] : R[1]; p.P(x, y, c); }
-      p.P(xs - 1, y, R[0]); p.P(xe + 1, y, R[0]); }
-    p.H(x0 - 2 + hip, top - 1, w + 4 - 2 * hip, R[0]); p.H(x0 - 1 + hip, top, w + 2 - 2 * hip, R[5]);
-    p.H(x0 - 3, eave + 1, w + 6, R[0]); p.H(x0 - 2, eave, w + 4, R[1]); p.P(x0 - 2, eave, R[0]); p.P(x0 + w + 1, eave, R[0]);
-  };
-  // W: [line, dark, mid, light]; planks = horizontal siding lines every 3 px
-  const walls = (x0, w, y0, y1, W, planks = true) => {
-    p.R(x0 - 1, y0, w + 2, y1 - y0 + 1, BOUT); p.R(x0, y0, w, y1 - y0, W[2]);
-    if (planks) for (let y = y0 + 3; y < y1 - 1; y += 3) p.H(x0, y, w, W[0]);
-    p.V(x0, y0, y1 - y0, W[3]); p.V(x0 + w - 1, y0, y1 - y0, W[1]); p.H(x0, y0, w, W[1]); p.H(x0, y0 + 1, w, mix(W[2], W[1], .5));
-    p.H(x0, y1 - 2, w, '#8a8290'); p.H(x0, y1 - 1, w, '#5e5866'); p.H(x0, y1 - 2, 1, '#aaa2ae');
-  };
-  const win = (x, y, lit, box) => { // 6×6 framed window with a cross, a sky reflection and an optional flower box
-    p.R(x - 1, y - 1, 8, 8, BOUT); p.R(x, y, 6, 6, '#f4ecd8'); p.R(x + 1, y + 1, 4, 4, lit ? '#ffe28a' : '#7cc0f0'); p.P(x + 1, y + 1, '#ffffff'); p.P(x + 2, y + 1, lit ? '#fff4c0' : '#c8ecff'); p.R(x + 3, y + 3, 2, 2, lit ? '#f0b040' : '#4a8ed0'); p.V(x + 3, y + 1, 4, '#d8ccb0'); p.H(x + 1, y + 3, 4, '#d8ccb0');
-    if (box) { p.R(x - 1, y + 6, 8, 3, BOUT); p.R(x, y + 7, 6, 1, '#8a5a30'); p.P(x, y + 6, '#e04848'); p.P(x + 2, y + 6, '#ffd24a'); p.P(x + 4, y + 6, '#ff8ac0'); p.P(x + 1, y + 6, G.l); p.P(x + 3, y + 6, G.l); p.P(x + 5, y + 6, G.l); }
-  };
-  const door = (x, y, w, h, col, step = true) => { // panelled door in a frame, a brass knob, a stone step
-    p.R(x - 1, y - 1, w + 2, h + 1, BOUT); p.R(x, y, w, h, col); p.V(x, y, h, shade(col, .22)); p.H(x, y, w, shade(col, .3)); p.V(x + w - 1, y, h, shade(col, -.3));
-    p.R(x + 1, y + 2, w - 3, 2, shade(col, -.18)); if (h > 6) p.R(x + 1, y + 5, w - 3, 2, shade(col, -.18)); p.P(x + w - 2, y + Math.floor(h / 2) + 1, '#ffd24a');
-    if (step) { p.R(x - 2, y + h, w + 4, 2, '#b8b0a4'); p.H(x - 2, y + h, w + 4, '#dcd4c8'); p.H(x - 2, y + h + 2, w + 4, '#5e5866'); }
-  };
-  const glassDoor = (x, y, w, h) => { p.R(x - 1, y - 1, w + 2, h + 1, BOUT); p.R(x, y, w, h, '#5a8ec8'); p.R(x + 1, y + 1, w - 2, h - 1, '#8ccaf4'); p.V(x + (w >> 1), y, h, '#3a5a80'); for (let i = 0; i < 3; i++) p.P(x + 2 + i, y + 2 + i, '#e8f8ff'); p.P(x + (w >> 1) + 2, y + 2, '#e8f8ff'); p.R(x - 2, y + h, w + 4, 2, '#d84040'); p.H(x - 2, y + h, w + 4, '#ff7a6a'); p.H(x - 2, y + h + 2, w + 4, '#5e5866'); };
-  const flag = (x, y, col) => { p.V(x, y, 9, '#e8e0d0'); p.V(x + 1, y + 1, 8, '#8a8290'); p.P(x, y - 1, '#ffd24a'); p.R(x + 1, y, 6, 4, col); p.H(x + 1, y, 6, shade(col, .35)); p.H(x + 1, y + 3, 6, shade(col, -.35)); p.P(x + 7, y + 1, col); p.P(x + 7, y + 2, shade(col, -.2)); };
-  const chimney = (x, y) => { p.R(x - 1, y - 1, 6, 8, BOUT); p.R(x, y, 4, 7, '#a0584a'); p.V(x, y, 7, '#c07262'); p.V(x + 3, y, 7, '#6a3a30'); p.H(x, y + 3, 4, '#6a3a30'); p.R(x - 1, y - 2, 6, 2, '#5e5866'); p.H(x - 1, y - 2, 6, '#8a8290'); };
+  const roof = (...a) => bldRoof(p, ...a), walls = (...a) => bldWalls(p, ...a), win = (...a) => bldWin(p, ...a), door = (...a) => bldDoor(p, ...a);
+  const glassDoor = (...a) => bldGlassDoor(p, ...a), flag = (...a) => bldFlag(p, ...a), chimney = (...a) => bldChimney(p, ...a);
   // Crate in three-quarter view: a lit top face, a front of planks with a cross brace, iron corners, a shadow to the east.
   const crate = (x, y, s) => { const K = PAL.plank, top = Math.max(3, Math.round(s * .3)); for (let j = 2; j < s + 2; j++) for (let i = s; i < s + 3; i++) if (dith(x + i, y + j) < .6) p.P(x + i, y + j, mix(PAL.floor.m, PAL.floor.grout, .8));
     p.R(x - 1, y - 1, s + 2, s + 2, PAL.outW); p.R(x, y, s, top, K.l); p.H(x, y, s, K.ll); p.H(x, y + top - 1, s, K.m);
@@ -734,7 +739,7 @@ function spawnParts(x, y, n, col, opt = {}) {
 // Shaped effect sprite. kinds: burst flash slash flame drop bolt leaf bubble shard rock wisp psy poof spark heart wind star
 function spawnSprite(kind, x, y, o = {}) {
   if (REDUCED && FX.sprites.length > 12) return null;
-  const s = { kind, x, y, vx: o.vx || 0, vy: o.vy || 0, t: -(o.delay || 0), life: o.life || .5, col: o.col || '#ffffff', col2: o.col2 || '#ffffff', size: o.size || 6, grav: o.grav || 0, rot: o.rot || 0, spin: o.spin || 0, seed: Math.floor(vrnd() * 1e6), arc: o.arc || 0, x0: x, y0: y, tx: o.tx, ty: o.ty, trail: o.trail || null, len: o.len || 0, orbit: o.orbit || null, dir: o.dir || 1 };
+  const s = { floor: o.floor == null ? null : o.floor, kind, x, y, vx: o.vx || 0, vy: o.vy || 0, t: -(o.delay || 0), life: o.life || .5, col: o.col || '#ffffff', col2: o.col2 || '#ffffff', size: o.size || 6, grav: o.grav || 0, rot: o.rot || 0, spin: o.spin || 0, seed: Math.floor(vrnd() * 1e6), arc: o.arc || 0, x0: x, y0: y, tx: o.tx, ty: o.ty, trail: o.trail || null, len: o.len || 0, orbit: o.orbit || null, dir: o.dir || 1 };
   FX.sprites.push(s); return s;
 }
 // Hurry the texts on screen off within `t` seconds (a KO stamp should not land on top of the damage numbers).
@@ -743,7 +748,7 @@ function floatText(x, y, s, col = '#ffffff', opt = {}) { FX.texts.push({ x, y, s
 function updateFX(dt) {
   for (const p of FX.parts) { p.t += dt; if (p.t < 0) continue; p.vy += p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
   FX.parts = FX.parts.filter(p => p.t < p.life);
-  for (const s of FX.sprites) { s.t += dt; if (s.t < 0) continue; if (s.orbit) { const o = s.orbit, k = Math.min(1, s.t / s.life), a = o.a0 + s.t * o.speed, r = o.r * (o.shrink ? 1 - k * .8 : 1); s.x = s.x0 + Math.cos(a) * r; s.y = s.y0 + Math.sin(a) * r * (o.squash || .45); } else if (s.tx != null) { const k = Math.min(1, s.t / s.life); s.x = lerp(s.x0, s.tx, k); s.y = lerp(s.y0, s.ty, k) - Math.sin(k * Math.PI) * s.arc; } else { s.vy += s.grav * dt; s.x += s.vx * dt; s.y += s.vy * dt; } s.rot += s.spin * dt; if (s.trail && vrnd() < .6) spawnParts(s.x, s.y, 1, s.trail, { speed: 12, life: .25, grav: 0, size: 2 }); }
+  for (const s of FX.sprites) { s.t += dt; if (s.t < 0) continue; if (s.orbit) { const o = s.orbit, k = Math.min(1, s.t / s.life), a = o.a0 + s.t * o.speed, r = o.r * (o.shrink ? 1 - k * .8 : 1); s.x = s.x0 + Math.cos(a) * r; s.y = s.y0 + Math.sin(a) * r * (o.squash || .45); } else if (s.tx != null) { const k = Math.min(1, s.t / s.life); s.x = lerp(s.x0, s.tx, k); s.y = lerp(s.y0, s.ty, k) - Math.sin(k * Math.PI) * s.arc; } else { s.vy += s.grav * dt; s.x += s.vx * dt; s.y += s.vy * dt; if (s.floor != null && s.y > s.floor) { s.y = s.floor; if (s.vy > 40) { s.vy *= -.42; s.vx *= .6; s.spin *= .5; } else { s.vy = 0; s.vx *= .82; s.spin = 0; } } } s.rot += s.spin * dt; if (s.trail && vrnd() < .6) spawnParts(s.x, s.y, 1, s.trail, { speed: 12, life: .25, grav: 0, size: 2 }); }
   FX.sprites = FX.sprites.filter(s => s.t < s.life);
   for (const f of FX.texts) { if (f.delay > 0) { f.delay -= dt; continue; } f.t += dt; f.y += f.vy * dt * (f.t < .25 ? 1 : .25); }
   FX.texts = FX.texts.filter(f => f.t < f.life);
@@ -771,6 +776,19 @@ function drawSprite(s, ox, oy) {
     case 'rock': { const sz = s.size; ctx.fillStyle = s.col2; ctx.fillRect(x - (sz >> 1), y - (sz >> 1), sz, sz); ctx.fillStyle = s.col; ctx.fillRect(x - (sz >> 1), y - (sz >> 1), sz - 1, sz - 1); ctx.fillStyle = '#ffffff'; ctx.fillRect(x - (sz >> 1), y - (sz >> 1), 1, 1); break; }
     case 'wisp': { const r = Math.max(1, Math.round(s.size * (1 - k * .5))); const wob = Math.round(Math.sin(s.t * 14 + s.seed) * 2); circle(x + wob, y, r, s.col); circle(x + wob - 1, y - 1, Math.max(0, r - 2), s.col2); circle(x + wob - Math.sign(s.vx || 1) * (r + 1), y + 2, Math.max(0, r - 2), s.col); ctx.fillStyle = '#ffffff'; ctx.fillRect(x + wob - 1, y - 1, 1, 1); break; }
     case 'psy': { const r = Math.max(1, Math.round(s.size * easeOut(k))); ctx.fillStyle = s.col; for (let a = 0; a < 48; a++) ctx.fillRect(x + Math.round(Math.cos(a * Math.PI / 24) * r), y + Math.round(Math.sin(a * Math.PI / 24) * r * .7), 1, 1); if (r > 4) { ctx.fillStyle = s.col2; for (let a = 0; a < 32; a++) ctx.fillRect(x + Math.round(Math.cos(a * Math.PI / 16) * (r - 3)), y + Math.round(Math.sin(a * Math.PI / 16) * (r - 3) * .7), 1, 1); } break; }
+    // An Advance Wars explosion: a white-hot core swelling through yellow, orange and red into smoke, lumpy and
+    // rising as it burns out. `col` 'dust' draws the grey dust cloud of a fainting Pokémon instead.
+    case 'boom': { ctx.globalAlpha = 1; const dust = s.col === 'dust', e = Math.min(1, k * 1.7), r = Math.max(1, Math.round(s.size * (.35 + .65 * easeOut(e)))), rise = Math.round(k * s.size * .5);
+      const pal = dust ? (k < .2 ? ['#ffffff', '#e8e4ee'] : k < .55 ? ['#d8d2e0', '#a8a0b4'] : ['#9a92a4', '#6a6274']) : k < .12 ? ['#ffffff', '#fff6c8'] : k < .3 ? ['#fff4b0', '#ffc848'] : k < .5 ? ['#ffc040', '#f06a1e'] : k < .72 ? ['#e0561c', '#8a2a14'] : ['#6a5a5a', '#3e3434'];
+      if (k > .72) ctx.globalAlpha = Math.max(0, 1 - (k - .72) / .28);
+      const lumps = []; for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + s.rot + R() * .6, d = r * (.45 + R() * .25); lumps.push([x + Math.round(Math.cos(a) * d), y - rise + Math.round(Math.sin(a) * d * .8), Math.max(1, Math.round(r * (.42 + R() * .2)))]); }
+      for (const [lx, ly, lr] of lumps) circle(lx, ly + 1, lr + 1, dust ? '#4a4452' : '#2a1410');
+      for (const [lx, ly, lr] of lumps) circle(lx, ly, lr, pal[1]);
+      circle(x, y - rise, Math.max(1, Math.round(r * .62)), pal[1]); circle(x - Math.round(r * .15), y - rise - Math.round(r * .15), Math.max(1, Math.round(r * .42)), pal[0]);
+      if (k < .2 && !dust) { ctx.fillStyle = '#ffffff'; ctx.fillRect(x - r - 3, y - rise, 2 * r + 7, 1); ctx.fillRect(x, y - rise - r - 3, 1, 2 * r + 7); }
+      break; }
+    case 'smoke': { const r = Math.max(1, Math.round(s.size * (.5 + k))); ctx.globalAlpha = fade * .55; circle(x, y, r, s.col); circle(x - Math.round(r * .5), y + 1, Math.max(1, r - 2), s.col); circle(x + Math.round(r * .5), y, Math.max(1, r - 1), s.col); ctx.globalAlpha = fade * .35; circle(x - 1, y - 1, Math.max(1, r - 2), s.col2); break; }
+    case 'debris': { const f = Math.floor(s.rot * 2) & 3; ctx.fillStyle = s.col; if (s.size > 2) { if (f & 1) ctx.fillRect(x - 1, y - 1, 3, 2); else ctx.fillRect(x - 1, y - 1, 2, 3); } else ctx.fillRect(x, y, 2, 2); ctx.fillStyle = s.col2; ctx.fillRect(x - (f === 2 ? 0 : 1), y - 1, 1, 1); break; }
     case 'poof': { const r = Math.max(1, Math.round(s.size * (0.5 + k * .8))); ctx.globalAlpha = fade * .85; circle(x, y, r, s.col); circle(x - r, y + 1, Math.max(1, r - 2), s.col); circle(x + r, y + 1, Math.max(1, r - 2), s.col); circle(x - 1, y - 1, Math.max(0, r - 2), s.col2); break; }
     case 'heart': { const sc = k < .2 ? 1 : 1; ctx.fillStyle = s.col; const rows = ST.heart; for (let j = 0; j < rows.length; j++) for (let i = 0; i < rows[j].length; i++) if (rows[j][i] !== '.') { ctx.fillStyle = rows[j][i] === 'L' ? '#ffffff' : s.col; ctx.fillRect(x - 2 + i, y - 2 + j, 1, 1); } break; }
     case 'wind': { const L = s.size; ctx.fillStyle = s.col; for (let n = 0; n < 3; n++) { const o = (n - 1) * 3, len = L - n * 2; ctx.fillRect(x - len + Math.round(k * 6), y + o, len, 1); } ctx.fillStyle = '#ffffff'; ctx.fillRect(x - 2, y, 3, 1); break; }

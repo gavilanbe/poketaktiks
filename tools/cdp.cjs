@@ -10,7 +10,7 @@ const PORT = parseInt(process.env.PK_PORT || '9337'); const ROOT = path.join(__d
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function main() {
   const script = process.argv[2] || 'smoke'; const mobile = script === 'mobile' || script.endsWith('-m');
-  const W = +(process.env.PK_VW || (mobile ? 390 : script === 'tiles' ? 1700 : 1280)), H = +(process.env.PK_VH || (mobile ? 844 : script === 'tiles' ? 1400 : 720));
+  const W = +(process.env.PK_VW || (mobile ? 390 : script === 'tiles' ? 1700 : script === 'scenes' ? 1940 : 1280)), H = +(process.env.PK_VH || (mobile ? 844 : script === 'tiles' ? 1400 : script === 'scenes' ? 2300 : 720));
   const chrome = spawn(CHROME, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', `--remote-debugging-port=${PORT}`, `--window-size=${W},${H}`, '--user-data-dir=/tmp/pk-cdp-profile-' + PORT, 'about:blank'], { stdio: 'ignore' });
   const out = [];
   try {
@@ -218,6 +218,10 @@ async function main() {
     if (script === 'tiles') {
       // every terrain tile and two sample maps, drawn by the game's own tile code (see tools/tile-gallery.js)
       await nav('silent&nosave'); await sleep(1500); out.push('gallery: ' + await ev(fs.readFileSync(path.join(__dirname, 'tile-gallery.js'), 'utf8').replace(/^\/\/.*\n/gm, ''))); await sleep(300); await shot('tiles');
+    }
+    if (script === 'scenes') {
+      // every battle-screen panorama (see tools/scene-gallery.js)
+      await nav('silent&nosave'); await sleep(1500); out.push('gallery: ' + await ev(fs.readFileSync(path.join(__dirname, 'scene-gallery.js'), 'utf8').replace(/^\/\/.*\n/gm, ''))); await sleep(300); await shot('scenes');
     }
     if (script === 'page' || script === 'page-m') {
       // ad-hoc: PK_Q query string, optional PK_EXPR run after PK_WAIT ms, screenshot as artifacts/PK_NAME.png

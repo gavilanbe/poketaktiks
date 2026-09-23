@@ -124,7 +124,7 @@ function duelBeat(q, b) {
       else { Audio.sfx('charge'); for (let i = 0; i < 10; i++) { const an = i / 10 * Math.PI * 2 + vrnd(), r = 34 + vrnd() * 18; spawnSprite('spark', a.x + Math.cos(an) * r, a.y - 44 + Math.sin(an) * r * .7, { tx: a.x + a.dir * 8, ty: a.y - 44, life: DUEL_T.windup * .95, col: F.parts[0] || col, delay: i * .015 }); } spawnSprite('ring', a.x, a.y - 44, { size: 26, life: DUEL_T.windup, col: shade(col, .35) }); }
       break;
     }
-    case 'launch': { const a = P(b.att.id); q.pose = { unit: b.att, kind: b.fam === 'contact' ? 'lunge' : 'cast', t0: q.t, fam: b.fam, dur: duelLaunchTime(b.fam) }; if (b.fam === 'contact') Audio.sfx('whoosh'); duelLaunchFx(b, a, P(b.def.id)); break; }
+    case 'launch': { const a = P(b.att.id); q.pose = { unit: b.att, kind: b.fam === 'contact' ? 'lunge' : 'cast', t0: q.t, fam: b.fam, dur: duelLaunchTime(b.fam) }; if (b.fam === 'contact') Audio.sfx('whoosh'); else if (!REDUCED) { spawnSprite('boom', a.x + a.dir * 24, a.y - 44, { size: 7, life: .22, rot: vrnd() * 6 }); shake(2); } duelLaunchFx(b, a, P(b.def.id)); break; }
     case 'impact': {
       const e = b.ev, d = P(b.def.id), a = P(b.att.id), cx = d.x, cy = d.y - 44, lethal = e.hpAfter <= 0, heavy = e.crit || lethal, col = TYPE_COL[b.move.type] || '#ffffff';
       q.hitFx = { unit: b.def, t0: q.t, crit: e.crit, lethal }; q.shakePanel[b.def.id] = q.t;
@@ -136,8 +136,10 @@ function duelBeat(q, b) {
         flashScreen(e.crit ? '#fff2c0' : e.eff > 1 ? shade(col, .5) : '#ffffff', e.crit ? .45 : e.eff > 1 ? .35 : .2);
         if (heavy) duelHeavy(q, cx, cy, e.crit ? '#fff4c8' : '#ffffff', e.crit ? .07 : .05, e.crit ? UI.gold : '#ffffff', .55);
         else if (e.eff > 1) duelHeavy(q, cx, cy, null, 0, shade(col, .4), .35);
-        // knockback dust at the feet
+        // knockback dust at the feet, and chips of the ground itself thrown back and bouncing
         for (let i = 0; i < 4; i++) spawnSprite('poof', d.x + d.dir * (4 + i * 7), d.y, { size: 3 + (i % 2) * 2, life: .4, col: '#d8d0b8', col2: '#f4f0e0', vx: -d.dir * (30 + i * 10), vy: -8, delay: i * .03 });
+        duelDebris(q, b.def, d, heavy ? 12 : e.eff > 1 ? 9 : 6, 0);
+        if (e.crit) { spawnSprite('boom', cx + d.dir * 4, cy - 2, { size: 15, life: .62, rot: vrnd() * 6 }); for (let i = 0; i < 2; i++) spawnSprite('smoke', cx + (i ? 9 : -9), cy - 8, { size: 5, life: 1.1, col: '#5e5866', col2: '#a8a2b0', vy: -18, vx: i ? 7 : -7, delay: .28 + i * .08 }); }
       }
       if (e.crit) spawnSprite('burst', cx, cy, { size: 34, life: .45, col: UI.gold, delay: .04 });
       // the number: huge, gold on a critical, orange when super effective; the tags above and below it fade before any KO stamp
@@ -161,6 +163,7 @@ function duelBeat(q, b) {
       // the faint: blink, then sink into the ground; dust where it went down; the stamp over its half of the field
       for (let i = 0; i < 6; i++) spawnSprite('poof', p.x + (i - 2.5) * 10, p.y - 2, { size: 6 + (i % 2) * 2, life: .7, col: '#6a6a78', col2: '#b0b0c0', vy: -10, vx: (i - 2.5) * 6, delay: .38 + i * .04 });
       spawnParts(p.x, cy, 18, own ? ['#ff8080', '#ffffff'] : ['#ffffff', '#ffd24a', '#ff8a2c'], { speed: 90, life: .7, grav: 80, delay: .3 });
+      for (let i = 0; i < 3; i++) spawnSprite('boom', p.x + (i - 1) * 13, p.y - 16 - (i % 2) * 14, { size: 12 + i * 3, life: .75, col: 'dust', rot: i * 2.1, delay: .36 + i * .1 }); duelDebris(q, b.unit, p, 10, .4);
       q.stamp = { unit: b.unit, text: own ? 'FAINTED!' : 'K.O.!', col: own ? '#ff6a6a' : UI.gold, ink: own ? '#2a0008' : '#3a2000', t0: q.t + .3, dur: DUEL_T.ko - .32 };
       if (b.by && b.by.hp > 0 && b.by !== b.unit) q.victor = { unit: b.by, t0: q.t + .62 };
       break;
@@ -168,6 +171,14 @@ function duelBeat(q, b) {
     case 'thaw': { const p = P(b.unit.id); floatText(p.x, p.y - 70, 'Thawed!', '#98d8f8', { big: true }); for (let i = 0; i < 8; i++) { const an = vrnd() * Math.PI * 2; spawnSprite('shard', p.x, p.y - 30, { life: .5, col: '#bde4f8', vx: Math.cos(an) * 60, vy: Math.sin(an) * 40 - 30, grav: 160, rot: i, spin: 8 }); } break; }
     case 'outro': { FX.parts = []; FX.sprites = []; FX.texts = []; FX.hitstop = 0; q.banner = null; q.focus = null; q.lines = null; q.flash = null; q.stamp = null; if (q.cam) { q.cam.tz = 1; q.cam.tx = q.cam.ty = 0; } for (const u of [q.att, q.def]) BT.hpShow.delete(u.id); Audio.sfx('wipe'); break; }
   }
+}
+// Chips of the ground a hit throws back: they fly away from the attacker, bounce on the defender's ground line and
+// settle; on water the hit throws a splash instead. Coloured by the panorama the defender stands in.
+function duelDebris(q, u, d, n, delay = 0) {
+  if (REDUCED) return; const K = q.scenes && q.scenes[u.id] ? q.scenes[u.id].kind : 'field';
+  if ((K === 'sea' || K === 'pool') && !q.view[u.id].fly) { for (let i = 0; i < n; i++) spawnSprite('drop', d.x + (vrnd() - .5) * 18, d.y - 8, { vx: (vrnd() - .5) * 100, vy: -70 - vrnd() * 80, grav: 330, life: .6, col: '#a2d8ff', col2: '#ffffff', delay }); spawnSprite('ring', d.x, d.y - 5, { size: 22, life: .5, col: '#e8f6ff', delay }); return; }
+  const cols = K === 'beach' ? ['#e0c688', '#f8e8c0'] : K === 'snow' ? ['#ffffff', '#c8d4e8'] : K === 'cave' || K === 'mountain' ? ['#6c5a4c', '#a89a8e'] : K === 'base' ? ['#8f889a', '#c8c2cc'] : K === 'volcano' ? ['#3c2b23', '#ff8a2c'] : K === 'town' ? ['#948e9a', '#c0bac4'] : K === 'road' ? ['#b08f5a', '#ecdcaa'] : K === 'forest' ? ['#2b6032', '#b86a2a'] : K === 'bridge' ? ['#845430', '#d2a266'] : ['#3f8440', '#80c86a'];
+  for (let i = 0; i < n; i++) spawnSprite('debris', d.x + (vrnd() - .5) * 14, d.y - 4 - vrnd() * 10, { vx: -d.dir * (30 + vrnd() * 100) + (vrnd() - .5) * 40, vy: -80 - vrnd() * 100, grav: 400, floor: d.y + Math.round(vrnd() * 9) - 2, life: 1 + vrnd() * .3, size: vrnd() < .5 ? 3 : 2, col: cols[0], col2: cols[1], rot: vrnd() * 4, spin: 12, delay: delay + vrnd() * .04 });
 }
 // What an inflicted status looks like on the Pokémon it lands on (field space).
 function duelStatusFx(st, d, q) {
@@ -215,7 +226,9 @@ function duelImpactFx(fam, type, cx, cy, d, e) {
 // are computed in field space (L.f) and mirrored to screen space (L.panels / L.pos / L.top ...) for callers.
 function duelZoom() { return VIEW.w >= 560 && VIEW.h >= 320 ? 2 : 1; }
 function duelSpriteKind(num) { return animReady(num) ? 'anim' : bigReady(num) ? 'big' : null; }
-function duelCamTo(q, p, zoom) { if (!q.cam || REDUCED) return; q.cam.tz = zoom; q.cam.tx = p.x; q.cam.ty = p.y - 40; }
+// The camera pans toward the acting side (the world slides so it comes toward the middle); `zoom` sets how far.
+// Panning keeps every pixel on the grid, which a zoom would not.
+function duelCamTo(q, p, zoom) { if (!q.cam || REDUCED) return; const f = duelLayout(q).f, amt = Math.round((zoom - 1) * 60); if (f.stacked) { q.cam.tx = 0; q.cam.ty = Math.sign(f.Hf / 2 - p.y) * amt; } else { q.cam.tx = Math.sign(f.Wf / 2 - p.x) * amt; q.cam.ty = 0; } }
 function duelLayout(q) {
   const W = VIEW.w, H = VIEW.h, z = duelZoom(), Wf = Math.floor(W / z), Hf = Math.floor(H / z), PH = 34, TH = 0;
   const stacked = Wf < 268; const PW = stacked ? Math.min(Wf - 12, 150) : Math.min(150, Math.floor((Wf - 18) / 2));
@@ -238,42 +251,7 @@ function duelLayout(q) {
   for (const id in f.pos) { const p = f.pos[id]; L.pos[id] = { x: p.x * z, y: p.y * z, dir: p.dir }; }
   return L;
 }
-const DUEL_SKY = {
-  meadow: { sky: ['#3f5f96', '#4f6fa0', '#5f82b2', '#7398c2', '#8db0d0', '#a4c2da'], far: '#3a5f63', mid: '#3b6b45', near: '#2f5a3a', trees: 7, sun: '#fff3b0', clouds: true },
-  forest: { sky: ['#31506f', '#3f5f80', '#4a6d8e', '#557a9a', '#6a8aa6', '#7d9ab2'], far: '#2c4f45', mid: '#2a5238', near: '#1f4530', trees: 14, clouds: true },
-  cave: { sky: ['#120e17', '#17121c', '#1d1724', '#231c2b', '#2a2233', '#2f2738'], far: '#2c2436', mid: '#332a3e', near: '#3a3046', stalactites: true },
-  interior: { sky: ['#1a1a30', '#20203a', '#26263f', '#2c2c46', '#33334e', '#3a3a56'], far: '#3c3b56', mid: '#44435e', near: '#4c4a66', pillars: true },
-  volcano: { sky: ['#140404', '#1e0806', '#30100a', '#45170c', '#5e2210', '#7a3016'], far: '#3a2020', mid: '#463030', near: '#2c1c1c', glow: true, embers: true },
-  snow: { sky: ['#47617f', '#546a86', '#6d84a2', '#8ba0ba', '#a9bacd', '#c0cedc'], far: '#7d90a8', mid: '#93a6bc', near: '#a6b6c8', trees: 5, sun: '#ffffff', clouds: true },
-};
 function clipPoly(pts) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.clip(); }
-// Sky and distant scenery for one side, in field space, with the horizon at that side's ground line.
-function duelBackdrop(q, u, L) {
-  const K = DUEL_SKY[q.biome] || DUEL_SKY.meadow, f = L.f, W = f.Wf, H = f.Hf, p = f.pos[u.id], hz = p.y - 40, R = mulberry32(q.seed + (p.dir > 0 ? 0 : 977)), t = BT.time;
-  const n = K.sky.length; K.sky.forEach((c, i) => { const y0 = Math.round(hz * i / n), y1 = Math.round(hz * (i + 1) / n); rect(0, y0, W, y1 - y0 + 1, c); if (i) dither(0, y0 - 2, W, 3, K.sky[i - 1], i); });
-  rect(0, hz, W, H - hz, K.near);
-  if (K.sun && p.dir < 0) { const sx = Math.round(W * .78), sy = Math.round(hz * .3); ctx.globalAlpha = .25; circle(sx, sy, 16, K.sun); ctx.globalAlpha = 1; circle(sx, sy, 9, K.sun); circle(sx, sy, 7, '#ffffff'); }
-  if (K.clouds) for (let i = 0; i < 5; i++) { const cw = 26 + Math.round(R() * 30), cy = Math.round(hz * (.12 + R() * .5)), cx = ((R() * (W + cw * 2) + t * (3 + i)) % (W + cw * 2)) - cw; const col = shade(K.sky[Math.min(n - 1, Math.floor(cy / hz * n))], .18); ellipse(cx, cy, cw >> 1, 4, col); ellipse(cx - (cw >> 2), cy + 2, cw >> 2, 3, col); ellipse(cx + (cw >> 2), cy + 1, (cw * .3) | 0, 3, col); hline(cx - (cw >> 1), cy + 4, cw, shade(col, -.12)); }
-  if (K.glow) { ctx.globalAlpha = .4; ellipse(Math.round(W / 2), hz, Math.round(W / 2), 26, '#e04e1a'); ctx.globalAlpha = 1; }
-  if (K.embers) for (let i = 0; i < 14; i++) { const ex = Math.round(R() * W), ph = R() * 10; const ey = hz + 20 - ((t * (8 + R() * 10) + ph * 30) % (hz + 30)); px(ex + Math.round(Math.sin(t * 2 + ph) * 3), ey, i % 3 ? '#ff8a2c' : '#ffd25a'); }
-  if (K.pillars) for (let i = 0; i < 4; i++) { const x = Math.round(W * (i + .5) / 4); rect(x - 7, 0, 14, hz + 4, K.far); vline(x - 7, 0, hz + 4, K.near); vline(x + 6, 0, hz + 4, shade(K.far, -.35)); rect(x - 9, hz - 6, 18, 4, shade(K.far, -.2)); }
-  if (K.stalactites) for (let i = 0; i < 12; i++) { const x = Math.round(R() * W), h = 12 + Math.round(R() * 34); for (let j = 0; j < h; j++) { const w = Math.max(1, Math.round((1 - j / h) * 7)); rect(x - (w >> 1), j, w, 1, j % 6 ? K.mid : shade(K.mid, -.15)); } }
-  const range = (base, amp, col, step) => { let y = base + Math.round((R() - .5) * amp); for (let x = 0; x <= W; x += step) { const ny = base + Math.round((R() - .5) * amp); for (let i = 0; i < step && x + i <= W; i++) { const yy = Math.round(lerp(y, ny, i / step)); rect(x + i, yy, 1, hz + 6 - yy, col); } y = ny; } };
-  if (!K.stalactites && !K.pillars) { range(hz - 26, 22, shade(K.far, .12), 14); range(hz - 14, 14, K.far, 10); } else range(hz - 10, 8, K.far, 12);
-  for (let i = 0; i < 6; i++) { const x = Math.round(W * (i + .5) / 6 + (R() - .5) * 40), r = 40 + Math.round(R() * 50); ellipse(x, hz + 6, r, Math.round(r * (K.stalactites ? .2 : .32)), K.mid); }
-  if (K.trees) for (let i = 0; i < K.trees; i++) { const x = Math.round(R() * W), h = 12 + Math.round(R() * 14), w = 6 + Math.round(R() * 4); for (let j = 0; j < h; j++) { const ww = Math.max(1, Math.round(w * j / h)); rect(x - (ww >> 1), hz + 4 - h + j, ww, 1, j % 5 === 0 ? shade(K.far, -.15) : K.far); } rect(x, hz + 4, 1, 2, shade(K.far, -.3)); }
-  ctx.globalAlpha = .12; rect(0, hz - 8, W, 10, '#ffffff'); ctx.globalAlpha = 1;
-}
-// The diorama: three receding rows of that unit's terrain squashed into perspective, a lit front edge and a dark
-// face below it, sitting on the near ground colour.
-function duelDiorama(q, u, L) {
-  const f = L.f, W = f.Wf, H = f.Hf, p = f.pos[u.id], t = q.terr[u.id], fr = Math.floor(BT.time * 3) % WATER_FRAMES, gy = p.y + 6;
-  const rows = [[gy - 10, 10], [gy - 24, 14], [gy - 40, 16]]; // [top, height] from far to near, listed near first
-  const start = p.x - TILE / 2 - Math.ceil(p.x / TILE) * TILE;
-  for (let r = rows.length - 1; r >= 0; r--) { const [ry, rh] = rows[r]; const sh = r === 0 ? 0 : r === 1 ? -.12 : -.22; let i = 0; for (let x = start - r * 6; x < W + TILE; x += TILE, i++) { const v = (B.map.variants[u.y] || [])[(u.x + i + r * 3) % B.map.w] || 0; ctx.drawImage(tileImg(t.ch, v, fr), 0, 0, TILE, TILE, x, ry, TILE, rh); } if (sh) { ctx.globalAlpha = -sh; rect(0, ry, W, rh, '#0b1020'); ctx.globalAlpha = 1; } }
-  hline(0, gy - 40, W, '#ffffff40'); rect(0, gy, W, 5, shade('#4a3a28', -.1)); rect(0, gy + 5, W, 3, '#1c1410'); ctx.globalAlpha = .55; rect(0, gy + 8, W, H - gy - 8, '#0b1020'); ctx.globalAlpha = 1;
-  ctx.globalAlpha = .35; hline(0, gy - 1, W, '#ffffff'); ctx.globalAlpha = 1;
-}
 // One combatant: pose (wind-up with its aura, lunge with after-images, cast), the hit reaction, a dodge, the faint (blink,
 // then sink into the ground) and the victory hop. `sil` draws it as a flat silhouette for the impact frame.
 function duelDrawUnit(q, u, L, t, sil = null) {
@@ -295,32 +273,45 @@ function duelDrawUnit(q, u, L, t, sil = null) {
   if (vic >= 0 && vic < .7 && !REDUCED) { const h = Math.abs(Math.sin(vic / .35 * Math.PI)); dy -= Math.round(h * 10); sy *= 1 + h * .05; sx *= 1 - h * .04; }
   const idle = !pose && hit < 0 && ko < 0 && vic < 0;
   if (!REDUCED && idle) { if (v.fly) dy -= 3 + Math.round(Math.sin(BT.time * 3 + u.id) * 3); else breath = Math.sin(BT.time * 2.2 + u.id) > 0 ? 1 : 0; }
-  if (!sil) { const shadowW = Math.round(28 * sx * (1 - Math.max(0, -dy) / 40) * (1 - sink / 90)); ctx.globalAlpha = .32 * alpha * (v.fly ? .7 : 1); ellipse(Math.round(p.x + dx), p.y + 1, Math.max(4, shadowW), 5, '#000000'); ctx.globalAlpha = 1; }
+  // a swimmer floats with its lower body under the surface of a sea or a cave pool; everyone else casts a shadow
+  const Sc = q.scenes && q.scenes[u.id], wl = Sc && Sc.fx.waterY != null && !v.fly ? Sc.fx.waterY + (REDUCED ? 0 : Math.round(Math.sin(BT.time * 2.4 + u.id))) : null;
+  if (!sil && wl == null) { const shadowW = Math.round(28 * sx * (1 - Math.max(0, -dy) / 40) * (1 - sink / 90)); ctx.globalAlpha = .32 * alpha * (v.fly ? .7 : 1); ellipse(Math.round(p.x + dx), p.y + 1, Math.max(4, shadowW), 5, '#000000'); ctx.globalAlpha = 1; }
   // the charge aura: a pulsing disc of the move's colour behind a winding-up Pokémon
   if (aura > 0 && !sil && !REDUCED) { const col = TYPE_COL[q.banner ? q.banner.move.type : 'Normal'] || '#ffffff', r = Math.round(18 + aura * 14 + Math.sin(t * 40) * 2); ctx.globalAlpha = .22 * aura; circle(Math.round(p.x + dx), p.y - 36, r, col); ctx.globalAlpha = .35 * aura; circle(Math.round(p.x + dx), p.y - 36, Math.round(r * .55), shade(col, .5)); ctx.globalAlpha = 1; }
   const num = v.num, kind = q.big ? q.big[u.id] : duelSpriteKind(num); const at = BT.time * (speed || 1e-6);
   const draw = (x, o) => { if (kind === 'anim') drawAnim(num, x, p.y + dy + sink, at, o); else if (kind === 'big') drawBig(num, x, p.y + dy + sink, Object.assign({ breath }, o)); else drawMon(num, x, p.y + dy + sink, Object.assign({}, o, { sx: 2 * (o.sx || 1), sy: 2 * (o.sy || 1) })); };
-  if (sink > 0) { ctx.save(); ctx.beginPath(); ctx.rect(-60, -60, f.Wf + 120, p.y + 64); ctx.clip(); }
+  const clipY = wl != null ? wl + 60 : sink > 0 ? p.y + 64 : null;
+  if (clipY != null) { ctx.save(); ctx.beginPath(); ctx.rect(-60, -60, f.Wf + 120, clipY); ctx.clip(); }
   if (!sil) for (const [gx, ga] of ghosts) draw(p.x + gx, { flip, tint: '#ffffff', alpha: ga * alpha, sx, sy });
   draw(p.x + dx, { flip, tint: sil || tint, alpha, sx, sy });
-  if (sink > 0) ctx.restore();
+  if (clipY != null) ctx.restore();
+  if (wl != null && !sil && sink < 30) { const X = Math.round(p.x + dx), k2 = REDUCED ? 0 : (BT.time * .7 + u.id * .3) % 1; ctx.globalAlpha = .9; ellipseRing(X, wl, 16, 3, 1, '#e8f6ff'); hline(X - 12, wl + 1, 25, '#5a9ad8'); if (!REDUCED) { ctx.globalAlpha = (1 - k2) * .7; ellipseRing(X, wl, Math.round(16 + k2 * 14), Math.round(3 + k2 * 3), 1, '#ffffff'); } ctx.globalAlpha = 1; }
 }
 // Header panel: portrait, name and level, HP counter and bar (with the ghost of the HP just lost draining after it),
 // tags and types, terrain defence as stars. A hit shakes the panel of the Pokémon that took it.
 function duelPanel(q, u, L, dy) {
-  const f = L.f, P = f.panels[u.id], v = q.view[u.id], hp = duelHpAt(q.script, q.t, u.id), ghost = Math.max(hp, duelHpAt(q.script, q.t - .5, u.id)), t = q.terr[u.id], col = teamColor(u.team), ko = q.koFx && q.koFx.unit === u && q.t - q.koFx.t0 > .3;
+  const f = L.f, P = f.panels[u.id], v = q.view[u.id], hp = duelHpAt(q.script, q.t, u.id), ghost = Math.max(hp, duelHpAt(q.script, q.t - .5, u.id)), t = q.terr[u.id], ko = q.koFx && q.koFx.unit === u && q.t - q.koFx.t0 > .3;
   const sh = q.shakePanel[u.id] != null && !REDUCED ? q.t - q.shakePanel[u.id] : 9, jx = sh < .3 ? Math.round(Math.sin(sh * 70) * 3 * (1 - sh / .3)) : 0, jy = sh < .3 ? Math.round(Math.cos(sh * 50) * 2 * (1 - sh / .3)) : 0;
-  const x0 = P.x + jx, y0 = P.y + dy + jy; panel(x0, y0, P.w, P.h, { border: col, fill: ko ? '#1a1a22' : (u.team === 0 ? '#182440' : u.team === 1 ? '#2a1a22' : UI.panel) });
-  const x = x0 + 6, y = y0 + 5;
-  ctx.save(); ctx.beginPath(); ctx.rect(x, y, 26, 24); ctx.clip(); portraitBg(x, y, 26, 24, u.team); ctx.drawImage(monIcon(v.num, u.team !== 0), x + 1, y + 4, 24, 18); ctx.restore(); teamGlyph(x + 2, y + 2, u.team, teamColorL(u.team));
-  const tx = x + 31; let name = v.name; while (textWidth(name) > P.w - 76 && name.length > 3) name = name.slice(0, -1);
-  text(name, tx, y, ko ? UI.dim : UI.ink); textR('Lv' + v.level, x0 + P.w - 6, y, ko ? UI.dim : UI.gold);
-  const ratio = clamp(hp / v.maxHp, 0, 1), gRatio = clamp(ghost / v.maxHp, 0, 1); const hs = String(Math.max(0, hp)), hw = textWidth(hs, BIG) + textWidth('/' + v.maxHp) + 3, bw = P.w - 37 - hw - 6;
-  bar(tx, y + 11, bw, 6, ratio, hpColor(ratio), UI.hpBack, { notch: true });
+  const x0 = P.x + jx, y0 = P.y + dy + jy, w = P.w, h = P.h, col = ko ? '#4a4a58' : teamColor(u.team), cd = ko ? '#24242c' : teamColorD(u.team), cl = ko ? '#70707e' : teamColorL(u.team), ink = '#0b0d16';
+  // the plate, Advance Wars style: the side's colour from a lit top to a deep base, outlined, the edge toward the split
+  // cut on the split's slant (content keeps clear of the cut)
+  const slant = !f.stacked, inner = P.side < 0 ? 1 : -1, cutAt = j => slant ? Math.round((inner > 0 ? j : h - 1 - j) * .24) : 0;
+  for (let j = 0; j < h; j++) { const c = cutAt(j), xs = x0 + (inner < 0 ? c : 0), xe = x0 + w - 1 - (inner > 0 ? c : 0);
+    rect(xs, y0 + j, xe - xs + 1, 1, j === 0 || j === h - 1 ? ink : j === 1 ? cl : j === 2 ? mix(col, cl, .4) : j < h * .5 ? col : j < h * .56 && ((j + xs) & 1) ? col : cd);
+    if (j > 0 && j < h - 1) { rect(xs, y0 + j, 1, 1, ink); rect(xe, y0 + j, 1, 1, ink); } }
+  for (let i = 0; i < w; i += 6) { const c = cutAt(h - 3); if (i > c && i < w - c) rect(x0 + i, y0 + h - 3, 3, 1, shade(cd, .12)); } // a strip of lights along the base
+  const lx = x0 + 6 + (inner < 0 ? 8 : 0), rx = x0 + w - 6 - (inner > 0 ? 8 : 0), y = y0 + 5;
+  // portrait in a dark window, the team mark in its corner
+  rect(lx - 1, y - 1, 28, 26, ink); ctx.save(); ctx.beginPath(); ctx.rect(lx, y, 26, 24); ctx.clip(); portraitBg(lx, y, 26, 24, u.team); ctx.drawImage(monIcon(v.num, u.team !== 0), lx + 1, y + 4, 24, 18); ctx.restore(); teamGlyph(lx + 2, y + 2, u.team, cl);
+  const tx = lx + 31; let name = v.name; while (textWidth(name) > rx - tx - 24 && name.length > 3) name = name.slice(0, -1);
+  text(name, tx, y, ko ? UI.dim : '#ffffff', { outline: ink }); textR('Lv' + v.level, rx, y, ko ? UI.dim : UI.gold, { outline: ink });
+  // HP: a dark inset bar with the drained ghost, then the big counter
+  const ratio = clamp(hp / v.maxHp, 0, 1), gRatio = clamp(ghost / v.maxHp, 0, 1); const hs = String(Math.max(0, hp)), hw = textWidth(hs, BIG) + textWidth('/' + v.maxHp) + 3, bw = rx - tx - hw - 4;
+  rect(tx - 1, y + 10, bw + 2, 8, ink); bar(tx, y + 11, bw, 6, ratio, hpColor(ratio), '#1c1e2a', { notch: true });
   if (gRatio > ratio) { const fx0 = tx + 1 + Math.round(ratio * (bw - 2)), gw = Math.round(gRatio * (bw - 2)) - Math.round(ratio * (bw - 2)); rect(fx0, y + 12, gw, 4, sh < .12 ? '#ffffff' : '#ff9a8a'); hline(fx0, y + 12, gw, '#ffd8d0'); }
-  const dropping = hp < ghost; bigText(hs, x0 + P.w - 6 - hw, y + 9 + (dropping && !REDUCED ? Math.round(Math.sin(q.t * 40)) : 0), hp <= 0 ? UI.red : dropping ? '#ffb0a0' : UI.ink, { outline: '#000' }); textR('/' + v.maxHp, x0 + P.w - 6, y + 11, UI.muted);
-  let bx = tx; bx += tagBadge(duelTeamTag(u), col, bx, y + 20) + 3; v.types.forEach((tp, i) => { typeBadge(tp, bx, y + 19, 24); bx += 26; }); if (v.status) { statusBadge(v.status, bx, y + 20); bx += 17; } if (v.brace) { miniBadge('BRC', BRACE_COL, bx, y + 20); bx += 17; } else if (v.root) { miniBadge('RT', ROOT_COL, bx, y + 20); bx += 17; }
-  const stars = Math.min(4, Math.round(terrainDef(t, u) / 10)); const ds = 'DEF ' + '★'.repeat(stars) + (stars ? '' : '-'); textR(ds, x0 + P.w - 6, y + 20, stars ? UI.gold : UI.dim);
+  const dropping = hp < ghost; bigText(hs, rx - hw, y + 9 + (dropping && !REDUCED ? Math.round(Math.sin(q.t * 40)) : 0), hp <= 0 ? '#ff6a6a' : dropping ? '#ffb0a0' : '#ffffff', { outline: ink }); textR('/' + v.maxHp, rx, y + 11, cl, { outline: ink });
+  let bx = tx; bx += tagBadge(duelTeamTag(u), cd, bx, y + 20) + 3; v.types.forEach(tp => { typeBadge(tp, bx, y + 19, 24); bx += 26; }); if (v.status) { statusBadge(v.status, bx, y + 20); bx += 17; } if (v.brace) { miniBadge('BRC', BRACE_COL, bx, y + 20); bx += 17; } else if (v.root) { miniBadge('RT', ROOT_COL, bx, y + 20); bx += 17; }
+  const stars = Math.min(4, Math.round(terrainDef(t, u) / 10)); const ds = (stars ? '★'.repeat(stars) : '-'); textR(ds, rx, y + 20, stars ? UI.gold : '#9aa0b8', { outline: ink }); textR('DEF', rx - textWidth(ds) - 2, y + 20, cl, { outline: ink });
 }
 // Manga focus lines: thin rays from beyond the screen edges toward the point, re-rolled a few times a second.
 function duelFocusLines(q, W, H, t) {
@@ -328,6 +319,8 @@ function duelFocusLines(q, W, H, t) {
   const R = mulberry32(Math.floor(t * 18) * 131 + 7), outer = Math.hypot(W, H), n = 34;
   ctx.globalAlpha = .55 * k; for (let i = 0; i < n; i++) { const a = (i + R() * .8) / n * Math.PI * 2, r1 = outer * (.34 + R() * .22), w = R() < .25 ? 2 : 1; pline(Fl.x + Math.cos(a) * outer, Fl.y + Math.sin(a) * outer * .7, Fl.x + Math.cos(a) * r1, Fl.y + Math.sin(a) * r1 * .7, Fl.col, w); } ctx.globalAlpha = 1;
 }
+// The seam between the two halves: a dark steel bar with a lit edge, as in the Advance Wars battle screen.
+function duelSplit(f) { const [a, b] = f.split; pline(a[0] + 2, a[1], b[0] + 2, b[1], '#5a6078', 2); pline(a[0] - 2, a[1], b[0] - 2, b[1], '#2a2e40', 2); pline(a[0], a[1], b[0], b[1], '#0b0d16', 3); pline(a[0] + 1, a[1], b[0] + 1, b[1], '#9aa2c0', 1); }
 // A starburst of rays (for the impact frame): crisp lines from the centre out.
 function duelStar(x, y, r, col) { for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2, rr = i % 2 ? r : r * .55; pline(x, y, x + Math.cos(a) * rr, y + Math.sin(a) * rr, col, 3); } circle(Math.round(x), Math.round(y), Math.round(r * .22), col); }
 // The KO stamp, in screen space over the fallen Pokémon's half (never under a panel or the banner): it slams in two
@@ -357,19 +350,19 @@ function drawDuel(q) {
   const kIn = REDUCED ? 1 : easeOut(clamp((t - .1) / .4, 0, 1)), kOut = REDUCED ? 1 : 1 - easeIn(clamp((t - outAt) / (S.outro - .05), 0, 1)), k = Math.min(kIn, kOut);
   ctx.save(); ctx.scale(z, z);
   rect(0, 0, W, H, '#070a14');
-  // camera (zoom towards the acting unit) and the impact jolt, both around the field
-  const c = q.cam || { zoom: 1, x: 0, y: 0 }; const jolt = q.jolt && t - q.jolt.t0 < .25 && !REDUCED ? Math.round(Math.sin((t - q.jolt.t0) * 40) * q.jolt.n * (1 - (t - q.jolt.t0) / .25)) * q.jolt.dir : 0;
-  ctx.save(); if (c.zoom > 1.001) { ctx.translate(c.x, c.y); ctx.scale(c.zoom, c.zoom); ctx.translate(-c.x, -c.y); } ctx.translate(FX.shakeX + jolt, FX.shakeY);
-  for (const u of [q.sides.left, q.sides.right]) { // each side: its own region, sliding in from its edge
-    const e = f.entry[u.id], off = (1 - k) * (e[0] ? W * .6 : H * .5); ctx.save(); clipPoly(f.region[u.id].map(pt => [pt[0] + e[0] * off, pt[1] + e[1] * off])); ctx.translate(e[0] * off, e[1] * off);
-    duelBackdrop(q, u, L); duelDiorama(q, u, L); ctx.restore();
-  }
-  // the split line
-  { const [a, b] = f.split; pline(a[0] + 1, a[1], b[0] + 1, b[1], '#ffffff60', 2); pline(a[0], a[1], b[0], b[1], '#070a14', 3); }
+  // the camera pans (and the impact jolts and shakes) the whole field; the layers of each panorama follow at their own depth
+  const c = q.cam || { x: 0, y: 0 }; const jolt = q.jolt && t - q.jolt.t0 < .25 && !REDUCED ? Math.round(Math.sin((t - q.jolt.t0) * 40) * q.jolt.n * (1 - (t - q.jolt.t0) / .25)) * q.jolt.dir : 0;
+  const cam = { x: Math.round(c.x + FX.shakeX + jolt), y: Math.round(c.y + FX.shakeY) };
+  const off = u => { const e = f.entry[u.id], o = (1 - k) * (e[0] ? W * .6 : H * .5); return [Math.round(e[0] * o), Math.round(e[1] * o)]; };
+  const inRegion = (u, fn) => { const [dx, dy] = off(u); ctx.save(); clipPoly(f.region[u.id].map(pt => [pt[0] + dx, pt[1] + dy])); ctx.translate(dx, dy); fn(); ctx.restore(); };
+  for (const u of [q.sides.left, q.sides.right]) inRegion(u, () => drawScenery(q, u, L, cam, t)); // each side: its own panorama, sliding in from its edge
+  duelSplit(f);
   if (q.focus && !REDUCED) { const fo = q.focus, kf = t < fo.t0 + .15 ? (t - fo.t0) / .15 : t > fo.until - .25 ? Math.max(0, (fo.until - t) / .25) : 1; if (kf > 0) { ctx.globalAlpha = .34 * kf; rect(-40, -40, W + 80, H + 80, '#050815'); ctx.globalAlpha = 1; } }
   duelFocusLines(q, W, H, t);
   const order = [q.sides.right, q.sides.left]; if (q.pose && q.pose.unit === q.sides.right) order.reverse();
-  for (const u of order) { const e = f.entry[u.id], off = (1 - k) * (e[0] ? W * .6 : H * .5); ctx.save(); ctx.translate(e[0] * off, e[1] * off); duelDrawUnit(q, u, L, t); ctx.restore(); }
+  ctx.save(); ctx.translate(cam.x, cam.y); for (const u of order) { const [dx, dy] = off(u); ctx.save(); ctx.translate(dx, dy); duelDrawUnit(q, u, L, t); ctx.restore(); } ctx.restore();
+  for (const u of [q.sides.left, q.sides.right]) inRegion(u, () => drawSceneryFront(q, u, L, cam, t));
+  ctx.save(); ctx.translate(cam.x, cam.y);
   drawFX(0, 0, false);
   // the impact frame: for a few frames the field turns bright and both fighters become flat ink silhouettes
   if (q.flash && t - q.flash.t0 < q.flash.dur) { rect(-60, -60, W + 120, H + 120, q.flash.col); for (const u of order) duelDrawUnit(q, u, L, t, '#0c0a1c'); duelStar(q.flash.x, q.flash.y, 26, '#0c0a1c'); }
