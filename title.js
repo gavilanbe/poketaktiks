@@ -219,6 +219,7 @@ function initTitle() {
   items.push({ label: 'NEW GAME', sub: 'Free Kanto from Team Rocket', icon: 'star', run: () => { if (save) openTitleConfirm(); else startNewGame(); } });
   items.push({ label: 'QUICK BATTLE', sub: 'Skirmish · Tower · Safari · Conquest', icon: 'blades', run: () => goScene('quick') });
   items.push({ label: 'VERSUS', sub: 'Two players, one screen', icon: 'duo', run: startVersusSetup });
+  items.push({ label: 'COMMANDERS', sub: 'Gym Leaders, their Aces and powers', icon: 'star', run: openCoRoom });
   items.forEach((item, i) => { item.hover = i === 0 ? 1 : 0; });
   SC.titleItems = items; SC.menuLen = items.length; SC.titleConfirm = null;
   SC.titleFx = { particles: [], focusAt: -10, logoAt: -10, down: null, action: null, hop: [], landed: {}, shake: 0 };
@@ -229,7 +230,10 @@ function titleConfirmRect() { const w = Math.min(VIEW.w - 16, 230), h = 74; retu
 function titleConfirmChoose(yes) { SC.titleConfirm = null; if (yes) { Audio.sfx('titleConfirm'); startNewGame(); } else Audio.sfx('cancel'); }
 function titleLayout(count) {
   const W = VIEW.w, H = VIEW.h, portrait = H > W || W < 320, compact = !portrait && H < 245;
-  const gap = compact ? 3 : 4, cols = compact && H < 190 && count > 4 ? 2 : 1;
+  const gap = compact ? 3 : 4;
+  // two columns when one would not fit between the logo and the footer (short landscape screens)
+  const cell1 = logoCell(W, H, portrait ? W - 16 : Math.max(Math.min(206, Math.floor(W * .42)) + 20, Math.floor(W * .46))), room1 = H - (compact ? 28 : 30) - ((compact ? 6 : Math.max(10, Math.min(24, Math.floor(H * .06)))) + logoMetrics(cell1).h + (compact ? 4 : 20));
+  const cols = !portrait && count > 4 && room1 < count * 18 + (count - 1) * gap ? 2 : 1;
   const w = portrait ? Math.min(236, W - 24) : cols === 2 ? Math.floor((W - 44) / 2) : Math.min(206, Math.floor(W * .42));
   const x = portrait ? Math.floor((W - w) / 2) : Math.max(14, Math.floor(W * .05));
   const logoMax = portrait ? W - 16 : Math.max(w + 20, Math.floor(W * .46));

@@ -110,7 +110,8 @@ one plays an Advance Wars cut-in with the trainer's portrait.
 | Giovanni | Nidoking | Income +10% | Earthquake | Rocket Supremacy |
 | Rocket Grunt | Arbok | Poison +10% | Pickpocket | Rocket Rush |
 
-Gym Leaders join you as they are freed on the route (Brock after Mt. Moon,
+The **Commanders** room on the title shows every trainer, their Ace, passive and
+powers, and where to free the ones still held. Gym Leaders join you as they are freed on the route (Brock after Mt. Moon,
 Misty after Nugget Bridge, Erika after the Rocket Hideout, Lt. Surge after the
 Power Plant, Koga and Blaine after Cinnabar; Sabrina, Blue and Giovanni once the
 journey is complete) and can lead your side from a front's briefing and in the

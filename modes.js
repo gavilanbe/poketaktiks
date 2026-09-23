@@ -291,3 +291,38 @@ function safariResultsDraw(R) {
   const bh = btnH(), fy = footerBand(bh + 12) + 6, bw = Math.min(110, Math.floor((W - 18) / 2));
   bigButton(W / 2 - bw - 3, fy, bw, bh, 'QUICK BATTLE', () => { Audio.sfx('cancel'); goScene('quick'); }, { variant: 'ghost' }); bigButton(W / 2 + 3, fy, bw, bh, 'AGAIN', () => { Audio.sfx('select'); startSafari(); }, { variant: 'primary' });
 }
+
+// ---------------------------------------------------------------- the commanders' room
+// Every trainer who can command: a card each (locked ones in shadow, with where to free them), and beside the chosen
+// one their Ace, passive, Power and Super Power. Opened from the title.
+const CO_ROOM = ['you', 'brock', 'misty', 'erika', 'surge', 'koga', 'blaine', 'sabrina', 'blue', 'giovanni', 'rocket'];
+function coUnlockText(id) { if (id === 'you') return 'Always yours'; if (id === 'rocket') return 'Enemy commander only'; const n = CO_UNLOCK[id]; return n >= 8 ? 'Joins when Kanto is free' : 'Freed on front ' + n + ': ' + CHAPTERS[n - 1].title; }
+function openCoRoom() { const save = loadSave(); goScene('cos', { i: 0, cos: coUnlocked(save), root: save && save.starter ? save.starter : 4 }); CO_ROOM.forEach(id => trainerImg((COS[id] || COS.you).tr)); }
+function coRoomDraw() {
+  const S = SC.data, W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), bh = btnH(); S.i = clamp(S.i, 0, CO_ROOM.length - 1);
+  rect(0, 0, W, H, '#0e0c22'); for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .25 * (1 - y / H); hline(0, y, W, '#3a2a6a'); } ctx.globalAlpha = 1; SC.hits = [];
+  const have = S.cos.filter(c => c !== 'you').length, top = screenTitle('COMMANDERS', narrow ? null : 'Gym Leaders freed: ' + have + ' / 9 · pick one in a briefing or a setup screen', 4), foot = footerBand(bh + 12);
+  const cols = narrow ? 4 : 4, cw = narrow ? Math.floor((W - 12 - 3 * 4) / 4) : 56, ch = narrow ? 50 : 62, gx = 6, gy = top + 4;
+  CO_ROOM.forEach((id, k) => { const x = gx + (k % cols) * (cw + 4), y = gy + Math.floor(k / cols) * (ch + 4), open = S.cos.includes(id) || id === 'rocket', sel = S.i === k, co = COS[id];
+    if (open) coCard(x, y, cw, ch, id, 0, () => { if (S.i === k) return; S.i = k; S.at = SC.t; Audio.sfx('cursor'); }, { hot: sel, col: id === 'you' ? CAPTAINS[S.root].col : null, tag: id === 'rocket' ? 'FOE' : null, label: 'CO ' + (co ? co.name : id) });
+    else { rrect(x, y, cw, ch, sel ? UI.gold : UI.inset, 2); rect(x + 1, y + 1, cw - 2, ch - 2, '#16142e'); const sil = trainerCanvas(co.tr, false, true); if (sil) { ctx.save(); ctx.beginPath(); ctx.rect(x + 1, y + 1, cw - 2, ch - 2); ctx.clip(); ctx.globalAlpha = .5; ctx.drawImage(sil, x + Math.round((cw - 48) / 2) - 16, y + ch - 60, 80, 80); ctx.restore(); ctx.globalAlpha = 1; } textC('?', x + cw / 2, y + ch / 2 - 4, UI.dim); hit(x, y, cw, ch, () => { S.i = k; S.at = SC.t; Audio.sfx('cursor'); }, 'CO ' + co.name); } });
+  // the chosen commander
+  const id = CO_ROOM[S.i], open = S.cos.includes(id) || id === 'rocket', c = coOf({ co: id, root: S.root }), px0 = narrow ? 6 : gx + cols * (cw + 4) + 4, py0 = narrow ? gy + Math.ceil(CO_ROOM.length / cols) * (ch + 4) + 2 : top + 4, pw = W - 6 - px0, ph = foot - 6 - py0;
+  const p = panel(px0, py0, pw, ph, { header: open ? (id === 'you' ? 'THE TACTICIAN' : c.name.toUpperCase()) : '???', headerRight: open ? c.blurb || c.style : 'LOCKED', headerRightCol: open ? UI.muted : UI.dim, headerFill: open ? shade(c.col, -.55) : UI.panelDark });
+  let y = p.cy; const ace = id === 'you' ? S.root : COS[id].ace;
+  if (!open) { const co = COS[id], aw = Math.min(90, pw - 16), ah = narrow ? 40 : 56; rect(px0 + 8, y, aw, ah, '#12102a'); outline(px0 + 7, y - 1, aw + 2, ah + 2, UI.border2); bigC('?', px0 + 8 + aw / 2, y + ah / 2 - 5, UI.dim);
+    const tx = px0 + 16 + aw, tw = pw - (tx - px0) - 8; text(id === 'blue' ? 'YOUR RIVAL' : id === 'giovanni' ? 'THE BOSS' : 'A GYM LEADER', tx, y + 2, UI.muted); wrap('Team Rocket holds them. ' + coUnlockText(id) + '.', tw).slice(0, 3).forEach((l, k) => text(l, tx, y + 13 + k * 9, UI.gold)); y += ah + 8;
+    sectionLabel('WORD IS', px0 + 8, y, pw - 16, UI.muted); y += 10; text(fitLabel('"' + co.blurb + '"', pw - 16), px0 + 8, y, UI.ink); }
+  else {
+    const aw = Math.min(90, pw - 16), ah = narrow ? 40 : 56; portraitBg(px0 + 8, y, aw, ah, 0); ctx.save(); ctx.beginPath(); ctx.rect(px0 + 8, y, aw, ah); ctx.clip(); requestAnim(ace); if (animReady(ace)) drawAnim(ace, px0 + 8 + aw / 2, y + ah - 3, t); else drawMon(ace, px0 + 8 + aw / 2, y + ah - 2, {}); ctx.restore(); outline(px0 + 7, y - 1, aw + 2, ah + 2, c.col); drawCrown(px0 + 10, y + 2);
+    const tx = px0 + 16 + aw, tw = pw - (tx - px0) - 8; text('ACE', tx, y + 2, UI.muted); text(id === 'you' ? 'Your partner (' + DEX[ace].name + ' line)' : DEX[ace].name, tx, y + 12, UI.ink); text(fitLabel(coUnlockText(id), tw), tx, y + 24, UI.green); y += ah + 6;
+    const rows = [['PASSIVE', c.passive ? c.passive.text + ' (within 2 of the Ace)' : '-', UI.ink], ['POWER · 50', c.power.name + ': ' + c.power.text, c.col], ['SUPER · 100', c.super.name + ': ' + c.super.text, UI.gold]];
+    for (const [k, v, col] of rows) { if (y + 18 > py0 + ph - 4) break; sectionLabel(k, px0 + 8, y, pw - 16, col); y += 10; const ls = wrap(v, pw - 16); ls.slice(0, 2).forEach(l => { text(l, px0 + 8, y, UI.ink); y += 9; }); y += 3; }
+  }
+  const fy = foot + 6; bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
+  if (!narrow) hintLine([['◂▸▲▼', 'commander'], ['X', 'back']], W / 2, fy + (bh - 7) / 2, { pill: false });
+}
+function coRoomInput(ev) {
+  const S = SC.data; if (ev.type === 'key') { const n = CO_ROOM.length, d = ev.key === 'left' ? -1 : ev.key === 'right' ? 1 : ev.key === 'up' ? -4 : ev.key === 'down' ? 4 : 0; if (d) { S.i = (S.i + d + n) % n; S.at = SC.t; Audio.sfx('cursor'); } else if (ev.key === 'back' || ev.key === 'ok') { Audio.sfx('cancel'); goScene('title'); } else if (ev.key === 'mute') Audio.toggle(); return; }
+  if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
+}
