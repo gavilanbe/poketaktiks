@@ -57,7 +57,7 @@ function openRoute(opts = {}) {
   const open = routeUnlocked(), sel = clamp(opts.sel != null ? opts.sel : open, 0, open);
   const S = { sel, reveal: opts.reveal || null, cam: null, walk: null, t0: 0, hop: 0 };
   if (S.reveal) S.sel = S.reveal.cleared; // the reveal starts on the stop just cleared and walks on afterwards
-  goScene('route', S); Audio.playMusic('calm');
+  goScene('route', S); Audio.playMusic('route');
 }
 // Layout: the map fills the screen; the stop card docks right on wide screens and at the bottom on tall ones.
 function routeLayout() {
