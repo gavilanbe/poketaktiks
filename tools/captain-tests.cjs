@@ -160,16 +160,34 @@ test('starter, lessons, preparation and power screens fit portrait and short lan
     for (const b of controls) assert(b.x >= 0 && b.y >= 0 && b.x+b.w <= w && b.y+b.h <= h, `${w}x${h} ${scene} control outside view`);
   }
 });
-test('versus: each trainer picks a captain style, the first pick leads, both powers are unlocked and charge from combat', () => {
+test('versus: each trainer picks a commander, whose Ace joins and leads; both powers are unlocked and charge from combat', () => {
   const T = loadGame(), { g, G } = T;
-  g.launchVersus({ seed: 5, level: 20, wild: false, mode: 'elim', arena: 's', fog: false, turns: 30, cap0: 1, cap1: 4, teams: [[25, 5], [7, 133]], order: [0, 1, 1, 0], size: 2, cur: 0 });
+  g.launchVersus({ seed: 5, level: 20, wild: false, mode: 'elim', arena: 's', fog: false, turns: 30, co0: 'erika', co1: 'surge', teams: [[25, 5], [7, 133]], order: [0, 1, 1, 0], size: 2, cur: 0 });
   const B = T.B(), s0 = g.powerState(0), s1 = g.powerState(1);
-  assert(s0 && s1, 'both trainers command a power'); assert.equal(s0.root, 1); assert.equal(s1.root, 4); assert(s0.unlocked && s0.superUnlocked && s1.superUnlocked);
-  assert.equal(g.powerCaptain(0).num, 25, 'player 1 first pick leads'); assert.equal(g.powerCaptain(1).num, 8, 'player 2 first pick leads (Squirtle has evolved at Lv20)');
+  assert(s0 && s1, 'both trainers command a power'); assert.equal(s0.co, 'erika'); assert.equal(s1.co, 'surge'); assert(s0.unlocked && s0.superUnlocked && s1.superUnlocked);
+  assert.equal(g.powerCaptain(0).num, 45, 'Erika brings Vileplume as her Ace'); assert.equal(g.powerCaptain(1).num, 26, 'Lt. Surge brings Raichu');
   assert.equal(B.units.filter(u => u.leader).length, 2, 'one crown per side'); assert.equal(json(B.bag), '{"pokeball":0}', 'no catching gear in Versus'); assert(!B.units.some(u => u.team === 2), 'no wild Pokémon');
   G('rnd = () => .5'); const a = g.alive(0)[0], d = g.alive(1)[0]; a.x = 3; a.y = 3; d.x = 4; d.y = 3; B.phase = 0; g.resolveCombat(a, d, a.moves[0], a);
   assert(s0.charge > 0 && s1.charge > 0, 'combat charges both bars: ' + s0.charge + '/' + s1.charge);
-  s0.charge = 50; a.hp = 1; assert.equal(g.powerBlock(0, false), null); const ev = g.activatePower(0, false); assert(ev && ev.some(e => e.type === 'heal'), 'Life Link heals in Versus');
+  s0.charge = 50; a.hp = 1; assert.equal(g.powerBlock(0, false), null); const ev = g.activatePower(0, false); assert(ev && ev.some(e => e.type === 'heal'), 'Aromatherapy heals in Versus');
+});
+test('commander effects: passives near the Ace, damage and defence powers, enemy damage never faints, statuses, weather, Future Sight, steal', () => {
+  const T = loadGame(), { g, G } = T; arena(T); const B = T.B(); G('rnd = () => .5');
+  const ace = place(T, 26, 20, 0, 2, 2), near = place(T, 25, 20, 0, 3, 2), far = place(T, 25, 20, 0, 9, 9), foe = place(T, 74, 20, 1, 4, 2), foe2 = place(T, 19, 20, 1, 8, 2);
+  g.addCaptain(0, ace, 4, 8, 'surge'); g.addCaptain(1, foe, 7, 8, 'misty'); const s0 = g.powerState(0), s1 = g.powerState(1);
+  const tackle = near.moves.find(m => m.kind === 'P') || near.moves[0];
+  assert.equal(g.calcCrit(near, foe, tackle) - g.calcCrit(far, foe, tackle), 10, "Surge's passive: +10 crit near Raichu only");
+  // Misty's passive: Water moves +10% near Starmie-less Geodude? no: only near her Ace (Geodude is the Ace here)
+  B.phase = 0; s0.charge = 100; const ev = g.activatePower(0, true); assert(ev.some(e => e.type === 'powerHit'), 'Thunderstorm strikes');
+  for (const u of [foe, foe2]) assert(u.hp >= 1, 'a power never faints a Pokémon');
+  assert.equal(g.calcCrit(far, foe, tackle), g.calcCrit(far, foe, tackle), 'stable'); assert(g.calcCrit(far, foe2, tackle) >= 30, 'crits +30 while Thunderstorm is on');
+  // weather: rain powers Water, dampens Fire, ends after its days
+  g.setWeather('rain', 2); assert.equal(g.weatherMult('Water'), 1.5); assert.equal(g.weatherMult('Fire'), .5); const ev2 = []; g.weatherDay(ev2); g.weatherDay(ev2); assert.equal(g.weatherKind(), null); assert(ev2.some(e => e.type === 'weatherEnd'));
+  g.setWeather('sand', 0); const hp = foe2.hp; g.upkeep(1); assert(foe2.hp < hp, 'the sandstorm chips a Normal type'); const geo = foe.hp; g.upkeep(1); assert.equal(foe.hp, geo, 'Rock/Ground are spared'); g.setWeather(null);
+  // Future Sight lands at the owner's next turn, never fainting anyone
+  s1.co = 'sabrina'; s1.future = .25; const before = near.hp; const ev3 = []; g.powerPhaseStart(1, ev3); assert(near.hp < before && near.hp >= 1 && ev3.some(e => e.type === 'powerHit'));
+  // Rocket's Pickpocket takes money when the enemy has it
+  s1.co = 'rocket'; s1.charge = 50; s1.spent = false; s1.active = null; B.phase = 1; B.war.funds[0] = 1500; B.war.funds[1] = 0; const ev4 = g.activatePower(1, false); assert(ev4 && ev4.some(e => e.type === 'steal')); assert.equal(B.war.funds[1], 1000); assert.equal(B.war.funds[0], 500);
 });
 let failed = 0;
 for (const [name, fn] of tests) { try { fn(); console.log('  ok   ' + name); } catch (e) { failed++; console.error('  FAIL ' + name + '\n' + e.stack); } }

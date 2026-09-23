@@ -97,6 +97,7 @@ function warSetup(mapDef, opts) {
   for (const u of B.units) if (u.fromBox && u.team <= 1) { const e = warEntry({ num: u.num, level: u.level, data: serializeUnit(u), pid: u.pid }); e.state = 'field'; e.unitId = u.id; B.war.box[u.team].push(e); }
   [opts.box || [], opts.box2 || []].forEach((list, team) => { for (const d of list) B.war.box[team].push(warEntry({ data: d, pid: d.pid })); });
   wildSetup(mapDef);
+  const w = opts.weather || mapDef.weather; B.weather = null; B.map.weather = WEATHER[w] ? w : null; if (B.map.weather) setWeather(w, 0);
 }
 // Can a side still play a phase with nothing on the map? Only if it can deploy.
 function warCanPlay(team) { return !!(B.war && team <= 1 && warDeploySites(team).length && B.war.box[team].some(e => e.state === 'box')); }
@@ -154,7 +155,7 @@ function setupEvent(q) {
   const ux = u => u.x * TILE + TILE / 2, uy = u => u.y * TILE + 4;
   switch (e.type) {
     case 'bossAlert': q.dur = REDUCED || BT.fast ? .8 : 1.7; Audio.sfx('boss'); Audio.playMusic('boss'); if (!REDUCED) { flashScreen('#ff3040', .3); shake(5); } break;
-    case 'power': q.dur = REDUCED || BT.fast ? .7 : 1.65; Audio.sfx(e.superPower ? 'evolve' : 'phase'); if (!REDUCED) flashScreen(CAPTAINS[e.root].col, .22); break;
+    case 'power': q.dur = REDUCED || BT.fast ? .7 : 1.65; Audio.sfx(e.superPower ? 'evolve' : 'phase'); if (!REDUCED) flashScreen(coOf({ co: e.co, root: e.root }).col, .22); break;
     case 'ko': q.dur = BT.fast ? .45 : .8; Audio.sfx('ko'); shake(4); spawnParts(ux(e.unit), uy(e.unit) + 8, 18, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 90, life: .7, grav: 60 }); noteKo(e); fadeFloatTexts(.12); floatText(ux(e.unit), uy(e.unit) - 14, e.unit.team === 0 ? 'FAINTED!' : 'KO!', e.unit.team === 0 ? UI.red : UI.gold, { huge: 2, life: 1.3, vy: -14, outline: e.unit.team === 0 ? '#2a0008' : '#3a2000' }); break;
     case 'xp': q.dur = BT.fast ? .35 : .6; q.from = e.unit.xp - e.amount; break;
     case 'levelup': q.dur = BT.fast ? .8 : 1.6; Audio.sfx('levelup'); spawnParts(ux(e.unit), uy(e.unit), 24, ['#ffd24a', '#ffffff', '#5ee06a'], { speed: 70, life: .9, grav: -30, shape: 'ring' }); break;
@@ -173,6 +174,18 @@ function setupEvent(q) {
     case 'wildSpawn': q.dur = BT.fast ? .5 : 1.1; centerCam(e.unit.x, e.unit.y); Audio.sfx('grass'); e.unit.fx.sy = .4; e.unit.fx.sx = 1.5;
       for (let i = 0; i < 8; i++) spawnSprite('leaf', ux(e.unit) + (i - 3.5) * 3, uy(e.unit) + 18, { size: 3, life: .7, col: '#3d8a3c', col2: '#a6dc7c', vx: (i - 3.5) * 16, vy: -60 - (i % 3) * 14, grav: 120, rot: i, spin: 10 });
       e.unit.fx.alert = BT.time; floatText(ux(e.unit), uy(e.unit) - 16, 'A wild ' + e.unit.name + ' appeared!', UI.gold, { outline: '#000', life: 1.3, delay: .15 }); break;
+    // a commander's power landing on one Pokémon: a bolt from the sky, the ground heaving, a swirl of petals, a psychic burst
+    case 'powerHit': { q.dur = BT.fast ? .2 : .38; const x = ux(e.unit), y = uy(e.unit) + 8; if (!unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); e.unit.fx.flash = 1; e.unit.fx.hit = .25; e.unit.fx.dx = e.kind === 'quake' ? 4 : 0;
+      if (e.kind === 'bolt') { Audio.sfx('elec'); spawnSprite('lightning', x, y + 10, { size: y + 40, life: .3, col: '#ffe94a' }); spawnSprite('flash', x, y, { size: 12, life: .2, col: '#fff7b0' }); flashScreen('#fff7b0', .25); }
+      else if (e.kind === 'quake') { Audio.sfx('thud'); shake(5); for (let i = 0; i < 6; i++) spawnSprite('debris', x + (vrnd() - .5) * 16, y + 8, { vx: (vrnd() - .5) * 80, vy: -70 - vrnd() * 60, grav: 380, floor: y + 12, life: .7, size: 3, col: '#8a6a48', col2: '#c8a878', rot: i, spin: 10 }); }
+      else if (e.kind === 'petals') { Audio.sfx('grass'); for (let i = 0; i < 8; i++) spawnSprite('leaf', x + (vrnd() - .5) * 20, y - 10, { size: 3, life: .6, col: '#ff8ac0', col2: '#ffd0e4', vx: (vrnd() - .5) * 60, vy: -30, grav: 40, rot: i, spin: 12 }); }
+      else if (e.kind === 'psy') { Audio.sfx('psy'); spawnSprite('psy', x, y, { size: 22, life: .35, col: '#ff70b0', col2: '#ffd0e4' }); }
+      else { Audio.sfx('hit'); spawnSprite('impact', x, y, { size: 14, life: .25, col: '#ffffff' }); }
+      floatText(x, y - 14, '-' + e.amount, '#ff9a9a', { big: true, outline: '#000', life: .9 }); break; }
+    case 'steal': q.dur = BT.fast ? .4 : .8; Audio.sfx('item'); if (e.unit) floatText(ux(e.unit), uy(e.unit) - 14, '+' + money(e.amount), UI.gold, { big: true, outline: '#3a2000', life: 1.3 }); break;
+    case 'future': q.dur = BT.fast ? .3 : .6; Audio.sfx('psy'); if (e.unit) floatText(ux(e.unit), uy(e.unit) - 14, 'The future is set...', '#ff70b0', { outline: '#000', life: 1.3 }); break;
+    case 'weather': q.dur = BT.fast ? .5 : 1.1; Audio.sfx(e.kind === 'sun' ? 'fire' : e.kind === 'rain' ? 'water' : 'whoosh'); flashScreen(e.kind === 'sun' ? '#fff0b0' : e.kind === 'rain' ? '#a0c8ff' : e.kind === 'sand' ? '#e0c890' : '#ffffff', .35); BT.weatherBanner = { t0: BT.time, text: WEATHER[e.kind].start, kind: e.kind }; break;
+    case 'weatherEnd': q.dur = BT.fast ? .3 : .7; BT.weatherBanner = { t0: BT.time, text: WEATHER[e.kind].end, kind: e.kind, end: true }; break;
     case 'capture': q.dur = (CATCH_T.result + e.shakes * CATCH_T.shake + (e.ok ? 1.35 : .8)) / (BT.fast ? 1.8 : 1); centerCam(e.unit.x, e.unit.y); break; // the catch plays in the middle of the view
     case 'miss': q.dur = BT.fast ? .3 : .55; break;
     case 'status': floatText(ux(e.unit), uy(e.unit) - 6, STATUS[e.status].text.toUpperCase() + '!', STATUS[e.status].col, { outline: '#000' }); Audio.sfx(e.status === 'par' ? 'para' : e.status === 'brn' ? 'burn' : 'poison'); break;
@@ -215,7 +228,7 @@ function updateAnim(dt) {
     if (e.type === 'ko') { const k = q.t / q.dur; e.unit.fx.flash = k < .4 ? (Math.floor(k * 20) % 2) : 0; e.unit.fx.alpha = k < .4 ? 1 : Math.max(0, 1 - (k - .4) / .5); e.unit.fx.dy = k > .4 ? -(k - .4) * 20 : 0; if (k >= .4 && !q.poofed) { q.poofed = true; const cx = e.unit.x * TILE + TILE / 2, cy = e.unit.y * TILE + TILE - 6; for (let i = 0; i < 4; i++) spawnSprite('poof', cx + (i - 1.5) * 7, cy - 2, { size: 5, life: .55, col: '#e8e0d0', col2: '#ffffff', vy: -14, vx: (i - 1.5) * 10, delay: i * .03 }); } if (k >= 1) { e.unit.fx.alpha = 1; e.unit.fx.flash = 0; e.unit.fx.dy = 0; } }
     if (e.type === 'evolve') { const k = q.t / q.dur; e.unit.fx.flash = k > .15 && k < .8 ? (Math.floor(k * 14) % 2 ? 1 : 0) : 0; e.unit.fx.showNum = k < .5 ? e.from.num : e.to.num; e.unit.fx.sx = e.unit.fx.sy = k > .15 && k < .8 ? 1 + Math.sin(k * 30) * .12 : 1; if (k > .8 && !q.popped) { q.popped = true; spawnParts(e.unit.x * TILE + TILE / 2, e.unit.y * TILE + 8, 40, ['#ffffff', '#ffd24a', '#98d8f8', '#f85888'], { speed: 120, life: 1, grav: 20 }); flashScreen('#ffffff', .8); shake(3); Audio.sfx('caught'); } if (k >= 1) { e.unit.fx.flash = 0; e.unit.fx.showNum = null; e.unit.fx.sx = e.unit.fx.sy = 1; } }
     if (e.type === 'capture') captureAnim(q);
-    if (e.type === 'power' && !q.aura && q.t > q.dur * .78) { q.aura = true; const c = CAPTAINS[e.root]; flashScreen('#ffffff', .45); Audio.sfx(e.superPower ? 'levelup' : 'heal'); for (const a of alive(e.team)) { spawnParts(a.x * TILE + TILE / 2, a.y * TILE + TILE - 4, 14, [c.col, '#ffffff', shade(c.col, .4)], { speed: 30, grav: -70, life: .9 }); a.fx.sy = .8; a.fx.sx = 1.2; } }
+    if (e.type === 'power' && !q.aura && q.t > q.dur * .78) { q.aura = true; const c = coOf({ co: e.co, root: e.root }); flashScreen('#ffffff', .45); Audio.sfx(e.superPower ? 'levelup' : 'heal'); for (const a of alive(e.team)) { spawnParts(a.x * TILE + TILE / 2, a.y * TILE + TILE - 4, 14, [c.col, '#ffffff', shade(c.col, .4)], { speed: 30, grav: -70, life: .9 }); a.fx.sy = .8; a.fx.sx = 1.2; } }
     if (e.type === 'levelup' && !q.shown && q.t > .2) { q.shown = true; }
     if (q.t >= q.dur) nextAnim();
     return;

@@ -36,8 +36,8 @@ const VS_RULES = [
   { k: 'arena', label: 'ARENA', vals: ['s', 'm', 'l'], show: v => VS_ARENAS[v].name + ' ' + VS_ARENAS[v].w + '×' + VS_ARENAS[v].h },
   { k: 'seed', label: 'MAP', vals: null, show: v => 'Arena #' + v },
   { k: 'fog', label: 'FOG', vals: [false, true], show: v => v ? 'On' : 'Off' },
-  { k: 'cap0', label: 'P1 CAPTAIN', vals: [4, 7, 1], show: v => CAPTAINS[v].name },
-  { k: 'cap1', label: 'P2 CAPTAIN', vals: [4, 7, 1], show: v => CAPTAINS[v].name },
+  { k: 'co0', label: 'P1 COMMANDER', vals: CO_ORDER.slice(1), show: v => COS[v].name },
+  { k: 'co1', label: 'P2 COMMANDER', vals: CO_ORDER.slice(1), show: v => COS[v].name },
 ];
 function vsCycle(S, rule, dir) { if (rule.vals) { const i = rule.vals.indexOf(S[rule.k]); S[rule.k] = rule.vals[(Math.max(0, i) + dir + rule.vals.length) % rule.vals.length]; } else S.seed = (S.seed + dir + 1000) % 1000; Audio.sfx('menu'); }
 function vsRuleRows(S, x, y, w, rh, rules) {
@@ -167,6 +167,13 @@ function trainerCanvas(tr, flip, dim) {
   c = document.createElement('canvas'); c.width = 80; c.height = 80; const g = c.getContext('2d'); if (flip) { g.translate(80, 0); g.scale(-1, 1); } g.drawImage(img, 0, 0);
   if (dim) { g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-atop'; g.fillStyle = 'rgba(10,12,34,.55)'; g.fillRect(0, 0, 80, 80); }
   TRAINERS.cache[key] = c; return c;
+}
+// A trainer's face for small badges (the power meter, the power menu): an 18×18 crop around the head. The head
+// positions were measured from the sprites' opaque pixels (a canvas cannot read them back on file://). Cached.
+const TRAINER_HEADS = { beauty: [37, 4], biker: [42, 1], bill: [38, 6], birdkeeper: [37, 8], blackbelt: [39, 9], blaine: [43, 1], blue: [37, 2], brock: [34, 14], bugcatcher: [44, 14], burglar: [40, 6], camper: [38, 23], erika: [41, 6], fisherman: [44, 16], gentleman: [35, 6], giovanni: [40, 1], hiker: [39, 4], juggler: [33, 5], koga: [37, 6], lass: [31, 8], ltsurge: [44, 5], misty: [34, 5], nurse: [33, 8], oak: [41, 6], psychic: [41, 6], red: [38, 8], rocketgrunt: [45, 9], rocketgruntf: [32, 9], sabrina: [41, 5], scientist: [42, 5], supernerd: [50, 17], swimmer: [36, 34], teamrocket: [41, 1], youngster: [41, 23] };
+function trainerFace(tr) {
+  const key = 'face:' + tr; if (TRAINERS.cache[key]) return TRAINERS.cache[key]; const img = trainerImg(tr); if (!img) return null;
+  const [cx, top] = TRAINER_HEADS[tr] || [40, 6], f = document.createElement('canvas'); f.width = 18; f.height = 18; f.getContext('2d').drawImage(img, cx - 9, Math.max(0, top - 1), 18, 18, 0, 0, 18, 18); TRAINERS.cache[key] = f; return f;
 }
 // A line's text with its *emphasis* resolved: the plain text and which letters to colour.
 function richLine(line) { if (line._rich) return line._rich; const em = []; let plain = '', on = false; for (const c of line.text) { if (c === '*') { on = !on; continue; } if (on) em[plain.length] = true; plain += c; } return (line._rich = { plain, em }); }

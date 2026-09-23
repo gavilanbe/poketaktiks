@@ -18,7 +18,7 @@ function unitAt(x, y) { for (const u of B.units) if (u.hp > 0 && u.x === x && u.
 function alive(team) { return B.units.filter(u => u.hp > 0 && u.team === team); }
 function dist(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
 // Paralysis cuts two tiles (never below one); a rooted unit cannot move at all.
-function effMov(u, status = u.status, root = u.root) { if (root > 0) return 0; let m = u.mov; if (status === 'par') m = Math.max(1, m - 2); return m; }
+function effMov(u, status = u.status, root = u.root) { if (root > 0) return 0; let m = u.mov; if (status === 'par') m = Math.max(1, m - 2); return Math.max(1, m + coMove(u)); }
 // Dijkstra movement: returns Map key→{x,y,cost,prev}. Passing through friends allowed; ending on anyone not allowed.
 function reachable(u, fromX = u.x, fromY = u.y, mov = effMov(u), opt = {}) {
   const out = new Map(); const open = [{ x: fromX, y: fromY, cost: 0, prev: null }]; out.set(key(fromX, fromY), open[0]);
@@ -72,10 +72,10 @@ function attackStat(u, move) { let a = move.kind === 'P' ? u.atk : u.spa; if (u.
 function defenseStat(u, move) { return move.kind === 'P' ? u.def : u.spd; }
 function usableMoves(att, d) { return att.moves.filter(m => d >= m.rng[0] && d <= m.rng[1]); }
 // Speed nudges accuracy a little (±10 at most). It no longer feeds the critical chance.
-function calcHit(att, def, move, defTerr) { const eva = terrainEva(defTerr, def); const spdDiff = clamp(Math.round((att.spe - def.spe) / 3), -10, 10); return clamp(Math.round(move.acc - eva + spdDiff), 20, 100); }
+function calcHit(att, def, move, defTerr) { const eva = terrainEva(defTerr, def) + coEva(def); const spdDiff = clamp(Math.round((att.spe - def.spe) / 3), -10, 10); return clamp(Math.round(move.acc - eva + spdDiff), 20, 100); }
 // Critical hits: a flat CRIT_BASE, +20 for high-crit moves, certain against a frozen target. ×1.5 damage.
 const CRIT_BASE = 4;
-function calcCrit(att, def, move) { let c = CRIT_BASE; if (move.eff && move.eff.crit) c += 20; if (def.status === 'frz') c = 100; return clamp(c, 0, 100); }
+function calcCrit(att, def, move) { let c = CRIT_BASE + coCrit(att); if (move.eff && move.eff.crit) c += 20; if (def.status === 'frz') c = 100; return clamp(c, 0, 100); }
 function calcDmg(att, def, move, defTerr, crit = false) {
   const eff = effMult(move.type, def.types); if (eff === 0) return 0;
   const A = attackStat(att, move), D = Math.max(1, defenseStat(def, move));
@@ -85,7 +85,7 @@ function calcDmg(att, def, move, defTerr, crit = false) {
   d = Math.floor(d * (1 - terrainDef(defTerr, def) / 100));
   if (def.brace) d = Math.floor(d * BRACE_MULT);
   if (crit) d = Math.floor(d * 1.5);
-  d = Math.floor(d * powerDamageMultiplier(att, def));
+  d = Math.floor(d * powerDamageMultiplier(att, def, move) * weatherMult(move.type));
   if (isPracticeTarget(def)) return Math.min(Math.max(0, def.hp - 1), Math.max(1, d));
   return Math.max(eff > 0 ? 1 : 0, d);
 }
@@ -146,7 +146,7 @@ function resolveCombat(att, def, move, from) {
     const crit = rnd() * 100 < calcCrit(A, Dn, s.move); const dmg = calcDmg(A, Dn, s.move, dT, crit);
     const lost = Math.min(dmg, Dn.hp); Dn.hp -= lost; let status = null;
     const ef = s.move.eff; // secondary effects need a damaging hit: immunity blocks them
-    if (ef && ef.status && !powerBlocksStatus(Dn) && !isPracticeTarget(Dn) && dmg > 0 && !Dn.status && Dn.hp > 0 && rnd() * 100 < ef.chance) { const st = ef.status; if (!(st === 'brn' && Dn.types.includes('Fire')) && !(st === 'psn' && (Dn.types.includes('Poison') || Dn.types.includes('Steel'))) && !(st === 'par' && Dn.types.includes('Electric')) && !(st === 'frz' && Dn.types.includes('Ice'))) { Dn.status = st; Dn.statusTurns = 0; status = st; } }
+    if (ef && ef.status && !powerBlocksStatus(Dn) && !isPracticeTarget(Dn) && dmg > 0 && !Dn.status && Dn.hp > 0 && rnd() * 100 < ef.chance + coStatusBonus(A)) { const st = ef.status; if (!(st === 'brn' && Dn.types.includes('Fire')) && !(st === 'psn' && (Dn.types.includes('Poison') || Dn.types.includes('Steel'))) && !(st === 'par' && Dn.types.includes('Electric')) && !(st === 'frz' && Dn.types.includes('Ice'))) { Dn.status = st; Dn.statusTurns = 0; status = st; } }
     const drain = Math.min(drainFor(s.move, lost), A.maxHp - A.hp); A.hp += drain; // the event carries the HP actually restored
     ev.push({ type: 'hit', att: A, def: Dn, move: s.move, dmg, lost, crit, eff: s.eff, hpAfter: Dn.hp, status, drain, attHpAfter: A.hp, counter: isCounter });
     if (Dn.hp <= 0) { ev.push({ type: 'ko', unit: Dn, by: A }); if (Dn.team === 0 && !B.versus) B.faints = (B.faints || 0) + 1; }
@@ -167,8 +167,8 @@ function awardXp(u, amount, ev) {
 // Start-of-phase upkeep for one team: recharge, status damage, terrain heals and cures, thaw checks.
 // Returns events. Runs exactly once per phase; a resumed suspend save skips it (see beginPhase).
 function upkeep(team) {
-  powerPhaseStart(team);
-  const ev = [];
+  const ev = []; powerPhaseStart(team, ev);
+  if (team === 0) weatherDay(ev);
   for (const u of alive(team)) {
     u.acted = false; u.moved = false;
     if (u.recharge) { u.recharge = 0; u.acted = true; u.moved = true; ev.push({ type: 'recharge', unit: u, done: true }); }
@@ -178,10 +178,11 @@ function upkeep(team) {
     if (u.root > 0) { u.root--; if (!u.root) ev.push({ type: 'unroot', unit: u }); }
     const t = terrAt(u.x, u.y);
     if (t.heal && warHeals(u)) {
-      if (u.hp < u.maxHp) { const h = Math.max(1, Math.floor(u.maxHp * t.heal)); u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: h }); }
+      if (u.hp < u.maxHp) { const h = Math.max(1, Math.floor(u.maxHp * (t.heal + coCenterHeal(u)))); u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: h }); }
       if (u.status || u.root) { ev.push({ type: 'cure', unit: u }); u.status = null; u.root = 0; }
     }
     if (t.burn && !u.fly && !u.types.includes('Fire')) { const d = Math.max(1, Math.floor(u.maxHp / 6)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'lava' }); }
+    const wk = weatherKind(); if ((wk === 'sand' || wk === 'snow') && !weatherSpares(u, wk) && u.hp > 1) { const d = Math.min(u.hp - 1, Math.max(1, Math.floor(u.maxHp / 16))); u.hp -= d; ev.push({ type: 'dot', unit: u, amount: d, kind: wk }); }
     if (u.status === 'psn') { const d = Math.max(1, Math.floor(u.maxHp / 8)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'psn' }); }
     if (u.status === 'brn') { const d = Math.max(1, Math.floor(u.maxHp / 16)); u.hp = Math.max(1, u.hp - d); ev.push({ type: 'dot', unit: u, amount: d, kind: 'brn' }); }
     if (u.status === 'frz') { u.statusTurns++; if (u.statusTurns >= 2 || rnd() < .4) { u.status = null; ev.push({ type: 'cure', unit: u, kind: 'frz' }); } }

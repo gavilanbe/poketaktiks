@@ -76,15 +76,15 @@ function applyBattleToParty() {
 // ---------------------------------------------------------------- suspend (mid-battle save at the start of each player phase)
 function saveSuspend() {
   if (!B || PARAMS.has('nosave')) return;
-  const s = { rng: typeof rnd.state === 'function' ? rnd.state() : null, territory: B.territory || null, war: B.war || null, command: B.command || null, lesson: B.lesson || null, chapter: B.chapter, skirmish: B.skirmish, skirmishMap: B.skirmish ? B.map.def : null, turn: B.turn, bag: B.bag, captured: B.captured, kills: B.kills, faints: B.faints || 0, seed: B.seed, items: B.map.items.map(i => !!i.taken), reinforce: B.map.reinforce.map(r => !!r.done), units: B.units.map(u => Object.assign(serializeUnit(u), { pid: u.pid, leader: !!u.leader, provoked: !!u.provoked, maxHpNow: u.maxHp })), cx: BT.cx, cy: BT.cy, party: SAVE ? SAVE.party : null, preset: SC.data && SC.data.preset };
+  const s = { rng: typeof rnd.state === 'function' ? rnd.state() : null, territory: B.territory || null, war: B.war || null, weather: B.weather || null, command: B.command || null, lesson: B.lesson || null, chapter: B.chapter, skirmish: B.skirmish, skirmishMap: B.skirmish ? B.map.def : null, turn: B.turn, bag: B.bag, captured: B.captured, kills: B.kills, faints: B.faints || 0, seed: B.seed, items: B.map.items.map(i => !!i.taken), reinforce: B.map.reinforce.map(r => !!r.done), units: B.units.map(u => Object.assign(serializeUnit(u), { pid: u.pid, leader: !!u.leader, provoked: !!u.provoked, maxHpNow: u.maxHp })), cx: BT.cx, cy: BT.cy, party: SAVE ? SAVE.party : null, preset: SC.data && SC.data.preset };
   try { localStorage.setItem('pk_suspend', JSON.stringify(s)); BT.savedAt = BT.time; } catch (e) { }
 }
 function resumeSuspend() {
   const s = loadSuspend(); if (!s) { goScene('title'); return; }
   SAVE = loadSave();
   const mapDef = s.territory ? TERRITORY_MAP : s.skirmish ? s.skirmishMap : CHAPTERS[s.chapter]?.map; if (!mapDef) { clearSuspend(); goScene('title'); return; }
-  seedRng(s.rng != null ? s.rng : s.seed ^ (s.turn * 7919)); const map = parseMap(mapDef); map.def = mapDef; UID = 1;
-  B = { territory: s.territory || null, war: s.war || null, command: s.command || null, lesson: s.lesson || null, map, units: [], turn: s.turn, phase: 0, bag: normalizeBag(s.bag), result: null, seized: false, captured: s.captured || [], kills: s.kills || 0, faints: s.faints || 0, chapter: s.chapter, log: [], seed: s.seed, skirmish: !!s.skirmish };
+  seedRng(s.rng != null ? s.rng : s.seed ^ (s.turn * 7919)); const map = parseMap(mapDef); map.def = mapDef; map.weather = WEATHER[mapDef.weather] ? mapDef.weather : null; UID = 1;
+  B = { territory: s.territory || null, war: s.war || null, weather: s.weather || null, command: s.command || null, lesson: s.lesson || null, map, units: [], turn: s.turn, phase: 0, bag: normalizeBag(s.bag), result: null, seized: false, captured: s.captured || [], kills: s.kills || 0, faints: s.faints || 0, chapter: s.chapter, log: [], seed: s.seed, skirmish: !!s.skirmish };
   map.items.forEach((it, i) => { it.taken = !!s.items[i]; }); map.reinforce.forEach((r, i) => { r.done = !!s.reinforce[i]; });
   for (const d of s.units) { if (d.hp <= 0 && !d.leader) continue; if (d.hpBonus == null && d.team === 0 && !B.territory) d.hpBonus = BOND_HP; const u = restoreUnit(d); u.pid = d.pid; u.leader = d.leader; u.provoked = d.provoked; if (u.team === 0 && u.status === 'frz') u.acted = true; if (d.hp <= 0) continue; B.units.push(u); }
   // older suspend saves could hold the same id on a party member and an enemy: renumber the duplicates (UID is already past every saved id)
@@ -113,12 +113,12 @@ function startSkirmishSetup() {
 const VS_ROSTER = [5, 8, 2, 25, 17, 33, 12, 15, 28, 37, 39, 42, 44, 54, 58, 61, 64, 67, 75, 93, 95, 123, 125, 126, 111, 104, 133, 116];
 // Versus: both trainers at Lv 20 with plain stats, 30 turns, no wild Pokémon; each picks a captain style and their first
 // draft pick leads the team (the same powers as the campaign, both unlocked).
-function startVersusSetup(seed) { const S = { seed: seed != null ? seed : Math.floor(Math.random() * 1000), level: 20, wild: false, mode: 'elim', arena: 'm', fog: false, turns: 30, cap0: 4, cap1: 7, teams: [[], []], order: [0, 1, 1, 0, 0, 1, 1, 0], size: 4, cur: 0, go: null }; S.go = () => launchVersus(S); goScene('versus', S); }
+function startVersusSetup(seed) { const S = { seed: seed != null ? seed : Math.floor(Math.random() * 1000), level: 20, wild: false, mode: 'elim', arena: 'm', fog: false, turns: 30, cap0: 4, cap1: 7, co0: 'brock', co1: 'misty', teams: [[], []], order: [0, 1, 1, 0, 0, 1, 1, 0], size: 4, cur: 0, go: null }; S.go = () => launchVersus(S); goScene('versus', S); }
 function vsMapFor(S) { const A = VS_ARENAS[S.arena] || VS_ARENAS.m; return versusMap(S.seed, A.w, A.h, { wild: S.wild, level: S.level, mode: S.mode || 'elim', fog: !!S.fog, turns: S.turns == null ? 30 : S.turns }); }
 function launchVersus(S) {
   const map = vsMapFor(S); const mk = list => list.map(n => partyUnit(n, S.level, 1)); // both trainers: plain stats
   const p1 = mk(S.teams[0]), p2 = mk(S.teams[1]); BACKDROP = makeBackdrop(map);
-  startBattle(map, p1, {}, { versus: true, humans: [0, 1], party2: p2, seed: (S.seed * 131 + 7) | 1, defer: true, setup: S, captains: [S.cap0 || 4, S.cap1 || 7] });
+  startBattle(map, p1, {}, { versus: true, humans: [0, 1], party2: p2, seed: (S.seed * 131 + 7) | 1, defer: true, setup: S, captains: [S.cap0 || 4, S.cap1 || 7], cos: [S.co0 || 'brock', S.co1 || 'misty'] });
   goScene('battle'); beginPhase(0, true);
 }
 

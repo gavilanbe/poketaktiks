@@ -39,7 +39,7 @@ function warProperty(x, y) { return B && B.war ? B.war.props.find(p => p.x === x
 function warOwnerAt(x, y) { const p = warProperty(x, y); return p ? p.owner : null; }
 function warOwned(team) { return B && B.war ? B.war.props.filter(p => p.owner === team) : []; }
 // Income comes from HQs and centers (a gym or an outpost is an objective, not a treasury).
-function warIncome(team) { return B && B.war ? warOwned(team).filter(p => p.kind === 'hq' || p.kind === 'center').length * B.war.income : 0; }
+function warIncome(team) { return B && B.war ? Math.round(warOwned(team).filter(p => p.kind === 'hq' || p.kind === 'center').length * B.war.income * (1 + coIncome(team)) / 100) * 100 : 0; }
 // A property heals whoever owns it (and every heal tile that is not a property heals everyone, as before).
 function warHeals(u) { const p = warProperty(u.x, u.y); return !p || p.owner === u.team; }
 function warDeploySites(team) { return warOwned(team).filter(p => p.kind === 'hq' || p.kind === 'center'); }
@@ -178,5 +178,14 @@ function wildSpawn() {
   if (!spots.length) return []; const p = spots[Math.floor(rnd() * spots.length)], d = W.pool[Math.floor(rnd() * W.pool.length)];
   const u = makeUnit(d.mon, d.level, 2, { x: p.x, y: p.y, ai: d.ai }); u.provoked = false; B.units.push(u); requestBigSprite(u.num); return [u];
 }
+// Weather, Pokémon style: rain powers Water and dampens Fire, sun the reverse; a sandstorm and snow chip 1/16 of max HP a
+// day from everyone they do not spare (never below 1 HP). B.weather = { kind, days }: days 0 is the map's own, lasting;
+// a power's weather counts down at each dawn and gives the map's back.
+const WEATHER = { rain: { name: 'Rain', start: 'It started to rain!', end: 'The rain stopped.' }, sun: { name: 'Harsh sun', start: 'The sunlight turned harsh!', end: 'The sunlight faded.' }, sand: { name: 'Sandstorm', start: 'A sandstorm kicked up!', end: 'The sandstorm subsided.' }, snow: { name: 'Snow', start: 'It started to snow!', end: 'The snow stopped.' } };
+function setWeather(kind, days) { if (B) B.weather = WEATHER[kind] ? { kind, days: days || 0 } : null; }
+function weatherKind() { return B && B.weather ? B.weather.kind : null; }
+function weatherMult(type) { const k = weatherKind(); if (k === 'rain') return type === 'Water' ? 1.5 : type === 'Fire' ? .5 : 1; if (k === 'sun') return type === 'Fire' ? 1.5 : type === 'Water' ? .5 : 1; return 1; }
+function weatherSpares(u, k) { return k === 'sand' ? u.types.some(t => t === 'Rock' || t === 'Ground' || t === 'Steel') : k === 'snow' ? u.types.includes('Ice') : true; }
+function weatherDay(ev) { const W = B && B.weather; if (!W || !W.days) return; if (--W.days <= 0) { const kind = W.kind; B.weather = B.map.weather ? { kind: B.map.weather, days: 0 } : null; if (!B.weather || B.weather.kind !== kind) ev.push({ type: 'weatherEnd', kind }); } }
 // Does this unit play the war (capture and roam) rather than a scripted role?
 function warRoams(u) { return !!(B && B.war && u.team <= 1 && !u.boss && (!u.ai || u.ai === 'aggro') && B.war.props.some(p => p.owner !== u.team)); }
