@@ -1168,9 +1168,11 @@ function endSequenceCues(a, b) {
 const SUNBURST = {};
 function sunburst(r, rays, phase, col) {
   const key = r + ':' + rays + ':' + phase + col; if (SUNBURST[key]) return SUNBURST[key];
-  const c = document.createElement('canvas'); c.width = c.height = r * 2; const g = c.getContext('2d'); g.fillStyle = col;
-  for (let y = 0; y < 2 * r; y++) for (let x = 0; x < 2 * r; x++) { const dx = x - r + .5, dy = y - r + .5, d = Math.hypot(dx, dy); if (d > r || d < 6) continue; const a = (Math.atan2(dy, dx) / (Math.PI * 2) + 1 + phase / (rays * 4)) % 1; if (Math.floor(a * rays * 2) % 2 === 0) g.fillRect(x, y, 1, 1); }
-  return SUNBURST[key] = c;
+  // built once per phase through ImageData: one pass over the pixels, no per-pixel draw calls
+  const c = document.createElement('canvas'); c.width = c.height = r * 2; const g = c.getContext('2d'); const [R, G2, B2] = hexRgb(col);
+  const img = g.createImageData(2 * r, 2 * r), d8 = img.data;
+  for (let y = 0; y < 2 * r; y++) for (let x = 0; x < 2 * r; x++) { const dx = x - r + .5, dy = y - r + .5, d = Math.hypot(dx, dy); if (d > r || d < 6) continue; const a = (Math.atan2(dy, dx) / (Math.PI * 2) + 1 + phase / (rays * 4)) % 1; if (Math.floor(a * rays * 2) % 2 === 0) { const i = (y * 2 * r + x) * 4; d8[i] = R; d8[i + 1] = G2; d8[i + 2] = B2; d8[i + 3] = 255; } }
+  g.putImageData(img, 0, 0); return SUNBURST[key] = c;
 }
 function drawStampWord(word, cx, y, t, col, dark, scale) {
   const chars = [...word.toUpperCase()], widths = chars.map(ch => ch === ' ' ? 4 : textWidth(ch, BIG) + 1), total = (widths.reduce((a, b) => a + b, 0) - 1) * scale; let x = Math.round(cx - total / 2);

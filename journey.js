@@ -117,29 +117,39 @@ function confirmPower() {
   if (!events) { Audio.sfx('error'); return; }
   BT.queue = events.map(ev => ({ kind: 'event', ev })); playQueue(() => { BT.mode = 'idle'; });
 }
+// The power menu: the captain in a portrait with the charge meter, then two power cards (side by side on wide screens,
+// stacked on tall ones): name, cost as cells, what it does, and READY or why not. The focused card lifts; Z or a second
+// tap activates it.
 function powerMenuLayout() {
-  const w = Math.min(300, VIEW.w - 12), x = (VIEW.w - w) / 2;
-  const c = CAPTAINS[powerState(HT()).root], desc = [c.normal, c.super].map(s => wrap(s, w - 24));
-  const row = Math.max(48, Math.max(...desc.map(a => a.length)) * 10 + 31);
-  const duration = wrap('Until next own turn. No extra actions.', w - 16);
-  const offset = 37 + duration.length * 10, h = offset + 28 + row * 2, y = Math.max(2, (VIEW.h - h) / 2);
-  return { x, y, w, h, row, desc, duration, offset };
+  const W = VIEW.w, H = VIEW.h, side = W >= 380, w = Math.min(side ? 400 : 300, W - 12), x = Math.round((W - w) / 2), s = powerState(HT()), c = CAPTAINS[s.root];
+  const cw = side ? Math.floor((w - 22) / 2) : w - 16, desc = [c.normal, c.super].map(t => wrap(t, cw - 14));
+  const lines = Math.min(side ? 3 : 2, Math.max(...desc.map(d => d.length))), ch = 44 + lines * 9, head = 30;
+  const h = head + (side ? ch : ch * 2 + 5) + 32, y = Math.max(2, Math.round((H - h) / 2));
+  const cards = [0, 1].map(i => side ? { x: x + 8 + i * (cw + 6), y: y + head, w: cw, h: ch } : { x: x + 8, y: y + head + i * (ch + 5), w: cw, h: ch });
+  return { x, y, w, h, cards, desc, lines, side };
 }
 function drawPowerMenu() {
   const team = HT(), s = powerState(team); if (!s) { BT.mode = 'idle'; return; }
-  const c = CAPTAINS[s.root], u = powerCaptain(team), r = powerMenuLayout(), { x, y, w, h, row } = r;
-  dimScreen(.7); hudPanel(x, y, w, h, { header: 'TEAM POWER', headerRight: s.charge + '/100', headerRightCol: c.col, light: false });
-  text(fitLabel((u ? u.name : DEX[s.root].name) + ' · ' + c.style, w - 16), x + 8, y + 19, c.col);
-  r.duration.forEach((l, i) => text(l, x + 8, y + 30 + i * 10, UI.muted));
+  const c = CAPTAINS[s.root], u = powerCaptain(team), r = powerMenuLayout(), { x, y, w, h } = r, t = BT.time;
+  dimScreen(.72); const tok = unfold('powermenu', x, y, w, h, .2);
+  hudPanel(x, y, w, h, { light: false, fill: '#161a44', border: c.col });
+  // the captain, its style and the charge
+  const pnum = u ? (u.fx.showNum || u.num) : s.root; requestAnim(pnum); ctx.save(); ctx.beginPath(); ctx.rect(x + 6, y + 5, 26, 22); ctx.clip(); portraitBg(x + 6, y + 5, 26, 22, team); drawMon(pnum, x + 19, y + 27, { outline: c.col }); ctx.restore(); drawCrown(x + 7, y + 6);
+  bigText('TEAM POWER', x + 38, y + 7, c.col, { shadow: UI.inset }); text(fitLabel((u ? u.name : DEX[s.root].name) + ' · ' + c.style, w - 120), x + 38, y + 18, UI.muted);
+  const mw = Math.min(90, w - 150), mx = x + w - 8 - mw; textR(s.charge + '/100', x + w - 8, y + 7, UI.gold); bar(mx, y + 18, mw, 5, s.charge / 100, c.col);
   for (let i = 0; i < 2; i++) {
-    const yy = y + r.offset + i * row, why = powerBlock(team, i === 1), hot = BT.powerIndex === i;
-    if (hot) rect(x + 5, yy - 2, w - 10, row - 3, UI.panel2);
-    text(fitLabel((i ? c.superName : c.name) + ' · ' + (i ? '100' : '50'), w - 24), x + 12, yy + 2, hot ? c.col : UI.ink);
-    r.desc[i].forEach((l, j) => text(l, x + 12, yy + 14 + j * 10, UI.ink));
-    text(fitLabel(why || 'Z / tap: activate', w - 24), x + 12, yy + row - 14, why ? UI.muted : UI.green);
-    HUD.hits.push({ x: x + 5, y: yy - 2, w: w - 10, h: row - 3, label: i ? 'SUPERPOWER' : 'NORMAL POWER', run: () => { if (BT.powerIndex !== i) { BT.powerIndex = i; Audio.sfx('cursor'); } else confirmPower(); } });
+    const card = r.cards[i], why = powerBlock(team, i === 1), hot = BT.powerIndex === i, lift = hot && !REDUCED ? -2 : 0, cx = card.x, cy = card.y + lift, ready = !why;
+    rrect(cx + 1, card.y + 3, card.w, card.h, UI.shadow, 2); rrect(cx, cy, card.w, card.h, hot ? UI.gold : UI.inset, 2); rrect(cx + 1, cy + 1, card.w - 2, card.h - 2, hot ? '#2c2f78' : '#1e2050', 1); hline(cx + 2, cy + 1, card.w - 4, hot ? '#4a50a8' : '#2e3066');
+    rect(cx + 1, cy + 1, 3, card.h - 2, i ? UI.gold : c.col);
+    const name = (i ? c.superName : c.name).toUpperCase(); bigText(fitLabel(name, card.w - 16), cx + 8, cy + 5, i ? UI.gold : c.col, { shadow: UI.inset });
+    const cells = i ? 10 : 5, cwid = Math.max(3, Math.floor((card.w - 20) / 10) - 1); for (let k = 0; k < cells; k++) { const on = s.charge >= (k + 1) * 10; rect(cx + 8 + k * (cwid + 1), cy + 17, cwid, 4, UI.inset); if (on) rect(cx + 9 + k * (cwid + 1), cy + 18, cwid - 2, 2, i ? UI.gold : c.col); }
+    text((i ? 100 : 50) + '', cx + 10 + cells * (cwid + 1), cy + 16, UI.muted);
+    r.desc[i].slice(0, r.lines).forEach((l, j) => text(l, cx + 8, cy + 25 + j * 9, UI.ink));
+    const sy = cy + card.h - 12; if (ready) { const pulse = REDUCED ? 1 : .6 + .4 * Math.abs(Math.sin(t * 5)); ctx.globalAlpha = pulse; text(VIEW.touch ? 'READY · tap again' : 'READY · Z', cx + 8, sy, UI.green); ctx.globalAlpha = 1; if (hot && !REDUCED) sparkle(cx + card.w - 8, cy + 6 + Math.round(Math.sin(t * 4)), 2, '#fff2b0'); } else text(fitLabel(why, card.w - 16), cx + 8, sy, UI.dim);
+    HUD.hits.push({ x: card.x, y: card.y, w: card.w, h: card.h, label: i ? 'SUPERPOWER' : 'NORMAL POWER', run: () => { if (BT.powerIndex !== i) { BT.powerIndex = i; Audio.sfx('cursor'); } else confirmPower(); } });
   }
-  button(x + 8, y + h - 23, w - 16, 18, 'BACK', () => { BT.mode = 'idle'; Audio.sfx('cancel'); }, { variant: 'ghost' });
+  unfoldEnd(tok);
+  button(x + 8, y + h - 24, w - 16, 18, 'BACK', () => { BT.mode = 'idle'; Audio.sfx('cancel'); }, { variant: 'ghost' });
 }
 function powerInput(ev) {
   if (ev.type === 'key') {
