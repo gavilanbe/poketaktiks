@@ -3364,6 +3364,7 @@ function openDeployMenu(p) {
   if (!p) { BT.menu = { title: 'DEPLOY WHERE?', i: 0, items: warDeploySites(team).map(q => ({ id: 'site:' + W.props.indexOf(q), label: q.name, icon: 'flag', off: !!unitAt(q.x, q.y), sub: unitAt(q.x, q.y) ? 'Occupied: move that Pokémon first' : 'Open the PC here · arrivals act next turn' })).concat([{ id: 'close', label: 'Close', icon: 'x' }]) }; return; }
   BT.deploySite = p; BT.cx = p.x; BT.cy = p.y; keepCursorVisible();
   BT.menu = { title: 'PC BOX · ' + money(W.funds[team]), i: 0, items: W.box[team].map((e, i) => { const why = warDeployBlock(team, i, p); return { id: 'deploy:' + i, icon: 'ball', label: (e.nick || DEX[e.num].name) + ' Lv' + e.level, right: e.state === 'field' ? 'OUT' : e.fresh ? 'FREE' : money(e.cost), off: !!why, sub: (why || p.name + ' · acts next turn') + ' · ' + ROLES[roleFor(DEX[e.num])].name + ' · ' + DEX[e.num].types.join('/') }; }).concat([{ id: 'close', label: 'Close', icon: 'x' }]) };
+  BT.menu.pc = { team, p, cache: {} }; // the highlighted Pokémon is previewed beside the list
   const k = BT.menu.items.findIndex(it => !it.off && it.id !== 'close'); if (k >= 0) BT.menu.i = k;
 }
 function warMenuAction(it) {
@@ -4063,6 +4064,19 @@ function drawMenu() {
     const lx = r.x + (it.icon ? 22 : 11); if (it.icon) iconAt(it.icon, r.x + 9, y + ty - 1, it.off ? UI.dim : hot ? '#ffffff' : '#c8cddc'); text(it.label, lx, y + ty, ink, hot ? { shadow: shade(UI.sel, -.6) } : {}); if (it.right) textR(it.right, r.x + r.w - 8, y + ty, it.off ? UI.dim : it.right === 'FREE' ? UI.green : UI.gold); });
   if (r.foot) { const fy = r.y + r.h - 4 - r.foot; rect(r.x + 4, fy, r.w - 8, r.foot, UI.panelDark); hline(r.x + 4, fy, r.w - 8, UI.inset); const it = m.items[m.i]; const lines = it && it.sub ? wrap(it.sub, r.w - 14).slice(0, 2) : []; lines.forEach((l, i) => text(l, r.x + 7, fy + 4 + i * 9, it.off ? '#d8a0a0' : UI.muted)); }
   ctx.globalAlpha = 1;
+  if (m.pc) drawPcPreview(m, r);
+}
+// Beside the PC Box list: the highlighted Pokémon in a portrait with its types, role, stats and price (wide screens).
+function drawPcPreview(m, r) {
+  const it = m.items[m.i]; if (!it || !it.id.startsWith('deploy:') || VIEW.w < 380 || hudLayout().stack) return;
+  const i = +it.id.slice(7), e = B.war.box[m.pc.team][i]; if (!e) return; let u = m.pc.cache[i]; if (!u) u = m.pc.cache[i] = e.data ? restoreUnit(Object.assign({}, e.data, { id: 0 })) : makeUnit(e.num, e.level, m.pc.team);
+  const w = 118, h = 124, x = r.x + r.w + 4 + w > VIEW.w - 4 ? r.x - w - 4 : r.x + r.w + 4, y = clamp(r.y, 4, VIEW.h - h - 4), t = BT.time, R = ROLES[u.role];
+  const p = hudPanel(x, y, w, h, { header: fitLabel(u.name, w - 44), headerRight: 'Lv' + u.level, headerRightCol: UI.gold, headerFill: teamColorD(m.pc.team) });
+  const ph = 40; portraitBg(x + 5, p.cy, w - 10, ph, m.pc.team); ctx.save(); ctx.beginPath(); ctx.rect(x + 5, p.cy, w - 10, ph); ctx.clip(); requestAnim(u.num); if (animReady(u.num)) drawAnim(u.num, x + w / 2, p.cy + ph - 3, t); else drawMon(u.num, x + w / 2, p.cy + ph - 2, {}); ctx.restore(); outline(x + 4, p.cy - 1, w - 8, ph + 2, UI.border2);
+  let yy = p.cy + ph + 4, bx = x + 6; for (const tp of u.types) bx += typeBadge(tp, bx, yy, 26) + 2; iconAt(R.icon, x + w - 50, yy, R.col); text(fitLabel(R.name, 36), x + w - 40, yy + 1, R.col); yy += 12;
+  [['HP', u.maxHp], ['SPA', u.spa], ['ATK', u.atk], ['SPE', u.spe], ['DEF', u.def], ['MOV', u.mov]].forEach(([k, v], j) => { const cx = x + 6 + (j % 2) * 55, cy = yy + Math.floor(j / 2) * 9; text(k, cx, cy, UI.muted); textR(String(v), cx + 48, cy, UI.ink); }); yy += 29;
+  const price = e.state === 'field' ? ['ON THE MAP', UI.dim] : e.recovery ? ['RECOVERING · ' + e.recovery + 'd', UI.red] : e.fresh ? ['FREE · FIRST DEPLOY', UI.green] : [money(e.cost), B.war.funds[m.pc.team] >= e.cost ? UI.gold : UI.red];
+  if (yy + 9 <= y + h - 3) textC(price[0], x + w / 2, yy, price[1], { outline: UI.inset });
 }
 // The forecast sits on the side away from the cursor on wide screens and spans the bottom on portrait phones.
 function forecastRect() {
