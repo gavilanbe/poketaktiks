@@ -215,8 +215,8 @@ function initTitle() {
   // Save state is a scene snapshot, not a localStorage read on every animation frame.
   const save = loadSave(), suspended = loadSuspend(); const items = [];
   if (suspended) items.push({ label: 'RESUME BATTLE', sub: 'Back to your last turn', icon: 'play', run: resumeSuspend });
-  if (save) { const chapter = CHAPTERS[clamp(save.chapter || 0, 0, CHAPTERS.length - 1)]; items.push({ label: 'CONTINUE', sub: save.beaten ? 'Journey complete · replay for stars' : 'Chapter ' + chapter.num + ' · ' + chapter.title, icon: 'map', run: continueCampaign }); }
-  items.push({ label: 'NEW GAME', sub: 'Pick a partner · 8 chapters', icon: 'star', run: () => { if (save) openTitleConfirm(); else startNewGame(); } });
+  if (save) { const chapter = CHAPTERS[clamp(save.chapter || 0, 0, CHAPTERS.length - 1)]; items.push({ label: 'CONTINUE', sub: save.beaten ? 'Kanto is free · replay for stars' : 'Front ' + chapter.num + ' · ' + chapter.title, icon: 'map', run: continueCampaign }); }
+  items.push({ label: 'NEW GAME', sub: 'Free Kanto from Team Rocket', icon: 'star', run: () => { if (save) openTitleConfirm(); else startNewGame(); } });
   items.push({ label: 'QUICK BATTLE', sub: 'Skirmish · Tower · Safari · Conquest', icon: 'blades', run: () => goScene('quick') });
   items.push({ label: 'VERSUS', sub: 'Two players, one screen', icon: 'duo', run: startVersusSetup });
   items.forEach((item, i) => { item.hover = i === 0 ? 1 : 0; });
