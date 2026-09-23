@@ -445,6 +445,7 @@ const SK_RULES = [
   { k: 'co', label: 'YOU', vals: S => S.cos, show: v => v === 'you' ? 'Tactician' : COS[v].name },
   { k: 'foe', label: 'FOE', vals: CO_FOES, show: v => COS[v].name },
   { k: 'level', label: 'LEVEL', vals: SKIRMISH.levels, show: v => 'Lv ' + v },
+  { k: 'diff', label: 'CPU', vals: ['easy', 'normal', 'hard'], show: v => SK_DIFF[v].name + (v === 'normal' ? ' · even funds' : v === 'easy' ? ' · poorer' : ' · richer, Lv+2') },
   { k: 'funds', label: 'FUNDS', vals: SKIRMISH.funds, show: v => money(v) + ' each' },
   { k: 'weather', label: 'WEATHER', vals: SKIRMISH.weather, show: v => v === 'none' ? 'Clear' : v === 'random' ? 'Random' : WEATHER[v].name },
   { k: 'biome', label: 'LAND', vals: SKIRMISH.biomes, show: (v, S) => v === 'random' ? 'Random · ' + BIOMES[skirmishBiome(S)].name : BIOMES[v].name },
@@ -463,7 +464,7 @@ function drawWarPreview(map, bd, px0, py0, pw, ph, centers = -1) {
 }
 function skirmishDraw() {
   const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t; rect(0, 0, W, H, UI.bg);
-  const size = SKIRMISH.sizes[S.size] || SKIRMISH.sizes.m, mapKey = [S.seed, S.level, S.foe, S.biome, S.size].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = skirmishMap(S.seed, size[0], size[1], S.level, { foe: S.foe, biome: skirmishBiome(S) }); S.bd = makeBackdrop(S.map); if (S.bdKey && S.bdKey.split('|')[0] !== String(S.seed)) S.rolledAt = SC.t; S.bdKey = mapKey; }
+  const size = SKIRMISH.sizes[S.size] || SKIRMISH.sizes.m, mapKey = [S.seed, S.level, S.foe, S.biome, S.size, S.diff].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = skirmishMap(S.seed, size[0], size[1], S.level + (SK_DIFF[S.diff] || SK_DIFF.normal).level, { foe: S.foe, biome: skirmishBiome(S) }); S.bd = makeBackdrop(S.map); if (S.bdKey && S.bdKey.split('|')[0] !== String(S.seed)) S.rolledAt = SC.t; S.bdKey = mapKey; }
   drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 + 40 - t * 4, (H - S.bd.canvas.height) / 2 + 30, .84); drawCloudShadows(t);
   const narrow = narrowView() || portraitView(), bh = btnH(); SC.hits = []; S.focus = clamp(S.focus || 0, 0, SK_RULES.length - 1);
   const top = screenTitle('SKIRMISH', narrow ? null : 'Random battlefield · rout the foe or take their HQ', 4), foot = footerBand(bh + 12), fy = foot + 6;

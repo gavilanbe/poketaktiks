@@ -23,7 +23,7 @@ function warEntry(e) {
 // opts.war = { funds: [a, b], income, owners: {'x,y': team}, names, goals, boxes: [[entry]…], centers: default owner of
 // centers (campaign: 0, the player's; otherwise neutral), hold: {need, turns} (Conquest), turns, bank, cap }.
 function warInit(mapDef, opts = {}) {
-  const cfg = Object.assign({ funds: [0, 0], income: WAR.income, owners: {}, names: {}, goals: {}, boxes: [[], []], centers: -1, hold: null, turns: null, bank: null, cap: WAR.cap }, mapDef.war || {}, opts.war || {});
+  const cfg = Object.assign({ funds: [0, 0], income: WAR.income, incomeMult: [1, 1], owners: {}, names: {}, goals: {}, boxes: [[], []], centers: -1, hold: null, turns: null, bank: null, cap: WAR.cap }, mapDef.war || {}, opts.war || {});
   const props = [], m = B.map;
   for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
     const ch = m.tiles[y][x].ch, kind = PROP_KIND[ch]; if (!kind) continue; const k = x + ',' + y;
@@ -32,14 +32,14 @@ function warInit(mapDef, opts = {}) {
   }
   // the map's outposts: named properties (a gym to seize, a contested center) with their own owner
   for (const o of mapDef.outposts || []) { let p = props.find(q => q.x === o.x && q.y === o.y); if (!p) { p = { x: o.x, y: o.y, kind: 'outpost', ch: m.tiles[o.y][o.x].ch, hq: -1, captor: null, progress: 0 }; props.push(p); } Object.assign(p, { name: o.name || p.name, owner: o.owner != null ? o.owner : -1, goal: !!o.goal }); }
-  B.war = { version: 1, income: cfg.income, funds: cfg.funds.slice(), props, box: [0, 1].map(t => (cfg.boxes[t] || []).map(warEntry)), cap: cfg.cap, hold: cfg.hold ? { need: cfg.hold.need || 2, turns: cfg.hold.turns || 3, count: [0, 0] } : null, turns: cfg.turns, bank: cfg.bank, stats: { captures: [0, 0], deployments: [0, 0], catches: [0, 0] }, stamp: [-1, -1], reason: '' };
+  B.war = { version: 1, income: cfg.income, incomeMult: cfg.incomeMult.slice(), funds: cfg.funds.slice(), props, box: [0, 1].map(t => (cfg.boxes[t] || []).map(warEntry)), cap: cfg.cap, hold: cfg.hold ? { need: cfg.hold.need || 2, turns: cfg.hold.turns || 3, count: [0, 0] } : null, turns: cfg.turns, bank: cfg.bank, stats: { captures: [0, 0], deployments: [0, 0], catches: [0, 0] }, stamp: [-1, -1], reason: '' };
   m.ownerAt = warOwnerAt;
 }
 function warProperty(x, y) { return B && B.war ? B.war.props.find(p => p.x === x && p.y === y) || null : null; }
 function warOwnerAt(x, y) { const p = warProperty(x, y); return p ? p.owner : null; }
 function warOwned(team) { return B && B.war ? B.war.props.filter(p => p.owner === team) : []; }
 // Income comes from HQs and centers (a gym or an outpost is an objective, not a treasury).
-function warIncome(team) { return B && B.war ? Math.round(warOwned(team).filter(p => p.kind === 'hq' || p.kind === 'center').length * B.war.income * (1 + coIncome(team)) / 100) * 100 : 0; }
+function warIncome(team) { return B && B.war ? Math.round(warOwned(team).filter(p => p.kind === 'hq' || p.kind === 'center').length * B.war.income * (1 + coIncome(team)) * ((B.war.incomeMult || [1, 1])[team] || 1) / 100) * 100 : 0; } // incomeMult: a Skirmish difficulty's handicap
 // A property heals whoever owns it (and every heal tile that is not a property heals everyone, as before).
 function warHeals(u) { const p = warProperty(u.x, u.y); return !p || p.owner === u.team; }
 function warDeploySites(team) { return warOwned(team).filter(p => p.kind === 'hq' || p.kind === 'center'); }

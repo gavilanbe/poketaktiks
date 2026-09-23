@@ -316,6 +316,8 @@ function skirmishMap(seed, w = 16, h = 11, avgLevel = 12, opt = {}) {
 
 // Skirmish options (the setup screen's rules). Both armies count twelve: four on the map and eight in the Box (the rest of
 // your collection, topped up with loaners from Oak's lab when it is small; the foe's squad, Ace and army).
+// Difficulty is the foe's war chest: starting funds and daily income scaled, and on Hard their army two levels up.
+const SK_DIFF = { easy: { name: 'Easy', funds: .5, income: .75, level: 0 }, normal: { name: 'Normal', funds: 1, income: 1, level: 0 }, hard: { name: 'Hard', funds: 1.5, income: 1.25, level: 2 } };
 const SKIRMISH = { sizes: { s: [14, 9, 'Small'], m: [16, 11, 'Medium'], l: [20, 13, 'Large'] }, biomes: ['field', 'forest', 'sea', 'mountain', 'snow', 'volcano', 'cave', 'random'], slots: 4, box: 8, funds: [0, 1000, 2000, 5000, 10000], weather: ['none', 'rain', 'sun', 'sand', 'snow', 'random'], levels: [5, 8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 30, 33, 36, 40, 45, 50] };
 const LOANERS = [16, 19, 25, 1, 4, 7, 74, 63, 43, 60, 66, 92, 41, 23, 56, 100, 109, 111];
 function skirmishBiome(S) { return S.biome === 'random' || !BIOMES[S.biome] ? SKIRMISH.biomes[S.seed % 7] : S.biome; }

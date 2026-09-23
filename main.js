@@ -117,20 +117,20 @@ function startSkirmishSetup() {
   if (!party) { preset = true; party = [partyUnit(25, 12), partyUnit(5, 12), partyUnit(8, 12), partyUnit(2, 12), partyUnit(133, 11), partyUnit(66, 11)]; }
   const avg = Math.round(party.reduce((a, p) => a + p.level, 0) / party.length), cos = coUnlocked(preset ? null : SAVE), last = (SAVE && SAVE.skirmishSetup) || {};
   const level = SKIRMISH.levels.reduce((b, l) => Math.abs(l - avg) < Math.abs(b - avg) ? l : b, SKIRMISH.levels[0]);
-  const S = { seed: Math.floor(Math.random() * 1000), level, party, preset, cos, co: cos.includes(last.co) ? last.co : 'you', foe: CO_FOES.includes(last.foe) ? last.foe : pick(CO_FOES.slice(0, 4)), funds: SKIRMISH.funds.includes(last.funds) ? last.funds : 1000, weather: SKIRMISH.weather.includes(last.weather) ? last.weather : 'none', biome: SKIRMISH.biomes.includes(last.biome) ? last.biome : 'field', size: SKIRMISH.sizes[last.size] ? last.size : 'm', go: null };
+  const S = { seed: Math.floor(Math.random() * 1000), level, party, preset, cos, co: cos.includes(last.co) ? last.co : 'you', foe: CO_FOES.includes(last.foe) ? last.foe : pick(CO_FOES.slice(0, 4)), funds: SKIRMISH.funds.includes(last.funds) ? last.funds : 1000, weather: SKIRMISH.weather.includes(last.weather) ? last.weather : 'none', biome: SKIRMISH.biomes.includes(last.biome) ? last.biome : 'field', size: SKIRMISH.sizes[last.size] ? last.size : 'm', diff: SK_DIFF[last.diff] ? last.diff : 'normal', go: null };
   S.go = () => {
     const map = S.map, ch = { title: map.name, num: 0, label: 'SKIRMISH', level: S.level, slots: SKIRMISH.slots, par: map.par, map, rewards: {} };
-    if (SAVE && !preset) { SAVE.skirmishSetup = { co: S.co, foe: S.foe, funds: S.funds, weather: S.weather, biome: S.biome, size: S.size }; writeSave(); }
+    if (SAVE && !preset) { SAVE.skirmishSetup = { co: S.co, foe: S.foe, funds: S.funds, weather: S.weather, biome: S.biome, size: S.size, diff: S.diff }; writeSave(); }
     // loaners (plain stats, never saved to the collection) make up an army of twelve
     const army = party.concat(skirmishLoaners(party, S.level, SKIRMISH.slots + SKIRMISH.box - party.length).map(l => Object.assign(partyUnit(l.num, l.level, 1), { loaner: true })));
     const P = { chapter: ch, party: army, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: preset ? { pokeball: 3 } : SAVE.bag, deploy: [], preset, back: () => goScene('skirmish', S) }; autoDeploy(P);
     P.start = () => {
       const pid = i => i < party.length ? i : null, deployed = P.deploy.map(i => Object.assign({}, army[i], { pid: pid(i) })), box = army.map((p, i) => Object.assign({}, p, { pid: pid(i) })).filter((p, i) => !P.deploy.includes(i));
-      const onMap = map.units.filter(u => u.team == null || u.team === 1).map(u => u.mon);
+      const onMap = map.units.filter(u => u.team == null || u.team === 1).map(u => u.mon), D = SK_DIFF[S.diff] || SK_DIFF.normal;
       const weather = S.weather === 'random' ? pick(['none', 'none', 'rain', 'sun', 'sand', 'snow']) : S.weather; map.weather = weather === 'none' ? null : weather;
       goScene('card', { chapter: ch, next: () => {
         BACKDROP = makeBackdrop(map);
-        startBattle(map, deployed, Object.assign({}, P.bag), { skirmish: true, seed: S.seed * 131 + 7, defer: true, cos: [S.co, S.foe], box, box2: coTeam(S.foe, S.level, 8, S.seed + 1, onMap), war: { funds: [S.funds, S.funds] },
+        startBattle(map, deployed, Object.assign({}, P.bag), { skirmish: true, seed: S.seed * 131 + 7, defer: true, cos: [S.co, S.foe], box, box2: coTeam(S.foe, S.level + D.level, 8, S.seed + 1, onMap), war: { funds: [S.funds, Math.round(S.funds * D.funds / 100) * 100], incomeMult: [1, D.income] },
           captain: preset ? { pid: 0, root: 4, chapter: 8 } : { pid: SAVE.captainPid, root: SAVE.starter, chapter: SAVE.chapter } });
         B.map.def = map; SC.data = { preset }; goScene('battle'); SC.data = { preset }; beginPhase(0, true);
       } });

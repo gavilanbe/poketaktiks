@@ -5195,6 +5195,8 @@ function skirmishMap(seed, w = 16, h = 11, avgLevel = 12, opt = {}) {
 
 // Skirmish options (the setup screen's rules). Both armies count twelve: four on the map and eight in the Box (the rest of
 // your collection, topped up with loaners from Oak's lab when it is small; the foe's squad, Ace and army).
+// Difficulty is the foe's war chest: starting funds and daily income scaled, and on Hard their army two levels up.
+const SK_DIFF = { easy: { name: 'Easy', funds: .5, income: .75, level: 0 }, normal: { name: 'Normal', funds: 1, income: 1, level: 0 }, hard: { name: 'Hard', funds: 1.5, income: 1.25, level: 2 } };
 const SKIRMISH = { sizes: { s: [14, 9, 'Small'], m: [16, 11, 'Medium'], l: [20, 13, 'Large'] }, biomes: ['field', 'forest', 'sea', 'mountain', 'snow', 'volcano', 'cave', 'random'], slots: 4, box: 8, funds: [0, 1000, 2000, 5000, 10000], weather: ['none', 'rain', 'sun', 'sand', 'snow', 'random'], levels: [5, 8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 30, 33, 36, 40, 45, 50] };
 const LOANERS = [16, 19, 25, 1, 4, 7, 74, 63, 43, 60, 66, 92, 41, 23, 56, 100, 109, 111];
 function skirmishBiome(S) { return S.biome === 'random' || !BIOMES[S.biome] ? SKIRMISH.biomes[S.seed % 7] : S.biome; }
@@ -5258,7 +5260,7 @@ function warEntry(e) {
 // opts.war = { funds: [a, b], income, owners: {'x,y': team}, names, goals, boxes: [[entry]…], centers: default owner of
 // centers (campaign: 0, the player's; otherwise neutral), hold: {need, turns} (Conquest), turns, bank, cap }.
 function warInit(mapDef, opts = {}) {
-  const cfg = Object.assign({ funds: [0, 0], income: WAR.income, owners: {}, names: {}, goals: {}, boxes: [[], []], centers: -1, hold: null, turns: null, bank: null, cap: WAR.cap }, mapDef.war || {}, opts.war || {});
+  const cfg = Object.assign({ funds: [0, 0], income: WAR.income, incomeMult: [1, 1], owners: {}, names: {}, goals: {}, boxes: [[], []], centers: -1, hold: null, turns: null, bank: null, cap: WAR.cap }, mapDef.war || {}, opts.war || {});
   const props = [], m = B.map;
   for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
     const ch = m.tiles[y][x].ch, kind = PROP_KIND[ch]; if (!kind) continue; const k = x + ',' + y;
@@ -5267,14 +5269,14 @@ function warInit(mapDef, opts = {}) {
   }
   // the map's outposts: named properties (a gym to seize, a contested center) with their own owner
   for (const o of mapDef.outposts || []) { let p = props.find(q => q.x === o.x && q.y === o.y); if (!p) { p = { x: o.x, y: o.y, kind: 'outpost', ch: m.tiles[o.y][o.x].ch, hq: -1, captor: null, progress: 0 }; props.push(p); } Object.assign(p, { name: o.name || p.name, owner: o.owner != null ? o.owner : -1, goal: !!o.goal }); }
-  B.war = { version: 1, income: cfg.income, funds: cfg.funds.slice(), props, box: [0, 1].map(t => (cfg.boxes[t] || []).map(warEntry)), cap: cfg.cap, hold: cfg.hold ? { need: cfg.hold.need || 2, turns: cfg.hold.turns || 3, count: [0, 0] } : null, turns: cfg.turns, bank: cfg.bank, stats: { captures: [0, 0], deployments: [0, 0], catches: [0, 0] }, stamp: [-1, -1], reason: '' };
+  B.war = { version: 1, income: cfg.income, incomeMult: cfg.incomeMult.slice(), funds: cfg.funds.slice(), props, box: [0, 1].map(t => (cfg.boxes[t] || []).map(warEntry)), cap: cfg.cap, hold: cfg.hold ? { need: cfg.hold.need || 2, turns: cfg.hold.turns || 3, count: [0, 0] } : null, turns: cfg.turns, bank: cfg.bank, stats: { captures: [0, 0], deployments: [0, 0], catches: [0, 0] }, stamp: [-1, -1], reason: '' };
   m.ownerAt = warOwnerAt;
 }
 function warProperty(x, y) { return B && B.war ? B.war.props.find(p => p.x === x && p.y === y) || null : null; }
 function warOwnerAt(x, y) { const p = warProperty(x, y); return p ? p.owner : null; }
 function warOwned(team) { return B && B.war ? B.war.props.filter(p => p.owner === team) : []; }
 // Income comes from HQs and centers (a gym or an outpost is an objective, not a treasury).
-function warIncome(team) { return B && B.war ? Math.round(warOwned(team).filter(p => p.kind === 'hq' || p.kind === 'center').length * B.war.income * (1 + coIncome(team)) / 100) * 100 : 0; }
+function warIncome(team) { return B && B.war ? Math.round(warOwned(team).filter(p => p.kind === 'hq' || p.kind === 'center').length * B.war.income * (1 + coIncome(team)) * ((B.war.incomeMult || [1, 1])[team] || 1) / 100) * 100 : 0; } // incomeMult: a Skirmish difficulty's handicap
 // A property heals whoever owns it (and every heal tile that is not a property heals everyone, as before).
 function warHeals(u) { const p = warProperty(u.x, u.y); return !p || p.owner === u.team; }
 function warDeploySites(team) { return warOwned(team).filter(p => p.kind === 'hq' || p.kind === 'center'); }
@@ -5998,6 +6000,7 @@ const SK_RULES = [
   { k: 'co', label: 'YOU', vals: S => S.cos, show: v => v === 'you' ? 'Tactician' : COS[v].name },
   { k: 'foe', label: 'FOE', vals: CO_FOES, show: v => COS[v].name },
   { k: 'level', label: 'LEVEL', vals: SKIRMISH.levels, show: v => 'Lv ' + v },
+  { k: 'diff', label: 'CPU', vals: ['easy', 'normal', 'hard'], show: v => SK_DIFF[v].name + (v === 'normal' ? ' · even funds' : v === 'easy' ? ' · poorer' : ' · richer, Lv+2') },
   { k: 'funds', label: 'FUNDS', vals: SKIRMISH.funds, show: v => money(v) + ' each' },
   { k: 'weather', label: 'WEATHER', vals: SKIRMISH.weather, show: v => v === 'none' ? 'Clear' : v === 'random' ? 'Random' : WEATHER[v].name },
   { k: 'biome', label: 'LAND', vals: SKIRMISH.biomes, show: (v, S) => v === 'random' ? 'Random · ' + BIOMES[skirmishBiome(S)].name : BIOMES[v].name },
@@ -6016,7 +6019,7 @@ function drawWarPreview(map, bd, px0, py0, pw, ph, centers = -1) {
 }
 function skirmishDraw() {
   const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t; rect(0, 0, W, H, UI.bg);
-  const size = SKIRMISH.sizes[S.size] || SKIRMISH.sizes.m, mapKey = [S.seed, S.level, S.foe, S.biome, S.size].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = skirmishMap(S.seed, size[0], size[1], S.level, { foe: S.foe, biome: skirmishBiome(S) }); S.bd = makeBackdrop(S.map); if (S.bdKey && S.bdKey.split('|')[0] !== String(S.seed)) S.rolledAt = SC.t; S.bdKey = mapKey; }
+  const size = SKIRMISH.sizes[S.size] || SKIRMISH.sizes.m, mapKey = [S.seed, S.level, S.foe, S.biome, S.size, S.diff].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = skirmishMap(S.seed, size[0], size[1], S.level + (SK_DIFF[S.diff] || SK_DIFF.normal).level, { foe: S.foe, biome: skirmishBiome(S) }); S.bd = makeBackdrop(S.map); if (S.bdKey && S.bdKey.split('|')[0] !== String(S.seed)) S.rolledAt = SC.t; S.bdKey = mapKey; }
   drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 + 40 - t * 4, (H - S.bd.canvas.height) / 2 + 30, .84); drawCloudShadows(t);
   const narrow = narrowView() || portraitView(), bh = btnH(); SC.hits = []; S.focus = clamp(S.focus || 0, 0, SK_RULES.length - 1);
   const top = screenTitle('SKIRMISH', narrow ? null : 'Random battlefield · rout the foe or take their HQ', 4), foot = footerBand(bh + 12), fy = foot + 6;
@@ -7312,20 +7315,20 @@ function startSkirmishSetup() {
   if (!party) { preset = true; party = [partyUnit(25, 12), partyUnit(5, 12), partyUnit(8, 12), partyUnit(2, 12), partyUnit(133, 11), partyUnit(66, 11)]; }
   const avg = Math.round(party.reduce((a, p) => a + p.level, 0) / party.length), cos = coUnlocked(preset ? null : SAVE), last = (SAVE && SAVE.skirmishSetup) || {};
   const level = SKIRMISH.levels.reduce((b, l) => Math.abs(l - avg) < Math.abs(b - avg) ? l : b, SKIRMISH.levels[0]);
-  const S = { seed: Math.floor(Math.random() * 1000), level, party, preset, cos, co: cos.includes(last.co) ? last.co : 'you', foe: CO_FOES.includes(last.foe) ? last.foe : pick(CO_FOES.slice(0, 4)), funds: SKIRMISH.funds.includes(last.funds) ? last.funds : 1000, weather: SKIRMISH.weather.includes(last.weather) ? last.weather : 'none', biome: SKIRMISH.biomes.includes(last.biome) ? last.biome : 'field', size: SKIRMISH.sizes[last.size] ? last.size : 'm', go: null };
+  const S = { seed: Math.floor(Math.random() * 1000), level, party, preset, cos, co: cos.includes(last.co) ? last.co : 'you', foe: CO_FOES.includes(last.foe) ? last.foe : pick(CO_FOES.slice(0, 4)), funds: SKIRMISH.funds.includes(last.funds) ? last.funds : 1000, weather: SKIRMISH.weather.includes(last.weather) ? last.weather : 'none', biome: SKIRMISH.biomes.includes(last.biome) ? last.biome : 'field', size: SKIRMISH.sizes[last.size] ? last.size : 'm', diff: SK_DIFF[last.diff] ? last.diff : 'normal', go: null };
   S.go = () => {
     const map = S.map, ch = { title: map.name, num: 0, label: 'SKIRMISH', level: S.level, slots: SKIRMISH.slots, par: map.par, map, rewards: {} };
-    if (SAVE && !preset) { SAVE.skirmishSetup = { co: S.co, foe: S.foe, funds: S.funds, weather: S.weather, biome: S.biome, size: S.size }; writeSave(); }
+    if (SAVE && !preset) { SAVE.skirmishSetup = { co: S.co, foe: S.foe, funds: S.funds, weather: S.weather, biome: S.biome, size: S.size, diff: S.diff }; writeSave(); }
     // loaners (plain stats, never saved to the collection) make up an army of twelve
     const army = party.concat(skirmishLoaners(party, S.level, SKIRMISH.slots + SKIRMISH.box - party.length).map(l => Object.assign(partyUnit(l.num, l.level, 1), { loaner: true })));
     const P = { chapter: ch, party: army, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: preset ? { pokeball: 3 } : SAVE.bag, deploy: [], preset, back: () => goScene('skirmish', S) }; autoDeploy(P);
     P.start = () => {
       const pid = i => i < party.length ? i : null, deployed = P.deploy.map(i => Object.assign({}, army[i], { pid: pid(i) })), box = army.map((p, i) => Object.assign({}, p, { pid: pid(i) })).filter((p, i) => !P.deploy.includes(i));
-      const onMap = map.units.filter(u => u.team == null || u.team === 1).map(u => u.mon);
+      const onMap = map.units.filter(u => u.team == null || u.team === 1).map(u => u.mon), D = SK_DIFF[S.diff] || SK_DIFF.normal;
       const weather = S.weather === 'random' ? pick(['none', 'none', 'rain', 'sun', 'sand', 'snow']) : S.weather; map.weather = weather === 'none' ? null : weather;
       goScene('card', { chapter: ch, next: () => {
         BACKDROP = makeBackdrop(map);
-        startBattle(map, deployed, Object.assign({}, P.bag), { skirmish: true, seed: S.seed * 131 + 7, defer: true, cos: [S.co, S.foe], box, box2: coTeam(S.foe, S.level, 8, S.seed + 1, onMap), war: { funds: [S.funds, S.funds] },
+        startBattle(map, deployed, Object.assign({}, P.bag), { skirmish: true, seed: S.seed * 131 + 7, defer: true, cos: [S.co, S.foe], box, box2: coTeam(S.foe, S.level + D.level, 8, S.seed + 1, onMap), war: { funds: [S.funds, Math.round(S.funds * D.funds / 100) * 100], incomeMult: [1, D.income] },
           captain: preset ? { pid: 0, root: 4, chapter: 8 } : { pid: SAVE.captainPid, root: SAVE.starter, chapter: SAVE.chapter } });
         B.map.def = map; SC.data = { preset }; goScene('battle'); SC.data = { preset }; beginPhase(0, true);
       } });
