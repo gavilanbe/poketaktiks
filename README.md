@@ -174,7 +174,7 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
 - **Skirmish**: point-symmetric battlefields with an HQ at each end of the road,
   each side's own center and two neutral ones. The foe opens with a squad and
   their Ace; both armies count twelve. Rules: your commander, the foe, level,
-  starting funds (₽0–10,000), weather, land and map.
+  starting funds (₽0–10,000), weather, land, size (14×9, 16×11 or 20×13) and map.
 - **Battle Tower**: Rocket Grunt, Brock, Misty, Lt. Surge, Erika, Koga, Sabrina,
   Blaine, Blue and Giovanni, one per floor, each on their own land and weather.
   Rank = SPEED (100 within par, −10 a day over) + POWER (25 per knockout for each
