@@ -69,10 +69,11 @@ function warCaptureBlock(u, p = u && warProperty(u.x, u.y), from = u) {
 function warCapture(u) {
   const p = warProperty(u.x, u.y); if (warCaptureBlock(u, p)) return null; warSettle();
   if (p.captor !== u.id) { p.captor = u.id; p.progress = 0; }
+  const from = p.progress, prevOwner = p.owner; // the capture scene counts the building down from here
   p.progress = Math.min(WAR.capture, p.progress + warCaptureGain(u)); const done = p.progress >= WAR.capture;
   if (done) { p.owner = u.team; p.captor = null; p.progress = 0; B.war.stats.captures[u.team]++; powerCharge(u.team, 20); if (p.goal && u.team === 0) B.seized = true; }
   u.acted = u.moved = true; warSettle();
-  return { type: 'property', unit: u, property: p, done, progress: p.progress };
+  return { type: 'property', unit: u, property: p, done, progress: done ? WAR.capture : p.progress, from, prevOwner };
 }
 function warEntryCost(e) { return e.fresh ? 0 : e.cost; }
 function warDeployBlock(team, i, p) {

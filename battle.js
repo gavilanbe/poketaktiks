@@ -200,7 +200,7 @@ function setupEvent(q) {
     case 'brace': Audio.sfx('shake'); floatText(ux(e.unit), uy(e.unit) - 8, 'BRACED!', BRACE_COL, { outline: '#000' }); e.unit.fx.sy = .8; e.unit.fx.sx = 1.2; break;
     case 'root': Audio.sfx('grass'); shake(1); floatText(ux(e.unit), uy(e.unit) - 8, 'ROOTED!', ROOT_COL, { outline: '#000' }); spawnParts(ux(e.unit), uy(e.unit) + 12, 12, ['#2a6b38', '#c8f0a0'], { speed: 30, grav: 40, life: .6 }); break;
     case 'blocked': q.dur = BT.fast ? .4 : .7; if (!unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); floatText(ux(e.unit), uy(e.unit) - 8, e.kind === 'frz' ? 'Frozen solid!' : 'Fully paralyzed!', STATUS[e.kind].col, { outline: '#000' }); break;
-    case 'property': q.dur = BT.fast ? .4 : e.done ? 1.1 : .8; floatText(ux(e.unit), uy(e.unit) - 10, e.done ? 'CAPTURED!' : e.progress + '/20', e.done ? UI.gold : '#fff0a0', { outline: '#000', big: !!e.done, life: e.done ? 1.4 : 1 });
+    case 'property': q.dur = REDUCED || BT.fast ? (e.done ? .9 : .6) : e.done ? (e.property.kind === 'hq' ? 2.2 : 1.8) : 1.3; centerCam(e.property.x, e.property.y); q.ticks = 0; Audio.sfx('whoosh');
       if (e.done) { const c = teamColorL(e.unit.team); Audio.sfx('caught'); shake(3); flashScreen(c, .25); spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 30, life: .55, col: c }); spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 18, life: .45, col: '#ffffff', delay: .08 }); spawnParts(ux(e.unit), uy(e.unit) + 4, 26, [c, '#ffffff', UI.gold, teamColor(e.unit.team)], { speed: 90, life: .9, grav: 90 }); e.unit.fx.sy = .75; e.unit.fx.sx = 1.25; }
       else { Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 20, 8, [UI.gold, '#ffffff'], { speed: 30, life: .5, grav: -40 }); } break;
     case 'unroot': q.dur = BT.fast ? .2 : .4; floatText(ux(e.unit), uy(e.unit) - 8, 'Free!', ROOT_COL, { outline: '#000' }); break;
@@ -1282,6 +1282,7 @@ function drawEventCard(q) {
   if (e.type === 'power') { drawPowerBurst(q); return; }
   if (e.type === 'bossAlert') { drawBossAlert(q); return; }
   if (e.type === 'aceDown') { drawAceDown(q); return; }
+  if (e.type === 'property') { drawCaptureCard(q); return; }
   if (e.type === 'xp') { const u = e.unit; const w = 120, x = W / 2 - w / 2, y = H - 40; panel(x, y, w, 24); const k = Math.min(1, q.t / q.dur); const shown = Math.min(100, q.from + e.amount * k); text(u.name, x + 6, y + 4, UI.ink); textR('+' + e.amount + ' EXP', x + w - 6, y + 4, UI.gold); bar(x + 6, y + 14, w - 12, 6, (shown % 100) / 100, '#6ad0ff'); }
   if (e.type === 'levelup') {
     const u = e.unit; const w = Math.min(190, W - 12), h = 74, x = W / 2 - w / 2; const uy = toScreenY(tileY(u.y)), ts = TILE * BT.zoom; const y = uy < H / 2 ? Math.min(H - h - 8, uy + ts + 10) : Math.max(28, uy - h - 12); const k = Math.min(1, q.t / .25); const yy = Math.round(y + (1 - easeOut(k)) * -20);
@@ -1303,6 +1304,30 @@ function drawEventCard(q) {
 // fits), the turn counter follows, the team runs across under it, and everything leaves to the right.
 // Phase banner: a tilted band in the team colour sweeps in with speed lines, the phase name slams down (doubled when it
 // fits), the turn counter follows, the team runs across under it, and everything leaves to the right.
+// Capturing, as Advance Wars shows it: the building (in its old colours) beside a meter of its 20 points that counts down
+// as the Pokémon hops on it, one tick per point; when it reaches zero the banner changes hands in a flash, CAPTURED!
+// (or BASE TAKEN! for an HQ) stamps down and sparks fly.
+function drawCaptureCard(q) {
+  const e = q.ev, p = e.property, u = e.unit, W = VIEW.w, t = q.t * (BT.fast ? 1.8 : 1), total = WAR.capture, from = e.from || 0, to = e.progress;
+  const w = Math.min(236, W - 12), h = 72, x = Math.round(W / 2 - w / 2), k = REDUCED ? 1 : Math.min(1, t / .18), y = Math.round(24 - (1 - easeOutBack(k, 2)) * 14);
+  const run = clamp((t - .25) / .6, 0, 1), shown = Math.round(lerp(from, to, REDUCED ? 1 : run)), left = total - shown, flip = e.done && t > .95, hq = p.kind === 'hq';
+  if (shown > (q.ticks || 0) + from && !REDUCED) { q.ticks = shown - from; Audio.sfx('tick'); }
+  if (flip && !q.flipped) { q.flipped = true; Audio.sfx(hq ? 'levelup' : 'chime'); if (!REDUCED) { shake(hq ? 5 : 2); flashScreen('#ffffff', .25); spawnParts(p.x * TILE + TILE / 2, p.y * TILE + 8, hq ? 40 : 22, [teamColor(u.team), teamColorL(u.team), '#ffd24a', '#ffffff'], { speed: 90, life: .9, grav: 50 }); } }
+  const owner = flip ? u.team : e.prevOwner, col = teamColor(u.team), head = flip ? (hq ? (u.team === 0 ? 'BASE TAKEN!' : 'YOUR BASE FELL!') : 'CAPTURED!') : 'CAPTURING';
+  ctx.globalAlpha = Math.min(1, k * 2); const pan = panel(x, y, w, h, { header: head, headerRight: fitLabel(p.name, w - textWidth(head) - 24), headerRightCol: flip ? UI.gold : UI.muted, headerFill: flip ? teamColorD(u.team) : '#2a2440' });
+  // the building, large, in its colours of the moment
+  const bx = x + 8, by = pan.cy + 1, img = tileImg(p.ch, (B.map.variants[p.y] || [])[p.x] || 0, 0, owner), pop = flip && !REDUCED ? Math.round(Math.sin(clamp((t - .95) / .25, 0, 1) * Math.PI) * 3) : 0;
+  rect(bx - 1, by - 1, 34, 34, UI.inset); ctx.drawImage(img, bx, by - pop, 32, 32); if (flip && t < 1.25 && !REDUCED) { ctx.globalAlpha = (1.25 - t) / .3; rect(bx, by, 32, 32, '#ffffff'); ctx.globalAlpha = 1; }
+  // the meter: 20 cells, the building's points left
+  const mx = bx + 42, mw = w - (mx - x) - 46, cw = mw / total; text('POINTS', mx, pan.cy + 1, UI.muted); textR(String(left), mx + mw, pan.cy + 1, left <= 5 ? UI.red : UI.ink);
+  for (let i = 0; i < total; i++) { const cx0 = Math.round(mx + i * cw), cx1 = Math.round(mx + (i + 1) * cw) - 1, on = i < left; rect(cx0, pan.cy + 11, cx1 - cx0, 8, UI.inset); if (on) { rect(cx0 + 1, pan.cy + 12, cx1 - cx0 - 2, 6, flip ? col : teamColor(e.prevOwner >= 0 ? e.prevOwner : 2)); hline(cx0 + 1, pan.cy + 12, cx1 - cx0 - 2, '#ffffff60'); } }
+  text(fitLabel(flip ? (hq ? (u.team === 0 ? 'Their base is yours!' : 'They took your base!') : u.name + ' took it for your side') : u.name + ' +' + (to - from) + (to < total ? ' · ' + (total - to) + ' to go, next turn' : ''), x + w - 44 - mx), mx, pan.cy + 23, flip ? UI.gold : UI.ink);
+  // the capturer hops on each point
+  requestAnim(u.num); const hop = REDUCED ? 0 : run < 1 ? Math.round(Math.abs(Math.sin(t * 16)) * 4) : flip ? Math.round(Math.abs(Math.sin(t * 7)) * 2) : 0, sx = x + w - 22;
+  ctx.save(); ctx.beginPath(); ctx.rect(x + w - 42, pan.cy - 4, 38, 40); ctx.clip(); if (animReady(u.num)) drawAnim(u.num, sx, pan.cy + 34 - hop, BT.time, { sx: .6, sy: .6 }); else drawMon(u.num, sx, pan.cy + 34 - hop, { outline: col }); ctx.restore();
+  ctx.globalAlpha = 1;
+  if (flip && !REDUCED) { const kk = clamp((t - .95) / .2, 0, 1), sc = 1 + (1 - easeOutBack(kk, 3)) * 1.5; ctx.save(); ctx.translate(Math.round(x + w / 2), y + h + 10); ctx.scale(sc, sc); bigC(hq ? 'BASE TAKEN!' : 'CAPTURED!', 0, -4, UI.gold, { outline: UI.inset }); ctx.restore(); }
+}
 // A commander's Ace falls: a band in the commander's colour, their portrait flinching, ACE DOWN! and what it costs.
 function drawAceDown(q) {
   const e = q.ev, c = coOf({ co: e.co, root: e.root }), W = VIEW.w, H = VIEW.h, t = q.t, dur = q.dur, out = t > dur - .25 ? easeIn((t - (dur - .25)) / .25) : 0, cy = Math.round(H * .38);
