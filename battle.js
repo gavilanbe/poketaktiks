@@ -737,6 +737,7 @@ function drawHUD() {
   if (BT.mode === 'target') drawForecast();
   if (BT.mode === 'catchTarget') drawCatchCard();
   if (BT.mode === 'idle' && B.lesson && !B.lesson.complete) drawCatchLesson(L);
+  drawCoach(L);
   if (BT.mode === 'skillTarget') drawSkillCard();
   if (BT.mode === 'unitinfo' && BT.info) { dimScreen(.3); drawUnitSheet(BT.info); }
   if (BT.mode === 'help') drawHelp();
@@ -808,6 +809,19 @@ function drawButtons(L) {
     if (BT.showDanger && (idle || m === 'move')) drawDangerLegend(bx, y + 2);
   }
   if (L.stack && BT.showDanger && (idle || m === 'move')) drawDangerLegend(4, L.top.y + L.top.h + 2);
+}
+// First-battle coach marks: during the opening turns of the first lesson a bouncing arrow points at the next Pokémon to
+// move and a bubble says what to do; in move mode the bubble explains the tiles. Nothing here changes the rules.
+function coachBubble(s, x, y) { const w = textWidth(s) + 10, bx = clamp(Math.round(x - w / 2), 4, VIEW.w - w - 4), by = clamp(Math.round(y), 4, VIEW.h - 16); rrect(bx + 1, by + 2, w, 12, UI.shadow, 2); rrect(bx, by, w, 12, UI.gold, 2); rrect(bx + 1, by + 1, w - 2, 10, '#fff6d0', 1); text(s, bx + 5, by + 3, '#3a2400'); }
+function drawCoach(L) {
+  if (!B || !B.lesson || B.turn > 2 || !isHuman(B.phase) || B.result || REDUCED && false) return;
+  const bob = REDUCED ? 0 : Math.round(Math.abs(Math.sin(BT.time * 5)) * 3);
+  if (BT.mode === 'idle') {
+    const u = alive(HT()).filter(v => !v.acted).sort((a, b) => (b.leader ? 1 : 0) - (a.leader ? 1 : 0))[0]; if (!u) return;
+    const sx = toScreenX(tileX(u.x) + TILE / 2), sy = toScreenY(tileY(u.y)) - 6 - bob; stampAt(sx - 3, sy - 6, ['OOOOOOO', 'OYYYYYO', '.OYYYO.', '..OYO..', '...O...'], { O: UI.inset, Y: UI.gold });
+    coachBubble(VIEW.touch ? 'Tap ' + u.name + ' to move it' : 'Select ' + u.name + ' (Z)', sx, sy - 22);
+  } else if (BT.mode === 'move' && BT.sel && !BT.dart) { const sx = toScreenX(tileX(BT.sel.x) + TILE / 2), sy = toScreenY(tileY(BT.sel.y) + TILE) + 6; coachBubble('Blue: where it can go · red: what it can hit', sx, sy); }
+  else if (BT.mode === 'target' && B.turn === 1 && !L.stack) { const r = forecastRect(); coachBubble((VIEW.touch ? 'Tap the target again' : 'Z') + ' to attack', r.x + r.w / 2, r.y + r.h + 18); }
 }
 // Danger overlay colours [fill, edge] per threat kind, and the recharge marker colour.
 const DANGER = { trainer: ['#b03030', '#ff8080'], wild: ['#b08a20', '#ffd24a'] };

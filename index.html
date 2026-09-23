@@ -1613,6 +1613,8 @@ const TYPE_ABBR = { Normal: 'NRM', Fire: 'FIR', Water: 'WTR', Electric: 'ELC', G
 // Type badge: `w` pixels wide (24 = three-letter code); w = 'auto' spells the type out and returns the width used.
 function typeBadge(t, x, y, w = 24) { const c = TYPE_COL[t] || '#888'; const full = w === 'auto'; if (full) w = textWidth(t.toUpperCase()) + 6; rrect(x, y, w, 9, shade(c, -.55), 1); rrect(x + 1, y + 1, w - 2, 7, c, 0); hline(x + 2, y + 1, w - 4, shade(c, .3)); hline(x + 2, y + 7, w - 4, shade(c, -.25)); textC(full || w >= 40 ? t.toUpperCase() : TYPE_ABBR[t] || t.slice(0, 3).toUpperCase(), x + w / 2, y + 1, '#ffffff', { shadow: shade(c, -.5) }); return w; }
 function miniBadge(label, col, x, y) { rrect(x, y, 15, 8, shade(col, -.55), 1); rrect(x + 1, y + 1, 13, 6, col, 0); hline(x + 2, y + 1, 11, shade(col, .3)); textC(label, x + 8, y + 1, '#ffffff', { shadow: shade(col, -.5) }); }
+// A badge sized to its label (miniBadge is fixed at 15 px); returns its width.
+function tagBadge(label, col, x, y) { const w = textWidth(label) + 5; rrect(x, y, w, 8, shade(col, -.55), 1); rrect(x + 1, y + 1, w - 2, 6, col, 0); hline(x + 2, y + 1, w - 4, shade(col, .3)); text(label, x + 3, y + 1, '#ffffff', { shadow: shade(col, -.5) }); return w; }
 function statusBadge(st, x, y) { const s = STATUS[st]; if (s) miniBadge(s.name, s.col, x, y); }
 function teamColor(team) { return team === 0 ? '#3d7dff' : team === 1 ? '#ff4b4b' : team === 2 ? '#e0c040' : '#40d060'; }
 function teamColorD(team) { return team === 0 ? '#1c3a8a' : team === 1 ? '#8a1c1c' : team === 2 ? '#7a6010' : '#1a6a30'; }
@@ -2984,6 +2986,7 @@ function drawHUD() {
   if (BT.mode === 'target') drawForecast();
   if (BT.mode === 'catchTarget') drawCatchCard();
   if (BT.mode === 'idle' && B.lesson && !B.lesson.complete) drawCatchLesson(L);
+  drawCoach(L);
   if (BT.mode === 'skillTarget') drawSkillCard();
   if (BT.mode === 'unitinfo' && BT.info) { dimScreen(.3); drawUnitSheet(BT.info); }
   if (BT.mode === 'help') drawHelp();
@@ -3055,6 +3058,19 @@ function drawButtons(L) {
     if (BT.showDanger && (idle || m === 'move')) drawDangerLegend(bx, y + 2);
   }
   if (L.stack && BT.showDanger && (idle || m === 'move')) drawDangerLegend(4, L.top.y + L.top.h + 2);
+}
+// First-battle coach marks: during the opening turns of the first lesson a bouncing arrow points at the next Pokémon to
+// move and a bubble says what to do; in move mode the bubble explains the tiles. Nothing here changes the rules.
+function coachBubble(s, x, y) { const w = textWidth(s) + 10, bx = clamp(Math.round(x - w / 2), 4, VIEW.w - w - 4), by = clamp(Math.round(y), 4, VIEW.h - 16); rrect(bx + 1, by + 2, w, 12, UI.shadow, 2); rrect(bx, by, w, 12, UI.gold, 2); rrect(bx + 1, by + 1, w - 2, 10, '#fff6d0', 1); text(s, bx + 5, by + 3, '#3a2400'); }
+function drawCoach(L) {
+  if (!B || !B.lesson || B.turn > 2 || !isHuman(B.phase) || B.result || REDUCED && false) return;
+  const bob = REDUCED ? 0 : Math.round(Math.abs(Math.sin(BT.time * 5)) * 3);
+  if (BT.mode === 'idle') {
+    const u = alive(HT()).filter(v => !v.acted).sort((a, b) => (b.leader ? 1 : 0) - (a.leader ? 1 : 0))[0]; if (!u) return;
+    const sx = toScreenX(tileX(u.x) + TILE / 2), sy = toScreenY(tileY(u.y)) - 6 - bob; stampAt(sx - 3, sy - 6, ['OOOOOOO', 'OYYYYYO', '.OYYYO.', '..OYO..', '...O...'], { O: UI.inset, Y: UI.gold });
+    coachBubble(VIEW.touch ? 'Tap ' + u.name + ' to move it' : 'Select ' + u.name + ' (Z)', sx, sy - 22);
+  } else if (BT.mode === 'move' && BT.sel && !BT.dart) { const sx = toScreenX(tileX(BT.sel.x) + TILE / 2), sy = toScreenY(tileY(BT.sel.y) + TILE) + 6; coachBubble('Blue: where it can go · red: what it can hit', sx, sy); }
+  else if (BT.mode === 'target' && B.turn === 1 && !L.stack) { const r = forecastRect(); coachBubble((VIEW.touch ? 'Tap the target again' : 'Z') + ' to attack', r.x + r.w / 2, r.y + r.h + 18); }
 }
 // Danger overlay colours [fill, edge] per threat kind, and the recharge marker colour.
 const DANGER = { trainer: ['#b03030', '#ff8080'], wild: ['#b08a20', '#ffd24a'] };
@@ -3676,7 +3692,7 @@ function duelPanel(q, u, L, dy) {
   text(name, tx, y, ko ? UI.dim : UI.ink); textR('Lv' + v.level, P.x + P.w - 6, y, ko ? UI.dim : UI.gold);
   const ratio = clamp(hp / v.maxHp, 0, 1); const hs = String(Math.max(0, hp)), hw = textWidth(hs, BIG) + textWidth('/' + v.maxHp) + 3;
   bar(tx, y + 11, P.w - 37 - hw - 6, 6, ratio, hpColor(ratio), UI.hpBack, { notch: true }); bigText(hs, P.x + P.w - 6 - hw, y + 9, hp <= 0 ? UI.red : UI.ink, { outline: '#000' }); textR('/' + v.maxHp, P.x + P.w - 6, y + 11, UI.muted);
-  let bx = tx; miniBadge(duelTeamTag(u), col, bx, y + 20); bx += 18; v.types.forEach((tp, i) => { typeBadge(tp, bx, y + 19, 24); bx += 26; }); if (v.status) { statusBadge(v.status, bx, y + 20); bx += 17; } if (v.brace) { miniBadge('BRC', BRACE_COL, bx, y + 20); bx += 17; } else if (v.root) { miniBadge('RT', ROOT_COL, bx, y + 20); bx += 17; }
+  let bx = tx; bx += tagBadge(duelTeamTag(u), col, bx, y + 20) + 3; v.types.forEach((tp, i) => { typeBadge(tp, bx, y + 19, 24); bx += 26; }); if (v.status) { statusBadge(v.status, bx, y + 20); bx += 17; } if (v.brace) { miniBadge('BRC', BRACE_COL, bx, y + 20); bx += 17; } else if (v.root) { miniBadge('RT', ROOT_COL, bx, y + 20); bx += 17; }
   const stars = Math.min(4, Math.round(terrainDef(t, u) / 10)); const ds = 'DEF ' + '★'.repeat(stars) + (stars ? '' : '-'); textR(ds, P.x + P.w - 6, y + 20, stars ? UI.gold : UI.dim);
 }
 function drawDuel(q) {
@@ -4187,15 +4203,19 @@ function drawTerritoryProperties() {
   }
 }
 function territoryOwnerAt(x, y) { const p = territoryProperty(x, y); return p ? p.owner : null; }
-// Turn card in Territory: TURN and READY in the header band; points and income, centers held and the hold race; then
-// the property under the cursor or the objective.
+// Conquest's objective card: TURN and a pip per Pokémon that can still act; command points with their income, the three
+// middle centers as tiny buildings in their owner's colour; the hold race as pips (yours against the foe's); then the
+// center under the cursor, or the goal.
+function miniCenter(x, y, owner) { const roof = owner === 0 ? '#3f6fd6' : owner === 1 ? '#e04848' : '#a8a8b4'; rect(x, y + 3, 7, 4, '#f2eee6'); outline(x, y + 3, 7, 4, UI.inset); rect(x - 1, y + 1, 9, 3, UI.inset); rect(x, y + 1, 7, 2, roof); px(x + 3, y, UI.inset); px(x + 3, y + 5, '#6a7aa8'); }
 function drawTerritoryTurn(r) {
-  const t = HT(), S = B.territory; hudPanel(r.x, r.y, r.w, r.h, { header: 'TURN ' + B.turn + '/' + TERRITORY.turns, headerRight: 'READY ' + alive(t).filter(u => !u.acted).length + '/' + alive(t).length, headerRightCol: UI.green, headerFill: teamColorD(t) });
-  const y0 = r.y + 17; text('POINTS ' + S.points[t], r.x + 5, y0, UI.gold); text('+' + territoryIncome(t) + '/turn', r.x + 5 + textWidth('POINTS ' + S.points[t]) + 4, y0, UI.muted);
-  textR('CENTERS ' + territoryControl(t) + '/3', r.x + r.w - 5, y0, UI.ink);
-  const hold = 'HOLD ' + S.hold[t] + '/3', foe = 'FOE ' + S.hold[1 - t] + '/3'; if (r.h >= 40) { text(hold, r.x + 5, y0 + 9, S.hold[t] ? UI.green : UI.muted); textR(foe, r.x + r.w - 5, y0 + 9, S.hold[1 - t] ? UI.red : UI.muted); }
-  const p = territoryProperty(BT.cx, BT.cy); let s = p ? p.name + ' · ' + (p.owner < 0 ? 'neutral' : p.owner === t ? 'yours' : 'enemy') + (p.progress ? ' · ' + p.progress + '/20' : '') : 'Take the enemy HQ or hold 2 centers';
-  while (textWidth(s) > r.w - 10) s = s.slice(0, -1); text(s, r.x + 5, r.h >= 40 ? y0 + 18 : y0 + 9, p ? UI.gold : UI.muted);
+  const t = HT(), S = B.territory, mine = alive(t), ready = mine.filter(u => !u.acted).length, pips = mine.length <= 6;
+  hudPanel(r.x, r.y, r.w, r.h, { header: 'TURN ' + B.turn + '/' + TERRITORY.turns, headerRight: pips ? null : 'READY ' + ready + '/' + mine.length, headerRightCol: UI.green, headerFill: teamColorD(t) });
+  if (pips) mine.forEach((u, i) => { const px0 = r.x + r.w - 7 - (mine.length - 1 - i) * 6, py0 = r.y + 8; circle(px0, py0, 2, UI.inset); if (!u.acted) { circle(px0, py0, 2, UI.green); px(px0 - 1, py0 - 1, '#d8ffe0'); } else circle(px0, py0, 1, shade(teamColorD(t), -.3)); });
+  const y1 = r.y + 16; drawBall(r.x + 9, y1 + 3, UI.gold, 3); const cp = 'CP ' + S.points[t]; text(cp, r.x + 15, y1, UI.gold); text('+' + territoryIncome(t), r.x + 18 + textWidth(cp), y1, UI.muted);
+  const mids = S.properties.filter(p => p.hq < 0); mids.forEach((p, i) => miniCenter(r.x + r.w - 12 - (mids.length - 1 - i) * 10, y1, p.owner));
+  if (r.h >= 32) { const y2 = r.y + 26; text('HOLD', r.x + 6, y2, UI.muted); const hx = r.x + 10 + textWidth('HOLD'); for (let k = 0; k < TERRITORY.hold; k++) { const on = S.hold[t] > k; rect(hx + k * 7, y2 + 1, 5, 5, UI.inset); if (on) rect(hx + 1 + k * 7, y2 + 2, 3, 3, UI.green); }
+    const fx0 = r.x + r.w - 6 - TERRITORY.hold * 7; text(B.versus ? 'P' + (2 - t) : 'FOE', fx0 - textWidth('FOE') - 4, y2, UI.muted); for (let k = 0; k < TERRITORY.hold; k++) { const on = S.hold[1 - t] > k; rect(fx0 + k * 7, y2 + 1, 5, 5, UI.inset); if (on) rect(fx0 + 1 + k * 7, y2 + 2, 3, 3, UI.red); } }
+  if (r.h >= 44) { const p = territoryProperty(BT.cx, BT.cy); let s2 = p ? p.name + ' · ' + (p.owner < 0 ? 'neutral' : p.owner === t ? 'yours' : 'enemy') + (p.progress ? ' · ' + p.progress + '/20' : '') : 'Take the HQ or hold 2 of 3'; text(fitLabel(s2, r.w - 12), r.x + 6, r.y + 34, p ? UI.gold : UI.muted); }
 }
 function openTerritoryReserves(p) {
   BT.sel = null; BT.autoEnd = 0; BT.mode = 'endmenu';
@@ -5110,7 +5130,7 @@ function journeyDraw() {
   if (pw) { const px0 = x + 10, py0 = p.cy + 2, ph = Math.min(70, h - (p.cy - y) - 36); portraitBg(px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); requestAnim(cap); ctx.save(); ctx.beginPath(); ctx.rect(px0, py0, pw, ph); ctx.clip(); if (animReady(cap)) drawAnim(cap, px0 + pw / 2, py0 + ph - 3, t); else drawMon(cap, px0 + pw / 2, py0 + ph - 3, { outline: teamColor(0) }); ctx.restore(); if (SAVE) drawCrown(px0 + 2, py0 + 2); }
   let yy = p.cy + 4; const tx = x + 10 + (pw ? pw + 8 : 0);
   rows.forEach((ls, i) => { const k = REDUCED ? 1 : clamp((t - .25 - i * .18) / .25, 0, 1); if (k <= 0) { yy += ls.length * 10 + 5; return; } ctx.globalAlpha = k; const off = Math.round((1 - easeOut(k)) * 16);
-    circle(tx + 4 - off, yy + 3, 5, UI.inset); circle(tx + 4 - off, yy + 3, 4, UI.gold); textC(String(i + 1), tx + 5 - off, yy, UI.goldDark);
+    rrect(tx - 1 - off, yy - 2, 11, 11, UI.inset, 1); rrect(tx - off, yy - 1, 9, 9, UI.gold, 1); hline(tx + 1 - off, yy - 1, 7, '#fff2b0'); textC(String(i + 1), tx + 5 - off, yy, UI.goldDark);
     ls.forEach(l => { text(l, tx + 13 - off, yy, UI.ink); yy += 10; }); yy += 5; ctx.globalAlpha = 1; });
   unfoldEnd(tok);
   const ready = REDUCED || t > .25 + rows.length * .18, pulse = ready && !REDUCED ? Math.round(Math.abs(Math.sin(t * 4)) * 1) : 0;

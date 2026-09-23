@@ -176,15 +176,19 @@ function drawTerritoryProperties() {
   }
 }
 function territoryOwnerAt(x, y) { const p = territoryProperty(x, y); return p ? p.owner : null; }
-// Turn card in Territory: TURN and READY in the header band; points and income, centers held and the hold race; then
-// the property under the cursor or the objective.
+// Conquest's objective card: TURN and a pip per Pokémon that can still act; command points with their income, the three
+// middle centers as tiny buildings in their owner's colour; the hold race as pips (yours against the foe's); then the
+// center under the cursor, or the goal.
+function miniCenter(x, y, owner) { const roof = owner === 0 ? '#3f6fd6' : owner === 1 ? '#e04848' : '#a8a8b4'; rect(x, y + 3, 7, 4, '#f2eee6'); outline(x, y + 3, 7, 4, UI.inset); rect(x - 1, y + 1, 9, 3, UI.inset); rect(x, y + 1, 7, 2, roof); px(x + 3, y, UI.inset); px(x + 3, y + 5, '#6a7aa8'); }
 function drawTerritoryTurn(r) {
-  const t = HT(), S = B.territory; hudPanel(r.x, r.y, r.w, r.h, { header: 'TURN ' + B.turn + '/' + TERRITORY.turns, headerRight: 'READY ' + alive(t).filter(u => !u.acted).length + '/' + alive(t).length, headerRightCol: UI.green, headerFill: teamColorD(t) });
-  const y0 = r.y + 17; text('POINTS ' + S.points[t], r.x + 5, y0, UI.gold); text('+' + territoryIncome(t) + '/turn', r.x + 5 + textWidth('POINTS ' + S.points[t]) + 4, y0, UI.muted);
-  textR('CENTERS ' + territoryControl(t) + '/3', r.x + r.w - 5, y0, UI.ink);
-  const hold = 'HOLD ' + S.hold[t] + '/3', foe = 'FOE ' + S.hold[1 - t] + '/3'; if (r.h >= 40) { text(hold, r.x + 5, y0 + 9, S.hold[t] ? UI.green : UI.muted); textR(foe, r.x + r.w - 5, y0 + 9, S.hold[1 - t] ? UI.red : UI.muted); }
-  const p = territoryProperty(BT.cx, BT.cy); let s = p ? p.name + ' · ' + (p.owner < 0 ? 'neutral' : p.owner === t ? 'yours' : 'enemy') + (p.progress ? ' · ' + p.progress + '/20' : '') : 'Take the enemy HQ or hold 2 centers';
-  while (textWidth(s) > r.w - 10) s = s.slice(0, -1); text(s, r.x + 5, r.h >= 40 ? y0 + 18 : y0 + 9, p ? UI.gold : UI.muted);
+  const t = HT(), S = B.territory, mine = alive(t), ready = mine.filter(u => !u.acted).length, pips = mine.length <= 6;
+  hudPanel(r.x, r.y, r.w, r.h, { header: 'TURN ' + B.turn + '/' + TERRITORY.turns, headerRight: pips ? null : 'READY ' + ready + '/' + mine.length, headerRightCol: UI.green, headerFill: teamColorD(t) });
+  if (pips) mine.forEach((u, i) => { const px0 = r.x + r.w - 7 - (mine.length - 1 - i) * 6, py0 = r.y + 8; circle(px0, py0, 2, UI.inset); if (!u.acted) { circle(px0, py0, 2, UI.green); px(px0 - 1, py0 - 1, '#d8ffe0'); } else circle(px0, py0, 1, shade(teamColorD(t), -.3)); });
+  const y1 = r.y + 16; drawBall(r.x + 9, y1 + 3, UI.gold, 3); const cp = 'CP ' + S.points[t]; text(cp, r.x + 15, y1, UI.gold); text('+' + territoryIncome(t), r.x + 18 + textWidth(cp), y1, UI.muted);
+  const mids = S.properties.filter(p => p.hq < 0); mids.forEach((p, i) => miniCenter(r.x + r.w - 12 - (mids.length - 1 - i) * 10, y1, p.owner));
+  if (r.h >= 32) { const y2 = r.y + 26; text('HOLD', r.x + 6, y2, UI.muted); const hx = r.x + 10 + textWidth('HOLD'); for (let k = 0; k < TERRITORY.hold; k++) { const on = S.hold[t] > k; rect(hx + k * 7, y2 + 1, 5, 5, UI.inset); if (on) rect(hx + 1 + k * 7, y2 + 2, 3, 3, UI.green); }
+    const fx0 = r.x + r.w - 6 - TERRITORY.hold * 7; text(B.versus ? 'P' + (2 - t) : 'FOE', fx0 - textWidth('FOE') - 4, y2, UI.muted); for (let k = 0; k < TERRITORY.hold; k++) { const on = S.hold[1 - t] > k; rect(fx0 + k * 7, y2 + 1, 5, 5, UI.inset); if (on) rect(fx0 + 1 + k * 7, y2 + 2, 3, 3, UI.red); } }
+  if (r.h >= 44) { const p = territoryProperty(BT.cx, BT.cy); let s2 = p ? p.name + ' · ' + (p.owner < 0 ? 'neutral' : p.owner === t ? 'yours' : 'enemy') + (p.progress ? ' · ' + p.progress + '/20' : '') : 'Take the HQ or hold 2 of 3'; text(fitLabel(s2, r.w - 12), r.x + 6, r.y + 34, p ? UI.gold : UI.muted); }
 }
 function openTerritoryReserves(p) {
   BT.sel = null; BT.autoEnd = 0; BT.mode = 'endmenu';

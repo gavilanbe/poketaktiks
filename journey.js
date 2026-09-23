@@ -15,7 +15,7 @@ function journeyDraw() {
   if (pw) { const px0 = x + 10, py0 = p.cy + 2, ph = Math.min(70, h - (p.cy - y) - 36); portraitBg(px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); requestAnim(cap); ctx.save(); ctx.beginPath(); ctx.rect(px0, py0, pw, ph); ctx.clip(); if (animReady(cap)) drawAnim(cap, px0 + pw / 2, py0 + ph - 3, t); else drawMon(cap, px0 + pw / 2, py0 + ph - 3, { outline: teamColor(0) }); ctx.restore(); if (SAVE) drawCrown(px0 + 2, py0 + 2); }
   let yy = p.cy + 4; const tx = x + 10 + (pw ? pw + 8 : 0);
   rows.forEach((ls, i) => { const k = REDUCED ? 1 : clamp((t - .25 - i * .18) / .25, 0, 1); if (k <= 0) { yy += ls.length * 10 + 5; return; } ctx.globalAlpha = k; const off = Math.round((1 - easeOut(k)) * 16);
-    circle(tx + 4 - off, yy + 3, 5, UI.inset); circle(tx + 4 - off, yy + 3, 4, UI.gold); textC(String(i + 1), tx + 5 - off, yy, UI.goldDark);
+    rrect(tx - 1 - off, yy - 2, 11, 11, UI.inset, 1); rrect(tx - off, yy - 1, 9, 9, UI.gold, 1); hline(tx + 1 - off, yy - 1, 7, '#fff2b0'); textC(String(i + 1), tx + 5 - off, yy, UI.goldDark);
     ls.forEach(l => { text(l, tx + 13 - off, yy, UI.ink); yy += 10; }); yy += 5; ctx.globalAlpha = 1; });
   unfoldEnd(tok);
   const ready = REDUCED || t > .25 + rows.length * .18, pulse = ready && !REDUCED ? Math.round(Math.abs(Math.sin(t * 4)) * 1) : 0;

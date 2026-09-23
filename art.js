@@ -654,6 +654,8 @@ const TYPE_ABBR = { Normal: 'NRM', Fire: 'FIR', Water: 'WTR', Electric: 'ELC', G
 // Type badge: `w` pixels wide (24 = three-letter code); w = 'auto' spells the type out and returns the width used.
 function typeBadge(t, x, y, w = 24) { const c = TYPE_COL[t] || '#888'; const full = w === 'auto'; if (full) w = textWidth(t.toUpperCase()) + 6; rrect(x, y, w, 9, shade(c, -.55), 1); rrect(x + 1, y + 1, w - 2, 7, c, 0); hline(x + 2, y + 1, w - 4, shade(c, .3)); hline(x + 2, y + 7, w - 4, shade(c, -.25)); textC(full || w >= 40 ? t.toUpperCase() : TYPE_ABBR[t] || t.slice(0, 3).toUpperCase(), x + w / 2, y + 1, '#ffffff', { shadow: shade(c, -.5) }); return w; }
 function miniBadge(label, col, x, y) { rrect(x, y, 15, 8, shade(col, -.55), 1); rrect(x + 1, y + 1, 13, 6, col, 0); hline(x + 2, y + 1, 11, shade(col, .3)); textC(label, x + 8, y + 1, '#ffffff', { shadow: shade(col, -.5) }); }
+// A badge sized to its label (miniBadge is fixed at 15 px); returns its width.
+function tagBadge(label, col, x, y) { const w = textWidth(label) + 5; rrect(x, y, w, 8, shade(col, -.55), 1); rrect(x + 1, y + 1, w - 2, 6, col, 0); hline(x + 2, y + 1, w - 4, shade(col, .3)); text(label, x + 3, y + 1, '#ffffff', { shadow: shade(col, -.5) }); return w; }
 function statusBadge(st, x, y) { const s = STATUS[st]; if (s) miniBadge(s.name, s.col, x, y); }
 function teamColor(team) { return team === 0 ? '#3d7dff' : team === 1 ? '#ff4b4b' : team === 2 ? '#e0c040' : '#40d060'; }
 function teamColorD(team) { return team === 0 ? '#1c3a8a' : team === 1 ? '#8a1c1c' : team === 2 ? '#7a6010' : '#1a6a30'; }

@@ -254,7 +254,7 @@ function duelPanel(q, u, L, dy) {
   text(name, tx, y, ko ? UI.dim : UI.ink); textR('Lv' + v.level, P.x + P.w - 6, y, ko ? UI.dim : UI.gold);
   const ratio = clamp(hp / v.maxHp, 0, 1); const hs = String(Math.max(0, hp)), hw = textWidth(hs, BIG) + textWidth('/' + v.maxHp) + 3;
   bar(tx, y + 11, P.w - 37 - hw - 6, 6, ratio, hpColor(ratio), UI.hpBack, { notch: true }); bigText(hs, P.x + P.w - 6 - hw, y + 9, hp <= 0 ? UI.red : UI.ink, { outline: '#000' }); textR('/' + v.maxHp, P.x + P.w - 6, y + 11, UI.muted);
-  let bx = tx; miniBadge(duelTeamTag(u), col, bx, y + 20); bx += 18; v.types.forEach((tp, i) => { typeBadge(tp, bx, y + 19, 24); bx += 26; }); if (v.status) { statusBadge(v.status, bx, y + 20); bx += 17; } if (v.brace) { miniBadge('BRC', BRACE_COL, bx, y + 20); bx += 17; } else if (v.root) { miniBadge('RT', ROOT_COL, bx, y + 20); bx += 17; }
+  let bx = tx; bx += tagBadge(duelTeamTag(u), col, bx, y + 20) + 3; v.types.forEach((tp, i) => { typeBadge(tp, bx, y + 19, 24); bx += 26; }); if (v.status) { statusBadge(v.status, bx, y + 20); bx += 17; } if (v.brace) { miniBadge('BRC', BRACE_COL, bx, y + 20); bx += 17; } else if (v.root) { miniBadge('RT', ROOT_COL, bx, y + 20); bx += 17; }
   const stars = Math.min(4, Math.round(terrainDef(t, u) / 10)); const ds = 'DEF ' + '★'.repeat(stars) + (stars ? '' : '-'); textR(ds, P.x + P.w - 6, y + 20, stars ? UI.gold : UI.dim);
 }
 function drawDuel(q) {
