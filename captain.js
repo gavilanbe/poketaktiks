@@ -113,38 +113,14 @@ function aiPower(team) {
   return activatePower(team, superPower);
 }
 
-// Outposts use the same 20-point, HP-scaled capture as Territory. Campaign
-// outposts grant team charge and owned healing; Territory also has an economy.
-function campaignProperty(x, y) { return B && B.outposts && B.outposts.find(p => p.x === x && p.y === y) || null; }
-function boardProperty(x, y) { return B && B.territory ? territoryProperty(x, y) : campaignProperty(x, y); }
-function campaignCaptureBlock(u, from = u) {
-  const p = from && campaignProperty(from.x, from.y);
-  if (!u || u.hp <= 0 || u.team > 1 || u.acted || u.status === 'frz' || u.recharge) return 'Unit not ready';
-  return !p || p.owner === u.team ? 'Stand on another outpost' : null;
-}
-function settleOutposts() {
-  for (const p of B.outposts || []) if (p.captor != null) {
-    const u = B.units.find(u => u.id === p.captor && u.hp > 0);
-    if (!u || u.x !== p.x || u.y !== p.y || u.team === p.owner) { p.captor = null; p.progress = 0; }
-  }
-}
-function boardCapture(u) {
-  if (B.territory) return territoryCapture(u);
-  if (campaignCaptureBlock(u)) return null;
-  settleOutposts(); const p = campaignProperty(u.x, u.y);
-  if (p.captor !== u.id) { p.captor = u.id; p.progress = 0; }
-  p.progress = Math.min(20, p.progress + territoryCaptureGain(u));
-  const done = p.progress >= 20;
-  if (done) { p.owner = u.team; p.captor = null; p.progress = 0; powerCharge(u.team, 20); if (p.goal && u.team === 0) B.seized = true; }
-  u.acted = u.moved = true;
-  return { type: 'property', unit: u, property: p, done, progress: p.progress };
-}
-function campaignCaptureChoice(u, combatScore) {
-  if (!B.outposts || !B.outposts.length || u.team > 1) return null;
+// A scripted unit (a guard, a boss's escort) still takes a property within its reach when that beats its best attack:
+// the capture choice the campaign's outposts always had, now over every war property.
+function warCaptureChoice(u, combatScore) {
+  if (!B.war || u.team > 1 || !B.war.props.some(p => p.owner !== u.team)) return null;
   let best = null, score = Math.max(12, combatScore == null ? 12 : combatScore);
   for (const n of reachable(u).values()) {
-    if (!canStand(u, n.x, n.y) || campaignCaptureBlock(u, n)) continue;
-    const p = campaignProperty(n.x, n.y); const value = 28 + (p.captor === u.id ? p.progress : 0) + (p.goal ? 12 : 0);
+    if (!canStand(u, n.x, n.y)) continue; const p = warProperty(n.x, n.y); if (!p || warCaptureBlock(u, p, n)) continue;
+    const value = 28 + (p.captor === u.id ? p.progress : 0) + (p.goal ? 12 : 0) + (p.kind === 'hq' ? 20 : 0);
     if (value > score) { score = value; best = { x: n.x, y: n.y, capture: true }; }
   }
   return best;
@@ -158,9 +134,7 @@ function captureChance(target, ball) {
   return clamp(p, .05, .97);
 }
 function initCampaignLessons(mapDef, opts) {
-  B.outposts = (mapDef.outposts || []).map(p => Object.assign({ owner: -1, captor: null, progress: 0 }, p));
   B.lesson = null;
-  if (B.outposts.length) B.map.ownerAt = (x, y) => { const p = campaignProperty(x, y); return p ? p.owner : null; };
   if (opts.lesson) {
     const u = B.units.find(v => v.team === 2 && v.num === 10);
     if (u) { u.ai = 'stay'; B.lesson = { targetId: u.id, complete: false }; }

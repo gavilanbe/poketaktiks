@@ -78,8 +78,9 @@ function startBattle(mapDef, party, bag, opts = {}) {
   // one: enemies were just numbered 1..N, and a duplicate id would make the duel scene overlay both sides.
   if (opts.territory) territoryInit(opts.captains);
   const fresh = { acted: false, status: null, recharge: 0, cd: 0, brace: 0, root: 0, id: 0 }; // battle-temporary state never crosses encounters (suspend keeps it)
-  party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus ? 1 : BOND_HP })); u.hp = u.maxHp; u.pid = p.pid; u.leader = i === 0; B.units.push(u); });
-  if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fx.facing = -1; B.units.push(u); });
+  party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus ? 1 : BOND_HP })); u.hp = u.maxHp; u.pid = p.pid; u.leader = i === 0; u.fromBox = true; B.units.push(u); });
+  if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fromBox = true; u.fx.facing = -1; B.units.push(u); });
+  if (!opts.territory) warSetup(mapDef, opts);
   initBattleCaptains(opts); initCampaignLessons(mapDef, opts);
   BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.autoEnd = 0; BT.dart = false; BT.log = []; BT.showDanger = false; BT.hpShow.clear();
   for (const u of B.units) requestBigSprite(u.num); // warm the duel scene's sprites; nothing waits on them
@@ -88,19 +89,29 @@ function startBattle(mapDef, party, bag, opts = {}) {
   Audio.playMusic(map.music);
   if (!opts.defer) beginPhase(0, true);
 }
+// Every battle is a war (war.js): properties from the map, funds, and each side's Box. The Pokémon a side brought onto
+// the map belong to its Box (they return to it when they faint); opts.box / opts.box2 add the ones waiting in the PC
+// (the rest of a campaign collection, the rest of a Versus draft); the chapter's roster fills the enemy's.
+function warSetup(mapDef, opts) {
+  warInit(mapDef, { war: Object.assign({ centers: opts.versus || opts.skirmish ? -1 : 0 }, opts.war || {}) });
+  for (const u of B.units) if (u.fromBox && u.team <= 1) { const e = warEntry({ num: u.num, level: u.level, data: serializeUnit(u), pid: u.pid }); e.state = 'field'; e.unitId = u.id; B.war.box[u.team].push(e); }
+  [opts.box || [], opts.box2 || []].forEach((list, team) => { for (const d of list) B.war.box[team].push(warEntry({ data: d, pid: d.pid })); });
+}
+// Can a side still play a phase with nothing on the map? Only if it can deploy.
+function warCanPlay(team) { return !!(B.war && team <= 1 && warDeploySites(team).length && B.war.box[team].some(e => e.state === 'box')); }
+function warHasBox(team) { return !!(B && B.war && team <= 1 && B.war.box[team].length && warDeploySites(team).length); }
 // first: the battle's opening phase (no turn increment). resumed: the phase comes from a suspend save,
 // which was written after upkeep already ran, so heals, ticks and recharges must not apply again.
 function beginPhase(team, first, resumed = false) {
   B.phase = team;
-  if (B.territory && team === 0 && !first && !resumed) B.turn++;
+  if (team === 0 && !first && !resumed) { B.turn++; if (!B.territory && checkObjective()) { endBattle(); return; } }
   const ev = resumed ? [] : upkeep(team);
   if (B.versus && !resumed) { const hv = versusPhaseStart(team); if (hv && B.hill) floatText(B.hill.x * TILE + TILE / 2, B.hill.y * TILE - 8, 'HILL ' + hv.score + '/' + B.hill.need + ' · ' + teamName(team), teamColorL(team), { big: true, life: 1.6, outline: '#000' }); if (checkObjective()) { endBattle(); return; } }
   if (B.fog) refreshVision(team);
-  if (B.territory && !resumed) { territoryUpkeep(team); if (checkObjective()) { endBattle(); return; } if (!isHuman(team)) for (const u of territoryAiDeploy(team)) ev.push({ type: 'spawn', unit: u }); }
-  if (team === 0 && !first && !B.territory) { B.turn++; if (checkObjective()) { endBattle(); return; } }
+  if (B.war && !resumed) { warUpkeep(team); if (checkObjective()) { endBattle(); return; } if (!isHuman(team)) for (const u of warAiDeploy(team)) { u.ai = 'war'; ev.push({ type: 'spawn', unit: u, deploy: true }); } }
   if (team === 0 && !B.versus && !resumed) { saveSuspend(); }
   const teamsPresent = [0, 1, 2, 3].filter(t => alive(t).length);
-  if (!teamsPresent.includes(team) && team !== 0 && !(B.territory && team === 1)) { nextPhase(); return; }
+  if (!teamsPresent.includes(team) && team !== 0 && !warCanPlay(team)) { nextPhase(); return; }
   // reinforcements at the start of the enemy phase
   if (team === 1) for (const u of spawnReinforcements()) ev.push({ type: 'spawn', unit: u });
   const label = phaseLabel(team);
@@ -114,7 +125,7 @@ function beginPhase(team, first, resumed = false) {
 function spawnReinforcements() { const out = []; for (const r of B.map.reinforce) if (r.turn === B.turn && !r.done) { r.done = true; for (const d of r.units) { if (unitAt(d.x, d.y)) continue; const u = makeUnit(d.mon, d.level, d.team == null ? 1 : d.team, { x: d.x, y: d.y, ai: d.ai || 'aggro', boss: d.boss }); B.units.push(u); out.push(u); requestBigSprite(u.num); } } return out; }
 function nextPhase() {
   if (checkObjective()) { endBattle(); return; }
-  let t = B.phase; for (let i = 0; i < 4; i++) { t = (t + 1) % 4; if (t === 0 || alive(t).length || (B.territory && t === 1)) break; }
+  let t = B.phase; for (let i = 0; i < 4; i++) { t = (t + 1) % 4; if (t === 0 || alive(t).length || warCanPlay(t)) break; }
   beginPhase(t, false);
 }
 function endBattle() { BT.mode = 'end'; BT.endTimer = 0; Audio.stopMusic(); const won = B.result === 'win' || B.result === 'p1' || B.result === 'p2'; Audio.sfx(won ? 'win' : 'lose'); if (won) Audio.playMusic('win'); }
@@ -151,7 +162,11 @@ function setupEvent(q) {
     case 'thaw': floatText(ux(e.unit), uy(e.unit) - 8, 'Thawed!', '#98d8f8'); break;
     case 'recharge': q.dur = BT.fast ? .3 : .6; if (e.done && !unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); floatText(ux(e.unit), uy(e.unit) - 8, e.done ? 'Recharging...' : 'Must recharge!', RECHARGE_COL, { outline: '#000' }); break;
     case 'dot': Audio.sfx(e.kind === 'brn' ? 'burn' : 'poison'); shake(1); floatText(ux(e.unit), uy(e.unit), '-' + e.amount, e.kind === 'psn' ? '#d080ff' : '#ff9040'); spawnParts(ux(e.unit), uy(e.unit) + 8, 8, e.kind === 'psn' ? ['#b050d0', '#7030a0'] : ['#ff8030', '#ffd040'], { speed: 30, grav: -50, life: .7 }); if (!unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); break;
-    case 'spawn': q.dur = BT.fast ? .3 : .6; centerCam(e.unit.x, e.unit.y); Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 8, 12, ['#ffffff', '#ff4b4b'], { speed: 50, life: .5, grav: 0 }); floatText(ux(e.unit), uy(e.unit) - 10, 'Reinforcements!', UI.red); break;
+    case 'spawn': q.dur = BT.fast ? .3 : e.deploy ? .8 : .6; centerCam(e.unit.x, e.unit.y);
+      if (e.deploy) { // out of the PC: a Poké Ball pops open on the center, a flash in the side's colour, "Go, Pidgey!"
+        const c = teamColorL(e.unit.team); Audio.sfx('caught'); e.unit.fx.sy = .5; e.unit.fx.sx = 1.4; spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 26, life: .5, col: c }); spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 14, life: .4, col: '#ffffff', delay: .06 }); spawnSprite('flash', ux(e.unit), uy(e.unit) + 6, { size: 12, life: .25, col: '#ffffff' });
+        spawnParts(ux(e.unit), uy(e.unit) + 6, 18, [c, '#ffffff', '#ff5a5a'], { speed: 70, life: .6, grav: 60 }); floatText(ux(e.unit), uy(e.unit) - 12, 'Go, ' + e.unit.name + '!', c, { big: true, outline: '#000', life: 1.2 }); break; }
+      Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 8, 12, ['#ffffff', '#ff4b4b'], { speed: 50, life: .5, grav: 0 }); floatText(ux(e.unit), uy(e.unit) - 10, 'Reinforcements!', UI.red); break;
     case 'capture': q.dur = BT.fast ? 1.6 : 2.6 + e.shakes * .5; Audio.sfx('catch'); break;
     case 'miss': q.dur = BT.fast ? .3 : .55; break;
     case 'status': floatText(ux(e.unit), uy(e.unit) - 6, STATUS[e.status].text.toUpperCase() + '!', STATUS[e.status].col, { outline: '#000' }); Audio.sfx(e.status === 'par' ? 'para' : e.status === 'brn' ? 'burn' : 'poison'); break;
@@ -291,19 +306,35 @@ function pickupAt(u) {
 }
 function openActionMenu(u) {
   const items = []; const tg = seenTargets(u); if (tg.length) items.push({ id: 'attack', label: 'Attack', icon: 'sword', sub: tg.length + (tg.length > 1 ? ' targets' : ' target') });
-  const wildAdj = B.units.filter(v => v.hp > 0 && v.team === 2 && dist(v, u) === 1); const hasBall = wildAdj.some(isPracticeTarget) || (B.bag.pokeball || 0) > 0;
-  if (wildAdj.length && hasBall) items.push({ id: 'catch', label: 'Catch', icon: 'ball', sub: wildAdj.some(isPracticeTarget) ? 'Oak\'s practice ball' : 'Throw a Poké Ball · ' + B.bag.pokeball + ' left' });
-  if (B.map.objective.type === 'seize' && B.map.seize && u.x === B.map.seize.x && u.y === B.map.seize.y && !campaignProperty(u.x, u.y)) items.unshift({ id: 'seize', label: 'Seize', icon: 'flag', sub: 'Win the map!' });
-  if (B.territory && !territoryCaptureBlock(u)) { const p = territoryProperty(u.x, u.y); items.unshift({ id: 'property', label: 'Capture', icon: 'flag', sub: p.name + ': ' + (p.captor === u.id ? p.progress : 0) + '/20 + ' + territoryCaptureGain(u) + ' · leaving resets progress' }); }
-  if (!B.territory && !campaignCaptureBlock(u)) { const p = campaignProperty(u.x, u.y); items.unshift({ id: 'outpost', label: 'Capture', icon: 'flag', sub: p.name + ': ' + (p.captor === u.id ? p.progress : 0) + '/20 + ' + territoryCaptureGain(u) }); }
+  const wildAdj = B.units.filter(v => v.hp > 0 && v.team === 2 && dist(v, u) === 1); const canBuy = !!(B.war && B.war.funds[u.team] >= WAR.ball), hasBall = wildAdj.some(isPracticeTarget) || (B.bag.pokeball || 0) > 0 || canBuy;
+  if (wildAdj.length && hasBall) items.push({ id: 'catch', label: 'Catch', icon: 'ball', sub: wildAdj.some(isPracticeTarget) ? 'Oak\'s practice ball' : (B.bag.pokeball > 0 ? 'Throw a Poké Ball · ' + B.bag.pokeball + ' left' : 'Buy a Poké Ball · ' + money(WAR.ball)) + ' · the catch goes to your PC Box' });
+  if (B.map.objective.type === 'seize' && B.map.seize && u.x === B.map.seize.x && u.y === B.map.seize.y && !warProperty(u.x, u.y)) items.unshift({ id: 'seize', label: 'Seize', icon: 'flag', sub: 'Win the map!' });
+  if (B.war && !warCaptureBlock(u)) { const p = warProperty(u.x, u.y); items.unshift({ id: 'property', label: 'Capture', icon: 'flag', sub: p.name + ': ' + (p.captor === u.id ? p.progress : 0) + '/20 + ' + warCaptureGain(u) + (p.kind === 'hq' ? ' · take it and win' : p.kind === 'center' ? ' · pays ' + money(B.war.income) + ' a day' : '') + ' · leaving resets it' }); }
   // the role skill: always listed so the player learns it exists; greyed with the reason when it cannot be used now
   if (u.skill && !u.skill.passive) { const why = skillBlock(u); const n = why ? 0 : skillTargetsAt(u).length; items.push({ id: 'skill', label: u.skill.name, icon: 'skill', off: !!why, sub: why ? u.skill.menu + ' (' + why + ')' : u.skill.menu + (u.skill.target === 'self' ? '' : ' · ' + n + (n > 1 ? ' targets' : ' target')) + (u.skill.cd ? ' · ' + cooldownText(u.skill) : '') }); }
   items.push({ id: 'wait', label: 'Wait', icon: 'wait', sub: 'End this unit\'s turn' });
   BT.menu = { items, i: 0 }; BT.mode = 'menu'; BT.cx = u.x; BT.cy = u.y;
 }
+// The PC: deploy a Pokémon from the side's Box onto a free center it owns (without a center given, pick the center
+// first). Each row shows the price (FREE for a fresh catch); the footer says why a row is greyed.
+function openDeployMenu(p) {
+  const team = HT(), W = B.war; BT.sel = null; BT.autoEnd = 0; BT.mode = 'endmenu';
+  if (!p) { BT.menu = { title: 'DEPLOY WHERE?', i: 0, items: warDeploySites(team).map(q => ({ id: 'site:' + W.props.indexOf(q), label: q.name, icon: 'flag', off: !!unitAt(q.x, q.y), sub: unitAt(q.x, q.y) ? 'Occupied: move that Pokémon first' : 'Open the PC here · arrivals act next turn' })).concat([{ id: 'close', label: 'Close', icon: 'x' }]) }; return; }
+  BT.deploySite = p; BT.cx = p.x; BT.cy = p.y; keepCursorVisible();
+  BT.menu = { title: 'PC BOX · ' + money(W.funds[team]), i: 0, items: W.box[team].map((e, i) => { const why = warDeployBlock(team, i, p); return { id: 'deploy:' + i, icon: 'ball', label: (e.nick || DEX[e.num].name) + ' Lv' + e.level, right: e.state === 'field' ? 'OUT' : e.fresh ? 'FREE' : money(e.cost), off: !!why, sub: (why || p.name + ' · acts next turn') + ' · ' + ROLES[roleFor(DEX[e.num])].name + ' · ' + DEX[e.num].types.join('/') }; }).concat([{ id: 'close', label: 'Close', icon: 'x' }]) };
+  const k = BT.menu.items.findIndex(it => !it.off && it.id !== 'close'); if (k >= 0) BT.menu.i = k;
+}
+function warMenuAction(it) {
+  if (!B.war || !(it.id === 'pc' || it.id.startsWith('site:') || it.id.startsWith('deploy:'))) return false;
+  if (it.off) { Audio.sfx('error'); return true; }
+  if (it.id === 'pc') openDeployMenu();
+  else if (it.id.startsWith('site:')) openDeployMenu(B.war.props[+it.id.slice(5)]);
+  else { const u = warDeploy(HT(), +it.id.slice(7), BT.deploySite); if (!u) { Audio.sfx('error'); return true; } BT.queue = [{ kind: 'event', ev: { type: 'spawn', unit: u, deploy: true } }]; playQueue(() => { BT.mode = 'idle'; }); }
+  return true;
+}
 function menuChoose(id) {
   const u = BT.sel;
-  if (id === 'property' || id === 'outpost') { const e = boardCapture(u); if (!e) { Audio.sfx('error'); return; } BT.queue = [{ kind: 'event', ev: e }]; playQueue(() => finishUnit(u)); return; }
+  if (id === 'property') { const e = warCapture(u); if (!e) { Audio.sfx('error'); return; } BT.queue = [{ kind: 'event', ev: e }]; playQueue(() => finishUnit(u)); return; }
   if (id === 'skill') { if (skillBlock(u)) { Audio.sfx('error'); return; } Audio.sfx('ok'); BT.targets = skillTargetsAt(u); BT.tIdx = 0; BT.mode = 'skillTarget'; setTargetCursor(); return; }
   Audio.sfx('ok');
   if (id === 'wait') finishUnit(u);
@@ -367,18 +398,20 @@ function noteKo(e) { if (e.noted) return; e.noted = true; if (e.unit.team !== 0)
 function confirmCatch() {
   const u = BT.sel, t = BT.targets[BT.tIdx]; const ball = BT.ball; if (!t || !ball || !canTakeAction(u) || t.hp <= 0 || t.team !== 2 || dist(u, t) !== 1 || (ball === 'practiceball' && !isPracticeTarget(t))) return;
   if (isPracticeTarget(t) && !practiceReady(t)) { Audio.sfx('error'); return; }
-  if (ball !== 'practiceball') { if (!(B.bag.pokeball > 0)) return; B.bag.pokeball--; }
+  if (ball !== 'practiceball') { if (B.bag.pokeball > 0) B.bag.pokeball--; else if (B.war && B.war.funds[u.team] >= WAR.ball) B.war.funds[u.team] -= WAR.ball; else return; }
   const r = tryCapture(t, ITEMS[ball]);
   BT.queue = [{ kind: 'event', ev: { type: 'capture', unit: t, ok: r.ok, shakes: r.shakes, from: { x: u.x, y: u.y }, ball } }];
   if (r.ok) BT.queue.push({ kind: 'fn', fn: () => {
     if (isPracticeTarget(t)) B.lesson.complete = true;
     powerCharge(u.team, 15);
-    if (B.versus) { t.team = u.team; t.acted = true; t.moved = true; t.ai = null; t.boss = false; t.status = null; t.hp = Math.max(1, Math.floor(t.maxHp * .5)); t.fx.alpha = 1; t.fx.sx = t.fx.sy = 1; floatText(t.x * TILE + TILE / 2, t.y * TILE - 6, 'Joined ' + teamName(u.team) + '!', teamColor(u.team), { outline: UI.shadow, life: 1.6 }); }
-    else { t.hp = 0; t.captured = true; B.captured.push(serializeUnit(Object.assign({}, t, { team: 0, hp: Math.max(1, Math.floor(t.maxHp * .5)) }))); } } });
+    // the catch goes to the catcher's PC Box (its first deployment is free); a campaign catch also joins the collection
+    t.hp = 0; t.captured = true; const e = warBoxAdd(u.team, Object.assign({}, t, { ai: null, boss: false, provoked: false }));
+    if (!B.versus && u.team === 0) { B.captured.push(serializeUnit(Object.assign({}, t, { team: 0, hp: Math.max(1, Math.floor(t.maxHp * .5)) }))); if (e) e.captIdx = B.captured.length - 1; }
+    if (e) floatText(t.x * TILE + TILE / 2, t.y * TILE - 20, 'To your PC Box!', teamColorL(u.team), { outline: UI.shadow, life: 1.6, delay: .4 }); } });
   playQueue(() => { finishUnit(u); });
 }
 function finishUnit(u) {
-  settleOutposts();
+  warSettle();
   u.acted = true; u.moved = true;
   if (B.versus) { const fe = versusAfterAction(u); if (fe) { Audio.sfx(fe.what === 'captured' ? 'select' : 'item'); floatText(u.x * TILE + TILE / 2, u.y * TILE - 8, fe.what === 'taken' ? 'FLAG TAKEN!' : fe.what === 'returned' ? 'Flag returned' : 'CAPTURED!', fe.what === 'captured' ? UI.gold : teamColorL(u.team), { big: fe.what !== 'returned', life: 1.4, outline: '#000' }); } }
   if (B.fog) refreshVision(HT()); BT.sel = null; BT.reach = null; BT.atk = null; BT.undo = null; BT.menu = null; BT.dart = false; BT.hpShow.clear();
@@ -405,7 +438,7 @@ function openEndMenu(keepIndex = 0) {
   BT.mode = 'endmenu';
   BT.menu = { items: [{ id: 'endturn', label: 'End Turn', icon: 'end', sub: B.versus ? 'Pass to the other trainer' : 'Pass to the enemy' }, { id: 'danger', label: (BT.showDanger ? 'Hide' : 'Show') + ' Danger', icon: 'skull', sub: 'Enemy attack range' }, { id: 'scene', label: 'Battle: ' + BATTLE_PREF_LABEL[PREF.battle], icon: 'vs', sub: 'Attack scene: full, quick or on the map' }, { id: 'help', label: 'Help', icon: 'help', sub: 'Controls & rules' }, { id: 'mute', label: Audio.muted ? 'Unmute' : 'Mute', icon: 'note', sub: 'Sound on/off' }, { id: 'retreat', label: B.versus ? 'Forfeit' : 'Retreat', icon: 'run', sub: B.versus ? 'Concede the arena' : 'Give up this map' }, { id: 'close', label: 'Close', icon: 'x', sub: '' }], i: keepIndex };
   if (powerState(HT())) BT.menu.items.splice(1, 0, { id: 'power', label: 'Team Power', icon: 'skill', sub: powerState(HT()).charge + '/100 charge · captain commands the team' });
-  if (B.territory) BT.menu.items.splice(1, 0, { id: 'reserves', label: 'Reserves', icon: 'ball', sub: B.territory.points[HT()] + ' CP · choose an owned center' });
+  if (warHasBox(HT())) BT.menu.items.splice(1, 0, { id: 'pc', label: 'PC Box', icon: 'ball', sub: money(B.war.funds[HT()]) + ' · deploy at one of your free centers' });
 }
 function endTurn() { BT.mode = 'anim'; BT.sel = null; BT.autoEnd = 0; for (const u of alive(HT())) u.acted = true; nextPhase(); }
 
@@ -413,7 +446,7 @@ function endTurn() { BT.mode = 'anim'; BT.sel = null; BT.autoEnd = 0; for (const
 function runEnemyPhase(team) {
   const order = alive(team).filter(u => u.hp > 0 && !u.acted).sort((a, b) => b.level - a.level); // acted: spent the turn recharging
   const step = () => {
-    settleOutposts();
+    warSettle();
     if (checkObjective()) { endBattle(); return; }
     const u = order.shift(); if (!u) { nextPhase(); return; }
     if (u.hp <= 0) { step(); return; }
@@ -422,7 +455,7 @@ function runEnemyPhase(team) {
     if (!d) { step(); return; }
     BT.queue = [];
     if (d.x !== u.x || d.y !== u.y) { const reach = reachable(u); const p = pathTo(reach, d.x, d.y); if (p) BT.queue.push({ kind: 'fn', fn: () => { centerCam(u.x, u.y); } }, { kind: 'wait', t2: .25 }, { kind: 'move', unit: u, path: p }); }
-    if (d.capture) { BT.queue.push({ kind: 'fn', fn: () => { const e = boardCapture(u); if (e) BT.queue.unshift({ kind: 'event', ev: e }); } }); }
+    if (d.capture) { BT.queue.push({ kind: 'fn', fn: () => { const e = warCapture(u); if (e) BT.queue.unshift({ kind: 'event', ev: e }); } }); }
     else if (d.skill) { BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...skillQueue(u, d.skill, d.target)); } }); }
     else if (d.target) {
       BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...combatQueue(u, d.target, d.move, { x: d.x, y: d.y })); } });
@@ -474,7 +507,7 @@ function keyInput(k) {
 }
 function activateMenu() {
   const m = BT.menu; const it = m.items[m.i]; if (!it) return;
-  if (territoryMenuAction(it)) return;
+  if (warMenuAction(it)) return;
   if (it.off) { Audio.sfx('error'); return; }
   if (BT.mode === 'menu') menuChoose(it.id);
   else if (BT.mode === 'endmenu') { Audio.sfx('ok'); if (it.id === 'endturn') endTurn(); else if (it.id === 'power') { BT.mode = 'idle'; openPowerMenu(); } else if (it.id === 'danger') { BT.showDanger = !BT.showDanger; BT.mode = 'idle'; } else if (it.id === 'scene') { cyclePref('battle'); openEndMenu(m.i); } else if (it.id === 'help') { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; } else if (it.id === 'mute') { Audio.toggle(); BT.mode = 'idle'; } else if (it.id === 'retreat') { B.result = B.versus ? (HT() === 0 ? 'p2' : 'p1') : 'retreat'; endBattle(); } else BT.mode = 'idle'; }
@@ -483,13 +516,13 @@ function activateMenu() {
 function pickBall() {
   const t = BT.targets[BT.tIdx]; if (!t) return;
   if (isPracticeTarget(t)) { if (!practiceReady(t)) { Audio.sfx('error'); floatText(t.x * TILE + TILE / 2, t.y * TILE - 6, 'Weaken it first!', UI.gold, { outline: '#000' }); return; } BT.ball = 'practiceball'; }
-  else { if (!(B.bag.pokeball > 0)) { Audio.sfx('error'); return; } BT.ball = 'pokeball'; }
+  else { if (!(B.bag.pokeball > 0) && !(B.war && B.war.funds[HT()] >= WAR.ball)) { Audio.sfx('error'); return; } BT.ball = 'pokeball'; }
   Audio.sfx('ok'); confirmCatch();
 }
 function tileAction(x, y) {
   const m = BT.mode; const u = seenUnitAt(x, y);
   if (m === 'idle') {
-    if (B.territory && !u) { const p = territoryProperty(x, y); if (p && p.owner === HT()) { openTerritoryReserves(p); return; } }
+    if (B.war && !u) { const p = warProperty(x, y); if (p && p.owner === HT() && (p.kind === 'hq' || p.kind === 'center') && warHasBox(HT())) { openDeployMenu(p); return; } }
     if (u && u.team === HT() && !u.acted) { selectUnit(u); return; }
     if (u) { BT.info = u; BT.mode = 'unitinfo'; Audio.sfx('ok'); return; }
     cancel(); return; // empty tile → end-turn menu
@@ -637,7 +670,6 @@ function drawBoardLayer() {
     let c = BT.hoverRange; if (!c || c.id !== hov.id || c.turn !== B.turn || c.x !== hov.x || c.y !== hov.y) { const r = reachable(hov); c = BT.hoverRange = { id: hov.id, turn: B.turn, x: hov.x, y: hov.y, t0: BT.time, cells: [...r.values()].filter(n => canStand(hov, n.x, n.y)), r, ac: attackCells(hov, r) }; }
     const k = Math.min(1, (BT.time - c.t0) / .25); ctx.globalAlpha = .55 * k; rangeOverlay(c.cells, (x, y) => c.r.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6)); rangeOverlay(c.ac, (x, y) => c.r.has(key(x, y)) || c.ac.some(q => q.x === x && q.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e07030', '#ffc0a0', Math.floor(BT.time * 6)); ctx.globalAlpha = 1; } }
   if (BT.mode === 'unitinfo' && BT.info && BT.info.team !== HT()) { const r = reachable(BT.info); const cells = [...r.values()].filter(n => canStand(BT.info, n.x, n.y)); rangeOverlay(cells, (x, y) => r.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6)); const ac = attackCells(BT.info, r); rangeOverlay(ac, (x, y) => r.has(key(x, y)) || ac.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e07030', '#ffc0a0', Math.floor(BT.time * 6)); }
-  if (B.territory) drawTerritoryProperties();
   drawOutposts();
   // target highlights: red for foes, green for allies and self (skills), the chosen one white
   if (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget') for (const t of BT.targets) { const X = tileX(t.x), Y = tileY(t.y); const k = Math.floor(BT.time * 8) % 2; const friendly = !hostile(t.team, HT()); outline(X + 1 + k, Y + 1 + k, TILE - 2 - 2 * k, TILE - 2 - 2 * k, t === BT.targets[BT.tIdx] ? '#ffffff' : friendly ? '#60e070' : '#ff6060'); }
@@ -848,7 +880,7 @@ function objectiveProgress() {
   if (B.versus) { const st = versusStatusText(); const m = o.mode || 'elim'; if (m === 'hill' && B.hill) return { text: 'Hold the hill', right: B.hill.score[HT()] + '/' + B.hill.need, ratio: B.hill.score[HT()] / B.hill.need, col: UI.gold }; if (m === 'ctf') return { text: 'Capture the flag', right: st ? st.text.replace('FLAGS ', '') : '', ratio: 0, col: UI.gold }; return { text: 'Beat the other team', right: alive(1 - HT()).length + ' left', ratio: 1 - alive(1 - HT()).length / Math.max(1, B.units.filter(u => u.team === 1 - HT()).length), col: UI.gold }; }
   if (o.type === 'boss') { const b = B.units.find(u => u.boss && u.team === 1); const name = o.bossName || (b ? b.name : 'the boss'); return { text: 'Defeat ' + name, right: b && b.hp > 0 ? b.hp + '/' + b.maxHp : 'down!', ratio: b ? b.hp / b.maxHp : 0, col: UI.red, boss: true }; }
   if (o.type === 'survive') return { text: 'Survive ' + o.turns + ' turns', right: Math.min(B.turn, o.turns) + '/' + o.turns, ratio: (B.turn - 1) / o.turns, col: UI.blue };
-  if (o.type === 'seize') { const p = (B.outposts || []).find(q => q.goal); return { text: 'Seize the ' + (o.what || 'gym'), right: p ? (p.owner === HT() ? 'taken!' : (p.captor != null ? p.progress : 0) + '/20') : '', ratio: p ? (p.owner === HT() ? 1 : (p.captor != null ? p.progress : 0) / 20) : 0, col: UI.gold }; }
+  if (o.type === 'seize') { const p = B.war && B.war.props.find(q => q.goal); return { text: 'Seize the ' + (o.what || 'gym'), right: p ? (p.owner === HT() ? 'taken!' : (p.captor != null ? p.progress : 0) + '/20') : '', ratio: p ? (p.owner === HT() ? 1 : (p.captor != null ? p.progress : 0) / 20) : 0, col: UI.gold }; }
   const total = B.units.filter(u => u.team === 1).length, left = alive(1).length; return { text: 'Defeat every foe', right: left + ' left', ratio: 1 - left / Math.max(1, total), col: UI.gold };
 }
 // The objective tracker (top-left): the turn and one pip per Pokémon that can still act in the header band; the goal
@@ -878,7 +910,7 @@ function drawButtons(L) {
   if (enemyAnim) items.push({ label: 'FAST', on: BT.fast, run: () => { BT.fast = !BT.fast; } });
   if (idle && VIEW.touch && alive(HT()).some(u => !u.acted)) { const nx = { label: 'NEXT', run: () => keyInput('next') }; if (L.stack) items.splice(1, 0, nx); else items.push(nx); }
   if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
-  if (idle && B.territory) items.push({ label: 'RESERVE', run: () => openTerritoryReserves() });
+  if (idle && warHasBox(HT())) items.push({ label: 'PC', run: () => openDeployMenu() });
   if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; Audio.sfx('menu'); } }, { label: '♪', on: !Audio.muted, half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
   if (B.territory && L.stack && idle) { const mute = items.findIndex(it => it.label.startsWith('♪')); if (mute >= 0) items.splice(mute, 1); }
   if (!items.length) return;
@@ -938,7 +970,7 @@ function unitCardBody(u, x, y, w, compact) {
 function terrainCardBody(t, ref, x, y, w, tall) {
   const mv = inMap(BT.cx, BT.cy) ? B.map.variants[BT.cy][BT.cx] : 0; const sw = tall ? 10 : 20;
   rect(x + 4, y + 3, sw, sw, UI.shadow); ctx.drawImage(tileImg(t.ch, mv, 0), 0, 0, 32, 32, x + 5, y + 4, sw - 2, sw - 2); outline(x + 4, y + 3, sw, sw, UI.border2);
-  const property = boardProperty(BT.cx, BT.cy);
+  const property = warProperty(BT.cx, BT.cy);
   const healText = property && property.owner !== (ref.team == null ? HT() : ref.team) ? ['no heal here', UI.muted] : ['heals 30%', UI.green];
   const cost = moveCost(t, ref); const extra = t.heal ? healText : t.burn ? ['burns', UI.red] : cost >= 99 ? ['no entry', UI.muted] : null;
   const stars = defStars(terrainDef(t, ref)), eva = terrainEva(t, ref);
@@ -963,7 +995,7 @@ function drawMenu() {
   const key = BT.mode + ':' + menuTitle() + ':' + m.items.length; if (BT.menuKey !== key) { BT.menuKey = key; BT.menuT0 = BT.time; } const ko = REDUCED ? 1 : Math.min(1, (BT.time - BT.menuT0) / .12); const r = menuRect(); r.y += Math.round((1 - easeOut(ko)) * 6); ctx.globalAlpha = ko;
   hudPanel(r.x, r.y, r.w, r.h, { header: menuTitle(), headerRight: m.items.length > 4 ? (m.i + 1) + '/' + m.items.length : null, headerFill: BT.mode === 'menu' && BT.sel ? teamColorD(BT.sel.team) : UI.panelDark });
   m.items.forEach((it, i) => { const y = r.y + r.top + i * rh; const hot = i === m.i; const ink = it.off ? UI.dim : hot ? UI.hi : UI.ink; if (hot) selRow(r.x + 4, y, r.w - 8, rh - 1);
-    const lx = r.x + (it.icon ? 22 : 11); if (it.icon) iconAt(it.icon, r.x + 9, y + ty - 1, it.off ? UI.dim : hot ? '#ffffff' : '#c8cddc'); text(it.label, lx, y + ty, ink, hot ? { shadow: shade(UI.sel, -.6) } : {}); });
+    const lx = r.x + (it.icon ? 22 : 11); if (it.icon) iconAt(it.icon, r.x + 9, y + ty - 1, it.off ? UI.dim : hot ? '#ffffff' : '#c8cddc'); text(it.label, lx, y + ty, ink, hot ? { shadow: shade(UI.sel, -.6) } : {}); if (it.right) textR(it.right, r.x + r.w - 8, y + ty, it.off ? UI.dim : it.right === 'FREE' ? UI.green : UI.gold); });
   if (r.foot) { const fy = r.y + r.h - 4 - r.foot; rect(r.x + 4, fy, r.w - 8, r.foot, UI.panelDark); hline(r.x + 4, fy, r.w - 8, UI.inset); const it = m.items[m.i]; const lines = it && it.sub ? wrap(it.sub, r.w - 14).slice(0, 2) : []; lines.forEach((l, i) => text(l, r.x + 7, fy + 4 + i * 9, it.off ? '#d8a0a0' : UI.muted)); }
   ctx.globalAlpha = 1;
 }
@@ -1275,7 +1307,7 @@ function drawEndScreen() {
   const n = endStars();
   if (n != null) { const ss = W >= 320 && H >= 240 ? 2 : 1; for (let s = 0; s < 3; s++) { const at = END_BEATS.stars + s * END_BEATS.starGap, u = REDUCED ? 1 : clamp((t - at) / .25, 0, 1), sx = Math.round(W / 2 + (s - 1) * (18 * ss + 6)), on = s < n; if (u <= 0) { drawBigStar(sx, y + 7 * ss, ss, false); continue; } const sc = on ? ss + (1 - easeOutBack(u, 3)) * ss : ss; drawBigStar(sx, y + 7 * ss, sc, on); } y += 14 * ss + 4;
     const goals = ['win', 'within ' + (B.map.par || 10) + ' turns', B.faints ? B.faints + ' fainted' : 'nobody fainted']; if (t > END_BEATS.stars + .2) { ctx.globalAlpha = clamp((t - END_BEATS.stars - .2) / .3, 0, 1); textC(goals.join('  ·  '), W / 2, y, UI.muted, { outline: UI.inset }); ctx.globalAlpha = 1; } y += 12; }
-  const stats = vs ? 'Turns ' + B.turn + '  ·  KOs ' + B.kills : win ? 'Turns ' + B.turn + '  ·  KOs ' + B.kills + (B.captured.length ? '  ·  Caught ' + B.captured.length : '') : (B.result === 'retreat' ? 'Your team runs back to the Poké Center.' : B.territory ? (B.territory.reason || '') : 'Everyone fainted. Try a different plan!');
+  const stats = vs ? 'Turns ' + B.turn + '  ·  KOs ' + B.kills : win ? 'Turns ' + B.turn + '  ·  KOs ' + B.kills + (B.captured.length ? '  ·  Caught ' + B.captured.length : '') : (B.result === 'retreat' ? 'Your team runs back to the Poké Center.' : B.war && B.war.reason ? B.war.reason : 'Everyone fainted. Try a different plan!');
   if (t > .7) { ctx.globalAlpha = clamp((t - .7) / .3, 0, 1); wrap(vs ? (B.endReason || stats) : stats, W - 20).slice(0, 2).forEach((l, i) => textC(l, W / 2, y + i * 10, UI.ink, { outline: UI.inset })); ctx.globalAlpha = 1; }
   if (t > 1.2) hintLine(VIEW.touch ? ['tap to continue'] : [['Z', 'continue']], W / 2, Math.min(H - 14, y + 26));
   if (win && k >= 1 && Math.random() < .35) spawnParts(vrnd() * bvW() + CAM.x, CAM.y - 5, 1, vs && vt >= 0 ? [teamColor(vt), teamColorL(vt), '#ffd24a', '#ffffff'] : ['#ffd24a', '#5ee06a', '#3d7dff', '#ff5a5a', '#ffffff'], { speed: 10, vy: 40, life: 2.5, grav: 20, size: 3 });

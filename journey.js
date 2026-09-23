@@ -185,9 +185,11 @@ function drawCatchLesson(L) {
   hudPanel(x, y, w, 15, { fill: UI.panelDark, light: false, flat: true }); textC(line, VIEW.w / 2, y + 4, UI.gold);
 }
 function drawOutposts() {
-  for (const p of B.outposts || []) {
+  if (!B.war) return;
+  for (const p of B.war.props) {
     const x = tileX(p.x), y = tileY(p.y), col = p.owner < 0 ? UI.gold : teamColor(p.owner);
-    outline(x + 1, y + 1, TILE - 2, TILE - 2, col);
+    if (p.kind === 'outpost') outline(x + 1, y + 1, TILE - 2, TILE - 2, col);
+    if (p.ch === 'K' && p.owner >= 0) drawFlag(x + TILE - 8, y + 2, p.owner, Math.floor(BT.time * 6 + p.x) % 2);
     if (p.progress) { rect(x + 3, y + TILE - 7, TILE - 6, 5, UI.inset); bar(x + 4, y + TILE - 6, TILE - 8, 3, p.progress / 20, col); }
   }
 }
@@ -213,10 +215,10 @@ function territorySetupDraw() {
   const rosterX = wide ? x0 + colW + 8 : x0, rosterW = wide ? colW : colW; let ry = wide ? cy0 : y;
   const roster = territoryRoster(S.captain), cellW = Math.floor((rosterW - 4) / 3), cellH = 24;
   if (ry + 12 + cellH * 2 < by - 4) { sectionLabel('Your six', rosterX, ry, rosterW, UI.gold); ry += 10;
-    roster.forEach(([num, cost], i) => { const xx = rosterX + (i % 3) * (cellW + 2), yy = ry + Math.floor(i / 3) * (cellH + 2), starts = i < 3; rrect(xx, yy, cellW, cellH, starts ? '#1c3a6a' : '#1c1d3c', 1); drawMon(num, xx + 14, yy + cellH - 1, { outline: starts ? teamColor(0) : null }); text(starts ? 'START' : cost + ' CP', xx + 28, yy + 4, starts ? UI.green : UI.gold); text(fitLabel(ROLES[roleFor(DEX[num])].name, cellW - 30), xx + 28, yy + 13, UI.muted); });
+    roster.forEach((num, i) => { const cost = warCost(num, TERRITORY.level); const xx = rosterX + (i % 3) * (cellW + 2), yy = ry + Math.floor(i / 3) * (cellH + 2), starts = i < 3; rrect(xx, yy, cellW, cellH, starts ? '#1c3a6a' : '#1c1d3c', 1); drawMon(num, xx + 14, yy + cellH - 1, { outline: starts ? teamColor(0) : null }); text(starts ? 'START' : money(cost), xx + 28, yy + 4, starts ? UI.green : UI.gold); text(fitLabel(ROLES[roleFor(DEX[num])].name, cellW - 30), xx + 28, yy + 13, UI.muted); });
     ry += (cellH + 2) * 2 + 4; if (!wide) y = ry; }
   // the rules, one line each
-  const rules = [['flag', 'Take the enemy HQ, or', UI.gold], ['flag', 'hold 2 of 3 middle centers 3 turns', UI.gold], ['ball', 'Centers pay 2 CP a turn: call reserves', UI.info]];
+  const rules = [['flag', 'Take the enemy HQ, or', UI.gold], ['flag', 'hold 2 of 3 middle centers 3 turns', UI.gold], ['ball', 'Centers pay ₽1000 a day: deploy from the PC', UI.info]];
   let rY = wide ? ry : y; const rX = wide ? rosterX : x0, rW = wide ? rosterW : colW;
   for (const [ic, s2, col] of rules) { if (rY + 9 > by - 4) break; iconAt(ic, rX, rY - 1, col); text(fitLabel(s2, rW - 12), rX + 12, rY, UI.ink); rY += 11; }
   // the map, when there is room left in the left column

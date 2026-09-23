@@ -6,7 +6,7 @@
 'use strict';
 const vm = require('vm'), fs = require('fs'), path = require('path'), assert = require('assert');
 const ROOT = path.join(__dirname, '..');
-const FILES = ['core.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'scenery.js', 'model.js', 'captain.js', 'battle.js', 'duel.js', 'campaign.js', 'territory.js', 'scenes.js', 'title.js', 'route.js', 'journey.js', 'main.js'];
+const FILES = ['core.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'scenery.js', 'model.js', 'captain.js', 'battle.js', 'duel.js', 'campaign.js', 'war.js', 'territory.js', 'scenes.js', 'title.js', 'route.js', 'journey.js', 'main.js'];
 
 // ---------------------------------------------------------------- harness
 function loadGame() {
@@ -233,7 +233,7 @@ test('danger zone previews guaranteed upkeep cures without touching the unit', T
   const snap = JSON.stringify(g.serializeUnit(e));
   assert(g.dangerZone(0).has(C.key(8, 2)), 'full move after the guaranteed cure'); assert.strictEqual(JSON.stringify(g.serializeUnit(e)), snap, 'no mutation');
   e.statusTurns = 0; assert(!g.dangerZone(0).has(C.key(8, 2)), 'still paralyzed next phase: reduced reach');
-  arena(T, ['C..............'].concat(Array(14).fill('.'.repeat(15)))); const c = place(T, 25, 10, 1, 0, 0); c.status = 'par'; c.statusTurns = 0;
+  arena(T, ['C..............'].concat(Array(14).fill('.'.repeat(15)))); const c = place(T, 25, 10, 1, 0, 0); c.status = 'par'; c.statusTurns = 0; T.B().war.props[0].owner = 1; // only an own center heals
   assert(g.dangerZone(0).has(C.key(7, 0)), 'a Poké Center cures whatever the timer says');
   const w = place(T, 16, 10, 2, 10, 10); w.status = 'frz'; w.statusTurns = 1; const z = g.dangerZones(0); assert(z.wild.size > 0, 'a wild unit sure to thaw is a wild threat'); assert(!z.trainer.has(C.key(10, 9)), 'zones stay separate');
   w.recharge = 1; assert.strictEqual(g.dangerZones(0).wild.size, 0, 'recharge still wins');
@@ -652,7 +652,7 @@ test('skills: legal targets, action cost, cooldown, brace and root expiry, clean
   const d2 = g.aiDecide(rat); assert(d2, 'the freed Rattata acts'); rat.root = 2; const d3 = g.aiDecide(rat); assert(!d3 || (d3.x === rat.x && d3.y === rat.y), 'a rooted unit acts from its tile: ' + JSON.stringify(d3 && [d3.x, d3.y]));
   // cleanse: a Poké Center frees a rooted unit; Mend does too; the rooted unit still counters
   rat.root = 2; ally.root = 2; const cl = place(T, 35, 20, 0, 3, 5); g.useSkill(cl, cl.skill, ally); assert.strictEqual(ally.root, 0, 'Mend frees an ally');
-  arena(T, ['C....']); const rooted = place(T, 19, 20, 1, 0, 0); rooted.root = 2; assert.strictEqual(g.rootAfterUpkeep(rooted), 0, 'the center will free it'); g.upkeep(1); assert.strictEqual(rooted.root, 0);
+  arena(T, ['C....']); const rooted = place(T, 19, 20, 1, 0, 0); rooted.root = 2; T.B().war.props[0].owner = 1; assert.strictEqual(g.rootAfterUpkeep(rooted), 0, 'the center will free it'); g.upkeep(1); assert.strictEqual(rooted.root, 0);
   arena(T); fixedRoll(T, .5); const r2 = place(T, 19, 20, 1, 2, 2), p2 = place(T, 25, 20, 0, 3, 2); r2.root = 2; const fc2 = g.forecast(p2, r2, move(p2, 'Thunder Shock'), p2); assert(fc2.c, 'a rooted unit still counters');
   assert(bird.fly && off && MOVES);
   // Dart: after attacking a scout may move up to 2 tiles (1 when paralyzed, none when rooted or recharging or frozen); anyone else cannot

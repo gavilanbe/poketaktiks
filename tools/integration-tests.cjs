@@ -156,10 +156,10 @@ test('territory runs through the real enemy animation queue to results and remat
   const T = loadGame(), { g, G } = T; G("PREF.territoryGuide='hide';PREF.battle='map';BT.fast=true;"); g.launchTerritory(7);
   let frames = 0;
   while (G('SC.name') === 'battle' && frames++ < 12000) {
-    if (G('BT.mode') === 'idle' && T.B().phase === 0 && !T.B().result) { g.territoryAiDeploy(0); g.autoTurn(); }
+    if (G('BT.mode') === 'idle' && T.B().phase === 0 && !T.B().result) { g.warAiDeploy(0); g.autoTurn(); }
     g.battleUpdate(.1); if (frames % 8 === 0) g.battleDraw();
   }
-  assert.equal(G('SC.name'), 'territoryResults', 'real playback must finish'); assert(frames < 12000); assert(T.B().territory.captures.some(n => n > 0));
+  assert.equal(G('SC.name'), 'territoryResults', 'real playback must finish'); assert(frames < 12000); assert(T.B().war.stats.captures.some(n => n > 0));
   g.territoryResultsDraw(); assert.equal(G('SC.hits.length'), 2); G('SC.hits[0].run()'); assert.equal(G('SC.name'), 'battle'); assert.equal(T.B().turn, 1); assert.equal(T.B().units.length, 6);
 });
 let failed = 0;

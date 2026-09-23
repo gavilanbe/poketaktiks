@@ -559,8 +559,8 @@ const ROTULO_SRC = {
 };
 // A glyph is "offset|rows" — offset is the row where the glyph starts below the cap line (2 = x-height).
 function parseGlyphs(src) { const out = {}; for (const k in src) { let s = src[k], off = 0; const bar = s.indexOf('|'); if (bar >= 0 && bar < 3) { off = parseInt(s.slice(0, bar)); s = s.slice(bar + 1); } const rows = s.split('/'); out[k] = { off, rows, w: rows[0].length, h: rows.length }; } return out; }
-const EXTRA_SRC = { '♪': '00011/00010/00010/00010/01110/11110/01100', '●': '1|01110/11111/11111/11111/01110', '○': '1|01110/10001/10001/10001/01110', '◂': '1|00001/00111/11111/00111/00001', '▸': '1|10000/11100/11111/11100/10000', '▲': '2|00100/01110/11111', '▼': '2|11111/01110/00100', '◆': '1|00100/01110/11111/01110/00100' };
-const BIG_EXTRA_SRC = { "'": '11/11/01/10/00/00/00/00/00', '★': '0001000/0001000/0011100/1111111/0111110/0011100/0110110/1100011/0000000', '♥': '0110110/1111111/1111111/1111111/0111110/0011100/0001000/0000000/0000000', '#': '0110110/0110110/1111111/0110110/0110110/1111111/0110110/0110110/0000000' };
+const EXTRA_SRC = { '♪': '00011/00010/00010/00010/01110/11110/01100', '●': '1|01110/11111/11111/11111/01110', '○': '1|01110/10001/10001/10001/01110', '◂': '1|00001/00111/11111/00111/00001', '▸': '1|10000/11100/11111/11100/10000', '▲': '2|00100/01110/11111', '▼': '2|11111/01110/00100', '◆': '1|00100/01110/11111/01110/00100', '₽': '01110/01001/01001/01110/11100/01000/01000' };
+const BIG_EXTRA_SRC = { "'": '11/11/01/10/00/00/00/00/00', '★': '0001000/0001000/0011100/1111111/0111110/0011100/0110110/1100011/0000000', '♥': '0110110/1111111/1111111/1111111/0111110/0011100/0001000/0000000/0000000', '#': '0110110/0110110/1111111/0110110/0110110/1111111/0110110/0110110/0000000', '₽': '0111110/0110011/0110011/0110011/0111110/1111000/0110000/0110000/0000000' };
 const FONT = Object.assign(parseGlyphs(CUADERNO_SRC), parseGlyphs(EXTRA_SRC)), BIG = Object.assign(parseGlyphs(ROTULO_SRC), parseGlyphs(BIG_EXTRA_SRC));
 const DESC = new Set('gjpqy,;¡¿ç');
 function stripAccents(c) { return c.normalize('NFD').replace(/[̀-ͯ]/g, ''); }
@@ -2321,14 +2321,14 @@ function attackCells(u, reach) { const set = new Set(), out = []; for (const n o
 // The status a unit will have after the guaranteed parts of its next upkeep (center cure, paralysis
 // and freeze timers), with no dice and no mutation. Mirrors the cure rules in upkeep().
 function statusAfterUpkeep(u) {
-  if (!u.status || terrAt(u.x, u.y).heal && territoryHeals(u)) return null;
+  if (!u.status || terrAt(u.x, u.y).heal && warHeals(u)) return null;
   if (u.status === 'par' && u.statusTurns + 1 >= 3) return null;
   if (u.status === 'frz' && u.statusTurns + 1 >= 2) return null;
   return u.status;
 }
 // Root counts down one at each of the rooted unit's upkeeps (it is applied at 2, so the unit spends exactly one
 // phase held); a Poké Center clears it outright. Mirrors upkeep(), no mutation.
-function rootAfterUpkeep(u) { if (!u.root || terrAt(u.x, u.y).heal && territoryHeals(u)) return 0; return Math.max(0, u.root - 1); }
+function rootAfterUpkeep(u) { if (!u.root || terrAt(u.x, u.y).heal && warHeals(u)) return 0; return Math.max(0, u.root - 1); }
 // Cells every hostile unit could hit on its next phase, split by who threatens them: trainer teams
 // (enemy or rival trainer) and wild Pokémon. A unit that must recharge skips its next phase, so it
 // threatens nothing; a unit whose upkeep is sure to cure it moves at full speed; frozen units that
@@ -2431,7 +2431,7 @@ function resolveCombat(att, def, move, from) {
   }
   // firing a recharge move costs the next turn whether it hit or missed
   if (fc.recharge && att.hp > 0) { att.recharge = 1; ev.push({ type: 'recharge', unit: att }); }
-  powerAfterCombat(att, ev); settleOutposts();
+  powerAfterCombat(att, ev); warSettle();
   // experience for player-team survivors
   for (const [u, o] of [[att, def], [def, att]]) { if (!isHuman(u.team) || u.hp <= 0) continue; const took = ev.some(e => e.type === 'hit' && e.att === u); if (!took) continue; awardXp(u, xpGain(u, o, o.hp <= 0), ev); }
   return ev;
@@ -2454,7 +2454,7 @@ function upkeep(team) {
     if (u.brace) u.brace = 0;
     if (u.root > 0) { u.root--; if (!u.root) ev.push({ type: 'unroot', unit: u }); }
     const t = terrAt(u.x, u.y);
-    if (t.heal && territoryHeals(u)) {
+    if (t.heal && warHeals(u)) {
       if (u.hp < u.maxHp) { const h = Math.max(1, Math.floor(u.maxHp * t.heal)); u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: h }); }
       if (u.status || u.root) { ev.push({ type: 'cure', unit: u }); u.status = null; u.root = 0; }
     }
@@ -2540,8 +2540,10 @@ function aiDart(u) {
   return best && (best.x !== u.x || best.y !== u.y) ? { x: best.x, y: best.y } : null;
 }
 function checkObjective() {
-  if (B.territory) return territoryObjective();
-  const o = B.map.objective; if (B.result) return B.result;
+  if (B.result) return B.result;
+  if (B.war && warObjective()) return B.result; // an HQ taken, Conquest's hold race or turn limit
+  if (B.territory) return null;
+  const o = B.map.objective;
   if (B.versus) {
     syncFlags(); const a = alive(0).length, b = alive(1).length; const win = (t, why) => { B.endReason = why; return B.result = t; };
     if (!a && !b) return win('draw', 'Everyone fainted at once.'); if (!a) return win('p2', 'Player 1 has no Pokémon left.'); if (!b) return win('p1', 'Player 2 has no Pokémon left.');
@@ -2621,7 +2623,7 @@ function aiSkillScore(u, sk, n, t, threat, aT) {
 function canTakeAction(u) { return !!(u && u.hp > 0 && !u.acted && !u.recharge && u.status !== 'frz'); }
 function aiDecide(u, cautious = false) {
   if (!canTakeAction(u) || isPracticeTarget(u)) return null;
-  if (B.territory) return territoryDecide(u);
+  if (warRoams(u)) return warDecide(u);
   const reach = reachable(u); const targets = aiTargetsOf(u); if (!targets.length) return null;
   const provoked = u.ai === 'aggro' || u.provoked || targets.some(t => dist(t, u) <= (u.ai === 'guard' ? Math.max(u.rngMax, 1) : 2));
   let best = null, bestScore = -1e9;
@@ -2646,7 +2648,7 @@ function aiDecide(u, cautious = false) {
       if (s > bestScore) { bestScore = s; best = { x: n.x, y: n.y, target: t, move: mv }; }
     }
   }
-  const capture = campaignCaptureChoice(u, bestScore); if (capture) return capture;
+  const capture = warCaptureChoice(u, bestScore); if (capture) return capture;
   if (best && cautious && bestScore <= 0) best = null;
   if (best && (u.ai !== 'boss' || provoked || bestScore > 0)) { return best; }
   if (!provoked) return null;
@@ -2776,38 +2778,14 @@ function aiPower(team) {
   return activatePower(team, superPower);
 }
 
-// Outposts use the same 20-point, HP-scaled capture as Territory. Campaign
-// outposts grant team charge and owned healing; Territory also has an economy.
-function campaignProperty(x, y) { return B && B.outposts && B.outposts.find(p => p.x === x && p.y === y) || null; }
-function boardProperty(x, y) { return B && B.territory ? territoryProperty(x, y) : campaignProperty(x, y); }
-function campaignCaptureBlock(u, from = u) {
-  const p = from && campaignProperty(from.x, from.y);
-  if (!u || u.hp <= 0 || u.team > 1 || u.acted || u.status === 'frz' || u.recharge) return 'Unit not ready';
-  return !p || p.owner === u.team ? 'Stand on another outpost' : null;
-}
-function settleOutposts() {
-  for (const p of B.outposts || []) if (p.captor != null) {
-    const u = B.units.find(u => u.id === p.captor && u.hp > 0);
-    if (!u || u.x !== p.x || u.y !== p.y || u.team === p.owner) { p.captor = null; p.progress = 0; }
-  }
-}
-function boardCapture(u) {
-  if (B.territory) return territoryCapture(u);
-  if (campaignCaptureBlock(u)) return null;
-  settleOutposts(); const p = campaignProperty(u.x, u.y);
-  if (p.captor !== u.id) { p.captor = u.id; p.progress = 0; }
-  p.progress = Math.min(20, p.progress + territoryCaptureGain(u));
-  const done = p.progress >= 20;
-  if (done) { p.owner = u.team; p.captor = null; p.progress = 0; powerCharge(u.team, 20); if (p.goal && u.team === 0) B.seized = true; }
-  u.acted = u.moved = true;
-  return { type: 'property', unit: u, property: p, done, progress: p.progress };
-}
-function campaignCaptureChoice(u, combatScore) {
-  if (!B.outposts || !B.outposts.length || u.team > 1) return null;
+// A scripted unit (a guard, a boss's escort) still takes a property within its reach when that beats its best attack:
+// the capture choice the campaign's outposts always had, now over every war property.
+function warCaptureChoice(u, combatScore) {
+  if (!B.war || u.team > 1 || !B.war.props.some(p => p.owner !== u.team)) return null;
   let best = null, score = Math.max(12, combatScore == null ? 12 : combatScore);
   for (const n of reachable(u).values()) {
-    if (!canStand(u, n.x, n.y) || campaignCaptureBlock(u, n)) continue;
-    const p = campaignProperty(n.x, n.y); const value = 28 + (p.captor === u.id ? p.progress : 0) + (p.goal ? 12 : 0);
+    if (!canStand(u, n.x, n.y)) continue; const p = warProperty(n.x, n.y); if (!p || warCaptureBlock(u, p, n)) continue;
+    const value = 28 + (p.captor === u.id ? p.progress : 0) + (p.goal ? 12 : 0) + (p.kind === 'hq' ? 20 : 0);
     if (value > score) { score = value; best = { x: n.x, y: n.y, capture: true }; }
   }
   return best;
@@ -2821,9 +2799,7 @@ function captureChance(target, ball) {
   return clamp(p, .05, .97);
 }
 function initCampaignLessons(mapDef, opts) {
-  B.outposts = (mapDef.outposts || []).map(p => Object.assign({ owner: -1, captor: null, progress: 0 }, p));
   B.lesson = null;
-  if (B.outposts.length) B.map.ownerAt = (x, y) => { const p = campaignProperty(x, y); return p ? p.owner : null; };
   if (opts.lesson) {
     const u = B.units.find(v => v.team === 2 && v.num === 10);
     if (u) { u.ai = 'stay'; B.lesson = { targetId: u.id, complete: false }; }
@@ -2915,8 +2891,9 @@ function startBattle(mapDef, party, bag, opts = {}) {
   // one: enemies were just numbered 1..N, and a duplicate id would make the duel scene overlay both sides.
   if (opts.territory) territoryInit(opts.captains);
   const fresh = { acted: false, status: null, recharge: 0, cd: 0, brace: 0, root: 0, id: 0 }; // battle-temporary state never crosses encounters (suspend keeps it)
-  party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus ? 1 : BOND_HP })); u.hp = u.maxHp; u.pid = p.pid; u.leader = i === 0; B.units.push(u); });
-  if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fx.facing = -1; B.units.push(u); });
+  party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus ? 1 : BOND_HP })); u.hp = u.maxHp; u.pid = p.pid; u.leader = i === 0; u.fromBox = true; B.units.push(u); });
+  if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fromBox = true; u.fx.facing = -1; B.units.push(u); });
+  if (!opts.territory) warSetup(mapDef, opts);
   initBattleCaptains(opts); initCampaignLessons(mapDef, opts);
   BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.autoEnd = 0; BT.dart = false; BT.log = []; BT.showDanger = false; BT.hpShow.clear();
   for (const u of B.units) requestBigSprite(u.num); // warm the duel scene's sprites; nothing waits on them
@@ -2925,19 +2902,29 @@ function startBattle(mapDef, party, bag, opts = {}) {
   Audio.playMusic(map.music);
   if (!opts.defer) beginPhase(0, true);
 }
+// Every battle is a war (war.js): properties from the map, funds, and each side's Box. The Pokémon a side brought onto
+// the map belong to its Box (they return to it when they faint); opts.box / opts.box2 add the ones waiting in the PC
+// (the rest of a campaign collection, the rest of a Versus draft); the chapter's roster fills the enemy's.
+function warSetup(mapDef, opts) {
+  warInit(mapDef, { war: Object.assign({ centers: opts.versus || opts.skirmish ? -1 : 0 }, opts.war || {}) });
+  for (const u of B.units) if (u.fromBox && u.team <= 1) { const e = warEntry({ num: u.num, level: u.level, data: serializeUnit(u), pid: u.pid }); e.state = 'field'; e.unitId = u.id; B.war.box[u.team].push(e); }
+  [opts.box || [], opts.box2 || []].forEach((list, team) => { for (const d of list) B.war.box[team].push(warEntry({ data: d, pid: d.pid })); });
+}
+// Can a side still play a phase with nothing on the map? Only if it can deploy.
+function warCanPlay(team) { return !!(B.war && team <= 1 && warDeploySites(team).length && B.war.box[team].some(e => e.state === 'box')); }
+function warHasBox(team) { return !!(B && B.war && team <= 1 && B.war.box[team].length && warDeploySites(team).length); }
 // first: the battle's opening phase (no turn increment). resumed: the phase comes from a suspend save,
 // which was written after upkeep already ran, so heals, ticks and recharges must not apply again.
 function beginPhase(team, first, resumed = false) {
   B.phase = team;
-  if (B.territory && team === 0 && !first && !resumed) B.turn++;
+  if (team === 0 && !first && !resumed) { B.turn++; if (!B.territory && checkObjective()) { endBattle(); return; } }
   const ev = resumed ? [] : upkeep(team);
   if (B.versus && !resumed) { const hv = versusPhaseStart(team); if (hv && B.hill) floatText(B.hill.x * TILE + TILE / 2, B.hill.y * TILE - 8, 'HILL ' + hv.score + '/' + B.hill.need + ' · ' + teamName(team), teamColorL(team), { big: true, life: 1.6, outline: '#000' }); if (checkObjective()) { endBattle(); return; } }
   if (B.fog) refreshVision(team);
-  if (B.territory && !resumed) { territoryUpkeep(team); if (checkObjective()) { endBattle(); return; } if (!isHuman(team)) for (const u of territoryAiDeploy(team)) ev.push({ type: 'spawn', unit: u }); }
-  if (team === 0 && !first && !B.territory) { B.turn++; if (checkObjective()) { endBattle(); return; } }
+  if (B.war && !resumed) { warUpkeep(team); if (checkObjective()) { endBattle(); return; } if (!isHuman(team)) for (const u of warAiDeploy(team)) { u.ai = 'war'; ev.push({ type: 'spawn', unit: u, deploy: true }); } }
   if (team === 0 && !B.versus && !resumed) { saveSuspend(); }
   const teamsPresent = [0, 1, 2, 3].filter(t => alive(t).length);
-  if (!teamsPresent.includes(team) && team !== 0 && !(B.territory && team === 1)) { nextPhase(); return; }
+  if (!teamsPresent.includes(team) && team !== 0 && !warCanPlay(team)) { nextPhase(); return; }
   // reinforcements at the start of the enemy phase
   if (team === 1) for (const u of spawnReinforcements()) ev.push({ type: 'spawn', unit: u });
   const label = phaseLabel(team);
@@ -2951,7 +2938,7 @@ function beginPhase(team, first, resumed = false) {
 function spawnReinforcements() { const out = []; for (const r of B.map.reinforce) if (r.turn === B.turn && !r.done) { r.done = true; for (const d of r.units) { if (unitAt(d.x, d.y)) continue; const u = makeUnit(d.mon, d.level, d.team == null ? 1 : d.team, { x: d.x, y: d.y, ai: d.ai || 'aggro', boss: d.boss }); B.units.push(u); out.push(u); requestBigSprite(u.num); } } return out; }
 function nextPhase() {
   if (checkObjective()) { endBattle(); return; }
-  let t = B.phase; for (let i = 0; i < 4; i++) { t = (t + 1) % 4; if (t === 0 || alive(t).length || (B.territory && t === 1)) break; }
+  let t = B.phase; for (let i = 0; i < 4; i++) { t = (t + 1) % 4; if (t === 0 || alive(t).length || warCanPlay(t)) break; }
   beginPhase(t, false);
 }
 function endBattle() { BT.mode = 'end'; BT.endTimer = 0; Audio.stopMusic(); const won = B.result === 'win' || B.result === 'p1' || B.result === 'p2'; Audio.sfx(won ? 'win' : 'lose'); if (won) Audio.playMusic('win'); }
@@ -2988,7 +2975,11 @@ function setupEvent(q) {
     case 'thaw': floatText(ux(e.unit), uy(e.unit) - 8, 'Thawed!', '#98d8f8'); break;
     case 'recharge': q.dur = BT.fast ? .3 : .6; if (e.done && !unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); floatText(ux(e.unit), uy(e.unit) - 8, e.done ? 'Recharging...' : 'Must recharge!', RECHARGE_COL, { outline: '#000' }); break;
     case 'dot': Audio.sfx(e.kind === 'brn' ? 'burn' : 'poison'); shake(1); floatText(ux(e.unit), uy(e.unit), '-' + e.amount, e.kind === 'psn' ? '#d080ff' : '#ff9040'); spawnParts(ux(e.unit), uy(e.unit) + 8, 8, e.kind === 'psn' ? ['#b050d0', '#7030a0'] : ['#ff8030', '#ffd040'], { speed: 30, grav: -50, life: .7 }); if (!unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); break;
-    case 'spawn': q.dur = BT.fast ? .3 : .6; centerCam(e.unit.x, e.unit.y); Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 8, 12, ['#ffffff', '#ff4b4b'], { speed: 50, life: .5, grav: 0 }); floatText(ux(e.unit), uy(e.unit) - 10, 'Reinforcements!', UI.red); break;
+    case 'spawn': q.dur = BT.fast ? .3 : e.deploy ? .8 : .6; centerCam(e.unit.x, e.unit.y);
+      if (e.deploy) { // out of the PC: a Poké Ball pops open on the center, a flash in the side's colour, "Go, Pidgey!"
+        const c = teamColorL(e.unit.team); Audio.sfx('caught'); e.unit.fx.sy = .5; e.unit.fx.sx = 1.4; spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 26, life: .5, col: c }); spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 14, life: .4, col: '#ffffff', delay: .06 }); spawnSprite('flash', ux(e.unit), uy(e.unit) + 6, { size: 12, life: .25, col: '#ffffff' });
+        spawnParts(ux(e.unit), uy(e.unit) + 6, 18, [c, '#ffffff', '#ff5a5a'], { speed: 70, life: .6, grav: 60 }); floatText(ux(e.unit), uy(e.unit) - 12, 'Go, ' + e.unit.name + '!', c, { big: true, outline: '#000', life: 1.2 }); break; }
+      Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 8, 12, ['#ffffff', '#ff4b4b'], { speed: 50, life: .5, grav: 0 }); floatText(ux(e.unit), uy(e.unit) - 10, 'Reinforcements!', UI.red); break;
     case 'capture': q.dur = BT.fast ? 1.6 : 2.6 + e.shakes * .5; Audio.sfx('catch'); break;
     case 'miss': q.dur = BT.fast ? .3 : .55; break;
     case 'status': floatText(ux(e.unit), uy(e.unit) - 6, STATUS[e.status].text.toUpperCase() + '!', STATUS[e.status].col, { outline: '#000' }); Audio.sfx(e.status === 'par' ? 'para' : e.status === 'brn' ? 'burn' : 'poison'); break;
@@ -3128,19 +3119,35 @@ function pickupAt(u) {
 }
 function openActionMenu(u) {
   const items = []; const tg = seenTargets(u); if (tg.length) items.push({ id: 'attack', label: 'Attack', icon: 'sword', sub: tg.length + (tg.length > 1 ? ' targets' : ' target') });
-  const wildAdj = B.units.filter(v => v.hp > 0 && v.team === 2 && dist(v, u) === 1); const hasBall = wildAdj.some(isPracticeTarget) || (B.bag.pokeball || 0) > 0;
-  if (wildAdj.length && hasBall) items.push({ id: 'catch', label: 'Catch', icon: 'ball', sub: wildAdj.some(isPracticeTarget) ? 'Oak\'s practice ball' : 'Throw a Poké Ball · ' + B.bag.pokeball + ' left' });
-  if (B.map.objective.type === 'seize' && B.map.seize && u.x === B.map.seize.x && u.y === B.map.seize.y && !campaignProperty(u.x, u.y)) items.unshift({ id: 'seize', label: 'Seize', icon: 'flag', sub: 'Win the map!' });
-  if (B.territory && !territoryCaptureBlock(u)) { const p = territoryProperty(u.x, u.y); items.unshift({ id: 'property', label: 'Capture', icon: 'flag', sub: p.name + ': ' + (p.captor === u.id ? p.progress : 0) + '/20 + ' + territoryCaptureGain(u) + ' · leaving resets progress' }); }
-  if (!B.territory && !campaignCaptureBlock(u)) { const p = campaignProperty(u.x, u.y); items.unshift({ id: 'outpost', label: 'Capture', icon: 'flag', sub: p.name + ': ' + (p.captor === u.id ? p.progress : 0) + '/20 + ' + territoryCaptureGain(u) }); }
+  const wildAdj = B.units.filter(v => v.hp > 0 && v.team === 2 && dist(v, u) === 1); const canBuy = !!(B.war && B.war.funds[u.team] >= WAR.ball), hasBall = wildAdj.some(isPracticeTarget) || (B.bag.pokeball || 0) > 0 || canBuy;
+  if (wildAdj.length && hasBall) items.push({ id: 'catch', label: 'Catch', icon: 'ball', sub: wildAdj.some(isPracticeTarget) ? 'Oak\'s practice ball' : (B.bag.pokeball > 0 ? 'Throw a Poké Ball · ' + B.bag.pokeball + ' left' : 'Buy a Poké Ball · ' + money(WAR.ball)) + ' · the catch goes to your PC Box' });
+  if (B.map.objective.type === 'seize' && B.map.seize && u.x === B.map.seize.x && u.y === B.map.seize.y && !warProperty(u.x, u.y)) items.unshift({ id: 'seize', label: 'Seize', icon: 'flag', sub: 'Win the map!' });
+  if (B.war && !warCaptureBlock(u)) { const p = warProperty(u.x, u.y); items.unshift({ id: 'property', label: 'Capture', icon: 'flag', sub: p.name + ': ' + (p.captor === u.id ? p.progress : 0) + '/20 + ' + warCaptureGain(u) + (p.kind === 'hq' ? ' · take it and win' : p.kind === 'center' ? ' · pays ' + money(B.war.income) + ' a day' : '') + ' · leaving resets it' }); }
   // the role skill: always listed so the player learns it exists; greyed with the reason when it cannot be used now
   if (u.skill && !u.skill.passive) { const why = skillBlock(u); const n = why ? 0 : skillTargetsAt(u).length; items.push({ id: 'skill', label: u.skill.name, icon: 'skill', off: !!why, sub: why ? u.skill.menu + ' (' + why + ')' : u.skill.menu + (u.skill.target === 'self' ? '' : ' · ' + n + (n > 1 ? ' targets' : ' target')) + (u.skill.cd ? ' · ' + cooldownText(u.skill) : '') }); }
   items.push({ id: 'wait', label: 'Wait', icon: 'wait', sub: 'End this unit\'s turn' });
   BT.menu = { items, i: 0 }; BT.mode = 'menu'; BT.cx = u.x; BT.cy = u.y;
 }
+// The PC: deploy a Pokémon from the side's Box onto a free center it owns (without a center given, pick the center
+// first). Each row shows the price (FREE for a fresh catch); the footer says why a row is greyed.
+function openDeployMenu(p) {
+  const team = HT(), W = B.war; BT.sel = null; BT.autoEnd = 0; BT.mode = 'endmenu';
+  if (!p) { BT.menu = { title: 'DEPLOY WHERE?', i: 0, items: warDeploySites(team).map(q => ({ id: 'site:' + W.props.indexOf(q), label: q.name, icon: 'flag', off: !!unitAt(q.x, q.y), sub: unitAt(q.x, q.y) ? 'Occupied: move that Pokémon first' : 'Open the PC here · arrivals act next turn' })).concat([{ id: 'close', label: 'Close', icon: 'x' }]) }; return; }
+  BT.deploySite = p; BT.cx = p.x; BT.cy = p.y; keepCursorVisible();
+  BT.menu = { title: 'PC BOX · ' + money(W.funds[team]), i: 0, items: W.box[team].map((e, i) => { const why = warDeployBlock(team, i, p); return { id: 'deploy:' + i, icon: 'ball', label: (e.nick || DEX[e.num].name) + ' Lv' + e.level, right: e.state === 'field' ? 'OUT' : e.fresh ? 'FREE' : money(e.cost), off: !!why, sub: (why || p.name + ' · acts next turn') + ' · ' + ROLES[roleFor(DEX[e.num])].name + ' · ' + DEX[e.num].types.join('/') }; }).concat([{ id: 'close', label: 'Close', icon: 'x' }]) };
+  const k = BT.menu.items.findIndex(it => !it.off && it.id !== 'close'); if (k >= 0) BT.menu.i = k;
+}
+function warMenuAction(it) {
+  if (!B.war || !(it.id === 'pc' || it.id.startsWith('site:') || it.id.startsWith('deploy:'))) return false;
+  if (it.off) { Audio.sfx('error'); return true; }
+  if (it.id === 'pc') openDeployMenu();
+  else if (it.id.startsWith('site:')) openDeployMenu(B.war.props[+it.id.slice(5)]);
+  else { const u = warDeploy(HT(), +it.id.slice(7), BT.deploySite); if (!u) { Audio.sfx('error'); return true; } BT.queue = [{ kind: 'event', ev: { type: 'spawn', unit: u, deploy: true } }]; playQueue(() => { BT.mode = 'idle'; }); }
+  return true;
+}
 function menuChoose(id) {
   const u = BT.sel;
-  if (id === 'property' || id === 'outpost') { const e = boardCapture(u); if (!e) { Audio.sfx('error'); return; } BT.queue = [{ kind: 'event', ev: e }]; playQueue(() => finishUnit(u)); return; }
+  if (id === 'property') { const e = warCapture(u); if (!e) { Audio.sfx('error'); return; } BT.queue = [{ kind: 'event', ev: e }]; playQueue(() => finishUnit(u)); return; }
   if (id === 'skill') { if (skillBlock(u)) { Audio.sfx('error'); return; } Audio.sfx('ok'); BT.targets = skillTargetsAt(u); BT.tIdx = 0; BT.mode = 'skillTarget'; setTargetCursor(); return; }
   Audio.sfx('ok');
   if (id === 'wait') finishUnit(u);
@@ -3204,18 +3211,20 @@ function noteKo(e) { if (e.noted) return; e.noted = true; if (e.unit.team !== 0)
 function confirmCatch() {
   const u = BT.sel, t = BT.targets[BT.tIdx]; const ball = BT.ball; if (!t || !ball || !canTakeAction(u) || t.hp <= 0 || t.team !== 2 || dist(u, t) !== 1 || (ball === 'practiceball' && !isPracticeTarget(t))) return;
   if (isPracticeTarget(t) && !practiceReady(t)) { Audio.sfx('error'); return; }
-  if (ball !== 'practiceball') { if (!(B.bag.pokeball > 0)) return; B.bag.pokeball--; }
+  if (ball !== 'practiceball') { if (B.bag.pokeball > 0) B.bag.pokeball--; else if (B.war && B.war.funds[u.team] >= WAR.ball) B.war.funds[u.team] -= WAR.ball; else return; }
   const r = tryCapture(t, ITEMS[ball]);
   BT.queue = [{ kind: 'event', ev: { type: 'capture', unit: t, ok: r.ok, shakes: r.shakes, from: { x: u.x, y: u.y }, ball } }];
   if (r.ok) BT.queue.push({ kind: 'fn', fn: () => {
     if (isPracticeTarget(t)) B.lesson.complete = true;
     powerCharge(u.team, 15);
-    if (B.versus) { t.team = u.team; t.acted = true; t.moved = true; t.ai = null; t.boss = false; t.status = null; t.hp = Math.max(1, Math.floor(t.maxHp * .5)); t.fx.alpha = 1; t.fx.sx = t.fx.sy = 1; floatText(t.x * TILE + TILE / 2, t.y * TILE - 6, 'Joined ' + teamName(u.team) + '!', teamColor(u.team), { outline: UI.shadow, life: 1.6 }); }
-    else { t.hp = 0; t.captured = true; B.captured.push(serializeUnit(Object.assign({}, t, { team: 0, hp: Math.max(1, Math.floor(t.maxHp * .5)) }))); } } });
+    // the catch goes to the catcher's PC Box (its first deployment is free); a campaign catch also joins the collection
+    t.hp = 0; t.captured = true; const e = warBoxAdd(u.team, Object.assign({}, t, { ai: null, boss: false, provoked: false }));
+    if (!B.versus && u.team === 0) { B.captured.push(serializeUnit(Object.assign({}, t, { team: 0, hp: Math.max(1, Math.floor(t.maxHp * .5)) }))); if (e) e.captIdx = B.captured.length - 1; }
+    if (e) floatText(t.x * TILE + TILE / 2, t.y * TILE - 20, 'To your PC Box!', teamColorL(u.team), { outline: UI.shadow, life: 1.6, delay: .4 }); } });
   playQueue(() => { finishUnit(u); });
 }
 function finishUnit(u) {
-  settleOutposts();
+  warSettle();
   u.acted = true; u.moved = true;
   if (B.versus) { const fe = versusAfterAction(u); if (fe) { Audio.sfx(fe.what === 'captured' ? 'select' : 'item'); floatText(u.x * TILE + TILE / 2, u.y * TILE - 8, fe.what === 'taken' ? 'FLAG TAKEN!' : fe.what === 'returned' ? 'Flag returned' : 'CAPTURED!', fe.what === 'captured' ? UI.gold : teamColorL(u.team), { big: fe.what !== 'returned', life: 1.4, outline: '#000' }); } }
   if (B.fog) refreshVision(HT()); BT.sel = null; BT.reach = null; BT.atk = null; BT.undo = null; BT.menu = null; BT.dart = false; BT.hpShow.clear();
@@ -3242,7 +3251,7 @@ function openEndMenu(keepIndex = 0) {
   BT.mode = 'endmenu';
   BT.menu = { items: [{ id: 'endturn', label: 'End Turn', icon: 'end', sub: B.versus ? 'Pass to the other trainer' : 'Pass to the enemy' }, { id: 'danger', label: (BT.showDanger ? 'Hide' : 'Show') + ' Danger', icon: 'skull', sub: 'Enemy attack range' }, { id: 'scene', label: 'Battle: ' + BATTLE_PREF_LABEL[PREF.battle], icon: 'vs', sub: 'Attack scene: full, quick or on the map' }, { id: 'help', label: 'Help', icon: 'help', sub: 'Controls & rules' }, { id: 'mute', label: Audio.muted ? 'Unmute' : 'Mute', icon: 'note', sub: 'Sound on/off' }, { id: 'retreat', label: B.versus ? 'Forfeit' : 'Retreat', icon: 'run', sub: B.versus ? 'Concede the arena' : 'Give up this map' }, { id: 'close', label: 'Close', icon: 'x', sub: '' }], i: keepIndex };
   if (powerState(HT())) BT.menu.items.splice(1, 0, { id: 'power', label: 'Team Power', icon: 'skill', sub: powerState(HT()).charge + '/100 charge · captain commands the team' });
-  if (B.territory) BT.menu.items.splice(1, 0, { id: 'reserves', label: 'Reserves', icon: 'ball', sub: B.territory.points[HT()] + ' CP · choose an owned center' });
+  if (warHasBox(HT())) BT.menu.items.splice(1, 0, { id: 'pc', label: 'PC Box', icon: 'ball', sub: money(B.war.funds[HT()]) + ' · deploy at one of your free centers' });
 }
 function endTurn() { BT.mode = 'anim'; BT.sel = null; BT.autoEnd = 0; for (const u of alive(HT())) u.acted = true; nextPhase(); }
 
@@ -3250,7 +3259,7 @@ function endTurn() { BT.mode = 'anim'; BT.sel = null; BT.autoEnd = 0; for (const
 function runEnemyPhase(team) {
   const order = alive(team).filter(u => u.hp > 0 && !u.acted).sort((a, b) => b.level - a.level); // acted: spent the turn recharging
   const step = () => {
-    settleOutposts();
+    warSettle();
     if (checkObjective()) { endBattle(); return; }
     const u = order.shift(); if (!u) { nextPhase(); return; }
     if (u.hp <= 0) { step(); return; }
@@ -3259,7 +3268,7 @@ function runEnemyPhase(team) {
     if (!d) { step(); return; }
     BT.queue = [];
     if (d.x !== u.x || d.y !== u.y) { const reach = reachable(u); const p = pathTo(reach, d.x, d.y); if (p) BT.queue.push({ kind: 'fn', fn: () => { centerCam(u.x, u.y); } }, { kind: 'wait', t2: .25 }, { kind: 'move', unit: u, path: p }); }
-    if (d.capture) { BT.queue.push({ kind: 'fn', fn: () => { const e = boardCapture(u); if (e) BT.queue.unshift({ kind: 'event', ev: e }); } }); }
+    if (d.capture) { BT.queue.push({ kind: 'fn', fn: () => { const e = warCapture(u); if (e) BT.queue.unshift({ kind: 'event', ev: e }); } }); }
     else if (d.skill) { BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...skillQueue(u, d.skill, d.target)); } }); }
     else if (d.target) {
       BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...combatQueue(u, d.target, d.move, { x: d.x, y: d.y })); } });
@@ -3311,7 +3320,7 @@ function keyInput(k) {
 }
 function activateMenu() {
   const m = BT.menu; const it = m.items[m.i]; if (!it) return;
-  if (territoryMenuAction(it)) return;
+  if (warMenuAction(it)) return;
   if (it.off) { Audio.sfx('error'); return; }
   if (BT.mode === 'menu') menuChoose(it.id);
   else if (BT.mode === 'endmenu') { Audio.sfx('ok'); if (it.id === 'endturn') endTurn(); else if (it.id === 'power') { BT.mode = 'idle'; openPowerMenu(); } else if (it.id === 'danger') { BT.showDanger = !BT.showDanger; BT.mode = 'idle'; } else if (it.id === 'scene') { cyclePref('battle'); openEndMenu(m.i); } else if (it.id === 'help') { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; } else if (it.id === 'mute') { Audio.toggle(); BT.mode = 'idle'; } else if (it.id === 'retreat') { B.result = B.versus ? (HT() === 0 ? 'p2' : 'p1') : 'retreat'; endBattle(); } else BT.mode = 'idle'; }
@@ -3320,13 +3329,13 @@ function activateMenu() {
 function pickBall() {
   const t = BT.targets[BT.tIdx]; if (!t) return;
   if (isPracticeTarget(t)) { if (!practiceReady(t)) { Audio.sfx('error'); floatText(t.x * TILE + TILE / 2, t.y * TILE - 6, 'Weaken it first!', UI.gold, { outline: '#000' }); return; } BT.ball = 'practiceball'; }
-  else { if (!(B.bag.pokeball > 0)) { Audio.sfx('error'); return; } BT.ball = 'pokeball'; }
+  else { if (!(B.bag.pokeball > 0) && !(B.war && B.war.funds[HT()] >= WAR.ball)) { Audio.sfx('error'); return; } BT.ball = 'pokeball'; }
   Audio.sfx('ok'); confirmCatch();
 }
 function tileAction(x, y) {
   const m = BT.mode; const u = seenUnitAt(x, y);
   if (m === 'idle') {
-    if (B.territory && !u) { const p = territoryProperty(x, y); if (p && p.owner === HT()) { openTerritoryReserves(p); return; } }
+    if (B.war && !u) { const p = warProperty(x, y); if (p && p.owner === HT() && (p.kind === 'hq' || p.kind === 'center') && warHasBox(HT())) { openDeployMenu(p); return; } }
     if (u && u.team === HT() && !u.acted) { selectUnit(u); return; }
     if (u) { BT.info = u; BT.mode = 'unitinfo'; Audio.sfx('ok'); return; }
     cancel(); return; // empty tile → end-turn menu
@@ -3474,7 +3483,6 @@ function drawBoardLayer() {
     let c = BT.hoverRange; if (!c || c.id !== hov.id || c.turn !== B.turn || c.x !== hov.x || c.y !== hov.y) { const r = reachable(hov); c = BT.hoverRange = { id: hov.id, turn: B.turn, x: hov.x, y: hov.y, t0: BT.time, cells: [...r.values()].filter(n => canStand(hov, n.x, n.y)), r, ac: attackCells(hov, r) }; }
     const k = Math.min(1, (BT.time - c.t0) / .25); ctx.globalAlpha = .55 * k; rangeOverlay(c.cells, (x, y) => c.r.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6)); rangeOverlay(c.ac, (x, y) => c.r.has(key(x, y)) || c.ac.some(q => q.x === x && q.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e07030', '#ffc0a0', Math.floor(BT.time * 6)); ctx.globalAlpha = 1; } }
   if (BT.mode === 'unitinfo' && BT.info && BT.info.team !== HT()) { const r = reachable(BT.info); const cells = [...r.values()].filter(n => canStand(BT.info, n.x, n.y)); rangeOverlay(cells, (x, y) => r.has(key(x, y)), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e03030', '#ffa0a0', Math.floor(BT.time * 6)); const ac = attackCells(BT.info, r); rangeOverlay(ac, (x, y) => r.has(key(x, y)) || ac.some(c => c.x === x && c.y === y), -CAM.x + FX.shakeX, -CAM.y + FX.shakeY, '#e07030', '#ffc0a0', Math.floor(BT.time * 6)); }
-  if (B.territory) drawTerritoryProperties();
   drawOutposts();
   // target highlights: red for foes, green for allies and self (skills), the chosen one white
   if (BT.mode === 'target' || BT.mode === 'catchTarget' || BT.mode === 'skillTarget') for (const t of BT.targets) { const X = tileX(t.x), Y = tileY(t.y); const k = Math.floor(BT.time * 8) % 2; const friendly = !hostile(t.team, HT()); outline(X + 1 + k, Y + 1 + k, TILE - 2 - 2 * k, TILE - 2 - 2 * k, t === BT.targets[BT.tIdx] ? '#ffffff' : friendly ? '#60e070' : '#ff6060'); }
@@ -3685,7 +3693,7 @@ function objectiveProgress() {
   if (B.versus) { const st = versusStatusText(); const m = o.mode || 'elim'; if (m === 'hill' && B.hill) return { text: 'Hold the hill', right: B.hill.score[HT()] + '/' + B.hill.need, ratio: B.hill.score[HT()] / B.hill.need, col: UI.gold }; if (m === 'ctf') return { text: 'Capture the flag', right: st ? st.text.replace('FLAGS ', '') : '', ratio: 0, col: UI.gold }; return { text: 'Beat the other team', right: alive(1 - HT()).length + ' left', ratio: 1 - alive(1 - HT()).length / Math.max(1, B.units.filter(u => u.team === 1 - HT()).length), col: UI.gold }; }
   if (o.type === 'boss') { const b = B.units.find(u => u.boss && u.team === 1); const name = o.bossName || (b ? b.name : 'the boss'); return { text: 'Defeat ' + name, right: b && b.hp > 0 ? b.hp + '/' + b.maxHp : 'down!', ratio: b ? b.hp / b.maxHp : 0, col: UI.red, boss: true }; }
   if (o.type === 'survive') return { text: 'Survive ' + o.turns + ' turns', right: Math.min(B.turn, o.turns) + '/' + o.turns, ratio: (B.turn - 1) / o.turns, col: UI.blue };
-  if (o.type === 'seize') { const p = (B.outposts || []).find(q => q.goal); return { text: 'Seize the ' + (o.what || 'gym'), right: p ? (p.owner === HT() ? 'taken!' : (p.captor != null ? p.progress : 0) + '/20') : '', ratio: p ? (p.owner === HT() ? 1 : (p.captor != null ? p.progress : 0) / 20) : 0, col: UI.gold }; }
+  if (o.type === 'seize') { const p = B.war && B.war.props.find(q => q.goal); return { text: 'Seize the ' + (o.what || 'gym'), right: p ? (p.owner === HT() ? 'taken!' : (p.captor != null ? p.progress : 0) + '/20') : '', ratio: p ? (p.owner === HT() ? 1 : (p.captor != null ? p.progress : 0) / 20) : 0, col: UI.gold }; }
   const total = B.units.filter(u => u.team === 1).length, left = alive(1).length; return { text: 'Defeat every foe', right: left + ' left', ratio: 1 - left / Math.max(1, total), col: UI.gold };
 }
 // The objective tracker (top-left): the turn and one pip per Pokémon that can still act in the header band; the goal
@@ -3715,7 +3723,7 @@ function drawButtons(L) {
   if (enemyAnim) items.push({ label: 'FAST', on: BT.fast, run: () => { BT.fast = !BT.fast; } });
   if (idle && VIEW.touch && alive(HT()).some(u => !u.acted)) { const nx = { label: 'NEXT', run: () => keyInput('next') }; if (L.stack) items.splice(1, 0, nx); else items.push(nx); }
   if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
-  if (idle && B.territory) items.push({ label: 'RESERVE', run: () => openTerritoryReserves() });
+  if (idle && warHasBox(HT())) items.push({ label: 'PC', run: () => openDeployMenu() });
   if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; Audio.sfx('menu'); } }, { label: '♪', on: !Audio.muted, half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
   if (B.territory && L.stack && idle) { const mute = items.findIndex(it => it.label.startsWith('♪')); if (mute >= 0) items.splice(mute, 1); }
   if (!items.length) return;
@@ -3775,7 +3783,7 @@ function unitCardBody(u, x, y, w, compact) {
 function terrainCardBody(t, ref, x, y, w, tall) {
   const mv = inMap(BT.cx, BT.cy) ? B.map.variants[BT.cy][BT.cx] : 0; const sw = tall ? 10 : 20;
   rect(x + 4, y + 3, sw, sw, UI.shadow); ctx.drawImage(tileImg(t.ch, mv, 0), 0, 0, 32, 32, x + 5, y + 4, sw - 2, sw - 2); outline(x + 4, y + 3, sw, sw, UI.border2);
-  const property = boardProperty(BT.cx, BT.cy);
+  const property = warProperty(BT.cx, BT.cy);
   const healText = property && property.owner !== (ref.team == null ? HT() : ref.team) ? ['no heal here', UI.muted] : ['heals 30%', UI.green];
   const cost = moveCost(t, ref); const extra = t.heal ? healText : t.burn ? ['burns', UI.red] : cost >= 99 ? ['no entry', UI.muted] : null;
   const stars = defStars(terrainDef(t, ref)), eva = terrainEva(t, ref);
@@ -3800,7 +3808,7 @@ function drawMenu() {
   const key = BT.mode + ':' + menuTitle() + ':' + m.items.length; if (BT.menuKey !== key) { BT.menuKey = key; BT.menuT0 = BT.time; } const ko = REDUCED ? 1 : Math.min(1, (BT.time - BT.menuT0) / .12); const r = menuRect(); r.y += Math.round((1 - easeOut(ko)) * 6); ctx.globalAlpha = ko;
   hudPanel(r.x, r.y, r.w, r.h, { header: menuTitle(), headerRight: m.items.length > 4 ? (m.i + 1) + '/' + m.items.length : null, headerFill: BT.mode === 'menu' && BT.sel ? teamColorD(BT.sel.team) : UI.panelDark });
   m.items.forEach((it, i) => { const y = r.y + r.top + i * rh; const hot = i === m.i; const ink = it.off ? UI.dim : hot ? UI.hi : UI.ink; if (hot) selRow(r.x + 4, y, r.w - 8, rh - 1);
-    const lx = r.x + (it.icon ? 22 : 11); if (it.icon) iconAt(it.icon, r.x + 9, y + ty - 1, it.off ? UI.dim : hot ? '#ffffff' : '#c8cddc'); text(it.label, lx, y + ty, ink, hot ? { shadow: shade(UI.sel, -.6) } : {}); });
+    const lx = r.x + (it.icon ? 22 : 11); if (it.icon) iconAt(it.icon, r.x + 9, y + ty - 1, it.off ? UI.dim : hot ? '#ffffff' : '#c8cddc'); text(it.label, lx, y + ty, ink, hot ? { shadow: shade(UI.sel, -.6) } : {}); if (it.right) textR(it.right, r.x + r.w - 8, y + ty, it.off ? UI.dim : it.right === 'FREE' ? UI.green : UI.gold); });
   if (r.foot) { const fy = r.y + r.h - 4 - r.foot; rect(r.x + 4, fy, r.w - 8, r.foot, UI.panelDark); hline(r.x + 4, fy, r.w - 8, UI.inset); const it = m.items[m.i]; const lines = it && it.sub ? wrap(it.sub, r.w - 14).slice(0, 2) : []; lines.forEach((l, i) => text(l, r.x + 7, fy + 4 + i * 9, it.off ? '#d8a0a0' : UI.muted)); }
   ctx.globalAlpha = 1;
 }
@@ -4112,7 +4120,7 @@ function drawEndScreen() {
   const n = endStars();
   if (n != null) { const ss = W >= 320 && H >= 240 ? 2 : 1; for (let s = 0; s < 3; s++) { const at = END_BEATS.stars + s * END_BEATS.starGap, u = REDUCED ? 1 : clamp((t - at) / .25, 0, 1), sx = Math.round(W / 2 + (s - 1) * (18 * ss + 6)), on = s < n; if (u <= 0) { drawBigStar(sx, y + 7 * ss, ss, false); continue; } const sc = on ? ss + (1 - easeOutBack(u, 3)) * ss : ss; drawBigStar(sx, y + 7 * ss, sc, on); } y += 14 * ss + 4;
     const goals = ['win', 'within ' + (B.map.par || 10) + ' turns', B.faints ? B.faints + ' fainted' : 'nobody fainted']; if (t > END_BEATS.stars + .2) { ctx.globalAlpha = clamp((t - END_BEATS.stars - .2) / .3, 0, 1); textC(goals.join('  ·  '), W / 2, y, UI.muted, { outline: UI.inset }); ctx.globalAlpha = 1; } y += 12; }
-  const stats = vs ? 'Turns ' + B.turn + '  ·  KOs ' + B.kills : win ? 'Turns ' + B.turn + '  ·  KOs ' + B.kills + (B.captured.length ? '  ·  Caught ' + B.captured.length : '') : (B.result === 'retreat' ? 'Your team runs back to the Poké Center.' : B.territory ? (B.territory.reason || '') : 'Everyone fainted. Try a different plan!');
+  const stats = vs ? 'Turns ' + B.turn + '  ·  KOs ' + B.kills : win ? 'Turns ' + B.turn + '  ·  KOs ' + B.kills + (B.captured.length ? '  ·  Caught ' + B.captured.length : '') : (B.result === 'retreat' ? 'Your team runs back to the Poké Center.' : B.war && B.war.reason ? B.war.reason : 'Everyone fainted. Try a different plan!');
   if (t > .7) { ctx.globalAlpha = clamp((t - .7) / .3, 0, 1); wrap(vs ? (B.endReason || stats) : stats, W - 20).slice(0, 2).forEach((l, i) => textC(l, W / 2, y + i * 10, UI.ink, { outline: UI.inset })); ctx.globalAlpha = 1; }
   if (t > 1.2) hintLine(VIEW.touch ? ['tap to continue'] : [['Z', 'continue']], W / 2, Math.min(H - 14, y + 26));
   if (win && k >= 1 && Math.random() < .35) spawnParts(vrnd() * bvW() + CAM.x, CAM.y - 5, 1, vs && vt >= 0 ? [teamColor(vt), teamColorL(vt), '#ffd24a', '#ffffff'] : ['#ffd24a', '#5ee06a', '#3d7dff', '#ff5a5a', '#ffffff'], { speed: 10, vy: 40, life: 2.5, grav: 20, size: 3 });
@@ -4818,152 +4826,200 @@ function versusMap(seed, w = 18, h = 11, opt = {}) {
   if (opt.wild !== false) for (let i = 0; i < 2; i++) { const s = spot(); if (!s) break; const d = pool[Math.floor(r() * pool.length)]; const lvl = Math.max(2, (opt.level || 20) - 3); units.push({ mon: d.num, level: lvl, x: s.x, y: s.y, team: 2, ai: 'aggro' }); if (s.x !== w - 1 - s.x) units.push({ mon: d.num, level: lvl, x: w - 1 - s.x, y: s.y, team: 2, ai: 'aggro' }); }
   return { name: 'Arena #' + (seed % 1000), seed, objective: { type: 'versus', mode: opt.mode || 'elim' }, rows, deploy, deploy2, units, items, par: 0, music: 'player', turnLimit: opt.turns == null ? 30 : opt.turns, flags, hill, fog: !!opt.fog };
 }
-// Territory: a finite team, contested centers, income and recoverable reserves.
-// The same capture/deploy/upkeep functions drive the player, AI and simulations.
+// ============================================================================
+// war.js — the Advance Wars layer every battle shares (Frente Kanto, see docs/frente-kanto.md): properties (HQs,
+// Poké Centers, Field Centers and the map's outposts) with owners and a 20-point capture, funds paid each day, the
+// Box each side deploys Pokémon from, catches that land in the Box, Pokémon that faint back into it and recover,
+// and the AI that deploys and captures. Conquest (territory.js) is one configuration of it; the campaign, Skirmish
+// and Versus are others. Model only: forecasts, the AI and playback share it.
+// ============================================================================
 'use strict';
-const TERRITORY = { level: 12, cap: 5, capture: 20, income: 2, recovery: 2, hold: 3, turns: 40, bank: 30 };
-const TERRITORY_ROSTER = [[16, 3], [74, 3], [7, 3], [1, 3], [63, 4], [35, 4]];
-const TERRITORY_MAP = {
-  name: 'Three Bridges', seed: 73, music: 'player', objective: { type: 'territory' }, turnLimit: TERRITORY.turns,
-  rows: ['TT....~~~....TT', 'T..T..~~~..T..T', '...T..=C=..T...', '......~~~......', '..T.M..~..M.T..', '.Q####=C=####Q.', '..T.M..~..M.T..', '......~~~......', '...T..=C=..T...', 'T..T..~~~..T..T', 'TT....~~~....TT'],
-  deploy: [], units: [],
-};
-function territoryProperty(x, y) { return B && B.territory ? B.territory.properties.find(p => p.x === x && p.y === y) : null; }
-function territoryCenters(team) { return B.territory.properties.filter(p => p.owner === team); }
-function territoryControl(team) { return territoryCenters(team).filter(p => p.hq < 0).length; }
-function territoryIncome(team) { return territoryCenters(team).length * TERRITORY.income; }
-function territoryHeals(u) { if (!B.territory) { const p = campaignProperty(u.x, u.y); return !p || p.owner === u.team; } return !!territoryProperty(u.x, u.y) && territoryProperty(u.x, u.y).owner === u.team; }
-function territoryRoster(root = 7) { return TERRITORY_ROSTER.map(([n, cost], i) => [i === 2 ? root : i === 3 && root === 1 ? 7 : n, cost]); }
-function territoryInit(captains = [7, 7]) {
-  const properties = [[1, 5, 'WEST HQ', 0], [13, 5, 'EAST HQ', 1], [7, 2, 'NORTH', -1], [7, 5, 'BRIDGE', -1], [7, 8, 'SOUTH', -1]].map(([x, y, name, hq]) => ({ x, y, name, hq, owner: hq, captor: null, progress: 0 }));
-  B.territory = { version: 1, captains: captains.slice(), points: [4, 4], properties, hold: [0, 0], stamp: [-1, -1], reserves: [0, 1].map(team => territoryRoster(captains[team]).map(([num, cost]) => ({ num, cost, unitId: null, recovery: 0 }))), captures: [0, 0], deployments: [0, 0], reason: '' };
-  for (const team of [0, 1]) for (let i = 0; i < 3; i++) {
-    const u = makeUnit(B.territory.reserves[team][i].num, TERRITORY.level, team, { x: team ? 12 : 2, y: team ? 6 - i : 4 + i });
-    u.reserveSlot = i; B.units.push(u); B.territory.reserves[team][i].unitId = u.id; requestBigSprite(u.num);
-  }
+const WAR = { income: 1000, cap: 10, capture: 20, recovery: 2, ball: 500 };
+const PROP_KIND = { Q: 'hq', C: 'center', K: 'center' };
+// Deploy price: base stat total × (level + 10) / 4, to the ₽100, at least ₽1000 (a Lv 5 Pidgey ₽1000, a Lv 20
+// Pidgey ₽1900, a Lv 16 Ivysaur ₽2600, a Lv 30 Charizard ₽5300).
+function bstOf(num) { const b = DEX[num].base; return b.hp + b.atk + b.def + b.spa + b.spd + b.spe; }
+function warCost(num, level) { return Math.max(1000, Math.round(bstOf(num) * (level + 10) * .25 / 100) * 100); }
+function money(n) { return '₽' + Math.round(n).toLocaleString('en-US'); }
+// A Box entry: a Pokémon a side can deploy. `data` is a serialized unit (a campaign Pokémon or a catch) that keeps its
+// moves and experience; otherwise the species is made fresh at `level`. state: 'box' (in the PC) or 'field'.
+function warEntry(e) {
+  const num = e.num || (e.data && e.data.num), level = e.level || (e.data && e.data.level) || 5;
+  return { num, level, cost: e.cost != null ? e.cost : warCost(num, level), data: e.data || null, pid: e.pid == null ? null : e.pid, unitId: null, state: 'box', recovery: 0, fresh: !!e.fresh, nick: e.nick || null };
 }
-// Record casualties once. Leaving a property or fainting interrupts that unit's capture.
-// Called after committed actions, never during the reversible move/menu preview.
-function territorySettle() {
-  if (!B.territory) return; const S = B.territory;
-  for (const team of [0, 1]) for (const r of S.reserves[team]) if (r.unitId != null) {
-    const u = B.units.find(u => u.id === r.unitId);
-    if (!u || u.hp <= 0) { r.unitId = null; r.recovery = TERRITORY.recovery; }
+// Build the war state of the battle in B from the map (its property tiles and outposts) and the mode's settings:
+// opts.war = { funds: [a, b], income, owners: {'x,y': team}, names, goals, boxes: [[entry]…], centers: default owner of
+// centers (campaign: 0, the player's; otherwise neutral), hold: {need, turns} (Conquest), turns, bank, cap }.
+function warInit(mapDef, opts = {}) {
+  const cfg = Object.assign({ funds: [0, 0], income: WAR.income, owners: {}, names: {}, goals: {}, boxes: [[], []], centers: -1, hold: null, turns: null, bank: null, cap: WAR.cap }, mapDef.war || {}, opts.war || {});
+  const props = [], m = B.map;
+  for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
+    const ch = m.tiles[y][x].ch, kind = PROP_KIND[ch]; if (!kind) continue; const k = x + ',' + y;
+    const owner = cfg.owners[k] != null ? cfg.owners[k] : kind === 'hq' ? (x < m.w / 2 ? 0 : 1) : cfg.centers;
+    props.push({ x, y, kind, ch, name: cfg.names[k] || (kind === 'hq' ? (owner === 0 ? 'YOUR HQ' : owner === 1 ? 'ENEMY HQ' : 'HQ') : ch === 'K' ? 'FIELD CENTER' : 'POKé CENTER'), hq: kind === 'hq' ? owner : -1, owner, captor: null, progress: 0, goal: !!cfg.goals[k] });
   }
-  for (const p of S.properties) if (p.captor != null) {
-    const u = B.units.find(u => u.id === p.captor && u.hp > 0);
-    if (!u || u.x !== p.x || u.y !== p.y || u.team === p.owner) { p.captor = null; p.progress = 0; }
-  }
-  for (const t of [0, 1]) if (territoryControl(t) < 2) S.hold[t] = 0;
+  // the map's outposts: named properties (a gym to seize, a contested center) with their own owner
+  for (const o of mapDef.outposts || []) { let p = props.find(q => q.x === o.x && q.y === o.y); if (!p) { p = { x: o.x, y: o.y, kind: 'outpost', ch: m.tiles[o.y][o.x].ch, hq: -1, captor: null, progress: 0 }; props.push(p); } Object.assign(p, { name: o.name || p.name, owner: o.owner != null ? o.owner : -1, goal: !!o.goal }); }
+  B.war = { version: 1, income: cfg.income, funds: cfg.funds.slice(), props, box: [0, 1].map(t => (cfg.boxes[t] || []).map(warEntry)), cap: cfg.cap, hold: cfg.hold ? { need: cfg.hold.need || 2, turns: cfg.hold.turns || 3, count: [0, 0] } : null, turns: cfg.turns, bank: cfg.bank, stats: { captures: [0, 0], deployments: [0, 0], catches: [0, 0] }, stamp: [-1, -1], reason: '' };
+  m.ownerAt = warOwnerAt;
 }
-function territoryCaptureBlock(u, p = u && territoryProperty(u.x, u.y), from = u) {
-  if (!B.territory || !u || u.hp <= 0 || u.team > 1) return 'unavailable';
+function warProperty(x, y) { return B && B.war ? B.war.props.find(p => p.x === x && p.y === y) || null : null; }
+function warOwnerAt(x, y) { const p = warProperty(x, y); return p ? p.owner : null; }
+function warOwned(team) { return B && B.war ? B.war.props.filter(p => p.owner === team) : []; }
+// Income comes from HQs and centers (a gym or an outpost is an objective, not a treasury).
+function warIncome(team) { return B && B.war ? warOwned(team).filter(p => p.kind === 'hq' || p.kind === 'center').length * B.war.income : 0; }
+// A property heals whoever owns it (and every heal tile that is not a property heals everyone, as before).
+function warHeals(u) { const p = warProperty(u.x, u.y); return !p || p.owner === u.team; }
+function warDeploySites(team) { return warOwned(team).filter(p => p.kind === 'hq' || p.kind === 'center'); }
+// Record what happened since the last committed action: a captor that left or fainted loses its progress; a deployed
+// Pokémon that fainted goes back to its Box and recovers for two of its side's days.
+function warSettle() {
+  if (!B || !B.war) return; const W = B.war;
+  for (const p of W.props) if (p.captor != null) { const u = B.units.find(v => v.id === p.captor && v.hp > 0); if (!u || u.x !== p.x || u.y !== p.y || u.team === p.owner) { p.captor = null; p.progress = 0; } }
+  for (const team of [0, 1]) for (const e of W.box[team]) if (e.state === 'field') { const u = B.units.find(v => v.id === e.unitId); if (!u || u.hp <= 0) { e.state = 'box'; e.recovery = WAR.recovery; } }
+  if (W.hold) for (const t of [0, 1]) if (warMiddleHeld(t) < W.hold.need) W.hold.count[t] = 0;
+}
+function warMiddleHeld(team) { return warOwned(team).filter(p => p.kind !== 'hq').length; }
+// The start of a side's turn: income, recovery in the Box, Conquest's hold count. Once per side and day.
+function warUpkeep(team) {
+  if (!B || !B.war || team > 1) return; const W = B.war; if (W.stamp[team] === B.turn) return; warSettle(); W.stamp[team] = B.turn;
+  for (const e of W.box[team]) if (e.state === 'box' && e.recovery > 0) e.recovery--;
+  W.funds[team] += warIncome(team); if (W.bank) W.funds[team] = Math.min(W.bank, W.funds[team]);
+  if (W.hold) W.hold.count[team] = warMiddleHeld(team) >= W.hold.need ? W.hold.count[team] + 1 : 0;
+}
+function warCaptureGain(u) { return Math.max(1, Math.ceil(10 * u.hp / u.maxHp)); }
+function warCaptureBlock(u, p = u && warProperty(u.x, u.y), from = u) {
+  if (!B || !B.war || !u || u.hp <= 0 || u.team > 1) return 'unavailable';
   if (u.acted || u.status === 'frz' || u.recharge) return 'unit not ready';
-  if (!p || !B.territory.properties.includes(p) || p.owner === u.team || from.x !== p.x || from.y !== p.y) return 'stand on another center';
+  if (!p || !B.war.props.includes(p) || p.owner === u.team || from.x !== p.x || from.y !== p.y) return 'stand on another property';
   return null;
 }
-function territoryCaptureGain(u) { return Math.max(1, Math.ceil(10 * u.hp / u.maxHp)); }
-function territoryCapture(u) {
-  const p = territoryProperty(u.x, u.y); if (territoryCaptureBlock(u, p)) return null;
-  territorySettle();
+function warCapture(u) {
+  const p = warProperty(u.x, u.y); if (warCaptureBlock(u, p)) return null; warSettle();
   if (p.captor !== u.id) { p.captor = u.id; p.progress = 0; }
-  p.progress = Math.min(TERRITORY.capture, p.progress + territoryCaptureGain(u));
-  const done = p.progress >= TERRITORY.capture;
-  if (done) { p.owner = u.team; p.captor = null; p.progress = 0; B.territory.captures[u.team]++; powerCharge(u.team, 20); }
-  u.acted = u.moved = true; territorySettle();
+  p.progress = Math.min(WAR.capture, p.progress + warCaptureGain(u)); const done = p.progress >= WAR.capture;
+  if (done) { p.owner = u.team; p.captor = null; p.progress = 0; B.war.stats.captures[u.team]++; powerCharge(u.team, 20); if (p.goal && u.team === 0) B.seized = true; }
+  u.acted = u.moved = true; warSettle();
   return { type: 'property', unit: u, property: p, done, progress: p.progress };
 }
-function territoryDeployBlock(team, slot, p) {
-  if (!B.territory || B.result || team !== B.phase || team < 0 || team > 1) return 'not your phase';
-  const r = B.territory.reserves[team][slot]; if (!r) return 'no reserve';
-  if (r.unitId != null) return 'already on map'; if (r.recovery) return 'recovering ' + r.recovery;
-  if (!p || !B.territory.properties.includes(p) || p.owner !== team) return 'need an owned center';
-  if (unitAt(p.x, p.y)) return 'center occupied';
-  if (alive(team).length >= TERRITORY.cap) return 'five on map';
-  if (B.territory.points[team] < r.cost) return 'need ' + r.cost + ' CP';
+function warEntryCost(e) { return e.fresh ? 0 : e.cost; }
+function warDeployBlock(team, i, p) {
+  if (!B || !B.war || B.result || team !== B.phase || team < 0 || team > 1) return 'not your phase';
+  const e = B.war.box[team][i]; if (!e) return 'not in the box';
+  if (e.state === 'field') return 'already on the map'; if (e.recovery) return 'recovering · ' + e.recovery + (e.recovery > 1 ? ' days' : ' day');
+  if (!p || !B.war.props.includes(p) || p.owner !== team || (p.kind !== 'hq' && p.kind !== 'center')) return 'needs one of your centers';
+  if (unitAt(p.x, p.y)) return 'the center is occupied';
+  if (alive(team).length >= B.war.cap) return B.war.cap + ' on the map already';
+  if (B.war.funds[team] < warEntryCost(e)) return 'needs ' + money(warEntryCost(e));
   return null;
 }
-function territoryDeploy(team, slot, p) {
-  if (territoryDeployBlock(team, slot, p)) return null;
-  const r = B.territory.reserves[team][slot], u = makeUnit(r.num, TERRITORY.level, team, { x: p.x, y: p.y });
-  u.reserveSlot = slot; if (slot === 2 && powerState(team)) { powerState(team).captainId = u.id; u.leader = true; } u.acted = u.moved = true; r.unitId = u.id; B.territory.points[team] -= r.cost;
-  B.territory.deployments[team]++; B.units.push(u); requestBigSprite(u.num); return u;
+// Withdraw a Pokémon from the Box onto a free property: a campaign Pokémon or a catch comes back as itself (moves,
+// experience), a fainted one at full HP; it waits until its side's next turn.
+function warDeploy(team, i, p) {
+  if (warDeployBlock(team, i, p)) return null; const W = B.war, e = W.box[team][i];
+  let u = e.unitId != null ? B.units.find(v => v.id === e.unitId) : null;
+  if (u) { u.hp = u.maxHp; u.status = null; u.statusTurns = 0; u.recharge = 0; u.cd = 0; u.brace = 0; u.root = 0; u.x = p.x; u.y = p.y; u.fx.alpha = 1; u.fx.dx = u.fx.dy = 0; u.fx.sx = u.fx.sy = 1; u.captured = false; }
+  else { u = e.data ? restoreUnit(Object.assign({}, e.data, { team, x: p.x, y: p.y, id: 0, acted: false, status: null, recharge: 0, cd: 0, brace: 0, root: 0 })) : makeUnit(e.num, e.level, team, { x: p.x, y: p.y }); u.hp = u.maxHp; if (e.pid != null) u.pid = e.pid; B.units.push(u); requestBigSprite(u.num); }
+  u.team = team; u.acted = u.moved = true; u.fx.facing = team === 1 ? -1 : 1; e.unitId = u.id; e.state = 'field';
+  W.funds[team] -= warEntryCost(e); e.fresh = false; W.stats.deployments[team]++;
+  const ps = powerState(team); if (ps && ps.captainId === u.id) u.leader = true;
+  return u;
 }
-// Deduplicated by round and side. beginPhase increments the round BEFORE this for territory battles.
-function territoryUpkeep(team) {
-  if (!B.territory || team > 1) return; const S = B.territory;
-  if (S.stamp[team] === B.turn) return; territorySettle(); S.stamp[team] = B.turn;
-  for (const r of S.reserves[team]) if (r.unitId == null && r.recovery > 0) r.recovery--;
-  S.points[team] = Math.min(TERRITORY.bank, S.points[team] + territoryIncome(team));
-  S.hold[team] = territoryControl(team) >= 2 ? S.hold[team] + 1 : 0;
+// A catch goes to the catcher's Box, marked fresh (its first deployment is free).
+function warBoxAdd(team, unit) {
+  if (!B || !B.war || team > 1) return null;
+  const data = serializeUnit(Object.assign({}, unit, { team, hp: unit.maxHp, status: null })); const e = warEntry({ num: unit.num, level: unit.level, data, fresh: true, nick: unit.nick });
+  B.war.box[team].push(e); B.war.stats.catches[team]++; return e;
 }
-function territoryObjective() {
-  if (B.result) return B.result; territorySettle(); const S = B.territory;
-  const finish = (winner, reason) => { S.reason = reason; return B.result = winner < 0 ? 'draw' : winner === 0 ? 'win' : 'lose'; };
-  for (const p of S.properties) if (p.hq >= 0 && p.owner !== p.hq) return finish(p.owner, p.name + ' captured');
-  for (const team of [0, 1]) {
-    if (S.hold[team] >= TERRITORY.hold) return finish(team, (team === 0 ? 'You' : 'Enemy') + ' held two centers for three turns');
-    if (!alive(team).length && !territoryCenters(team).length) return finish(1 - team, 'No units or deployment centers');
-  }
-  if (B.turn > TERRITORY.turns) { const a = territoryControl(0), b = territoryControl(1); return finish(a === b ? -1 : a > b ? 0 : 1, 'Turn limit: contested centers ' + a + '-' + b); }
+function warBallPrice() { return B && B.war ? WAR.ball : Infinity; }
+// HQ capture ends the battle for its side; Conquest also has its hold race and turn limit.
+function warObjective() {
+  if (!B || !B.war || B.result) return B && B.result; warSettle(); const W = B.war;
+  const finish = (winner, reason) => { W.reason = reason; return B.result = B.versus ? (winner < 0 ? 'draw' : winner === 0 ? 'p1' : 'p2') : winner < 0 ? 'draw' : winner === 0 ? 'win' : 'lose'; };
+  for (const p of W.props) if (p.kind === 'hq' && p.hq >= 0 && p.owner !== p.hq) return finish(p.owner === 2 || p.owner === 3 || p.owner < 0 ? 1 - p.hq : p.owner, p.name + ' captured');
+  if (W.hold) for (const t of [0, 1]) if (W.hold.count[t] >= W.hold.turns) return finish(t, (t === 0 ? 'You' : 'The enemy') + ' held ' + W.hold.need + ' centers for ' + W.hold.turns + ' turn starts');
+  if (B.territory) for (const t of [0, 1]) if (!alive(t).length && !warDeploySites(t).length) return finish(1 - t, 'No Pokémon and no centers left');
+  if (W.turns && B.turn > W.turns) { const a = warMiddleHeld(0), b = warMiddleHeld(1); return finish(a === b ? -1 : a > b ? 0 : 1, 'Turn limit: centers ' + a + '-' + b); }
   return null;
 }
-function territoryAiDeploy(team) {
-  const out = []; if (!B.territory || team !== B.phase) return out;
-  const foes = aiTargetsOf({ team });
-  const sites = territoryCenters(team).slice().sort((a, b) => Math.min(...foes.map(u => dist(u, a)), 99) - Math.min(...foes.map(u => dist(u, b)), 99));
+// ---------------------------------------------------------------- the AI side of the war
+// Deploy: at each free own center (the ones nearest the foe first), the best affordable Pokémon for the matchups
+// on the map; a side keeps a little money back when it is ahead on the field.
+function warAiDeploy(team) {
+  const out = []; if (!B || !B.war || team !== B.phase || team > 1) return out;
+  const foes = aiTargetsOf({ team }), W = B.war;
+  const sites = warDeploySites(team).slice().sort((a, b) => Math.min(...foes.map(u => dist(u, a)), 99) - Math.min(...foes.map(u => dist(u, b)), 99));
   for (const p of sites) {
-    const options = B.territory.reserves[team].map((r, i) => ({ r, i })).filter(o => !territoryDeployBlock(team, o.i, p));
-    options.sort((a, b) => {
-      const score = r => { const d = DEX[r.num]; const matches = foes.length ? Math.max(...d.types.map(t => foes.reduce((s, u) => s + effRaw(t, u.types), 0) / foes.length)) : 1; return matches * 3 + (roleFor(d) === 'support' && alive(team).some(u => u.hp < u.maxHp / 2) ? 3 : 0) - r.cost * .3; };
-      return score(b.r) - score(a.r) || a.i - b.i;
-    });
-    if (options.length) { const u = territoryDeploy(team, options[0].i, p); if (u) out.push(u); }
+    const options = W.box[team].map((e, i) => ({ e, i })).filter(o => !warDeployBlock(team, o.i, p));
+    const score = e => { const d = DEX[e.num], power = bstOf(e.num) * (e.level + 10) / 400; const matches = foes.length ? Math.max(...d.types.map(t => foes.reduce((s, u) => s + effRaw(t, u.types), 0) / foes.length)) : 1; return power * matches + (roleFor(d) === 'support' && alive(team).some(u => u.hp < u.maxHp / 2) ? 4 : 0) + (e.fresh ? 3 : 0) - warEntryCost(e) / 2000; };
+    options.sort((a, b) => score(b.e) - score(a.e) || a.i - b.i);
+    if (options.length) { const u = warDeploy(team, options[0].i, p); if (u) out.push(u); }
   }
   return out;
 }
-// Objectives compete with attacks and skills. Distance fields respect the unit's terrain access;
-// low-HP units value a friendly center, and exposed capture tiles carry an incoming-damage penalty.
-function territoryDecide(u) {
+// A war-aware decision: capture goals compete with attacks, skills, retreats to a friendly center and plain moves.
+// Distance fields respect terrain access; exposed tiles carry an incoming-damage penalty. Used for war battles'
+// free-roaming units (bosses, guards and scripted units keep their own AI).
+function warDecide(u) {
   if (u.hp <= 0 || u.acted || u.status === 'frz' || u.recharge) return null;
-  const foes = aiTargetsOf(u), reach = reachable(u), threat = dangerZone(u.team);
-  const goals = B.territory.properties.filter(p => p.owner !== u.team || u.hp < u.maxHp * .7);
+  const foes = aiTargetsOf(u), reach = reachable(u), threat = dangerZone(u.team), W = B.war;
+  const goals = W.props.filter(p => p.owner !== u.team || u.hp < u.maxHp * .7);
   const fields = goals.map(p => ({ p, field: distField(u, [p]) }));
   let best = null, score = -Infinity;
   for (const n of reach.values()) {
     if (!canStand(u, n.x, n.y)) continue; const tile = terrAt(n.x, n.y), danger = threat.has(key(n.x, n.y));
-    const incoming = danger ? foes.reduce((s, e) => {
-      if (dist(e, n) > effMov(e) + e.rngMax) return s;
-      return s + Math.max(0, ...e.moves.map(m => calcDmg(e, u, m, tile)));
-    }, 0) : 0;
+    const incoming = danger ? foes.reduce((s, e) => dist(e, n) > effMov(e) + e.rngMax ? s : s + Math.max(0, ...e.moves.map(m => calcDmg(e, u, m, tile))), 0) : 0;
     const risk = Math.min(60, incoming * (u.hp < u.maxHp / 2 ? .65 : .25));
     let route = -5;
     for (const { p, field } of fields) {
       const d = field.get(key(n.x, n.y)), before = field.get(key(u.x, u.y)); if (d == null || before == null) continue;
-      const friendly = p.owner === u.team, importance = friendly ? (1 - u.hp / u.maxHp) * 2 : p.hq >= 0 ? .8 : 1.2;
+      const friendly = p.owner === u.team, importance = friendly ? (1 - u.hp / u.maxHp) * 2 : p.kind === 'hq' ? .8 : p.goal ? 1.3 : 1.2;
       const crowded = alive(u.team).filter(a => a !== u && dist(a, p) < dist(u, p)).length;
       route = Math.max(route, ((before - d) * 3 + 20 / (d + 1)) * importance - crowded * 2);
     }
-    const cover = terrainDef(tile, u) * .12;
-    const offer = (s, d) => { if (s > score) { score = s; best = d; } };
+    const cover = terrainDef(tile, u) * .12, offer = (s, d) => { if (s > score) { score = s; best = d; } };
     offer(route + cover - risk, { x: n.x, y: n.y });
-    const p = territoryProperty(n.x, n.y);
-    if (p && !territoryCaptureBlock(u, p, n)) offer(48 + (p.hq >= 0 ? 30 : 0) + (p.captor === u.id ? p.progress : 0) - risk, { x: n.x, y: n.y, capture: true });
+    const p = warProperty(n.x, n.y);
+    if (p && !warCaptureBlock(u, p, n)) offer(48 + (p.kind === 'hq' ? 30 : 0) + (p.goal ? 20 : 0) + (p.captor === u.id ? p.progress : 0) - risk, { x: n.x, y: n.y, capture: true });
     if (p && p.owner === u.team && u.hp < u.maxHp) offer((u.maxHp - u.hp) * .7 + 15 - risk, { x: n.x, y: n.y });
-    if (u.skill && !u.skill.passive) for (const t of skillTargetsAt(u, u.skill, n)) if (!skillCheck(u, u.skill, t, n)) {
-      const s = aiSkillScore(u, u.skill, n, t, threat, tile); if (s != null) offer(s + Math.max(0, route) * .4 - risk * .5, { x: n.x, y: n.y, skill: u.skill, target: t });
-    }
+    if (u.skill && !u.skill.passive) for (const t of skillTargetsAt(u, u.skill, n)) if (!skillCheck(u, u.skill, t, n)) { const s = aiSkillScore(u, u.skill, n, t, threat, tile); if (s != null) offer(s + Math.max(0, route) * .4 - risk * .5, { x: n.x, y: n.y, skill: u.skill, target: t }); }
     for (const t of foes) for (const m of usableMoves(u, dist(n, t))) {
       const fc = forecast(u, t, m, n); let dealt = 0, taken = 0;
       for (const s of fc.strikes) if (s.nominal) { if (s.side === 'a') dealt += s.dmg * s.hit / 100; else taken += s.dmg * s.hit / 100; }
-      const defending = territoryCenters(u.team).some(p => dist(t, p) <= 1);
+      const defending = warOwned(u.team).some(q => dist(t, q) <= 1);
       offer(dealt - taken * .8 + (fc.koD ? 35 : 0) - (fc.koA ? 80 : 0) + (defending ? 15 : 0) + Math.max(0, route) * .4 - risk * .3, { x: n.x, y: n.y, target: t, move: m });
     }
   }
   return best;
 }
+// Does this unit play the war (capture and roam) rather than a scripted role?
+function warRoams(u) { return !!(B && B.war && u.team <= 1 && !u.boss && (!u.ai || u.ai === 'aggro') && B.war.props.some(p => p.owner !== u.team)); }
+// Territory (Conquest): Three Bridges, the same captain on both sides, six teammates each (three start on the map,
+// three wait in the Box), income from the HQ and the three middle centers, the enemy HQ to take or two middle centers
+// to hold for three turn starts. Built on the shared war rules (war.js); this file keeps the map, the setup screen,
+// the guide, the objective card and the results.
+'use strict';
+const TERRITORY = { level: 12, cap: 5, hold: 3, turns: 40, funds: 2000 };
+const TERRITORY_ROSTER = [16, 74, 7, 1, 63, 35];
+const TERRITORY_MAP = {
+  name: 'Three Bridges', seed: 73, music: 'player', objective: { type: 'territory' }, turnLimit: TERRITORY.turns,
+  rows: ['TT....~~~....TT', 'T..T..~~~..T..T', '...T..=C=..T...', '......~~~......', '..T.M..~..M.T..', '.Q####=C=####Q.', '..T.M..~..M.T..', '......~~~......', '...T..=C=..T...', 'T..T..~~~..T..T', 'TT....~~~....TT'],
+  deploy: [], units: [],
+};
+// The six teammates of a side: the captain in the third slot (Charmander, Squirtle or Bulbasaur), Squirtle instead of
+// Bulbasaur in the fourth when Bulbasaur leads.
+function territoryRoster(root = 7) { return TERRITORY_ROSTER.map((n, i) => i === 2 ? root : i === 3 && root === 1 ? 7 : n); }
+function territoryInit(captains = [7, 7]) {
+  const names = { '1,5': 'WEST HQ', '13,5': 'EAST HQ', '7,2': 'NORTH', '7,5': 'BRIDGE', '7,8': 'SOUTH' }, owners = { '1,5': 0, '13,5': 1, '7,2': -1, '7,5': -1, '7,8': -1 };
+  warInit(TERRITORY_MAP, { war: { funds: [TERRITORY.funds, TERRITORY.funds], owners, names, centers: -1, boxes: [0, 1].map(t => territoryRoster(captains[t]).map(num => ({ num, level: TERRITORY.level }))), hold: { need: 2, turns: TERRITORY.hold }, turns: TERRITORY.turns, cap: TERRITORY.cap } });
+  B.territory = { captains: captains.slice() };
+  for (const team of [0, 1]) for (let i = 0; i < 3; i++) {
+    const e = B.war.box[team][i], u = makeUnit(e.num, e.level, team, { x: team ? 12 : 2, y: team ? 6 - i : 4 + i });
+    u.reserveSlot = i; u.ai = 'war'; B.units.push(u); e.unitId = u.id; e.state = 'field'; requestBigSprite(u.num);
+  }
+}
 function launchTerritory(seed = 7, defer = false, captains = [7, 7]) {
-  BACKDROP = makeBackdrop(TERRITORY_MAP); startBattle(TERRITORY_MAP, [], {}, { territory: true, captains, seed, defer: true }); B.map.ownerAt = territoryOwnerAt;
+  BACKDROP = makeBackdrop(TERRITORY_MAP); startBattle(TERRITORY_MAP, [], {}, { territory: true, captains, seed, defer: true });
   BT.territoryGuide = !defer && PREF.territoryGuide === 'show' && !PARAMS.has('noguide');
   goScene('battle'); if (!defer) beginPhase(0, true);
 }
@@ -4978,7 +5034,7 @@ function territorySceneInput(ev) {
 function closeTerritoryGuide() { BT.territoryGuide = false; setPref('territoryGuide', 'hide'); BT.mode = 'idle'; }
 function territoryGuideRect() {
   const w = Math.min(VIEW.w - 16, 280), lines = [];
-  ['1. Move onto a grey-roofed center. Choose Capture twice at full HP.', '2. Use RESERVE at an empty center with your blue roof. Arrivals act next turn.', '3. Take the red-roofed enemy HQ, or hold two centers for three of your turn starts.'].forEach((s, i) => { if (i) lines.push(''); lines.push(...wrap(s, w - 16)); });
+  ['1. Move onto a grey-roofed center. Choose Capture twice at full HP.', '2. Pick an empty center with your blue roof to deploy from your PC Box. Arrivals act next turn.', '3. Take the red-roofed enemy HQ, or hold two centers for three of your turn starts.'].forEach((s, i) => { if (i) lines.push(''); lines.push(...wrap(s, w - 16)); });
   const h = 60 + lines.length * 10; return { x: (VIEW.w - w) / 2, y: (VIEW.h - h) / 2, w, h, lines };
 }
 function drawTerritoryGuide() {
@@ -4987,44 +5043,19 @@ function drawTerritoryGuide() {
   r.lines.forEach((s, i) => text(s, r.x + 8, p.cy + i * 10, UI.ink));
   button(r.x + 8, r.y + r.h - 28, r.w - 16, 20, 'GOT IT · H FOR RULES', closeTerritoryGuide, { variant: 'primary' });
 }
-// Buildings show their owner on the roof (the tile itself, see ROOFS); the overlay only adds a capture-progress bar
-// and a soft pulse on the tile under the cursor.
-function drawTerritoryProperties() {
-  for (const p of B.territory.properties) {
-    const x = tileX(p.x), y = tileY(p.y);
-    if (p.progress) { const w = TILE - 8; rect(x + 3, y + TILE - 6, w + 2, 5, UI.inset); rect(x + 4, y + TILE - 5, w, 3, '#2a2f44'); rect(x + 4, y + TILE - 5, Math.floor(w * p.progress / TERRITORY.capture), 3, UI.gold); hline(x + 4, y + TILE - 5, Math.floor(w * p.progress / TERRITORY.capture), '#fff0a0'); }
-  }
-}
-function territoryOwnerAt(x, y) { const p = territoryProperty(x, y); return p ? p.owner : null; }
 // Conquest's objective card: TURN and a pip per Pokémon that can still act; command points with their income, the three
 // middle centers as tiny buildings in their owner's colour; the hold race as pips (yours against the foe's); then the
 // center under the cursor, or the goal.
 function miniCenter(x, y, owner) { const roof = owner === 0 ? '#3f6fd6' : owner === 1 ? '#e04848' : '#a8a8b4'; rect(x, y + 3, 7, 4, '#f2eee6'); outline(x, y + 3, 7, 4, UI.inset); rect(x - 1, y + 1, 9, 3, UI.inset); rect(x, y + 1, 7, 2, roof); px(x + 3, y, UI.inset); px(x + 3, y + 5, '#6a7aa8'); }
 function drawTerritoryTurn(r) {
-  const t = HT(), S = B.territory, mine = alive(t), ready = mine.filter(u => !u.acted).length, pips = mine.length <= 6;
+  const t = HT(), W = B.war, mine = alive(t), ready = mine.filter(u => !u.acted).length, pips = mine.length <= 6;
   hudPanel(r.x, r.y, r.w, r.h, { header: 'TURN ' + B.turn + '/' + TERRITORY.turns, headerRight: pips ? null : 'READY ' + ready + '/' + mine.length, headerRightCol: UI.green, headerFill: teamColorD(t) });
   if (pips) mine.forEach((u, i) => { const px0 = r.x + r.w - 7 - (mine.length - 1 - i) * 6, py0 = r.y + 8; circle(px0, py0, 2, UI.inset); if (!u.acted) { circle(px0, py0, 2, UI.green); px(px0 - 1, py0 - 1, '#d8ffe0'); } else circle(px0, py0, 1, shade(teamColorD(t), -.3)); });
-  const y1 = r.y + 16; drawBall(r.x + 9, y1 + 3, UI.gold, 3); const cp = 'CP ' + S.points[t]; text(cp, r.x + 15, y1, UI.gold); text('+' + territoryIncome(t), r.x + 18 + textWidth(cp), y1, UI.muted);
-  const mids = S.properties.filter(p => p.hq < 0); mids.forEach((p, i) => miniCenter(r.x + r.w - 12 - (mids.length - 1 - i) * 10, y1, p.owner));
-  if (r.h >= 32) { const y2 = r.y + 26; text('HOLD', r.x + 6, y2, UI.muted); const hx = r.x + 10 + textWidth('HOLD'); for (let k = 0; k < TERRITORY.hold; k++) { const on = S.hold[t] > k; rect(hx + k * 7, y2 + 1, 5, 5, UI.inset); if (on) rect(hx + 1 + k * 7, y2 + 2, 3, 3, UI.green); }
-    const fx0 = r.x + r.w - 6 - TERRITORY.hold * 7; text(B.versus ? 'P' + (2 - t) : 'FOE', fx0 - textWidth('FOE') - 4, y2, UI.muted); for (let k = 0; k < TERRITORY.hold; k++) { const on = S.hold[1 - t] > k; rect(fx0 + k * 7, y2 + 1, 5, 5, UI.inset); if (on) rect(fx0 + 1 + k * 7, y2 + 2, 3, 3, UI.red); } }
-  if (r.h >= 44) { const p = territoryProperty(BT.cx, BT.cy); let s2 = p ? p.name + ' · ' + (p.owner < 0 ? 'neutral' : p.owner === t ? 'yours' : 'enemy') + (p.progress ? ' · ' + p.progress + '/20' : '') : 'Take the HQ or hold 2 of 3'; text(fitLabel(s2, r.w - 12), r.x + 6, r.y + 34, p ? UI.gold : UI.muted); }
-}
-function openTerritoryReserves(p) {
-  BT.sel = null; BT.autoEnd = 0; BT.mode = 'endmenu';
-  if (!p) {
-    BT.menu = { title: 'DEPLOY WHERE?', i: 0, items: territoryCenters(HT()).map((p, i) => ({ id: 'site:' + B.territory.properties.indexOf(p), label: p.name, icon: 'flag', off: !!unitAt(p.x, p.y), sub: unitAt(p.x, p.y) ? 'Center occupied: move that unit first' : 'Deploy a reserve here · arrivals act next turn' })).concat([{ id: 'close', label: 'Close', icon: 'x' }]) }; return;
-  }
-  BT.deploySite = p; BT.cx = p.x; BT.cy = p.y; keepCursorVisible();
-  BT.menu = { title: 'RESERVES · ' + B.territory.points[HT()] + ' CP', i: 0, items: B.territory.reserves[HT()].map((r, i) => { const why = territoryDeployBlock(HT(), i, p); return { id: 'deploy:' + i, label: DEX[r.num].name + ' ' + r.cost + 'CP', off: !!why, sub: (why || p.name + ' · acts next turn') + ' · ' + ROLES[roleFor(DEX[r.num])].name }; }).concat([{ id: 'close', label: 'Close' }]) };
-}
-function territoryMenuAction(it) {
-  if (!B.territory || !(it.id === 'reserves' || it.id.startsWith('site:') || it.id.startsWith('deploy:'))) return false;
-  if (it.off) { Audio.sfx('error'); return true; }
-  if (it.id === 'reserves') openTerritoryReserves();
-  else if (it.id.startsWith('site:')) openTerritoryReserves(B.territory.properties[+it.id.slice(5)]);
-  else { const u = territoryDeploy(HT(), +it.id.slice(7), BT.deploySite); if (!u) { Audio.sfx('error'); return true; } BT.queue = [{ kind: 'event', ev: { type: 'spawn', unit: u } }]; playQueue(() => { BT.mode = 'idle'; }); }
-  return true;
+  const y1 = r.y + 16, cash = money(W.funds[t]); drawBall(r.x + 9, y1 + 3, UI.gold, 3); text(cash, r.x + 15, y1, UI.gold); text('+' + warIncome(t), r.x + 18 + textWidth(cash), y1, UI.muted);
+  const mids = W.props.filter(p => p.kind !== 'hq'); mids.forEach((p, i) => miniCenter(r.x + r.w - 12 - (mids.length - 1 - i) * 10, y1, p.owner));
+  if (r.h >= 32) { const y2 = r.y + 26, H = W.hold; text('HOLD', r.x + 6, y2, UI.muted); const hx = r.x + 10 + textWidth('HOLD'); for (let k = 0; k < H.turns; k++) { const on = H.count[t] > k; rect(hx + k * 7, y2 + 1, 5, 5, UI.inset); if (on) rect(hx + 1 + k * 7, y2 + 2, 3, 3, UI.green); }
+    const fx0 = r.x + r.w - 6 - H.turns * 7; text(B.versus ? 'P' + (2 - t) : 'FOE', fx0 - textWidth('FOE') - 4, y2, UI.muted); for (let k = 0; k < H.turns; k++) { const on = H.count[1 - t] > k; rect(fx0 + k * 7, y2 + 1, 5, 5, UI.inset); if (on) rect(fx0 + 1 + k * 7, y2 + 2, 3, 3, UI.red); } }
+  if (r.h >= 44) { const p = warProperty(BT.cx, BT.cy); let s2 = p ? p.name + ' · ' + (p.owner < 0 ? 'neutral' : p.owner === t ? 'yours' : 'enemy') + (p.progress ? ' · ' + p.progress + '/20' : '') : 'Take the HQ or hold 2 of 3'; text(fitLabel(s2, r.w - 12), r.x + 6, r.y + 34, p ? UI.gold : UI.muted); }
 }
 // Conquest results: the outcome stamped letter by letter, why it ended, three stat plates (turn, middle centers, deployments)
 // and both captains; REMATCH keeps the captain, TITLE leaves.
@@ -5048,15 +5079,15 @@ function simTerritory(seed = 7, maxTurns = TERRITORY.turns + 1, captains = [7, 7
   launchTerritory(seed, true, captains); const actions = [];
   for (B.turn = 1; B.turn <= maxTurns && !B.result; B.turn++) {
     for (const team of [0, 1]) {
-      B.phase = team; upkeep(team); territoryUpkeep(team); if (checkObjective()) break;
-      territoryAiDeploy(team);
+      B.phase = team; upkeep(team); warUpkeep(team); if (checkObjective()) break;
+      warAiDeploy(team);
       const power = aiPower(team); if (power) actions.push({ turn: B.turn, team, kind: 'power', name: power[0].name });
       for (const u of alive(team).slice().sort((a, b) => b.level - a.level)) {
         if (u.acted || u.status === 'frz') continue;
-        const d = territoryDecide(u);
+        const d = warDecide(u);
         if (d) {
           const r = reachable(u); if (!r.has(key(d.x, d.y)) || !canStand(u, d.x, d.y)) throw new Error('Illegal territory AI move');
-          if (d.capture && territoryCaptureBlock(u, territoryProperty(d.x, d.y), d)) throw new Error('Illegal AI capture');
+          if (d.capture && warCaptureBlock(u, warProperty(d.x, d.y), d)) throw new Error('Illegal AI capture');
           if (d.skill && skillCheck(u, d.skill, d.target, d)) throw new Error('Illegal AI skill');
           if (d.move && !usableMoves(u, dist(d, d.target)).includes(d.move)) throw new Error('Illegal AI attack');
           actions.push({ turn: B.turn, team, kind: d.capture ? 'capture' : d.skill ? d.skill.id : d.move ? 'attack' : 'move' });
@@ -5068,7 +5099,7 @@ function simTerritory(seed = 7, maxTurns = TERRITORY.turns + 1, captains = [7, 7
     }
     if (B.result) break;
   }
-  return { seed, result: B.result, turn: B.turn, reason: B.territory.reason, captures: B.territory.captures.slice(), deployments: B.territory.deployments.slice(), actions };
+  return { seed, result: B.result, turn: B.turn, reason: B.war.reason, captures: B.war.stats.captures.slice(), deployments: B.war.stats.deployments.slice(), actions };
 }
 // ============================================================================
 // scenes.js — title, starter pick, chapter card, story dialogue, prep (party &
@@ -6127,9 +6158,11 @@ function drawCatchLesson(L) {
   hudPanel(x, y, w, 15, { fill: UI.panelDark, light: false, flat: true }); textC(line, VIEW.w / 2, y + 4, UI.gold);
 }
 function drawOutposts() {
-  for (const p of B.outposts || []) {
+  if (!B.war) return;
+  for (const p of B.war.props) {
     const x = tileX(p.x), y = tileY(p.y), col = p.owner < 0 ? UI.gold : teamColor(p.owner);
-    outline(x + 1, y + 1, TILE - 2, TILE - 2, col);
+    if (p.kind === 'outpost') outline(x + 1, y + 1, TILE - 2, TILE - 2, col);
+    if (p.ch === 'K' && p.owner >= 0) drawFlag(x + TILE - 8, y + 2, p.owner, Math.floor(BT.time * 6 + p.x) % 2);
     if (p.progress) { rect(x + 3, y + TILE - 7, TILE - 6, 5, UI.inset); bar(x + 4, y + TILE - 6, TILE - 8, 3, p.progress / 20, col); }
   }
 }
@@ -6155,10 +6188,10 @@ function territorySetupDraw() {
   const rosterX = wide ? x0 + colW + 8 : x0, rosterW = wide ? colW : colW; let ry = wide ? cy0 : y;
   const roster = territoryRoster(S.captain), cellW = Math.floor((rosterW - 4) / 3), cellH = 24;
   if (ry + 12 + cellH * 2 < by - 4) { sectionLabel('Your six', rosterX, ry, rosterW, UI.gold); ry += 10;
-    roster.forEach(([num, cost], i) => { const xx = rosterX + (i % 3) * (cellW + 2), yy = ry + Math.floor(i / 3) * (cellH + 2), starts = i < 3; rrect(xx, yy, cellW, cellH, starts ? '#1c3a6a' : '#1c1d3c', 1); drawMon(num, xx + 14, yy + cellH - 1, { outline: starts ? teamColor(0) : null }); text(starts ? 'START' : cost + ' CP', xx + 28, yy + 4, starts ? UI.green : UI.gold); text(fitLabel(ROLES[roleFor(DEX[num])].name, cellW - 30), xx + 28, yy + 13, UI.muted); });
+    roster.forEach((num, i) => { const cost = warCost(num, TERRITORY.level); const xx = rosterX + (i % 3) * (cellW + 2), yy = ry + Math.floor(i / 3) * (cellH + 2), starts = i < 3; rrect(xx, yy, cellW, cellH, starts ? '#1c3a6a' : '#1c1d3c', 1); drawMon(num, xx + 14, yy + cellH - 1, { outline: starts ? teamColor(0) : null }); text(starts ? 'START' : money(cost), xx + 28, yy + 4, starts ? UI.green : UI.gold); text(fitLabel(ROLES[roleFor(DEX[num])].name, cellW - 30), xx + 28, yy + 13, UI.muted); });
     ry += (cellH + 2) * 2 + 4; if (!wide) y = ry; }
   // the rules, one line each
-  const rules = [['flag', 'Take the enemy HQ, or', UI.gold], ['flag', 'hold 2 of 3 middle centers 3 turns', UI.gold], ['ball', 'Centers pay 2 CP a turn: call reserves', UI.info]];
+  const rules = [['flag', 'Take the enemy HQ, or', UI.gold], ['flag', 'hold 2 of 3 middle centers 3 turns', UI.gold], ['ball', 'Centers pay ₽1000 a day: deploy from the PC', UI.info]];
   let rY = wide ? ry : y; const rX = wide ? rosterX : x0, rW = wide ? rosterW : colW;
   for (const [ic, s2, col] of rules) { if (rY + 9 > by - 4) break; iconAt(ic, rX, rY - 1, col); text(fitLabel(s2, rW - 12), rX + 12, rY, UI.ink); rY += 11; }
   // the map, when there is room left in the left column
@@ -6196,13 +6229,14 @@ function prepChapter(idx) {
 }
 function launchChapter(idx, deployed) {
   const ch = CHAPTERS[idx]; BACKDROP = makeBackdrop(ch.map);
-  startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: (Date.now() & 0xffff) | 1, defer: true, captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx }, lesson: idx === 0 && SAVE.journey && !SAVE.journey.firstCatch });
+  const box = SAVE.party.map((p, i) => Object.assign({}, p, { pid: i })).filter(p => !deployed.some(d => d.pid === p.pid));
+  startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: (Date.now() & 0xffff) | 1, defer: true, box, captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx }, lesson: idx === 0 && SAVE.journey && !SAVE.journey.firstCatch });
   for (const u of alive(0)) { const src = deployed.find(d => d.pid != null && d.num === u.num && d.level === u.level && !d._used); if (src) { src._used = true; u.pid = src.pid; } }
   const go = () => { const start = () => { goScene('battle'); beginPhase(0, true); }; if (CHAPTER_LESSONS[idx]) showJourney(CHAPTER_LESSONS[idx], start); else start(); };
   if (ch.intro && !PARAMS.has('nostory')) { goScene('battle'); startDialog(ch.intro, go); } else go();
 }
 function onBattleEnd(result) {
-  if (B.territory) { const S = B.territory; clearSuspend(); goScene('territoryResults', { result, reason: S.reason || 'Retreated', turn: B.turn, centers: [territoryControl(0), territoryControl(1)], deployments: S.deployments.slice(), seed: B.seed, captains: (S.captains || [7, 7]).slice() }); return; }
+  if (B.territory) { const S = B.territory, W = B.war; clearSuspend(); goScene('territoryResults', { result, reason: W.reason || 'Retreated', turn: B.turn, centers: [warMiddleHeld(0), warMiddleHeld(1)], deployments: W.stats.deployments.slice(), seed: B.seed, captains: (S.captains || [7, 7]).slice() }); return; }
   if (B.versus) {
     const S = B.setup; const survivors = t => alive(t).map(u => u.num); const again = teams => { const S2 = Object.assign({}, S, { teams }); S2.go = () => launchVersus(S2); return S2; };
     goScene('results', { versus: true, result: B.result, reason: B.endReason, mode: B.map.objective.mode || 'elim', turns: B.turn, kills: B.kills, teams: [survivors(0), survivors(1)], rosters: [S.teams[0].slice(), S.teams[1].slice()], next: () => goScene('title'), rematch: () => { const S2 = again([S.teams[0].slice(), S.teams[1].slice()]); S2.seed = (S.seed + 1) % 1000; launchVersus(S2); }, setup: () => goScene('versus', again([[], []])) });
@@ -6238,13 +6272,14 @@ function battleStars(par) { return 1 + (B.turn <= (par || 10) ? 1 : 0) + (!(B.fa
 function applyBattleToParty() {
   if (!SAVE) return;
   for (const u of B.units) { if (u.team !== 0 || u.pid == null) continue; const s = serializeUnit(u); s.hp = u.maxHp; s.status = null; s.acted = false; s.recharge = 0; s.cd = 0; s.brace = 0; s.root = 0; SAVE.party[u.pid] = s; }
+  if (B.war) for (const e of B.war.box[0]) if (e.captIdx != null && e.unitId != null) { const u = B.units.find(v => v.id === e.unitId); if (u) B.captured[e.captIdx] = serializeUnit(Object.assign({}, u, { team: 0 })); }
   for (const c of B.captured) { const s = Object.assign({}, c, { team: 0, acted: false, status: null, recharge: 0, cd: 0, brace: 0, root: 0, hpBonus: BOND_HP }); const u = restoreUnit(s); u.hp = u.maxHp; SAVE.party.push(serializeUnit(u)); }
   SAVE.bag = normalizeBag(B.bag);
 }
 // ---------------------------------------------------------------- suspend (mid-battle save at the start of each player phase)
 function saveSuspend() {
   if (!B || PARAMS.has('nosave')) return;
-  const s = { rng: typeof rnd.state === 'function' ? rnd.state() : null, territory: B.territory || null, command: B.command || null, lesson: B.lesson || null, outposts: B.outposts || [], chapter: B.chapter, skirmish: B.skirmish, skirmishMap: B.skirmish ? B.map.def : null, turn: B.turn, bag: B.bag, captured: B.captured, kills: B.kills, faints: B.faints || 0, seed: B.seed, items: B.map.items.map(i => !!i.taken), reinforce: B.map.reinforce.map(r => !!r.done), units: B.units.map(u => Object.assign(serializeUnit(u), { pid: u.pid, leader: !!u.leader, provoked: !!u.provoked, maxHpNow: u.maxHp })), cx: BT.cx, cy: BT.cy, party: SAVE ? SAVE.party : null, preset: SC.data && SC.data.preset };
+  const s = { rng: typeof rnd.state === 'function' ? rnd.state() : null, territory: B.territory || null, war: B.war || null, command: B.command || null, lesson: B.lesson || null, chapter: B.chapter, skirmish: B.skirmish, skirmishMap: B.skirmish ? B.map.def : null, turn: B.turn, bag: B.bag, captured: B.captured, kills: B.kills, faints: B.faints || 0, seed: B.seed, items: B.map.items.map(i => !!i.taken), reinforce: B.map.reinforce.map(r => !!r.done), units: B.units.map(u => Object.assign(serializeUnit(u), { pid: u.pid, leader: !!u.leader, provoked: !!u.provoked, maxHpNow: u.maxHp })), cx: BT.cx, cy: BT.cy, party: SAVE ? SAVE.party : null, preset: SC.data && SC.data.preset };
   try { localStorage.setItem('pk_suspend', JSON.stringify(s)); BT.savedAt = BT.time; } catch (e) { }
 }
 function resumeSuspend() {
@@ -6252,7 +6287,7 @@ function resumeSuspend() {
   SAVE = loadSave();
   const mapDef = s.territory ? TERRITORY_MAP : s.skirmish ? s.skirmishMap : CHAPTERS[s.chapter]?.map; if (!mapDef) { clearSuspend(); goScene('title'); return; }
   seedRng(s.rng != null ? s.rng : s.seed ^ (s.turn * 7919)); const map = parseMap(mapDef); map.def = mapDef; UID = 1;
-  B = { territory: s.territory || null, command: s.command || null, lesson: s.lesson || null, outposts: s.outposts || [], map, units: [], turn: s.turn, phase: 0, bag: normalizeBag(s.bag), result: null, seized: false, captured: s.captured || [], kills: s.kills || 0, faints: s.faints || 0, chapter: s.chapter, log: [], seed: s.seed, skirmish: !!s.skirmish };
+  B = { territory: s.territory || null, war: s.war || null, command: s.command || null, lesson: s.lesson || null, map, units: [], turn: s.turn, phase: 0, bag: normalizeBag(s.bag), result: null, seized: false, captured: s.captured || [], kills: s.kills || 0, faints: s.faints || 0, chapter: s.chapter, log: [], seed: s.seed, skirmish: !!s.skirmish };
   map.items.forEach((it, i) => { it.taken = !!s.items[i]; }); map.reinforce.forEach((r, i) => { r.done = !!s.reinforce[i]; });
   for (const d of s.units) { if (d.hp <= 0 && !d.leader) continue; if (d.hpBonus == null && d.team === 0 && !B.territory) d.hpBonus = BOND_HP; const u = restoreUnit(d); u.pid = d.pid; u.leader = d.leader; u.provoked = d.provoked; if (u.team === 0 && u.status === 'frz') u.acted = true; if (d.hp <= 0) continue; B.units.push(u); }
   // older suspend saves could hold the same id on a party member and an enemy: renumber the duplicates (UID is already past every saved id)
@@ -6260,10 +6295,8 @@ function resumeSuspend() {
   BACKDROP = makeBackdrop(mapDef); BT.mode = 'idle'; BT.sel = null; BT.queue = []; BT.anim = null; BT.hpShow.clear(); BT.cx = s.cx; BT.cy = s.cy; BT.zoom = 1; if (narrowView() && canZoom()) setZoom(.5); centerCam(BT.cx, BT.cy, true); BT.hoverAnchor = null; FX.parts = []; FX.texts = [];
   for (const u of B.units) requestBigSprite(u.num);
   if (s.skirmish && s.preset) SC.data = { preset: true };
-  if (B.territory) {
-    map.ownerAt = territoryOwnerAt;
-    for (const u of B.units) u.reserveSlot = B.territory.reserves[u.team].findIndex(r => r.unitId === u.id);
-  } else if (B.outposts.length) map.ownerAt = (x, y) => { const p = campaignProperty(x, y); return p ? p.owner : null; };
+  if (B.war) { map.ownerAt = warOwnerAt; if (B.territory) for (const u of B.units) if (u.team <= 1) u.reserveSlot = B.war.box[u.team].findIndex(e => e.unitId === u.id); }
+  else warSetup(mapDef, { skirmish: B.skirmish }); // a suspend from before the war rules: rebuild them from the map
   if (!s.command) initBattleCaptains(B.territory ? {} : SAVE ? { captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: s.chapter == null ? 8 : s.chapter } } : {});
   // the save was written after this phase's upkeep: resume without applying it again
   goScene('battle'); Audio.playMusic(map.music); beginPhase(0, true, true);
@@ -6338,8 +6371,8 @@ requestAnimationFrame(frame);
 // Debug: play one player phase with the enemy AI (used by tools/cdp.cjs balance script).
 // Model-only action for one AI decision: skill, or attack then dart. Shared by autoTurn and simBattle.
 function aiAct(u, d, log) {
-  u.x = d.x; u.y = d.y; settleOutposts();
-  if (d.capture) { const ev = boardCapture(u); if (log && ev) log.push('T' + B.turn + ' ' + u.name + ' captures ' + ev.property.name); return; }
+  u.x = d.x; u.y = d.y; warSettle();
+  if (d.capture) { const ev = warCapture(u); if (log && ev) log.push('T' + B.turn + ' ' + u.name + ' captures ' + ev.property.name); return; }
   if (d.skill) { const ev = useSkill(u, d.skill, d.target); if (log && ev) log.push('T' + B.turn + ' ' + u.name + '(' + u.team + ') ' + d.skill.name + '→' + d.target.name); return; }
   if (d.target) { const ev = resolveCombat(u, d.target, d.move, u); if (log) for (const e of ev) if (e.type === 'hit' || e.type === 'ko') log.push('T' + B.turn + ' ' + (e.type === 'ko' ? 'KO ' + e.unit.name + ' by ' + e.by.name : e.att.name + '(' + e.att.team + ')L' + e.att.level + ' ' + e.move.name + '→' + e.def.name + 'L' + e.def.level + ' ' + e.dmg + (e.crit ? '!' : '') + ' hp' + e.hpAfter + '/' + e.def.maxHp)); const c = aiDart(u); if (c) { u.x = c.x; u.y = c.y; if (log) log.push('T' + B.turn + ' ' + u.name + ' darts'); } }
 }

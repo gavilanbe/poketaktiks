@@ -44,14 +44,14 @@ function attackCells(u, reach) { const set = new Set(), out = []; for (const n o
 // The status a unit will have after the guaranteed parts of its next upkeep (center cure, paralysis
 // and freeze timers), with no dice and no mutation. Mirrors the cure rules in upkeep().
 function statusAfterUpkeep(u) {
-  if (!u.status || terrAt(u.x, u.y).heal && territoryHeals(u)) return null;
+  if (!u.status || terrAt(u.x, u.y).heal && warHeals(u)) return null;
   if (u.status === 'par' && u.statusTurns + 1 >= 3) return null;
   if (u.status === 'frz' && u.statusTurns + 1 >= 2) return null;
   return u.status;
 }
 // Root counts down one at each of the rooted unit's upkeeps (it is applied at 2, so the unit spends exactly one
 // phase held); a Poké Center clears it outright. Mirrors upkeep(), no mutation.
-function rootAfterUpkeep(u) { if (!u.root || terrAt(u.x, u.y).heal && territoryHeals(u)) return 0; return Math.max(0, u.root - 1); }
+function rootAfterUpkeep(u) { if (!u.root || terrAt(u.x, u.y).heal && warHeals(u)) return 0; return Math.max(0, u.root - 1); }
 // Cells every hostile unit could hit on its next phase, split by who threatens them: trainer teams
 // (enemy or rival trainer) and wild Pokémon. A unit that must recharge skips its next phase, so it
 // threatens nothing; a unit whose upkeep is sure to cure it moves at full speed; frozen units that
@@ -154,7 +154,7 @@ function resolveCombat(att, def, move, from) {
   }
   // firing a recharge move costs the next turn whether it hit or missed
   if (fc.recharge && att.hp > 0) { att.recharge = 1; ev.push({ type: 'recharge', unit: att }); }
-  powerAfterCombat(att, ev); settleOutposts();
+  powerAfterCombat(att, ev); warSettle();
   // experience for player-team survivors
   for (const [u, o] of [[att, def], [def, att]]) { if (!isHuman(u.team) || u.hp <= 0) continue; const took = ev.some(e => e.type === 'hit' && e.att === u); if (!took) continue; awardXp(u, xpGain(u, o, o.hp <= 0), ev); }
   return ev;
@@ -177,7 +177,7 @@ function upkeep(team) {
     if (u.brace) u.brace = 0;
     if (u.root > 0) { u.root--; if (!u.root) ev.push({ type: 'unroot', unit: u }); }
     const t = terrAt(u.x, u.y);
-    if (t.heal && territoryHeals(u)) {
+    if (t.heal && warHeals(u)) {
       if (u.hp < u.maxHp) { const h = Math.max(1, Math.floor(u.maxHp * t.heal)); u.hp = Math.min(u.maxHp, u.hp + h); ev.push({ type: 'heal', unit: u, amount: h }); }
       if (u.status || u.root) { ev.push({ type: 'cure', unit: u }); u.status = null; u.root = 0; }
     }
@@ -263,8 +263,10 @@ function aiDart(u) {
   return best && (best.x !== u.x || best.y !== u.y) ? { x: best.x, y: best.y } : null;
 }
 function checkObjective() {
-  if (B.territory) return territoryObjective();
-  const o = B.map.objective; if (B.result) return B.result;
+  if (B.result) return B.result;
+  if (B.war && warObjective()) return B.result; // an HQ taken, Conquest's hold race or turn limit
+  if (B.territory) return null;
+  const o = B.map.objective;
   if (B.versus) {
     syncFlags(); const a = alive(0).length, b = alive(1).length; const win = (t, why) => { B.endReason = why; return B.result = t; };
     if (!a && !b) return win('draw', 'Everyone fainted at once.'); if (!a) return win('p2', 'Player 1 has no Pokémon left.'); if (!b) return win('p1', 'Player 2 has no Pokémon left.');
@@ -344,7 +346,7 @@ function aiSkillScore(u, sk, n, t, threat, aT) {
 function canTakeAction(u) { return !!(u && u.hp > 0 && !u.acted && !u.recharge && u.status !== 'frz'); }
 function aiDecide(u, cautious = false) {
   if (!canTakeAction(u) || isPracticeTarget(u)) return null;
-  if (B.territory) return territoryDecide(u);
+  if (warRoams(u)) return warDecide(u);
   const reach = reachable(u); const targets = aiTargetsOf(u); if (!targets.length) return null;
   const provoked = u.ai === 'aggro' || u.provoked || targets.some(t => dist(t, u) <= (u.ai === 'guard' ? Math.max(u.rngMax, 1) : 2));
   let best = null, bestScore = -1e9;
@@ -369,7 +371,7 @@ function aiDecide(u, cautious = false) {
       if (s > bestScore) { bestScore = s; best = { x: n.x, y: n.y, target: t, move: mv }; }
     }
   }
-  const capture = campaignCaptureChoice(u, bestScore); if (capture) return capture;
+  const capture = warCaptureChoice(u, bestScore); if (capture) return capture;
   if (best && cautious && bestScore <= 0) best = null;
   if (best && (u.ai !== 'boss' || provoked || bestScore > 0)) { return best; }
   if (!provoked) return null;

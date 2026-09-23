@@ -98,19 +98,19 @@ test('practice target stays put, cannot faint even on a double, and capture is f
 });
 test('campaign outposts take two full-HP actions, heal their owner and charge only on completion', () => {
   const T = field(7), { g, ally } = T, B = T.B(), s = g.powerState(0);
-  B.outposts = [{ x: 2, y: 2, owner: -1, progress: 0, captor: null, goal: true }];
-  assert(!g.territoryHeals(ally)); assert(!g.boardCapture(ally).done); assert.equal(s.charge, 0);
-  assert.equal(g.boardCapture(ally), null); g.upkeep(0); assert(g.boardCapture(ally).done); assert.equal(s.charge, 20); assert(B.seized); assert(g.territoryHeals(ally));
-  B.outposts[0].owner = -1; ally.acted = false; g.boardCapture(ally); ally.x--; g.settleOutposts(); assert.equal(B.outposts[0].progress, 0);
+  const post = { x: 2, y: 2, kind: 'outpost', ch: '.', name: 'OUTPOST', hq: -1, owner: -1, progress: 0, captor: null, goal: true }; B.war.props.push(post);
+  assert(!g.warHeals(ally)); assert(!g.warCapture(ally).done); assert.equal(s.charge, 0);
+  assert.equal(g.warCapture(ally), null); g.upkeep(0); assert(g.warCapture(ally).done); assert.equal(s.charge, 20); assert(B.seized); assert(g.warHeals(ally));
+  post.owner = -1; ally.acted = false; g.warCapture(ally); ally.x--; g.warSettle(); assert.equal(post.progress, 0);
 });
 test('Territory offers three symmetric unique teams, and a recovered captain regains power access', () => {
   for (const root of [4, 7, 1]) {
     const T = loadGame(), { g } = T; g.launchTerritory(7, true, [root, root]); const B = T.B(), s = g.powerState(0);
-    assert.equal(s.root, root); assert(s.superUnlocked); const roster = B.territory.reserves[0]; assert.equal(new Set(roster.map(r => r.num)).size, 6);
-    assert.equal(json(roster.map(r=>r.num)), json(B.territory.reserves[1].map(r=>r.num)));
-    g.powerCaptain(0).hp = 0; g.territorySettle(); s.charge = 100; assert(g.powerBlock(0));
-    for (let i = 0; i < 2; i++) { B.turn++; g.territoryUpkeep(0); }
-    B.territory.points[0] = 30; const again = g.territoryDeploy(0, 2, B.territory.properties[0]); assert(again); assert.equal(g.powerCaptain(0).id, again.id); assert.equal(g.powerBlock(0, true), null);
+    assert.equal(s.root, root); assert(s.superUnlocked); const roster = B.war.box[0]; assert.equal(new Set(roster.map(r => r.num)).size, 6);
+    assert.equal(json(roster.map(r=>r.num)), json(B.war.box[1].map(r=>r.num)));
+    g.powerCaptain(0).hp = 0; g.warSettle(); s.charge = 100; assert(g.powerBlock(0));
+    for (let i = 0; i < 2; i++) { B.turn++; g.warUpkeep(0); }
+    B.war.funds[0] = 30000; const again = g.warDeploy(0, 2, B.war.props.find(p => p.name === 'WEST HQ')); assert(again); assert.equal(g.powerCaptain(0).id, again.id); assert.equal(g.powerBlock(0, true), null);
   }
 });
 test('AI activates the same shared power once before its units act', () => {
@@ -133,8 +133,8 @@ test('full Territory simulations finish with each captain and legal powers on bo
 test('suspend preserves charge, active effects, used attacks, outposts, lesson and RNG without replaying upkeep', () => {
   const T = loadGame(), { g, G } = T; g.launchTerritory(7, true, [4, 4]);
   g.powerState(0).charge = 100; g.activatePower(0, true); g.powerState(0).used.push(g.alive(0)[0].id);
-  const command = json(T.B().command), s = T.B().territory; g.saveSuspend(); const roll = G('rnd()'); g.resumeSuspend();
-  assert.equal(json(T.B().command), command); assert.equal(G('rnd()'), roll); assert.equal(json(T.B().territory), json(s));
+  const command = json(T.B().command), s = json(T.B().war); g.saveSuspend(); const roll = G('rnd()'); g.resumeSuspend();
+  assert.equal(json(T.B().command), command); assert.equal(G('rnd()'), roll); assert.equal(json(T.B().war), s);
   assert.equal(g.powerCaptain(0).reserveSlot, 2); assert.equal(g.activatePower(0), null);
   const U = loadGame(); U.g.startNewGame(); U.g.pickStarter(7); U.g.launchChapter(0, U.G('SAVE.party.map((p,pid)=>Object.assign({},p,{pid}))'));
   U.g.saveSuspend(); const lesson = json(U.B().lesson); U.g.resumeSuspend(); assert.equal(json(U.B().lesson), lesson);
