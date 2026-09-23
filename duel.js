@@ -362,6 +362,7 @@ function drawDuel(q) {
   const order = [q.sides.right, q.sides.left]; if (q.pose && q.pose.unit === q.sides.right) order.reverse();
   ctx.save(); ctx.translate(cam.x, cam.y); for (const u of order) { const [dx, dy] = off(u); ctx.save(); ctx.translate(dx, dy); duelDrawUnit(q, u, L, t); ctx.restore(); } ctx.restore();
   for (const u of [q.sides.left, q.sides.right]) inRegion(u, () => drawSceneryFront(q, u, L, cam, t));
+  drawWeather(weatherKind(), W, H, t); // the weather falls across both halves
   ctx.save(); ctx.translate(cam.x, cam.y);
   drawFX(0, 0, false);
   // the impact frame: for a few frames the field turns bright and both fighters become flat ink silhouettes

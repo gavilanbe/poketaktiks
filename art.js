@@ -836,6 +836,26 @@ function drawFXTexts(ox, oy, sc = 1) {
 function shake(n) { FX.shake = Math.max(FX.shake, n); }
 function flashScreen(col = '#ffffff', a = 1) { FX.flash = a; FX.flashCol = col; }
 
+// ---------------------------------------------------------------- weather
+// The weather over a view of w×h (screen or field space): slanted rain with splashes, harsh sun in warm beams, a
+// sandstorm's blowing streaks and haze, drifting snow. Stateless (positions come from the index and the clock).
+function drawWeather(kind, w, h, t) {
+  if (!kind || REDUCED) return; const hash = i => ((Math.sin(i * 127.1) * 43758.5453) % 1 + 1) % 1;
+  if (kind === 'rain') { ctx.globalAlpha = .12; rect(0, 0, w, h, '#1a2a50'); const n = Math.round(w * h / 1400); ctx.globalAlpha = .62;
+    for (let i = 0; i < n; i++) { const sp = 240 + hash(i + 3) * 120, y = ((hash(i) * (h + 30) + t * sp) % (h + 30)) - 15, x = ((hash(i + 7) * (w + 40) - t * sp * .3) % (w + 40) + w + 40) % (w + 40) - 20; pline(Math.round(x), Math.round(y), Math.round(x - 2), Math.round(y + 7), '#b8d4ff', 1); }
+    ctx.globalAlpha = .45; for (let i = 0; i < n / 8; i++) { const k = (t * 1.5 + hash(i + 11)) % 1; if (k < .3) { const x = Math.round(hash(i + 13) * w), y = Math.round(hash(i + 17) * h); ellipseRing(x, y, 2 + Math.round(k * 10), 1 + Math.round(k * 3), 1, '#d8e8ff'); } } ctx.globalAlpha = 1; }
+  else if (kind === 'sun') { ctx.globalAlpha = .07; rect(0, 0, w, h, '#ffc860'); for (let i = 0; i < 3; i++) { const x0 = Math.round(w * (.1 + i * .3) + Math.sin(t * .4 + i) * 20); ctx.globalAlpha = .05 + .02 * Math.sin(t * .8 + i); ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0 + 40, 0); ctx.lineTo(x0 + 40 - h * .5, h); ctx.lineTo(x0 - h * .5, h); ctx.closePath(); ctx.fillStyle = '#fff4c0'; ctx.fill(); }
+    ctx.globalAlpha = .6; for (let i = 0; i < 12; i++) { const k = (t * .3 + hash(i)) % 1, x = Math.round(hash(i + 5) * w + Math.sin(t + i) * 6), y = Math.round(h - k * h); if (Math.sin(t * 3 + i) > 0) rect(x, y, 1, 1, '#fff4c0'); } ctx.globalAlpha = 1; }
+  else if (kind === 'sand') { ctx.globalAlpha = .18; rect(0, 0, w, h, '#c8a060'); const n = Math.round(w * h / 1200); ctx.globalAlpha = .55;
+    for (let i = 0; i < n; i++) { const sp = 300 + hash(i + 2) * 200, x = ((hash(i) * (w + 60) + t * sp) % (w + 60)) - 30, y = Math.round(hash(i + 9) * h + Math.sin(t * 2 + i) * 3), len = 3 + Math.round(hash(i + 4) * 8); rect(Math.round(x), y, len, 1, i % 3 ? '#e8d0a0' : '#b88a50'); } ctx.globalAlpha = 1; }
+  else if (kind === 'snow') { ctx.globalAlpha = .08; rect(0, 0, w, h, '#dce8ff'); const n = Math.round(w * h / 1300); ctx.globalAlpha = .85;
+    for (let i = 0; i < n; i++) { const sp = 18 + hash(i + 1) * 26, y = ((hash(i) * (h + 10) + t * sp) % (h + 10)) - 5, x = ((hash(i + 3) * w + Math.sin(t * 1.3 + i) * 8 + t * 6) % w + w) % w, big = hash(i + 8) > .75; rect(Math.round(x), Math.round(y), big ? 2 : 1, big ? 2 : 1, '#ffffff'); } ctx.globalAlpha = 1; }
+}
+// A tiny weather icon (7×7): a drop, a sun, a swirl of sand, a flake.
+function weatherIcon(kind, x, y) {
+  const rows = { rain: ['...B...', '..BBB..', '.BBBBB.', 'BBBWBBB', 'BBBBBBB', '.BBBBB.', '..BBB..'], sun: ['Y..Y..Y', '.YYYYY.', '.YWWYY.', 'YYWYYYY', '.YYYYY.', '.YYYYY.', 'Y..Y..Y'], sand: ['.SSSS..', 'S....S.', '..SSS.S', '.S...S.', '.S.SS..', '..S....', '...SSS.'], snow: ['...W...', '.W.W.W.', '..WWW..', 'WWW.WWW', '..WWW..', '.W.W.W.', '...W...'] }[kind];
+  if (rows) stampAt(x, y, rows, { B: '#5aa8f0', W: '#ffffff', Y: '#ffd24a', S: '#d8b070' });
+}
 // ---------------------------------------------------------------- type-flavoured battle effects
 const TYPE_FX = {
   Normal: { proj: 'star', parts: ['#ffffff', '#ffe9a0'] }, Fighting: { proj: null, parts: ['#ffb07a', '#ffffff'] },

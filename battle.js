@@ -650,6 +650,7 @@ function battleDraw() {
 // drawn afterwards at screen scale so they stay legible when zoomed out.
 function drawBoard() {
   ctx.save(); ctx.scale(BT.zoom, BT.zoom); drawBoardLayer(); ctx.restore();
+  drawWeather(weatherKind(), VIEW.w, VIEW.h, BT.time);
   drawFXTexts(-CAM.x + FX.shakeX, -CAM.y + FX.shakeY, BT.zoom);
   if (BT.mode === 'target') drawAimBubble();
   if (FX.flash > 0) { ctx.globalAlpha = FX.flash * .7; rect(0, 0, VIEW.w, VIEW.h, FX.flashCol); ctx.globalAlpha = 1; }
@@ -885,6 +886,16 @@ function hudLayout() {
   }
   return L;
 }
+// The weather chip under the objective and power cards (its icon, name and the days left), and the banner that
+// announces a change: a band across the middle with the icon at 2× and the line, in and out in under two seconds.
+function drawWeatherChip(L) {
+  const k = weatherKind();
+  if (k && !['power', 'help', 'handoff'].includes(BT.mode) && !(B.lesson && !B.lesson.complete)) { const Wt = B.weather, label = WEATHER[k].name.toUpperCase() + (Wt.days ? ' · ' + Wt.days + 'D' : ''), w = textWidth(label) + 22, x = L.top.x, y = L.top.y + L.top.h + powerRibbonHeight() + 3; hudPanel(x, y, w, 13, { fill: UI.panelDark, light: false, flat: true }); weatherIcon(k, x + 4, y + 3); text(label, x + 14, y + 3, k === 'sun' ? UI.gold : k === 'rain' ? '#8ab4ff' : k === 'sand' ? '#e0c890' : '#ffffff'); }
+  const wb = BT.weatherBanner; if (!wb) return; const a = BT.time - wb.t0; if (a > 1.8) { BT.weatherBanner = null; return; }
+  const W = VIEW.w, H = VIEW.h, k2 = REDUCED ? 1 : Math.min(1, a / .18) * Math.min(1, (1.8 - a) / .25), bh = Math.round(30 * k2), cy = Math.round(H * .38); if (bh < 2) return;
+  const col = wb.kind === 'sun' ? '#c87820' : wb.kind === 'rain' ? '#2a5aa8' : wb.kind === 'sand' ? '#a07838' : '#6a86b8'; ctx.globalAlpha = .88; rect(0, cy - (bh >> 1), W, bh, shade(col, -.35)); ctx.globalAlpha = 1; hline(0, cy - (bh >> 1), W, shade(col, .4)); hline(0, cy + (bh >> 1) - 1, W, shade(col, -.6));
+  if (bh > 20) { const txt = wb.text.toUpperCase(), tw = textWidth(txt, BIG), x0 = Math.round(W / 2 - (tw + 22) / 2) + (REDUCED ? 0 : Math.round((1 - Math.min(1, a / .25)) * 40)); ctx.save(); ctx.translate(x0, cy - 7); ctx.scale(2, 2); weatherIcon(wb.kind, 0, 0); ctx.restore(); bigText(txt, x0 + 20, cy - 4, '#ffffff', { outline: '#000' }); }
+}
 function drawHUD() {
   HUD.hits = []; HUD.panels = []; const W = VIEW.w, H = VIEW.h; const L = hudLayout();
   if (BT.mode === 'end') { if (SC.name === 'battle') drawEndScreen(); return; } // the outro dialogue draws over the board, not over the stamp
@@ -893,6 +904,7 @@ function drawHUD() {
   if (BT.mode === 'power') { drawPowerMenu(); return; }
   drawTurnCard(L.top);
   drawPowerStrip(L.top);
+  drawWeatherChip(L);
   // context cards: the hovered unit and its terrain, side by side or as one strip on portrait phones
   const hov = seenUnitAt(BT.cx, BT.cy); const t = terrAt(BT.cx, BT.cy);
   if (boardModes.includes(BT.mode) && BT.mode !== 'target' && BT.mode !== 'catchTarget' && BT.mode !== 'skillTarget' && !(L.stack && BT.mode === 'menu')) {
