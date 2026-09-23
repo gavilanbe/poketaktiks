@@ -140,6 +140,7 @@ function setupEvent(q) {
   const e = q.ev; q.dur = BT.fast ? .35 : .7;
   const ux = u => u.x * TILE + TILE / 2, uy = u => u.y * TILE + 4;
   switch (e.type) {
+    case 'bossAlert': q.dur = REDUCED || BT.fast ? .8 : 1.7; Audio.sfx('boss'); Audio.playMusic('boss'); if (!REDUCED) { flashScreen('#ff3040', .3); shake(5); } break;
     case 'power': q.dur = REDUCED || BT.fast ? .7 : 1.65; Audio.sfx(e.superPower ? 'evolve' : 'phase'); if (!REDUCED) flashScreen(CAPTAINS[e.root].col, .22); break;
     case 'ko': q.dur = BT.fast ? .45 : .8; Audio.sfx('ko'); shake(4); spawnParts(ux(e.unit), uy(e.unit) + 8, 18, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 90, life: .7, grav: 60 }); noteKo(e); floatText(ux(e.unit), uy(e.unit) - 14, e.unit.team === 0 ? 'FAINTED!' : 'KO!', e.unit.team === 0 ? UI.red : UI.gold, { big: true, life: 1.3 }); break;
     case 'xp': q.dur = BT.fast ? .35 : .6; q.from = e.unit.xp - e.amount; break;
@@ -416,8 +417,11 @@ function runEnemyPhase(team) {
     BT.queue.push({ kind: 'wait', t2: .15 });
     playQueue(() => { u.acted = true; step(); });
   };
-  const power = aiPower(team);
-  if (power) { BT.queue = power.map(ev => ({ kind: 'event', ev })); playQueue(step); } else step();
+  const power = aiPower(team); BT.queue = [];
+  const boss = !B.versus && !B.territory && team === 1 && !B.bossAlerted && B.units.find(u => u.boss && u.hp > 0 && u.team === 1 && (u.provoked || u.ai === 'aggro'));
+  if (boss) { B.bossAlerted = true; BT.queue.push({ kind: 'fn', fn: () => centerCam(boss.x, boss.y) }, { kind: 'event', ev: { type: 'bossAlert', unit: boss } }); }
+  if (power) BT.queue.push(...power.map(ev => ({ kind: 'event', ev })));
+  if (BT.queue.length) playQueue(step); else step();
 }
 
 // ---------------------------------------------------------------- input handling
@@ -1073,6 +1077,7 @@ function drawDuelCard(q) {
 function drawEventCard(q) {
   const e = q.ev, W = VIEW.w, H = VIEW.h;
   if (e.type === 'power') { drawPowerBurst(q); return; }
+  if (e.type === 'bossAlert') { drawBossAlert(q); return; }
   if (e.type === 'xp') { const u = e.unit; const w = 120, x = W / 2 - w / 2, y = H - 40; panel(x, y, w, 24); const k = Math.min(1, q.t / q.dur); const shown = Math.min(100, q.from + e.amount * k); text(u.name, x + 6, y + 4, UI.ink); textR('+' + e.amount + ' EXP', x + w - 6, y + 4, UI.gold); bar(x + 6, y + 14, w - 12, 6, (shown % 100) / 100, '#6ad0ff'); }
   if (e.type === 'levelup') {
     const u = e.unit; const w = Math.min(190, W - 12), h = 74, x = W / 2 - w / 2; const uy = toScreenY(tileY(u.y)), ts = TILE * BT.zoom; const y = uy < H / 2 ? Math.min(H - h - 8, uy + ts + 10) : Math.max(28, uy - h - 12); const k = Math.min(1, q.t / .25); const yy = Math.round(y + (1 - easeOut(k)) * -20);
@@ -1090,6 +1095,17 @@ function drawEventCard(q) {
 // fits), the turn counter follows, the team runs across under it, and everything leaves to the right.
 // Phase banner: a tilted band in the team colour sweeps in with speed lines, the phase name slams down (doubled when it
 // fits), the turn counter follows, the team runs across under it, and everything leaves to the right.
+// The boss wakes up: a red band tears across, BOSS BATTLE! slams down and the boss slides in from the right with its name.
+function drawBossAlert(q) {
+  const u = q.ev.unit, W = VIEW.w, H = VIEW.h, t = q.t, dur = q.dur, out = t > dur - .25 ? easeIn((t - (dur - .25)) / .25) : 0, cy = Math.round(H / 2);
+  const bh = Math.round(Math.min(90, H * .36) * clamp(REDUCED ? 1 : easeOutBack(clamp(t / .2, 0, 1), 2), 0, 1.1) * (1 - out));
+  ctx.globalAlpha = .5 * (1 - out); rect(0, 0, W, H, '#1a0208'); ctx.globalAlpha = 1;
+  if (bh > 2) { for (let y = 0; y < bh; y++) rect(0, cy - Math.round(bh / 2) + y, W, 1, y % 4 < 2 ? '#8a1020' : '#9a1628'); rect(0, cy - Math.round(bh / 2) - 2, W, 2, '#ff5060'); rect(0, cy + Math.round(bh / 2), W, 2, '#300008');
+    if (!REDUCED) for (let i = 0; i < 12; i++) { const ly = cy - Math.round(bh / 2) + 3 + (i * 7) % Math.max(4, bh - 6), len = 20 + (i * 13) % 50, lx = W - ((t * (600 + i * 70) + i * 97) % (W + len * 2)); ctx.globalAlpha = .35; rect(Math.round(lx), ly, len, 1, '#ffc0c8'); ctx.globalAlpha = 1; } }
+  const label = 'BOSS BATTLE!', big = W >= textWidth(label, BIG) * 2 + W * .45 ? 2 : 1, slam = REDUCED ? 0 : clamp(1 - (t - .15) / .14, 0, 1), sc = big + slam * 1.4, lx = Math.round(W * (W > 300 ? .38 : .5)) - Math.round(out * W);
+  if (t > .15 || REDUCED) { ctx.save(); ctx.translate(lx, cy - Math.round(4.5 * sc) - 5); ctx.scale(sc, sc); bigC(label, 0, 0, '#ffffff', { outline: '#300008' }); ctx.restore(); ctx.globalAlpha = clamp((t - .35) / .2, 0, 1) * (1 - out); textC(u.name + '  Lv' + u.level, lx, cy + Math.round(4.5 * big) + 2, '#ffd0d8', { outline: '#300008' }); ctx.globalAlpha = 1; }
+  if (W > 300 && bh > 30) { requestAnim(u.num); const bx = Math.round(W * .8 + (REDUCED ? 0 : (1 - easeOut(clamp((t - .1) / .35, 0, 1))) * W * .4) + out * W * .5); ctx.save(); ctx.beginPath(); ctx.rect(0, cy - Math.round(bh / 2), W, bh); ctx.clip(); if (animReady(u.num)) drawAnim(u.num, bx, cy + Math.round(bh / 2) - 4, BT.time, { flip: false }); else drawMon(u.num, bx, cy + Math.round(bh / 2) - 4, { flip: true, sx: 2, sy: 2 }); ctx.restore(); }
+}
 function drawBanner() {
   const b = BT.banner, W = VIEW.w, H = VIEW.h, t = b.t, dur = BT.fast ? .9 : 1.5, out = t > dur - .28 ? easeIn((t - (dur - .28)) / .28) : 0;
   const grow = REDUCED ? 1 : easeOutBack(clamp(t / .22, 0, 1), 2), bh = Math.round(46 * clamp(grow, 0, 1.15) * (1 - out)), cy = Math.round(H / 2);
