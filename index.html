@@ -4452,15 +4452,16 @@ function cardInput(ev) { if (ev.type === 'up' || (ev.type === 'key' && ev.key ==
 function startDialog(lines, done) { SC.dialog = { lines, i: 0, chars: 0, t: 0, done }; goScene('story'); }
 function storyUpdate(dt) { const d = SC.dialog; if (!d) return; d.t += dt; const line = d.lines[d.i]; const total = line.text.length; if (d.chars < total) { const before = d.chars; d.chars = Math.min(total, d.chars + dt * 45); if (Math.floor(d.chars) !== Math.floor(before) && Math.floor(d.chars) % 2 === 0) Audio.sfx('text'); } CAM.x += (CAM.tx - CAM.x) * Math.min(1, dt * 6); CAM.y += (CAM.ty - CAM.y) * Math.min(1, dt * 6); for (const u of B.units) { u.fx.sx += (1 - u.fx.sx) * dt * 10; u.fx.sy += (1 - u.fx.sy) * dt * 10; } updateFX(dt); Audio.tick(); BT.time += dt; }
 function storyDraw() {
-  battleDraw(); const d = SC.dialog; if (!d) return; const W = VIEW.w, H = VIEW.h; const line = d.lines[d.i];
-  ctx.globalAlpha = .35; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
-  const bh = 58, by = H - bh - 6, bx = 6, bw = W - 12; panel(bx, by, bw, bh, { fill: '#182640' });
-  if (line.mon) { requestBigSprite(line.mon); ctx.save(); ctx.beginPath(); ctx.rect(bx + 6, by + 8, 44, 40); ctx.clip(); portraitBg(bx + 6, by + 8, 44, 40, 0);
-    const talk = d.chars < line.text.length ? Math.round(Math.sin(d.t * 8)) : 0; if (bigReady(line.mon)) drawBig(line.mon, bx + 28, by + 8 + 40 + 14 + talk, { flip: true }); else drawMon(line.mon, bx + 28, by + 46 + talk, { flip: false }); ctx.restore(); outline(bx + 6, by + 8, 44, 40, UI.inset); }
-  const tx = bx + (line.mon ? 58 : 10); { const tw = textWidth(line.who) + 12; rrect(tx - 4, by - 9, tw, 12, UI.inset, 1); rect(tx - 3, by - 8, tw - 2, 10, UI.gold); hline(tx - 2, by - 8, tw - 4, '#fff0b0'); text(line.who, tx + 2, by - 7, UI.goldDark); }
-  const lines = wrap(line.text, bw - (line.mon ? 70 : 22)); let shown = Math.floor(d.chars); lines.forEach((l, i) => { if (shown <= 0) return; const s = l.slice(0, shown); shown -= l.length + 1; text(s, tx, by + 12 + i * 11, UI.ink); });
-  if (d.chars >= line.text.length && Math.floor(d.t * 3) % 2) { const ax = bx + bw - 12, ay = by + bh - 9; rect(ax - 3, ay, 7, 1, UI.gold); rect(ax - 2, ay + 1, 5, 1, UI.gold); rect(ax - 1, ay + 2, 3, 1, UI.gold); px(ax, ay + 3, UI.gold); }
-  hintLine([(d.i + 1) + ' / ' + d.lines.length, ['X', 'skip']], bx + bw - 4, by - 12, { right: true });
+  battleDraw(); const d = SC.dialog; if (!d) return; const W = VIEW.w, H = VIEW.h, line = d.lines[d.i], t = d.t;
+  ctx.globalAlpha = .35; rect(0, 0, W, H, '#05041a'); ctx.globalAlpha = 1;
+  const bh = 60, by = H - bh - 6, bx = 6, bw = W - 12, rise = REDUCED ? 0 : Math.round((1 - easeOutBack(clamp(appear('story') / .3, 0, 1), 2)) * 30);
+  panel(bx, by + rise, bw, bh, { fill: '#1c2254' });
+  if (line.mon) { requestAnim(line.mon); requestBigSprite(line.mon); const pw = 46, ph = bh - 14, px0 = bx + 7, py0 = by + 7 + rise; ctx.save(); ctx.beginPath(); ctx.rect(px0, py0, pw, ph); ctx.clip(); portraitBg(px0, py0, pw, ph, 0);
+    const talk = d.chars < line.text.length && !REDUCED ? Math.round(Math.abs(Math.sin(t * 10))) : 0; if (animReady(line.mon)) drawAnim(line.mon, px0 + pw / 2, py0 + ph + 6 - talk, BT.time); else if (bigReady(line.mon)) drawBig(line.mon, px0 + pw / 2, py0 + ph + 14 - talk, { flip: true }); else drawMon(line.mon, px0 + pw / 2, py0 + ph - 2 - talk, {}); ctx.restore(); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.inset); }
+  const tx = bx + (line.mon ? 60 : 10); ribbonTab(line.who, tx - 4, by - 9 + rise);
+  const lines = wrap(line.text, bw - (line.mon ? 72 : 22)); let shown = Math.floor(d.chars); lines.forEach((l, i) => { if (shown <= 0) return; const s2 = l.slice(0, shown); shown -= l.length + 1; text(s2, tx, by + 10 + i * 11 + rise, UI.ink); });
+  if (d.chars >= line.text.length) { const ax = bx + bw - 12, ay = by + bh - 11 + rise + (REDUCED ? 0 : Math.round(Math.abs(Math.sin(t * 6)) * 2)); rect(ax - 3, ay, 7, 1, UI.gold); rect(ax - 2, ay + 1, 5, 1, UI.gold); rect(ax - 1, ay + 2, 3, 1, UI.gold); px(ax, ay + 3, UI.gold); }
+  hintLine([(d.i + 1) + ' / ' + d.lines.length, ['X', 'skip']], bx + bw - 4, by - 12 + rise, { right: true });
   // focus the camera on the speaker's Pokémon if it is on the board
   const spk = B.units.find(u => u.num === line.mon && u.hp > 0); if (spk && !d.focused) { d.focused = true; centerCam(spk.x, spk.y); spk.fx.sy = .8; spk.fx.sx = 1.2; }
 }
