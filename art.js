@@ -232,6 +232,14 @@ function drawTile(ch, variant, frame, g, owner = null) {
       door(13, 21, 6, 6, '#6a4a30'); p.V(16, 21, 6, PAL.out); p.R(4, 26, 24, 1, '#bdb3a0');
       p.V(16, 0, 5, '#e8e0d0'); p.P(16, 0, '#ffffff'); if (RF[3]) { p.R(17, 1, 7, 4, RF[3]); p.H(17, 4, 6, shade(RF[3], -.35)); p.P(23, 2, shade(RF[3], -.35)); } else { p.R(17, 1, 7, 4, '#d8d8e0'); p.H(17, 4, 6, '#a0a0ac'); }
       break;
+    // Field Center: a healing machine bolted to a floor plate, so it sits in caves, bases and volcanoes alike
+    case 'K': { const M = PAL.metal; p.R(0, 0, 32, 32, M.d); p.R(1, 1, 30, 30, mix(M.m, M.d, .35)); p.H(1, 1, 30, M.m); p.V(1, 1, 30, M.m); p.H(1, 30, 30, shade(M.d, -.3)); p.V(30, 1, 30, shade(M.d, -.3));
+      for (const [rx, ry] of [[3, 3], [28, 3], [3, 28], [28, 28]]) { p.P(rx, ry, M.ll); p.P(rx + 1, ry + 1, M.d); }
+      p.E(16, 27, 11, 2, shade(M.d, -.4));
+      p.R(6, 8, 20, 19, PAL.out); p.R(7, 9, 18, 17, '#f6f1e6'); p.H(7, 9, 18, '#ffffff'); p.V(24, 9, 17, '#c8bfae'); p.H(7, 25, 18, '#c8bfae');
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { const bx = 9 + i * 5, by = 11 + j * 4; p.R(bx, by, 4, 3, PAL.out); p.R(bx + 1, by, 2, 1, '#ff5a5a'); p.R(bx + 1, by + 2, 2, 1, '#ffffff'); p.P(bx + 1, by + 1, '#2a2a2a'); p.P(bx + 2, by + 1, '#2a2a2a'); }
+      p.R(12, 19, 8, 6, PAL.out); p.R(13, 20, 6, 4, '#bff0c8'); p.R(15, 20, 2, 4, '#3ab85a'); p.R(13, 21, 6, 2, '#3ab85a');
+      p.R(8, 6, 2, 2, '#ff5a5a'); p.P(8, 6, '#ffb0b0'); break; }
     case 'G': grassBase(1); building({ roof: '#3f6fd6', roofD: '#2a4a9a', roofL: '#5f8ff0', wall: '#d8dce8', wallD: '#a8adbf', wallTop: 12, wallH: 15, ridge: 4 });
       // columns, a GYM sign and a banner pole
       p.R(5, 13, 3, 13, '#eef0f6'); p.V(7, 13, 13, '#a8adbf'); p.R(24, 13, 3, 13, '#eef0f6'); p.V(26, 13, 13, '#a8adbf'); p.H(4, 12, 5, PAL.out); p.H(23, 12, 5, PAL.out);

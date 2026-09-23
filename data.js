@@ -94,6 +94,7 @@ const TERRAIN = {
   '#': { id: 'road', name: 'Road', cost: { walk: 1 }, def: 0, eva: 0 },
   's': { id: 'sand', name: 'Sand', cost: { walk: 2, fly: 1, desert: 1 }, def: 0, eva: 0 },
   'C': { id: 'center', name: 'Poké Center', cost: { walk: 1 }, def: 10, eva: 0, heal: .3 },
+  'K': { id: 'center', name: 'Field Center', cost: { walk: 1 }, def: 10, eva: 0, heal: .3 },
   'G': { id: 'gym', name: 'Gym', cost: { walk: 1 }, def: 20, eva: 0 },
   'Q': { id: 'hq', name: 'HQ', cost: { walk: 1 }, def: 20, eva: 0, heal: .3 },
   'H': { id: 'house', name: 'House', cost: { walk: 99, fly: 99 }, def: 0, eva: 0 },
