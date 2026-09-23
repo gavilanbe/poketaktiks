@@ -1308,7 +1308,7 @@ function drawAceDown(q) {
   rect(0, cy - Math.round(bh / 2), W, bh, shade(c.col, -.55)); hline(0, cy - Math.round(bh / 2), W, c.col); hline(0, cy + Math.round(bh / 2), W, UI.inset);
   const face = trainerFace(coTrainer({ co: e.co }) ? c.tr : 'red'), shake2 = !REDUCED && t < .4 ? Math.round(Math.sin(t * 60) * 2) : 0, fx = Math.round(W / 2 - 90) + shake2, fy = cy - 11;
   if (face && bh >= 24) { rect(fx - 2, fy - 2, 26, 26, UI.inset); rect(fx - 1, fy - 1, 24, 24, c.col); ctx.save(); ctx.translate(fx + 2, fy + 2); ctx.drawImage(face, 0, 0); ctx.restore(); ctx.globalAlpha = .45; rect(fx + 2, fy + 2, 18, 18, '#1a0610'); ctx.globalAlpha = 1; }
-  if (bh >= 24) { bigText('ACE DOWN!', fx + 32, cy - 10, '#ffffff', { outline: UI.inset }); text(fitLabel(e.unit.name + ' fainted · meter halved' + (e.lost ? ' (−' + e.lost + ')' : '') + ' · powers wait', W - (fx + 32) - 8), fx + 32, cy + 2, shade(c.col, .5), { outline: UI.inset }); }
+  if (bh >= 24) { bigText('ACE DOWN!', fx + 32, cy - 10, '#ffffff', { outline: UI.inset }); text(fitLabel(e.unit.name + ' fainted · meter halved' + (e.lost ? ' (-' + e.lost + ')' : '') + ' · powers wait', W - (fx + 32) - 8), fx + 32, cy + 2, shade(c.col, .5), { outline: UI.inset }); }
 }
 // The boss wakes up: a red band tears across, BOSS BATTLE! slams down and the boss slides in from the right with its name.
 function drawBossAlert(q) {
