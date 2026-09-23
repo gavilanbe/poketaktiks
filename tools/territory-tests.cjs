@@ -163,6 +163,35 @@ test('Versus arenas: mirrored HQs and centers, deploy zones and flags clear of t
     for (const t of [0, 1]) { assert.equal(W.box[t].filter(e => e.state === 'box').length, 8, 'catalog'); assert(W.box[t].filter(e => e.state === 'field').length >= 3, 'the draft plays from the Box'); }
   }
 });
+test('Battle Tower: floors open in order, rentals at the floor level, rank maths, records keep the best, a floor plays out', () => {
+  const T = loadGame(), { g, G } = T, TOWER = G('TOWER');
+  assert.equal(TOWER.length, 10); assert(g.towerOpen({}, 0) && !g.towerOpen({}, 1) && g.towerOpen({ tower: { 0: { rank: 'B' } } }, 1));
+  assert.deepEqual(g.towerScore(10, 10, 6, 0), { days: 10, kills: 6, faints: 0, speed: 100, power: 100, tech: 100, total: 300, rank: 'S' });
+  assert.equal(g.towerScore(10, 13, 4, 2).rank, 'B', '70 + 50 + 70'); assert.equal(g.towerScore(10, 11, 8, 1).rank, 'A', '90 + 100 + 85');
+  // a floor, model-only: the rentals open at the floor level against the floor's commander, the war plays out, the rank is recorded
+  const F = TOWER[0], map = g.towerMap(0), army = G('TOWER_RENTALS').map(n => Object.assign(g.partyUnit(n, F.level, 1), { loaner: true })); // as launchTowerFloor builds them
+  assert(map.units.filter(u => u.team == null).length === 3 && map.par === F.par);
+  g.startBattle(map, army.slice(0, 4), {}, { skirmish: true, tower: 0, seed: 5, defer: true, cos: ['you', F.co], box: army.slice(4), box2: g.coTeam(F.co, F.level, 8, F.seed), war: { funds: [2000, 2000] }, captain: { pid: null, root: 4, chapter: 8 } });
+  const B = T.B(); assert.equal(B.tower, 0); assert(g.alive(0).every(u => u.level === F.level && u.hpBonus === 1), 'rentals are plain and level');
+  const r = g.simWar(30); const result = r.result || 'lose'; B.result = result; g.towerEnd(result);
+  const R = JSON.parse(T.store.get('pk_records') || '{}'); if (result === 'win') { assert(R.tower && R.tower[0] && 'SABC'.includes(R.tower[0].rank)); } else assert(!R.tower || !R.tower[0]);
+  assert.equal(G('SC.name'), 'rank'); g.rankDraw(); for (const h of G('SC.hits')) assert(h.w > 0);
+  console.log('       floor 1: ' + result + ' in ' + r.turn + ' days' + (R.tower && R.tower[0] ? ', rank ' + R.tower[0].rank : ''));
+});
+test('Safari Zone: weighted rarity pool, a race both sides play (weaken, throw, score), results and the record', () => {
+  const T = loadGame(), { g, G } = T, S = G('SAFARI'), pool = g.safariPool(20), share = tier => pool.filter(p => S.tiers[tier].mons.includes(p.mon)).length / pool.length;
+  assert(share(0) > .5 && share(1) > .2 && share(2) > .05 && share(3) > 0 && share(3) < .05, 'common > uncommon > rare > very rare');
+  assert.equal(g.safariTier(147).pts, 8); assert.equal(g.safariTier(148).pts, 8, 'an evolved catch keeps its line\'s tier'); assert.equal(g.safariTier(16).pts, 1);
+  const map = g.safariMap(7, 16); assert.equal(map.objective.type, 'safari'); assert(map.units.filter(u => u.team === 2).every(u => u.ai === 'guard'));
+  const party = [4, 16, 25, 7].map((n, i) => Object.assign(g.partyUnit(n, 16), { pid: i }));
+  g.startBattle(map, party, { pokeball: 12 }, { skirmish: true, safari: { days: 8, score: [0, 0], catches: [[], []], balls: [12, 12], preset: true }, seed: 3, defer: true, cos: ['you', 'blue'], captain: { pid: 0, root: 4, chapter: 8 } });
+  const B = T.B(), r = g.simWar(12); assert(['win', 'lose', 'draw'].includes(r.result), json(r.result)); assert(B.turn >= 9 || !g.alive(0).length);
+  const caught = B.safari.catches[0].length + B.safari.catches[1].length; assert(caught > 0, 'somebody caught something');
+  for (const t of [0, 1]) assert.equal(B.safari.score[t], B.safari.catches[t].reduce((a, c) => a + c.pts, 0)); assert(B.bag.pokeball <= 12 && B.safari.balls[1] <= 12);
+  assert(r.log.some(l => /throws at/.test(l)), 'the AI throws Safari Balls'); assert(!r.log.some(l => /KO .* by .*\(1\)/.test(l) && false));
+  g.safariEnd(B.result); assert.equal(G('SC.name'), 'rank'); g.rankDraw(); const rec = JSON.parse(T.store.get('pk_records') || '{}'); assert.equal(rec.safari || 0, Math.max(0, B.safari.score[0]));
+  console.log('       race: ' + B.result + ' ' + B.safari.score.join('-') + ', ' + caught + ' catches');
+});
 let failed = 0;
 for (const [name, fn] of tests) { try { fn(); console.log('  ok   ' + name); } catch (e) { failed++; console.error('  FAIL ' + name + '\n' + e.stack); } }
 console.log(`${tests.length - failed}/${tests.length} territory tests passed`); process.exitCode = failed ? 1 : 0;

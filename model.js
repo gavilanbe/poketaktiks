@@ -279,6 +279,7 @@ function checkObjective() {
     }
     return null;
   }
+  if (o.type === 'safari') { if (!alive(0).length) return B.result = 'lose'; if (B.turn > o.days) { const [a, b] = B.safari.score; return B.result = a > b ? 'win' : a < b ? 'lose' : 'draw'; } return null; }
   if (!alive(0).length) return B.result = 'lose';
   if ((o.type === 'rout' || o.type === 'war') && !alive(1).length && (!B.lesson || B.lesson.complete)) return B.result = 'win';
   if (o.type === 'boss' && !B.units.some(u => u.boss && u.hp > 0 && u.team === 1)) return B.result = 'win';
@@ -287,7 +288,7 @@ function checkObjective() {
   if (B.map.turnLimit && o.type !== 'survive' && B.turn > B.map.turnLimit) return B.result = 'lose';
   return null;
 }
-function objectiveText() { if (B.lesson && !B.lesson.complete) return 'Catch Caterpie + defeat foes'; const o = B.map.objective; switch (o.type) { case 'rout': return 'Defeat all enemies'; case 'war': return 'Rout the foe or take their HQ'; case 'boss': return 'Defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Survive ' + o.turns + ' turns'; case 'seize': return 'Seize the ' + (o.what || 'gym'); case 'versus': return versusObjectiveText(); } return ''; }
+function objectiveText() { if (B.lesson && !B.lesson.complete) return 'Catch Caterpie + defeat foes'; const o = B.map.objective; switch (o.type) { case 'rout': return 'Defeat all enemies'; case 'war': return 'Rout the foe or take their HQ'; case 'safari': return 'Out-catch Blue in ' + o.days + ' days'; case 'boss': return 'Defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Survive ' + o.turns + ' turns'; case 'seize': return 'Seize the ' + (o.what || 'gym'); case 'versus': return versusObjectiveText(); } return ''; }
 
 // ---------------------------------------------------------------- versus rules: modes, flags, the hill, fog of war
 const VS_MODES = {
@@ -347,6 +348,7 @@ function aiSkillScore(u, sk, n, t, threat, aT) {
 function canTakeAction(u) { return !!(u && u.hp > 0 && !u.acted && !u.recharge && u.status !== 'frz'); }
 function aiDecide(u, cautious = false) {
   if (!canTakeAction(u) || isPracticeTarget(u)) return null;
+  if (B.safari && u.team <= 1) return safariDecide(u);
   if (warRoams(u)) return warDecide(u);
   const reach = reachable(u); const targets = aiTargetsOf(u); if (!targets.length) return null;
   const provoked = u.ai === 'aggro' || u.provoked || targets.some(t => dist(t, u) <= (u.ai === 'guard' ? Math.max(u.rngMax, 1) : 2));

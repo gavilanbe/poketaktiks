@@ -150,7 +150,7 @@ function cardDraw() {
 }
 // drawStampWord with an explicit time (the chapter card starts its letters later than the end screen).
 function drawStampWordAt(word, cx, y, t, col, dark, scale) { return drawStampWord(word, cx, y, t + END_BEATS.letters, col, dark, scale); }
-function objectiveTextFor(o) { switch (o.type) { case 'rout': return 'Objective: defeat all enemies'; case 'war': return 'Objective: rout the foe or take their HQ'; case 'boss': return 'Objective: defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Objective: survive ' + o.turns + ' turns'; case 'seize': return 'Objective: seize the ' + (o.what || 'gym'); case 'versus': return 'Objective: defeat the other trainer'; } return ''; }
+function objectiveTextFor(o) { switch (o.type) { case 'rout': return 'Objective: defeat all enemies'; case 'war': return 'Objective: rout the foe or take their HQ'; case 'safari': return 'Objective: out-catch Blue in ' + o.days + ' days'; case 'boss': return 'Objective: defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Objective: survive ' + o.turns + ' turns'; case 'seize': return 'Objective: seize the ' + (o.what || 'gym'); case 'versus': return 'Objective: defeat the other trainer'; } return ''; }
 function cardInput(ev) { if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) SC.skip = true; }
 
 // ---------------------------------------------------------------- story dialogue (drawn over the battle board)
@@ -395,20 +395,23 @@ function creditsInput(ev) { if (ev.type === 'up' || ev.type === 'key') SC.skip =
 const QUICK_MODES = [
   { id: 'skirmish', label: 'SKIRMISH', tag: 'HQ vs HQ', lines: ['A random battlefield.', 'Earn funds, deploy your Box,', 'catch wild Pokémon mid-war.'], goal: 'Rout them or take their HQ', run: () => startSkirmishSetup() },
   { id: 'conquest', label: 'CONQUEST', tag: 'CENTERS', lines: ['Three bridges, six teammates.', 'Capture centers to earn points', 'and call reserves.'], goal: 'Take the HQ or hold 2 centers', run: () => startTerritorySetup() },
+  { id: 'tower', label: 'BATTLE TOWER', tag: 'RANKED', lines: ['Ten floors, a commander on each.', 'Rental armies, equal terms:', 'climb for an S rank.'], goal: 'Rank S on every floor', run: () => startTower() },
+  { id: 'safari', label: 'SAFARI ZONE', tag: 'CATCH RACE', lines: ['Eight days, twelve Safari Balls.', 'Weaken, never knock out:', 'rare ones score more.'], goal: 'Out-catch Blue', run: () => startSafari() },
 ];
-function quickPreview(m) { const S = SC.data || (SC.data = {}); if (!S[m.id]) S[m.id] = makeBackdrop(m.id === 'conquest' ? TERRITORY_MAP : skirmishMap(412, 16, 11, 12)); return S[m.id]; }
+function quickPreview(m) { const S = SC.data || (SC.data = {}); if (!S[m.id]) S[m.id] = makeBackdrop(m.id === 'conquest' ? TERRITORY_MAP : m.id === 'tower' ? towerMap(4) : m.id === 'safari' ? safariMap(21, 16) : skirmishMap(412, 16, 11, 12)); return S[m.id]; }
+function quickCols() { return narrowView() || portraitView() ? 1 : 2; }
 function quickDraw() {
   const W = VIEW.w, H = VIEW.h, narrow = narrowView() || portraitView(), bh = btnH(); rect(0, 0, W, H, UI.bg); SC.hits = [];
   const bd = quickPreview(QUICK_MODES[SC.i]); drawBackdrop(bd, (W - bd.canvas.width) / 2 - SC.t * 5, (H - bd.canvas.height) / 2, .78);
-  const top = screenTitle('QUICK BATTLE', 'Battle the CPU · your captain leads', 5);
-  const foot = footerBand(bh + 12), gap = 8, n = QUICK_MODES.length;
-  const cw = narrow ? W - 16 : Math.min(200, Math.floor((W - 24 - gap) / 2)), ch = narrow ? Math.floor((foot - top - 8 - gap) / 2) : Math.min(foot - top - 14, 170);
-  const x0 = narrow ? 8 : Math.round(W / 2 - (cw * 2 + gap) / 2), y0 = narrow ? top + 4 : top + Math.max(4, Math.round((foot - top - ch) / 2) - 4);
+  const top = screenTitle('QUICK BATTLE', 'Battle the CPU · four ways to play', 5);
+  const foot = footerBand(bh + 12), gap = narrow ? 5 : 8, n = QUICK_MODES.length, cols = quickCols(), rows = Math.ceil(n / cols);
+  const cw = narrow ? W - 16 : Math.min(230, Math.floor((W - 24 - gap) / 2)), ch = Math.min(narrow ? 999 : 150, Math.floor((foot - top - 8 - gap * (rows - 1)) / rows));
+  const x0 = narrow ? 8 : Math.round(W / 2 - (cw * 2 + gap) / 2), y0 = top + Math.max(4, Math.round((foot - top - (ch * rows + gap * (rows - 1))) / 2) - 2);
   QUICK_MODES.forEach((m, i) => {
-    const sel = SC.i === i, x = narrow ? x0 : x0 + i * (cw + gap), y = narrow ? y0 + i * (ch + gap) : y0, lift = sel && !REDUCED ? -2 : 0;
+    const sel = SC.i === i, x = x0 + (i % cols) * (cw + gap), y = y0 + Math.floor(i / cols) * (ch + gap), lift = sel && !REDUCED ? -2 : 0;
     const tok = unfold('quick' + i, x, y, cw, ch, .22 + i * .06);
     const p = panel(x, y + lift, cw, ch, { header: m.label, headerRight: m.tag, headerRightCol: sel ? UI.gold : UI.muted, fill: sel ? UI.panel2 : UI.panel, border: sel ? UI.gold : UI.border });
-    const pv = quickPreview(m), room = ch - 76, sc = Math.min((cw - 16) / pv.canvas.width, room / pv.canvas.height);
+    const pv = quickPreview(m), room = ch - (narrow ? 66 : 70), sc = Math.min((cw - 16) / pv.canvas.width, room / pv.canvas.height);
     const pw = Math.floor(pv.canvas.width * sc), ph = Math.floor(pv.canvas.height * sc), px0 = x + Math.round((cw - pw) / 2), py0 = p.cy;
     if (ph >= 18) { rect(px0 - 2, py0 - 2, pw + 4, ph + 4, UI.inset); ctx.drawImage(pv.canvas, px0, py0, pw, ph); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, sel ? UI.gold : UI.border2); }
     const tx = x + 8, ty = py0 + (ph >= 18 ? ph + 6 : 0), tw = x + cw - 8 - tx;
@@ -424,7 +427,7 @@ function quickDraw() {
 }
 function quickGo() { Audio.sfx('select'); QUICK_MODES[SC.i].run(); }
 function quickInput(ev) {
-  if (ev.type === 'key') { if (['left', 'right', 'up', 'down'].includes(ev.key)) { SC.i = 1 - SC.i; Audio.sfx('cursor'); } else if (ev.key === 'ok') quickGo(); else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('title'); } else if (ev.key === 'mute') Audio.toggle(); return; }
+  if (ev.type === 'key') { const n = QUICK_MODES.length, cols = quickCols(); if (['left', 'right', 'up', 'down'].includes(ev.key)) { const d = ev.key === 'left' ? -1 : ev.key === 'right' ? 1 : ev.key === 'up' ? -cols : cols; SC.i = (SC.i + d + n) % n; Audio.sfx('cursor'); } else if (ev.key === 'ok') quickGo(); else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('title'); } else if (ev.key === 'mute') Audio.toggle(); return; }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
 

@@ -68,7 +68,7 @@ function toggleZoom() { return setZoom(BT.zoom === 1 ? .75 : BT.zoom === .75 ? .
 function startBattle(mapDef, party, bag, opts = {}) {
   seedRng(opts.seed || (Date.now() & 0xffff));
   const map = parseMap(mapDef); UID = 1;
-  B = { map, units: [], turn: 1, phase: 0, bag: normalizeBag(bag), result: null, seized: false, captured: [], kills: 0, chapter: opts.chapter != null ? opts.chapter : null, log: [], seed: opts.seed || 1, skirmish: !!opts.skirmish, turnsUsed: 0, versus: !!opts.versus, humans: opts.humans || [0], setup: opts.setup || null };
+  B = { map, units: [], turn: 1, phase: 0, bag: normalizeBag(bag), result: null, seized: false, captured: [], kills: 0, chapter: opts.chapter != null ? opts.chapter : null, log: [], seed: opts.seed || 1, skirmish: !!opts.skirmish, tower: opts.tower != null ? opts.tower : null, safari: opts.safari || null, turnsUsed: 0, versus: !!opts.versus, humans: opts.humans || [0], setup: opts.setup || null };
   // versus rules: fog of war, capture-the-flag bases, the hill
   B.fog = !!map.fog; B.vis = null; B.captureBy = null; B.endReason = null; B.flags = map.flags ? map.flags.map(f => ({ team: f.team, home: { x: f.x, y: f.y }, x: f.x, y: f.y, carrier: null })) : null; B.hill = map.hill ? { x: map.hill.x, y: map.hill.y, r: map.hill.r || 1, score: [0, 0], need: 3 } : null;
   // enemies / wild / allies from the map definition
@@ -458,7 +458,7 @@ function confirmCatch() {
   BT.queue = [{ kind: 'event', ev: { type: 'capture', unit: t, ok: r.ok, shakes: r.shakes, from: { x: u.x, y: u.y }, ball, team: u.team } }]; BT.boxNew = r.ok ? true : BT.boxNew;
   if (r.ok) BT.queue.push({ kind: 'fn', fn: () => {
     if (isPracticeTarget(t)) B.lesson.complete = true;
-    powerCharge(u.team, 15);
+    powerCharge(u.team, 15); if (B.safari) safariCatch(u.team, t);
     // the catch goes to the catcher's PC Box (its first deployment is free); a campaign catch also joins the collection
     t.hp = 0; t.captured = true; const e = warBoxAdd(u.team, Object.assign({}, t, { ai: null, boss: false, provoked: false }));
     if (!B.versus && u.team === 0) { B.captured.push(serializeUnit(Object.assign({}, t, { team: 0, hp: Math.max(1, Math.floor(t.maxHp * .5)) }))); if (e) e.captIdx = B.captured.length - 1; } } });
@@ -510,6 +510,7 @@ function runEnemyPhase(team) {
     BT.queue = [];
     if (d.x !== u.x || d.y !== u.y) { const reach = reachable(u); const p = pathTo(reach, d.x, d.y); if (p) BT.queue.push({ kind: 'fn', fn: () => { centerCam(u.x, u.y); } }, { kind: 'wait', t2: .25 }, { kind: 'move', unit: u, path: p }); }
     if (d.capture) { BT.queue.push({ kind: 'fn', fn: () => { const e = warCapture(u); if (e) BT.queue.unshift({ kind: 'event', ev: e }); } }); }
+    else if (d.catch) { BT.queue.push({ kind: 'fn', fn: () => { const c = safariThrow(u, d.target); if (c) BT.queue.unshift({ kind: 'event', ev: c.ev }, { kind: 'fn', fn: c.done }); } }); }
     else if (d.skill) { BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...skillQueue(u, d.skill, d.target)); } }); }
     else if (d.target) {
       BT.queue.push({ kind: 'fn', fn: () => { BT.queue.unshift(...combatQueue(u, d.target, d.move, { x: d.x, y: d.y })); } });
@@ -948,6 +949,7 @@ function objectiveProgress() {
   const o = B.map.objective;
   if (B.lesson && !B.lesson.complete) { const t = B.units.find(u => u.id === B.lesson.targetId); return { text: 'Catch the Caterpie', right: t && practiceReady(t) ? 'ready!' : 'weaken it', ratio: t ? clamp(1 - t.hp / t.maxHp, 0, 1) * 2 : 1, col: UI.gold }; }
   if (B.versus) { const st = versusStatusText(); const m = o.mode || 'elim'; if (m === 'hill' && B.hill) return { text: 'Hold the hill', right: B.hill.score[HT()] + '/' + B.hill.need, ratio: B.hill.score[HT()] / B.hill.need, col: UI.gold }; if (m === 'ctf') return { text: 'Capture the flag', right: st ? st.text.replace('FLAGS ', '') : '', ratio: 0, col: UI.gold }; const hq = B.war && B.war.props.find(p => p.kind === 'hq' && p.hq === 1 - HT()); if (hq && hq.captor != null && B.units.some(u => u.id === hq.captor && u.team === HT())) return { text: 'Take their HQ', right: hq.progress + '/20', ratio: hq.progress / 20, col: UI.gold }; return { text: 'Rout them or take HQ', right: alive(1 - HT()).length + ' left', ratio: 1 - alive(1 - HT()).length / Math.max(1, B.units.filter(u => u.team === 1 - HT()).length), col: UI.gold }; }
+  if (o.type === 'safari' && B.safari) { const [a, b] = B.safari.score; return { text: 'Catch race · ' + (B.bag.pokeball || 0) + ' balls', right: a + ' - ' + b, ratio: a / Math.max(1, a + b), col: a >= b ? UI.gold : UI.red }; }
   if (o.type === 'boss') { const b = B.units.find(u => u.boss && u.team === 1); const name = o.bossName || (b ? b.name : 'the boss'); return { text: 'Defeat ' + name, right: b && b.hp > 0 ? b.hp + '/' + b.maxHp : 'down!', ratio: b ? b.hp / b.maxHp : 0, col: UI.red, boss: true }; }
   if (o.type === 'survive') return { text: 'Survive ' + o.turns + ' turns', right: Math.min(B.turn, o.turns) + '/' + o.turns, ratio: (B.turn - 1) / o.turns, col: UI.blue };
   if (o.type === 'seize') { const p = B.war && B.war.props.find(q => q.goal); return { text: 'Seize the ' + (o.what || 'gym'), right: p ? (p.owner === HT() ? 'taken!' : (p.captor != null ? p.progress : 0) + '/20') : '', ratio: p ? (p.owner === HT() ? 1 : (p.captor != null ? p.progress : 0) / 20) : 0, col: UI.gold }; }
@@ -1268,9 +1270,9 @@ function drawEventCard(q) {
   if (e.type === 'evolve') { const k = q.t / q.dur; const msg = k < .5 ? 'What? ' + e.from.name + ' is evolving!' : e.from.name + ' evolved into ' + e.to.name + '!'; const w = Math.min(W - 12, Math.max(160, textWidth(msg) + 16)), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20); textC(msg, W / 2, y + 6, k < .5 ? UI.ink : UI.gold); if (k > .15 && k < .8 && Math.floor(q.t * 14) % 2) { ctx.globalAlpha = .25; rect(0, 0, W, H, '#ffffff'); ctx.globalAlpha = 1; } }
   if (e.type === 'capture' && e.ok && q.cfx && q.cfx.done) { // CAUGHT: the portrait, the name and level, and where it went (the PC Box, first deployment free)
     const u = e.unit, w = Math.min(212, W - 12), h = 44, x = Math.round(W / 2 - w / 2), k = Math.min(1, (q.t * (BT.fast ? 1.8 : 1) - CATCH_T.result - e.shakes * CATCH_T.shake) / .25), y = Math.round(26 - (1 - easeOutBack(k, 2)) * 14);
-    ctx.globalAlpha = Math.min(1, k * 2); const p = panel(x, y, w, h, { header: 'CAUGHT!', headerRight: 'Lv ' + u.level, headerRightCol: UI.gold, fill: '#1f2a5e' });
+    const rival = B.safari && e.team === 1, tier = B.safari ? safariTier(u.num) : null; ctx.globalAlpha = Math.min(1, k * 2); const p = panel(x, y, w, h, { header: rival ? 'BLUE CAUGHT IT!' : 'CAUGHT!', headerRight: 'Lv ' + u.level, headerRightCol: UI.gold, fill: rival ? '#4a1a26' : '#1f2a5e' });
     ctx.save(); ctx.beginPath(); ctx.rect(x + 6, p.cy, 30, 22); ctx.clip(); portraitBg(x + 6, p.cy, 30, 22, 0); drawMon(u.num, x + 21, p.cy + 21 + Math.round(Math.sin(q.t * 9) * (k < 1 ? 0 : 1)), {}); ctx.restore(); drawBall(x + 33, p.cy + 18, ITEMS.pokeball.col, 3);
-    text(u.name, x + 42, p.cy + 1, '#ffffff', { outline: '#000' }); text(B.war ? 'Sent to your PC Box' : 'Joins your team', x + 42, p.cy + 11, UI.info); if (B.war) textR('1st deploy FREE', x + w - 7, p.cy + 11, UI.green); ctx.globalAlpha = 1; }
+    text(u.name, x + 42, p.cy + 1, '#ffffff', { outline: '#000' }); if (tier) { text(tier.name, x + 42, p.cy + 11, tier.col); textR('+' + tier.pts + ' pts' + (rival ? ' for Blue' : ''), x + w - 7, p.cy + 11, rival ? UI.red : UI.green); } else { text(B.war ? 'Sent to your PC Box' : 'Joins your team', x + 42, p.cy + 11, UI.info); if (B.war) textR('1st deploy FREE', x + w - 7, p.cy + 11, UI.green); } ctx.globalAlpha = 1; }
   if (e.type === 'skill') { const msg = e.unit.name + ' uses ' + e.skill.name + (e.target && e.target !== e.unit ? ' on ' + e.target.name : '') + '!'; const w = Math.min(W - 12, Math.max(120, textWidth(msg) + 16)), x = W / 2 - w / 2, y = 30; panel(x, y, w, 20, { border: ROLES[e.unit.role].col }); let s = msg; while (textWidth(s) > w - 12 && s.length > 6) s = s.slice(0, -1); textC(s, W / 2, y + 6, UI.ink); }
 }
 // Phase banner: a slanted band in the team colour sweeps in with speed lines, the phase name slams down (doubled when it
@@ -1357,7 +1359,7 @@ function drawHandoff() {
 // VICTORY / DEFEAT stamped letter by letter over a turning sunburst, then (campaign and skirmish wins) the three stars
 // pop in one by one; confetti for a win. endSequenceCues plays the sounds at the same beats the drawing uses.
 const END_BEATS = { letters: .15, stars: 1.25, starGap: .38 };
-function endStars() { if (B.versus || B.territory || !(B.result === 'win')) return null; return battleStars(B.map.par || (CHAPTERS[B.chapter] && CHAPTERS[B.chapter].par) || 10); }
+function endStars() { if (B.versus || B.territory || B.tower != null || B.safari || !(B.result === 'win')) return null; return battleStars(B.map.par || (CHAPTERS[B.chapter] && CHAPTERS[B.chapter].par) || 10); }
 function endSequenceCues(a, b) {
   if (!REDUCED) { const word = endWord(); for (let i = 0; i < word.length; i++) { const at = END_BEATS.letters + i * .06 + .2; if (word[i] !== ' ' && a < at && b >= at) Audio.sfx(i === word.length - 1 ? 'crit' : 'stamp'); } }
   const n = endStars(); if (n == null || REDUCED) return;

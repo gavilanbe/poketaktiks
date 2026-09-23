@@ -217,7 +217,7 @@ function initTitle() {
   if (suspended) items.push({ label: 'RESUME BATTLE', sub: 'Back to your last turn', icon: 'play', run: resumeSuspend });
   if (save) { const chapter = CHAPTERS[clamp(save.chapter || 0, 0, CHAPTERS.length - 1)]; items.push({ label: 'CONTINUE', sub: save.beaten ? 'Journey complete · replay for stars' : 'Chapter ' + chapter.num + ' · ' + chapter.title, icon: 'map', run: continueCampaign }); }
   items.push({ label: 'NEW GAME', sub: 'Pick a partner · 8 chapters', icon: 'star', run: () => { if (save) openTitleConfirm(); else startNewGame(); } });
-  items.push({ label: 'QUICK BATTLE', sub: 'Skirmish or Conquest vs CPU', icon: 'blades', run: () => goScene('quick') });
+  items.push({ label: 'QUICK BATTLE', sub: 'Skirmish · Tower · Safari · Conquest', icon: 'blades', run: () => goScene('quick') });
   items.push({ label: 'VERSUS', sub: 'Two players, one screen', icon: 'duo', run: startVersusSetup });
   items.forEach((item, i) => { item.hover = i === 0 ? 1 : 0; });
   SC.titleItems = items; SC.menuLen = items.length; SC.titleConfirm = null;
