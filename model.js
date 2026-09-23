@@ -291,7 +291,7 @@ function objectiveText() { if (B.lesson && !B.lesson.complete) return 'Catch Cat
 
 // ---------------------------------------------------------------- versus rules: modes, flags, the hill, fog of war
 const VS_MODES = {
-  elim: { name: 'Elimination', short: 'ELIM', blurb: 'Knock out every Pokémon on the other team. At the turn limit the larger team wins.' },
+  elim: { name: 'HQ War', short: 'WAR', blurb: 'Knock out every Pokémon on the other team or capture their HQ. Centers pay funds each day; deploy from your Box at the ones you hold. At the turn limit the larger team wins.' },
   ctf: { name: 'Capture the Flag', short: 'CTF', blurb: 'Take the flag from the enemy base and carry it back to your own flag. A fainted carrier drops it; step on your own dropped flag to send it home.' },
   hill: { name: 'King of the Hill', short: 'HILL', blurb: 'Start three of your turns with more Pokémon than the other team on the hill, the 3×3 zone in the middle of the arena.' },
 };
@@ -323,7 +323,7 @@ function versusAfterAction(u) {
 function hillCount(team) { const h = B.hill; return B.units.filter(u => u.hp > 0 && u.team === team && Math.abs(u.x - h.x) <= h.r && Math.abs(u.y - h.y) <= h.r).length; }
 // King of the Hill: starting a turn with more Pokémon on the hill than the other team scores a point.
 function versusPhaseStart(team) { if (!B.versus) return null; syncFlags(); if (B.hill && team <= 1) { const mine = hillCount(team), theirs = hillCount(1 - team); if (mine > theirs) { B.hill.score[team]++; return { type: 'hill', team, score: B.hill.score[team] }; } } return null; }
-function versusObjectiveText() { const m = B.map.objective.mode || 'elim'; return m === 'ctf' ? 'Capture the enemy flag' : m === 'hill' ? 'Hold the hill ' + (B.hill ? B.hill.need : 3) + ' turns' : 'Beat the other team'; }
+function versusObjectiveText() { const m = B.map.objective.mode || 'elim'; return m === 'ctf' ? 'Capture the enemy flag' : m === 'hill' ? 'Hold the hill ' + (B.hill ? B.hill.need : 3) + ' turns' : 'Rout them or take their HQ'; }
 
 // ---------------------------------------------------------------- AI
 // BFS distance field over terrain the unit can enter (ignores units) from a set of goal cells.

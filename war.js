@@ -107,7 +107,7 @@ function warBallPrice() { return B && B.war ? WAR.ball : Infinity; }
 // HQ capture ends the battle for its side; Conquest also has its hold race and turn limit.
 function warObjective() {
   if (!B || !B.war || B.result) return B && B.result; warSettle(); const W = B.war;
-  const finish = (winner, reason) => { W.reason = reason; return B.result = B.versus ? (winner < 0 ? 'draw' : winner === 0 ? 'p1' : 'p2') : winner < 0 ? 'draw' : winner === 0 ? 'win' : 'lose'; };
+  const finish = (winner, reason) => { W.reason = reason; if (B.versus) B.endReason = reason + '!'; return B.result = B.versus ? (winner < 0 ? 'draw' : winner === 0 ? 'p1' : 'p2') : winner < 0 ? 'draw' : winner === 0 ? 'win' : 'lose'; };
   for (const p of W.props) if (p.kind === 'hq' && p.hq >= 0 && p.owner !== p.hq) return finish(p.owner === 2 || p.owner === 3 || p.owner < 0 ? 1 - p.hq : p.owner, p.name + ' captured');
   if (W.hold) for (const t of [0, 1]) if (W.hold.count[t] >= W.hold.turns) return finish(t, (t === 0 ? 'You' : 'The enemy') + ' held ' + W.hold.need + ' centers for ' + W.hold.turns + ' turn starts');
   if (B.territory) for (const t of [0, 1]) if (!alive(t).length && !warDeploySites(t).length) return finish(1 - t, 'No Pokémon and no centers left');

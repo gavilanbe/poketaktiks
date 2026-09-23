@@ -2612,7 +2612,7 @@ function objectiveText() { if (B.lesson && !B.lesson.complete) return 'Catch Cat
 
 // ---------------------------------------------------------------- versus rules: modes, flags, the hill, fog of war
 const VS_MODES = {
-  elim: { name: 'Elimination', short: 'ELIM', blurb: 'Knock out every Pokémon on the other team. At the turn limit the larger team wins.' },
+  elim: { name: 'HQ War', short: 'WAR', blurb: 'Knock out every Pokémon on the other team or capture their HQ. Centers pay funds each day; deploy from your Box at the ones you hold. At the turn limit the larger team wins.' },
   ctf: { name: 'Capture the Flag', short: 'CTF', blurb: 'Take the flag from the enemy base and carry it back to your own flag. A fainted carrier drops it; step on your own dropped flag to send it home.' },
   hill: { name: 'King of the Hill', short: 'HILL', blurb: 'Start three of your turns with more Pokémon than the other team on the hill, the 3×3 zone in the middle of the arena.' },
 };
@@ -2644,7 +2644,7 @@ function versusAfterAction(u) {
 function hillCount(team) { const h = B.hill; return B.units.filter(u => u.hp > 0 && u.team === team && Math.abs(u.x - h.x) <= h.r && Math.abs(u.y - h.y) <= h.r).length; }
 // King of the Hill: starting a turn with more Pokémon on the hill than the other team scores a point.
 function versusPhaseStart(team) { if (!B.versus) return null; syncFlags(); if (B.hill && team <= 1) { const mine = hillCount(team), theirs = hillCount(1 - team); if (mine > theirs) { B.hill.score[team]++; return { type: 'hill', team, score: B.hill.score[team] }; } } return null; }
-function versusObjectiveText() { const m = B.map.objective.mode || 'elim'; return m === 'ctf' ? 'Capture the enemy flag' : m === 'hill' ? 'Hold the hill ' + (B.hill ? B.hill.need : 3) + ' turns' : 'Beat the other team'; }
+function versusObjectiveText() { const m = B.map.objective.mode || 'elim'; return m === 'ctf' ? 'Capture the enemy flag' : m === 'hill' ? 'Hold the hill ' + (B.hill ? B.hill.need : 3) + ' turns' : 'Rout them or take their HQ'; }
 
 // ---------------------------------------------------------------- AI
 // BFS distance field over terrain the unit can enter (ignores units) from a set of goal cells.
@@ -3921,7 +3921,7 @@ function versusStatusText() {
 function objectiveProgress() {
   const o = B.map.objective;
   if (B.lesson && !B.lesson.complete) { const t = B.units.find(u => u.id === B.lesson.targetId); return { text: 'Catch the Caterpie', right: t && practiceReady(t) ? 'ready!' : 'weaken it', ratio: t ? clamp(1 - t.hp / t.maxHp, 0, 1) * 2 : 1, col: UI.gold }; }
-  if (B.versus) { const st = versusStatusText(); const m = o.mode || 'elim'; if (m === 'hill' && B.hill) return { text: 'Hold the hill', right: B.hill.score[HT()] + '/' + B.hill.need, ratio: B.hill.score[HT()] / B.hill.need, col: UI.gold }; if (m === 'ctf') return { text: 'Capture the flag', right: st ? st.text.replace('FLAGS ', '') : '', ratio: 0, col: UI.gold }; return { text: 'Beat the other team', right: alive(1 - HT()).length + ' left', ratio: 1 - alive(1 - HT()).length / Math.max(1, B.units.filter(u => u.team === 1 - HT()).length), col: UI.gold }; }
+  if (B.versus) { const st = versusStatusText(); const m = o.mode || 'elim'; if (m === 'hill' && B.hill) return { text: 'Hold the hill', right: B.hill.score[HT()] + '/' + B.hill.need, ratio: B.hill.score[HT()] / B.hill.need, col: UI.gold }; if (m === 'ctf') return { text: 'Capture the flag', right: st ? st.text.replace('FLAGS ', '') : '', ratio: 0, col: UI.gold }; const hq = B.war && B.war.props.find(p => p.kind === 'hq' && p.hq === 1 - HT()); if (hq && hq.captor != null && B.units.some(u => u.id === hq.captor && u.team === HT())) return { text: 'Take their HQ', right: hq.progress + '/20', ratio: hq.progress / 20, col: UI.gold }; return { text: 'Rout them or take HQ', right: alive(1 - HT()).length + ' left', ratio: 1 - alive(1 - HT()).length / Math.max(1, B.units.filter(u => u.team === 1 - HT()).length), col: UI.gold }; }
   if (o.type === 'boss') { const b = B.units.find(u => u.boss && u.team === 1); const name = o.bossName || (b ? b.name : 'the boss'); return { text: 'Defeat ' + name, right: b && b.hp > 0 ? b.hp + '/' + b.maxHp : 'down!', ratio: b ? b.hp / b.maxHp : 0, col: UI.red, boss: true }; }
   if (o.type === 'survive') return { text: 'Survive ' + o.turns + ' turns', right: Math.min(B.turn, o.turns) + '/' + o.turns, ratio: (B.turn - 1) / o.turns, col: UI.blue };
   if (o.type === 'seize') { const p = B.war && B.war.props.find(q => q.goal); return { text: 'Seize the ' + (o.what || 'gym'), right: p ? (p.owner === HT() ? 'taken!' : (p.captor != null ? p.progress : 0) + '/20') : '', ratio: p ? (p.owner === HT() ? 1 : (p.captor != null ? p.progress : 0) / 20) : 0, col: UI.gold }; }
@@ -5070,6 +5070,10 @@ const SKIRMISH = { slots: 4, box: 8, funds: [0, 1000, 2000, 5000, 10000], weathe
 const LOANERS = [16, 19, 25, 1, 4, 7, 74, 63, 43, 60, 66, 92, 41, 23, 56, 100, 109, 111];
 function skirmishLoaners(party, level, n) { const have = new Set(party.map(p => LINE_ROOT[p.num])); return LOANERS.filter(num => !have.has(LINE_ROOT[num])).slice(0, Math.max(0, n)).map(num => ({ num: formAt(num, level), level })); }
 
+// Versus: both trainers deploy from the same catalog (at the match level, grown into their evolutions), plus catches.
+const VS_CATALOG = [16, 19, 25, 74, 43, 60, 23, 129];
+const VS_FUNDS = [0, 1000, 2000, 5000];
+function vsCatalog(level) { return VS_CATALOG.map(num => ({ num: formAt(num, level), level })); }
 // ---------------------------------------------------------------- versus arenas
 // Mirror-symmetric arena for two trainers: the left half is generated with value noise and reflected.
 function versusMap(seed, w = 18, h = 11, opt = {}) {
@@ -5080,20 +5084,24 @@ function versusMap(seed, w = 18, h = 11, opt = {}) {
   for (let y = 0; y < h; y++) { let s = ''; for (let x = 0; x < half; x++) { const v = grid[y][x]; let ch = '.'; if (x <= 1) ch = v > .6 ? 'T' : v > .5 ? 't' : '.'; else if (v < .3) ch = '~'; else if (v < .35) ch = 's'; else if (v > .74) ch = theme === 2 ? '^' : 'M'; else if (v > .63) ch = 'T'; else if (v > .53) ch = 't'; else if (r() < .07) ch = ','; s += ch; } const left = s.slice(0, Math.floor(w / 2)); const mid = w % 2 ? s[half - 1] : ''; rows.push(left + mid + left.split('').reverse().join('')); }
   const ry = Math.floor(h / 2); rows[ry] = rows[ry].split('').map(c => c === '~' ? '=' : (c === 'M' || c === '^') ? '.' : '#').join('');
   const put = (x, y, ch) => { rows[y] = rows[y].slice(0, x) + ch + rows[y].slice(x + 1); };
-  // a Poké Center for each side
-  const cy = ry - 2 >= 0 ? ry - 2 : ry + 2; put(3, cy, 'C'); put(w - 4, cy, 'C');
-  // deploy zones: the two outer columns, nearest the middle row first; P2 mirrors P1
-  const order = []; for (let y = 0; y < h; y++) for (let x = 0; x < 2; x++) order.push({ x, y }); order.sort((a, b) => Math.abs(a.y - ry) - Math.abs(b.y - ry) || a.x - b.x);
+  // an HQ at each end of the road, each side's own Poké Center and two neutral ones further in (a path to the road
+  // through water or rock, open ground beside them), all mirrored
+  const cy = ry - 2 >= 0 ? ry - 2 : ry + 2, ny = clamp(ry + 3, 1, h - 2), nx = Math.max(4, Math.floor(w / 2) - 3);
+  const center = (x, y) => { const step = y < ry ? 1 : -1; for (let yy = y + step; yy !== ry; yy += step) if ('~M^'.includes(rows[yy][x])) { put(x, yy, '#'); put(w - 1 - x, yy, '#'); } for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < w && Y < h && '~^'.includes(rows[Y][X])) { put(X, Y, '.'); put(w - 1 - X, Y, '.'); } } put(x, y, 'C'); put(w - 1 - x, y, 'C'); };
+  center(3, cy); center(nx, ny); put(1, ry, 'Q'); put(w - 2, ry, 'Q');
+  // mode furniture: flag bases at the road's ends behind each HQ, or a 3×3 hill of open ground in the centre
+  const flags = opt.mode === 'ctf' ? [{ team: 0, x: 0, y: ry }, { team: 1, x: w - 1, y: ry }] : null; if (flags) for (const f of flags) put(f.x, f.y, '#');
+  // deploy zones: the two outer columns, nearest the middle row first, skipping the HQ and the flag; P2 mirrors P1
+  const order = []; for (let y = 0; y < h; y++) for (let x = 0; x < 2; x++) if (!(y === ry && (x === 1 || flags))) order.push({ x, y }); order.sort((a, b) => Math.abs(a.y - ry) - Math.abs(b.y - ry) || a.x - b.x);
   const deploy = []; for (const c of order) { if (deploy.length >= 6) break; if (!'.,t#'.includes(rows[c.y][c.x])) { put(c.x, c.y, '.'); put(w - 1 - c.x, c.y, '.'); } deploy.push(c); }
   const deploy2 = deploy.map(c => ({ x: w - 1 - c.x, y: c.y }));
-  // mode furniture: flag bases at each end of the middle road, or a 3×3 hill of open ground in the centre
-  const flags = opt.mode === 'ctf' ? [{ team: 0, x: 1, y: ry }, { team: 1, x: w - 2, y: ry }] : null; if (flags) for (const f of flags) put(f.x, f.y, '.');
   const hill = opt.mode === 'hill' ? { x: Math.floor(w / 2), y: ry, r: 1 } : null; if (hill) for (let y = ry - 1; y <= ry + 1; y++) for (let x = hill.x - 1; x <= hill.x + 1; x++) if (y >= 0 && y < h && x >= 0 && x < w) put(x, y, y === ry ? '#' : '.');
   const units = [], items = []; const taken = new Set([...deploy, ...deploy2].map(d => key(d.x, d.y))); if (flags) for (const f of flags) taken.add(key(f.x, f.y)); if (hill) for (let y = ry - 1; y <= ry + 1; y++) for (let x = hill.x - 1; x <= hill.x + 1; x++) taken.add(key(x, y));
   const pool = DEX_LIST.filter(d => d.num < 144 && d.num !== 132 && d.num !== 143);
   const spot = () => { for (let i = 0; i < 200; i++) { const x = 3 + Math.floor(r() * (half - 3)), y = Math.floor(r() * h); if ('.,t#TsM'.includes(rows[y][x]) && !taken.has(key(x, y)) && !taken.has(key(w - 1 - x, y))) { taken.add(key(x, y)); taken.add(key(w - 1 - x, y)); return { x, y }; } } return null; };
   if (opt.wild !== false) for (let i = 0; i < 2; i++) { const s = spot(); if (!s) break; const d = pool[Math.floor(r() * pool.length)]; const lvl = Math.max(2, (opt.level || 20) - 3); units.push({ mon: d.num, level: lvl, x: s.x, y: s.y, team: 2, ai: 'aggro' }); if (s.x !== w - 1 - s.x) units.push({ mon: d.num, level: lvl, x: w - 1 - s.x, y: s.y, team: 2, ai: 'aggro' }); }
-  return { name: 'Arena #' + (seed % 1000), seed, objective: { type: 'versus', mode: opt.mode || 'elim' }, rows, deploy, deploy2, units, items, par: 0, music: 'player', turnLimit: opt.turns == null ? 30 : opt.turns, flags, hill, fog: !!opt.fog };
+  const war = { owners: { [key(3, cy)]: 0, [key(w - 4, cy)]: 1 }, names: { [key(1, ry)]: 'P1 HQ', [key(w - 2, ry)]: 'P2 HQ' } };
+  return { name: 'Arena #' + (seed % 1000), seed, objective: { type: 'versus', mode: opt.mode || 'elim' }, rows, deploy, deploy2, units, items, par: 0, music: 'player', turnLimit: opt.turns == null ? 30 : opt.turns, flags, hill, fog: !!opt.fog, war };
 }
 // ============================================================================
 // war.js — the Advance Wars layer every battle shares (Frente Kanto, see docs/frente-kanto.md): properties (HQs,
@@ -5204,7 +5212,7 @@ function warBallPrice() { return B && B.war ? WAR.ball : Infinity; }
 // HQ capture ends the battle for its side; Conquest also has its hold race and turn limit.
 function warObjective() {
   if (!B || !B.war || B.result) return B && B.result; warSettle(); const W = B.war;
-  const finish = (winner, reason) => { W.reason = reason; return B.result = B.versus ? (winner < 0 ? 'draw' : winner === 0 ? 'p1' : 'p2') : winner < 0 ? 'draw' : winner === 0 ? 'win' : 'lose'; };
+  const finish = (winner, reason) => { W.reason = reason; if (B.versus) B.endReason = reason + '!'; return B.result = B.versus ? (winner < 0 ? 'draw' : winner === 0 ? 'p1' : 'p2') : winner < 0 ? 'draw' : winner === 0 ? 'win' : 'lose'; };
   for (const p of W.props) if (p.kind === 'hq' && p.hq >= 0 && p.owner !== p.hq) return finish(p.owner === 2 || p.owner === 3 || p.owner < 0 ? 1 - p.hq : p.owner, p.name + ' captured');
   if (W.hold) for (const t of [0, 1]) if (W.hold.count[t] >= W.hold.turns) return finish(t, (t === 0 ? 'You' : 'The enemy') + ' held ' + W.hold.need + ' centers for ' + W.hold.turns + ' turn starts');
   if (B.territory) for (const t of [0, 1]) if (!alive(t).length && !warDeploySites(t).length) return finish(1 - t, 'No Pokémon and no centers left');
@@ -5450,6 +5458,8 @@ const VS_RULES = [
   { k: 'fog', label: 'FOG', vals: [false, true], show: v => v ? 'On' : 'Off' },
   { k: 'co0', label: 'P1 COMMANDER', vals: CO_ORDER.slice(1), show: v => COS[v].name },
   { k: 'co1', label: 'P2 COMMANDER', vals: CO_ORDER.slice(1), show: v => COS[v].name },
+  { k: 'funds', label: 'FUNDS', vals: VS_FUNDS, show: v => money(v) },
+  { k: 'weather', label: 'WEATHER', vals: SKIRMISH.weather, show: v => v === 'none' ? 'Clear' : v === 'random' ? 'Random' : WEATHER[v].name },
 ];
 function vsCycle(S, rule, dir) { const vals = typeof rule.vals === 'function' ? rule.vals(S) : rule.vals; if (vals) { const i = vals.indexOf(S[rule.k]); S[rule.k] = vals[(Math.max(0, i) + dir + vals.length) % vals.length]; } else S.seed = (S.seed + dir + 1000) % 1000; Audio.sfx('menu'); }
 function vsRuleRows(S, x, y, w, rh, rules, focus = -1) {
@@ -5462,9 +5472,15 @@ function vsRuleRows(S, x, y, w, rh, rules, focus = -1) {
     SC.hits[SC.hits.length - 1].label = rule.label + '-'; SC.hits[SC.hits.length - 2].label = rule.label + '+';
     textR(val, x + w - 2 * bw - 7, ry + (rh - 7) / 2, rule.k === 'mode' ? UI.gold : UI.ink); hit(x, ry, w - 2 * bw - 4, rh, () => vsCycle(S, rule, 1), rule.label); });
 }
+// Phones: the rules as a two-column grid of cells, label over value; a tap cycles the value.
+function vsRuleGrid(S, x, y, w, rh, rules) {
+  const cw = Math.floor((w - 3) / 2); rules.forEach((rule, i) => { const cx = x + (i % 2) * (cw + 3), cy = y + Math.floor(i / 2) * (rh + 2), val = rule.show(S[rule.k], S);
+    rrect(cx, cy, cw, rh, '#141c30', 1); outline(cx, cy, cw, rh, UI.border2); text(fitLabel(rule.label, cw - 6), cx + 3, cy + 2, UI.muted); textR(fitLabel(val, cw - 6), cx + cw - 3, cy + rh - 9, rule.k === 'mode' ? UI.gold : UI.ink);
+    hit(cx, cy, cw, rh, () => vsCycle(S, rule, 1), rule.label + '+'); }); // a tap is the row's [+]
+}
 function versusDraw() {
   const W = VIEW.w, H = VIEW.h, S = SC.data; rect(0, 0, W, H, '#0e0c10');
-  const mapKey = [S.seed, S.mode, S.arena, S.fog].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = vsMapFor(S); S.bd = makeBackdrop(S.map); S.bdKey = mapKey; }
+  const mapKey = [S.seed, S.mode, S.arena, S.fog, S.weather].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = vsMapFor(S); S.bd = makeBackdrop(S.map); S.bdKey = mapKey; }
   drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2, (H - S.bd.canvas.height) / 2, .8); SC.hits = [];
   const picks = S.teams[0].length + S.teams[1].length, full = picks >= S.size * 2; const cur = full ? -1 : S.order[picks]; S.cur = cur;
   screenTitle('VERSUS', null, 3);
@@ -5504,16 +5520,16 @@ function versusDraw() {
   if (d) { const u = makeUnit(d.num, S.level, 0); text(d.name, gx, iy, UI.ink, { outline: UI.shadow }); d.types.forEach((tp, j) => typeBadge(tp, gx + textWidth(d.name) + 6 + j * 26, iy - 1, 24)); const mv = u.moves.slice(0, 3).map(m => m.name).join(' / '); const R = ROLES[u.role]; if (narrow) { let s = mv; const avail = gx + cols * cw - (gx + textWidth(d.name) + 6 + d.types.length * 26 + 4); while (textWidth(s) > avail && s.length > 4) s = s.slice(0, -1); textR(s, gx + cols * cw, iy, UI.info, { outline: UI.shadow }); } else { textR(mv, gx + cols * cw, iy, UI.info, { outline: UI.shadow }); text('HP ' + u.maxHp + '  ATK ' + u.atk + '  DEF ' + u.def + '  SPA ' + u.spa + '  SPE ' + u.spe + '  MOV ' + u.mov, gx, iy + 10, UI.muted, { outline: UI.shadow }); const rx0 = gx + textWidth(d.name) + 6 + d.types.length * 26 + 4; let rs = R.name + ': ' + (u.skill ? u.skill.blurb.replace(/^[^:]+: /, '') : 'plain attacker'); while (textWidth(rs) > gx + cols * cw - textWidth(mv) - 8 - rx0 && rs.length > 8) rs = rs.slice(0, -1); text(rs, rx0, iy, R.col, { outline: UI.shadow }); } }
   const go = () => { if (!full) { Audio.sfx('error'); return; } Audio.sfx('select'); S.go(); }; const goOpt = full ? { variant: 'danger' } : { disabled: true };
   if (narrow) {
-    const r1 = H - 2 * (bh + 4), r2 = H - bh - 4, cw3 = Math.floor((W - 20) / 3); const rulesY = iy + 12, phoneRules = VS_RULES, rh = clamp(Math.floor((r1 - 6 - rulesY) / phoneRules.length), 14, 16);
-    vsRuleRows(S, 6, rulesY, W - 12, rh, phoneRules);
+    const r1 = H - 2 * (bh + 4), r2 = H - bh - 4, cw3 = Math.floor((W - 20) / 3); const rulesY = iy + 12, rows = Math.ceil(VS_RULES.length / 2), rh = clamp(Math.floor((r1 - 6 - rulesY) / rows) - 2, 14, 20);
+    vsRuleGrid(S, 6, rulesY, W - 12, rh, VS_RULES);
     footerBand(2 * (bh + 4) + 4);
     bigButton(6, r1, cw3, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' }); bigButton(10 + cw3, r1, cw3, bh, 'RANDOM', () => vsRandom(S)); bigButton(14 + 2 * cw3, r1, cw3, bh, 'CLEAR', () => { S.teams = [[], []]; Audio.sfx('cancel'); }, { variant: 'dark' });
     bigButton(6, r2, W - 12, bh, 'BATTLE!', go, goOpt);
   } else {
-    const rx = gx + cols * cw + 10, rw = W - 6 - rx, ry = gy; const fy = footerBand(28); const rh = 14, lines = wrap(VS_MODES[S.mode].blurb + (S.fog ? ' Fog of war hides foes beyond your Pokémon\'s sight.' : '') + ' Your first pick is your captain.', rw - 16); const nl = Math.min(lines.length, Math.max(1, Math.floor((fy - 6 - ry - 21 - VS_RULES.length * rh - 10) / 9)));
+    const rx = gx + cols * cw + 10, rw = W - 6 - rx, ry = gy; const fy = footerBand(28); const rh = 14, lines = wrap(VS_MODES[S.mode].blurb + (S.fog ? ' Fog of war hides foes beyond your Pokémon\'s sight.' : '') + ' Each commander\'s Ace joins the team.', rw - 16); const nl = Math.min(lines.length, Math.max(0, Math.floor((fy - 6 - ry - 21 - VS_RULES.length * rh - 10) / 9)));
     const p = panel(rx, ry, rw, Math.min(fy - 6 - ry, 21 + VS_RULES.length * rh + 8 + nl * 9 + 6), { header: 'MATCH RULES', headerRight: VS_MODES[S.mode].short + (S.fog ? ' · FOG' : '') });
     vsRuleRows(S, rx + 4, p.cy - 2, rw - 8, rh, VS_RULES);
-    const by0 = p.cy - 2 + VS_RULES.length * rh + 3; hline(rx + 5, by0, rw - 10, UI.inset); lines.slice(0, nl).forEach((l, i) => text(l, rx + 8, by0 + 4 + i * 9, UI.muted));
+    const by0 = p.cy - 2 + VS_RULES.length * rh + 3; if (nl) { hline(rx + 5, by0, rw - 10, UI.inset); lines.slice(0, nl).forEach((l, i) => text(l, rx + 8, by0 + 4 + i * 9, UI.muted)); }
     const by = fy + 5; bigButton(6, by, 60, 18, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' }); bigButton(72, by, 70, 18, 'RANDOM', () => vsRandom(S)); bigButton(148, by, 60, 18, 'CLEAR', () => { S.teams = [[], []]; Audio.sfx('cancel'); }, { variant: 'dark' });
     if (W > 470) hintLine(['Snake draft', 'click a picked slot to drop it'], 216, by + 5, { left: true, pill: false }); bigButton(W - 96, by, 90, 18, 'BATTLE!', go, goOpt);
   }
@@ -6760,12 +6776,14 @@ function startSkirmishSetup() {
 const VS_ROSTER = [5, 8, 2, 25, 17, 33, 12, 15, 28, 37, 39, 42, 44, 54, 58, 61, 64, 67, 75, 93, 95, 123, 125, 126, 111, 104, 133, 116];
 // Versus: both trainers at Lv 20 with plain stats, 30 turns, no wild Pokémon; each picks a captain style and their first
 // draft pick leads the team (the same powers as the campaign, both unlocked).
-function startVersusSetup(seed) { const S = { seed: seed != null ? seed : Math.floor(Math.random() * 1000), level: 20, wild: false, mode: 'elim', arena: 'm', fog: false, turns: 30, cap0: 4, cap1: 7, co0: 'brock', co1: 'misty', teams: [[], []], order: [0, 1, 1, 0, 0, 1, 1, 0], size: 4, cur: 0, go: null }; S.go = () => launchVersus(S); goScene('versus', S); }
+function startVersusSetup(seed) { const S = { seed: seed != null ? seed : Math.floor(Math.random() * 1000), level: 20, wild: false, mode: 'elim', arena: 'm', fog: false, turns: 30, cap0: 4, cap1: 7, co0: 'brock', co1: 'misty', funds: 1000, weather: 'none', teams: [[], []], order: [0, 1, 1, 0, 0, 1, 1, 0], size: 4, cur: 0, go: null }; S.go = () => launchVersus(S); goScene('versus', S); }
 function vsMapFor(S) { const A = VS_ARENAS[S.arena] || VS_ARENAS.m; return versusMap(S.seed, A.w, A.h, { wild: S.wild, level: S.level, mode: S.mode || 'elim', fog: !!S.fog, turns: S.turns == null ? 30 : S.turns }); }
 function launchVersus(S) {
   const map = vsMapFor(S); const mk = list => list.map(n => partyUnit(n, S.level, 1)); // both trainers: plain stats
   const p1 = mk(S.teams[0]), p2 = mk(S.teams[1]); BACKDROP = makeBackdrop(map);
-  startBattle(map, p1, {}, { versus: true, humans: [0, 1], party2: p2, seed: (S.seed * 131 + 7) | 1, defer: true, setup: S, captains: [S.cap0 || 4, S.cap1 || 7], cos: [S.co0 || 'brock', S.co1 || 'misty'] });
+  const weather = S.weather === 'random' ? pick(['none', 'none', 'rain', 'sun', 'sand', 'snow']) : S.weather || 'none'; map.weather = weather === 'none' ? null : weather;
+  const funds = S.funds == null ? 1000 : S.funds, cat = vsCatalog(S.level);
+  startBattle(map, p1, {}, { versus: true, humans: [0, 1], party2: p2, seed: (S.seed * 131 + 7) | 1, defer: true, setup: S, captains: [S.cap0 || 4, S.cap1 || 7], cos: [S.co0 || 'brock', S.co1 || 'misty'], box: cat, box2: cat, war: { funds: [funds, funds] } });
   goScene('battle'); beginPhase(0, true);
 }
 

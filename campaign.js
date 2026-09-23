@@ -287,6 +287,10 @@ const SKIRMISH = { slots: 4, box: 8, funds: [0, 1000, 2000, 5000, 10000], weathe
 const LOANERS = [16, 19, 25, 1, 4, 7, 74, 63, 43, 60, 66, 92, 41, 23, 56, 100, 109, 111];
 function skirmishLoaners(party, level, n) { const have = new Set(party.map(p => LINE_ROOT[p.num])); return LOANERS.filter(num => !have.has(LINE_ROOT[num])).slice(0, Math.max(0, n)).map(num => ({ num: formAt(num, level), level })); }
 
+// Versus: both trainers deploy from the same catalog (at the match level, grown into their evolutions), plus catches.
+const VS_CATALOG = [16, 19, 25, 74, 43, 60, 23, 129];
+const VS_FUNDS = [0, 1000, 2000, 5000];
+function vsCatalog(level) { return VS_CATALOG.map(num => ({ num: formAt(num, level), level })); }
 // ---------------------------------------------------------------- versus arenas
 // Mirror-symmetric arena for two trainers: the left half is generated with value noise and reflected.
 function versusMap(seed, w = 18, h = 11, opt = {}) {
@@ -297,18 +301,22 @@ function versusMap(seed, w = 18, h = 11, opt = {}) {
   for (let y = 0; y < h; y++) { let s = ''; for (let x = 0; x < half; x++) { const v = grid[y][x]; let ch = '.'; if (x <= 1) ch = v > .6 ? 'T' : v > .5 ? 't' : '.'; else if (v < .3) ch = '~'; else if (v < .35) ch = 's'; else if (v > .74) ch = theme === 2 ? '^' : 'M'; else if (v > .63) ch = 'T'; else if (v > .53) ch = 't'; else if (r() < .07) ch = ','; s += ch; } const left = s.slice(0, Math.floor(w / 2)); const mid = w % 2 ? s[half - 1] : ''; rows.push(left + mid + left.split('').reverse().join('')); }
   const ry = Math.floor(h / 2); rows[ry] = rows[ry].split('').map(c => c === '~' ? '=' : (c === 'M' || c === '^') ? '.' : '#').join('');
   const put = (x, y, ch) => { rows[y] = rows[y].slice(0, x) + ch + rows[y].slice(x + 1); };
-  // a Poké Center for each side
-  const cy = ry - 2 >= 0 ? ry - 2 : ry + 2; put(3, cy, 'C'); put(w - 4, cy, 'C');
-  // deploy zones: the two outer columns, nearest the middle row first; P2 mirrors P1
-  const order = []; for (let y = 0; y < h; y++) for (let x = 0; x < 2; x++) order.push({ x, y }); order.sort((a, b) => Math.abs(a.y - ry) - Math.abs(b.y - ry) || a.x - b.x);
+  // an HQ at each end of the road, each side's own Poké Center and two neutral ones further in (a path to the road
+  // through water or rock, open ground beside them), all mirrored
+  const cy = ry - 2 >= 0 ? ry - 2 : ry + 2, ny = clamp(ry + 3, 1, h - 2), nx = Math.max(4, Math.floor(w / 2) - 3);
+  const center = (x, y) => { const step = y < ry ? 1 : -1; for (let yy = y + step; yy !== ry; yy += step) if ('~M^'.includes(rows[yy][x])) { put(x, yy, '#'); put(w - 1 - x, yy, '#'); } for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < w && Y < h && '~^'.includes(rows[Y][X])) { put(X, Y, '.'); put(w - 1 - X, Y, '.'); } } put(x, y, 'C'); put(w - 1 - x, y, 'C'); };
+  center(3, cy); center(nx, ny); put(1, ry, 'Q'); put(w - 2, ry, 'Q');
+  // mode furniture: flag bases at the road's ends behind each HQ, or a 3×3 hill of open ground in the centre
+  const flags = opt.mode === 'ctf' ? [{ team: 0, x: 0, y: ry }, { team: 1, x: w - 1, y: ry }] : null; if (flags) for (const f of flags) put(f.x, f.y, '#');
+  // deploy zones: the two outer columns, nearest the middle row first, skipping the HQ and the flag; P2 mirrors P1
+  const order = []; for (let y = 0; y < h; y++) for (let x = 0; x < 2; x++) if (!(y === ry && (x === 1 || flags))) order.push({ x, y }); order.sort((a, b) => Math.abs(a.y - ry) - Math.abs(b.y - ry) || a.x - b.x);
   const deploy = []; for (const c of order) { if (deploy.length >= 6) break; if (!'.,t#'.includes(rows[c.y][c.x])) { put(c.x, c.y, '.'); put(w - 1 - c.x, c.y, '.'); } deploy.push(c); }
   const deploy2 = deploy.map(c => ({ x: w - 1 - c.x, y: c.y }));
-  // mode furniture: flag bases at each end of the middle road, or a 3×3 hill of open ground in the centre
-  const flags = opt.mode === 'ctf' ? [{ team: 0, x: 1, y: ry }, { team: 1, x: w - 2, y: ry }] : null; if (flags) for (const f of flags) put(f.x, f.y, '.');
   const hill = opt.mode === 'hill' ? { x: Math.floor(w / 2), y: ry, r: 1 } : null; if (hill) for (let y = ry - 1; y <= ry + 1; y++) for (let x = hill.x - 1; x <= hill.x + 1; x++) if (y >= 0 && y < h && x >= 0 && x < w) put(x, y, y === ry ? '#' : '.');
   const units = [], items = []; const taken = new Set([...deploy, ...deploy2].map(d => key(d.x, d.y))); if (flags) for (const f of flags) taken.add(key(f.x, f.y)); if (hill) for (let y = ry - 1; y <= ry + 1; y++) for (let x = hill.x - 1; x <= hill.x + 1; x++) taken.add(key(x, y));
   const pool = DEX_LIST.filter(d => d.num < 144 && d.num !== 132 && d.num !== 143);
   const spot = () => { for (let i = 0; i < 200; i++) { const x = 3 + Math.floor(r() * (half - 3)), y = Math.floor(r() * h); if ('.,t#TsM'.includes(rows[y][x]) && !taken.has(key(x, y)) && !taken.has(key(w - 1 - x, y))) { taken.add(key(x, y)); taken.add(key(w - 1 - x, y)); return { x, y }; } } return null; };
   if (opt.wild !== false) for (let i = 0; i < 2; i++) { const s = spot(); if (!s) break; const d = pool[Math.floor(r() * pool.length)]; const lvl = Math.max(2, (opt.level || 20) - 3); units.push({ mon: d.num, level: lvl, x: s.x, y: s.y, team: 2, ai: 'aggro' }); if (s.x !== w - 1 - s.x) units.push({ mon: d.num, level: lvl, x: w - 1 - s.x, y: s.y, team: 2, ai: 'aggro' }); }
-  return { name: 'Arena #' + (seed % 1000), seed, objective: { type: 'versus', mode: opt.mode || 'elim' }, rows, deploy, deploy2, units, items, par: 0, music: 'player', turnLimit: opt.turns == null ? 30 : opt.turns, flags, hill, fog: !!opt.fog };
+  const war = { owners: { [key(3, cy)]: 0, [key(w - 4, cy)]: 1 }, names: { [key(1, ry)]: 'P1 HQ', [key(w - 2, ry)]: 'P2 HQ' } };
+  return { name: 'Arena #' + (seed % 1000), seed, objective: { type: 'versus', mode: opt.mode || 'elim' }, rows, deploy, deploy2, units, items, par: 0, music: 'player', turnLimit: opt.turns == null ? 30 : opt.turns, flags, hill, fog: !!opt.fog, war };
 }

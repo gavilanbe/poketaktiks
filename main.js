@@ -135,12 +135,14 @@ function startSkirmishSetup() {
 const VS_ROSTER = [5, 8, 2, 25, 17, 33, 12, 15, 28, 37, 39, 42, 44, 54, 58, 61, 64, 67, 75, 93, 95, 123, 125, 126, 111, 104, 133, 116];
 // Versus: both trainers at Lv 20 with plain stats, 30 turns, no wild Pokémon; each picks a captain style and their first
 // draft pick leads the team (the same powers as the campaign, both unlocked).
-function startVersusSetup(seed) { const S = { seed: seed != null ? seed : Math.floor(Math.random() * 1000), level: 20, wild: false, mode: 'elim', arena: 'm', fog: false, turns: 30, cap0: 4, cap1: 7, co0: 'brock', co1: 'misty', teams: [[], []], order: [0, 1, 1, 0, 0, 1, 1, 0], size: 4, cur: 0, go: null }; S.go = () => launchVersus(S); goScene('versus', S); }
+function startVersusSetup(seed) { const S = { seed: seed != null ? seed : Math.floor(Math.random() * 1000), level: 20, wild: false, mode: 'elim', arena: 'm', fog: false, turns: 30, cap0: 4, cap1: 7, co0: 'brock', co1: 'misty', funds: 1000, weather: 'none', teams: [[], []], order: [0, 1, 1, 0, 0, 1, 1, 0], size: 4, cur: 0, go: null }; S.go = () => launchVersus(S); goScene('versus', S); }
 function vsMapFor(S) { const A = VS_ARENAS[S.arena] || VS_ARENAS.m; return versusMap(S.seed, A.w, A.h, { wild: S.wild, level: S.level, mode: S.mode || 'elim', fog: !!S.fog, turns: S.turns == null ? 30 : S.turns }); }
 function launchVersus(S) {
   const map = vsMapFor(S); const mk = list => list.map(n => partyUnit(n, S.level, 1)); // both trainers: plain stats
   const p1 = mk(S.teams[0]), p2 = mk(S.teams[1]); BACKDROP = makeBackdrop(map);
-  startBattle(map, p1, {}, { versus: true, humans: [0, 1], party2: p2, seed: (S.seed * 131 + 7) | 1, defer: true, setup: S, captains: [S.cap0 || 4, S.cap1 || 7], cos: [S.co0 || 'brock', S.co1 || 'misty'] });
+  const weather = S.weather === 'random' ? pick(['none', 'none', 'rain', 'sun', 'sand', 'snow']) : S.weather || 'none'; map.weather = weather === 'none' ? null : weather;
+  const funds = S.funds == null ? 1000 : S.funds, cat = vsCatalog(S.level);
+  startBattle(map, p1, {}, { versus: true, humans: [0, 1], party2: p2, seed: (S.seed * 131 + 7) | 1, defer: true, setup: S, captains: [S.cap0 || 4, S.cap1 || 7], cos: [S.co0 || 'brock', S.co1 || 'misty'], box: cat, box2: cat, war: { funds: [funds, funds] } });
   goScene('battle'); beginPhase(0, true);
 }
 

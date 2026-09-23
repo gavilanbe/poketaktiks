@@ -149,6 +149,20 @@ test('Skirmish battlefields: HQ vs HQ with point-symmetric centers, Box-owned sq
     console.log('       seed ' + seed + ': ' + (r.result || 'unfinished') + ' turn ' + r.turn + ', ' + (r.reason || 'rout'));
   }
 });
+test('Versus arenas: mirrored HQs and centers, deploy zones and flags clear of them, the shared catalog in both Boxes', () => {
+  for (const mode of ['elim', 'ctf', 'hill']) for (const [w, h] of [[14, 9], [18, 11], [22, 13]]) {
+    const T = loadGame(), { g } = T, map = g.versusMap(11, w, h, { mode, level: 20 }), at = (x, y) => map.rows[y][x];
+    const props = []; map.rows.forEach((r, y) => [...r].forEach((c, x) => { if ('QC'.includes(c)) props.push({ x, y, c }); }));
+    assert.equal(props.filter(p => p.c === 'Q').length, 2, mode + w); assert.equal(props.filter(p => p.c === 'C').length, 4, mode + w);
+    for (const p of props) assert.equal(at(w - 1 - p.x, p.y), p.c, 'mirrored ' + json(p));
+    for (const d of map.deploy.concat(map.deploy2)) assert('.,t#'.includes(at(d.x, d.y)), 'deploy on open ground ' + json(d));
+    if (map.flags) for (const f of map.flags) assert(!'QC'.includes(at(f.x, f.y)), 'flag clear of properties');
+    g.launchVersus({ seed: 11, level: 20, mode, arena: w === 14 ? 's' : w === 18 ? 'm' : 'l', teams: [[25, 5, 8], [4, 7, 1]], order: [0, 1, 1, 0, 0, 1], size: 3, cur: 0, funds: 2000 });
+    const B = T.B(), W = B.war; assert.deepEqual(W.funds, [4000, 2000], 'starting funds, and P1 already paid for its HQ and center'); assert.equal(W.props.filter(p => p.kind === 'hq').length, 2);
+    assert.deepEqual(W.props.filter(p => p.kind === 'center').map(p => p.owner).sort(), [-1, -1, 0, 1]);
+    for (const t of [0, 1]) { assert.equal(W.box[t].filter(e => e.state === 'box').length, 8, 'catalog'); assert(W.box[t].filter(e => e.state === 'field').length >= 3, 'the draft plays from the Box'); }
+  }
+});
 let failed = 0;
 for (const [name, fn] of tests) { try { fn(); console.log('  ok   ' + name); } catch (e) { failed++; console.error('  FAIL ' + name + '\n' + e.stack); } }
 console.log(`${tests.length - failed}/${tests.length} territory tests passed`); process.exitCode = failed ? 1 : 0;

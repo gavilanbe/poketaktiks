@@ -38,6 +38,8 @@ const VS_RULES = [
   { k: 'fog', label: 'FOG', vals: [false, true], show: v => v ? 'On' : 'Off' },
   { k: 'co0', label: 'P1 COMMANDER', vals: CO_ORDER.slice(1), show: v => COS[v].name },
   { k: 'co1', label: 'P2 COMMANDER', vals: CO_ORDER.slice(1), show: v => COS[v].name },
+  { k: 'funds', label: 'FUNDS', vals: VS_FUNDS, show: v => money(v) },
+  { k: 'weather', label: 'WEATHER', vals: SKIRMISH.weather, show: v => v === 'none' ? 'Clear' : v === 'random' ? 'Random' : WEATHER[v].name },
 ];
 function vsCycle(S, rule, dir) { const vals = typeof rule.vals === 'function' ? rule.vals(S) : rule.vals; if (vals) { const i = vals.indexOf(S[rule.k]); S[rule.k] = vals[(Math.max(0, i) + dir + vals.length) % vals.length]; } else S.seed = (S.seed + dir + 1000) % 1000; Audio.sfx('menu'); }
 function vsRuleRows(S, x, y, w, rh, rules, focus = -1) {
@@ -50,9 +52,15 @@ function vsRuleRows(S, x, y, w, rh, rules, focus = -1) {
     SC.hits[SC.hits.length - 1].label = rule.label + '-'; SC.hits[SC.hits.length - 2].label = rule.label + '+';
     textR(val, x + w - 2 * bw - 7, ry + (rh - 7) / 2, rule.k === 'mode' ? UI.gold : UI.ink); hit(x, ry, w - 2 * bw - 4, rh, () => vsCycle(S, rule, 1), rule.label); });
 }
+// Phones: the rules as a two-column grid of cells, label over value; a tap cycles the value.
+function vsRuleGrid(S, x, y, w, rh, rules) {
+  const cw = Math.floor((w - 3) / 2); rules.forEach((rule, i) => { const cx = x + (i % 2) * (cw + 3), cy = y + Math.floor(i / 2) * (rh + 2), val = rule.show(S[rule.k], S);
+    rrect(cx, cy, cw, rh, '#141c30', 1); outline(cx, cy, cw, rh, UI.border2); text(fitLabel(rule.label, cw - 6), cx + 3, cy + 2, UI.muted); textR(fitLabel(val, cw - 6), cx + cw - 3, cy + rh - 9, rule.k === 'mode' ? UI.gold : UI.ink);
+    hit(cx, cy, cw, rh, () => vsCycle(S, rule, 1), rule.label + '+'); }); // a tap is the row's [+]
+}
 function versusDraw() {
   const W = VIEW.w, H = VIEW.h, S = SC.data; rect(0, 0, W, H, '#0e0c10');
-  const mapKey = [S.seed, S.mode, S.arena, S.fog].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = vsMapFor(S); S.bd = makeBackdrop(S.map); S.bdKey = mapKey; }
+  const mapKey = [S.seed, S.mode, S.arena, S.fog, S.weather].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = vsMapFor(S); S.bd = makeBackdrop(S.map); S.bdKey = mapKey; }
   drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2, (H - S.bd.canvas.height) / 2, .8); SC.hits = [];
   const picks = S.teams[0].length + S.teams[1].length, full = picks >= S.size * 2; const cur = full ? -1 : S.order[picks]; S.cur = cur;
   screenTitle('VERSUS', null, 3);
@@ -92,16 +100,16 @@ function versusDraw() {
   if (d) { const u = makeUnit(d.num, S.level, 0); text(d.name, gx, iy, UI.ink, { outline: UI.shadow }); d.types.forEach((tp, j) => typeBadge(tp, gx + textWidth(d.name) + 6 + j * 26, iy - 1, 24)); const mv = u.moves.slice(0, 3).map(m => m.name).join(' / '); const R = ROLES[u.role]; if (narrow) { let s = mv; const avail = gx + cols * cw - (gx + textWidth(d.name) + 6 + d.types.length * 26 + 4); while (textWidth(s) > avail && s.length > 4) s = s.slice(0, -1); textR(s, gx + cols * cw, iy, UI.info, { outline: UI.shadow }); } else { textR(mv, gx + cols * cw, iy, UI.info, { outline: UI.shadow }); text('HP ' + u.maxHp + '  ATK ' + u.atk + '  DEF ' + u.def + '  SPA ' + u.spa + '  SPE ' + u.spe + '  MOV ' + u.mov, gx, iy + 10, UI.muted, { outline: UI.shadow }); const rx0 = gx + textWidth(d.name) + 6 + d.types.length * 26 + 4; let rs = R.name + ': ' + (u.skill ? u.skill.blurb.replace(/^[^:]+: /, '') : 'plain attacker'); while (textWidth(rs) > gx + cols * cw - textWidth(mv) - 8 - rx0 && rs.length > 8) rs = rs.slice(0, -1); text(rs, rx0, iy, R.col, { outline: UI.shadow }); } }
   const go = () => { if (!full) { Audio.sfx('error'); return; } Audio.sfx('select'); S.go(); }; const goOpt = full ? { variant: 'danger' } : { disabled: true };
   if (narrow) {
-    const r1 = H - 2 * (bh + 4), r2 = H - bh - 4, cw3 = Math.floor((W - 20) / 3); const rulesY = iy + 12, phoneRules = VS_RULES, rh = clamp(Math.floor((r1 - 6 - rulesY) / phoneRules.length), 14, 16);
-    vsRuleRows(S, 6, rulesY, W - 12, rh, phoneRules);
+    const r1 = H - 2 * (bh + 4), r2 = H - bh - 4, cw3 = Math.floor((W - 20) / 3); const rulesY = iy + 12, rows = Math.ceil(VS_RULES.length / 2), rh = clamp(Math.floor((r1 - 6 - rulesY) / rows) - 2, 14, 20);
+    vsRuleGrid(S, 6, rulesY, W - 12, rh, VS_RULES);
     footerBand(2 * (bh + 4) + 4);
     bigButton(6, r1, cw3, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' }); bigButton(10 + cw3, r1, cw3, bh, 'RANDOM', () => vsRandom(S)); bigButton(14 + 2 * cw3, r1, cw3, bh, 'CLEAR', () => { S.teams = [[], []]; Audio.sfx('cancel'); }, { variant: 'dark' });
     bigButton(6, r2, W - 12, bh, 'BATTLE!', go, goOpt);
   } else {
-    const rx = gx + cols * cw + 10, rw = W - 6 - rx, ry = gy; const fy = footerBand(28); const rh = 14, lines = wrap(VS_MODES[S.mode].blurb + (S.fog ? ' Fog of war hides foes beyond your Pokémon\'s sight.' : '') + ' Your first pick is your captain.', rw - 16); const nl = Math.min(lines.length, Math.max(1, Math.floor((fy - 6 - ry - 21 - VS_RULES.length * rh - 10) / 9)));
+    const rx = gx + cols * cw + 10, rw = W - 6 - rx, ry = gy; const fy = footerBand(28); const rh = 14, lines = wrap(VS_MODES[S.mode].blurb + (S.fog ? ' Fog of war hides foes beyond your Pokémon\'s sight.' : '') + ' Each commander\'s Ace joins the team.', rw - 16); const nl = Math.min(lines.length, Math.max(0, Math.floor((fy - 6 - ry - 21 - VS_RULES.length * rh - 10) / 9)));
     const p = panel(rx, ry, rw, Math.min(fy - 6 - ry, 21 + VS_RULES.length * rh + 8 + nl * 9 + 6), { header: 'MATCH RULES', headerRight: VS_MODES[S.mode].short + (S.fog ? ' · FOG' : '') });
     vsRuleRows(S, rx + 4, p.cy - 2, rw - 8, rh, VS_RULES);
-    const by0 = p.cy - 2 + VS_RULES.length * rh + 3; hline(rx + 5, by0, rw - 10, UI.inset); lines.slice(0, nl).forEach((l, i) => text(l, rx + 8, by0 + 4 + i * 9, UI.muted));
+    const by0 = p.cy - 2 + VS_RULES.length * rh + 3; if (nl) { hline(rx + 5, by0, rw - 10, UI.inset); lines.slice(0, nl).forEach((l, i) => text(l, rx + 8, by0 + 4 + i * 9, UI.muted)); }
     const by = fy + 5; bigButton(6, by, 60, 18, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' }); bigButton(72, by, 70, 18, 'RANDOM', () => vsRandom(S)); bigButton(148, by, 60, 18, 'CLEAR', () => { S.teams = [[], []]; Audio.sfx('cancel'); }, { variant: 'dark' });
     if (W > 470) hintLine(['Snake draft', 'click a picked slot to drop it'], 216, by + 5, { left: true, pill: false }); bigButton(W - 96, by, 90, 18, 'BATTLE!', go, goOpt);
   }
