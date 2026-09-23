@@ -826,7 +826,11 @@ function drawButtons(L) {
 // move and a bubble says what to do; in move mode the bubble explains the tiles. Nothing here changes the rules.
 function coachBubble(s, x, y) { const w = textWidth(s) + 10, bx = clamp(Math.round(x - w / 2), 4, VIEW.w - w - 4), by = clamp(Math.round(y), 4, VIEW.h - 16); rrect(bx + 1, by + 2, w, 12, UI.shadow, 2); rrect(bx, by, w, 12, UI.gold, 2); rrect(bx + 1, by + 1, w - 2, 10, '#fff6d0', 1); text(s, bx + 5, by + 3, '#3a2400'); }
 function drawCoach(L) {
-  if (!B || !B.lesson || B.turn > 2 || !isHuman(B.phase) || B.result || REDUCED && false) return;
+  // chapters 2 and 4 teach the power: the first time the bar can buy one, a bubble points at the meter until it is used
+  const ps = B && !B.versus && !B.territory && powerState(HT()); if (ps && (B.chapter === 1 || B.chapter === 3) && BT.mode === 'idle' && isHuman(B.phase) && !ps.active && !ps.uses && ps.unlocked && ps.charge >= (B.chapter === 3 && ps.superUnlocked ? 100 : 50) && powerCaptain(HT())) {
+    const r = L.top, y = r.y + r.h + powerRibbonHeight() + 2, msg = (B.chapter === 3 ? 'Super ready! ' : 'Power ready! ') + (VIEW.touch ? 'Tap the meter' : 'Press P'); if (L.stack) coachBubble(msg, r.x + r.w / 2, y); else coachBubble(msg, r.x + r.w + 8 + (textWidth(msg) + 10) / 2, r.y + r.h + 8);
+    if (!L.stack) stampAt(r.x + r.w + 2, r.y + r.h + 10, ['...O', '..OY', '.OYY', 'OYYY', '.OYY', '..OY', '...O'], { O: UI.inset, Y: UI.gold }); }
+  if (!B || !B.lesson || B.turn > 2 || !isHuman(B.phase) || B.result) return;
   const bob = REDUCED ? 0 : Math.round(Math.abs(Math.sin(BT.time * 5)) * 3);
   if (BT.mode === 'idle') {
     const u = alive(HT()).filter(v => !v.acted).sort((a, b) => (b.leader ? 1 : 0) - (a.leader ? 1 : 0))[0]; if (!u) return;
