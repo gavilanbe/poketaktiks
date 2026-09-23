@@ -541,6 +541,8 @@ const TEXT_CASES = [
   ['quick', `goScene('quick'); SC.t = 5;`, 'quickDraw()'],
   ['brief', `SAVE = { chapter: 4, party: [4, 7, 1, 25, 133, 66].map(n => partyUnit(n, 16)), bag: { pokeball: 3 }, stars: {}, beaten: false, captainPid: 0, starter: 4 }; briefChapter(4); SC.t = 5;`, 'briefDraw()'],
   ['tower', `startTower(); SC.t = 5;`, 'towerDraw()'],
+  ['cos', `openCoRoom(); SC.data.i = 0; SC.t = 5;`, 'coRoomDraw()'],
+  ['cos-locked', `openCoRoom(); SC.data.i = 6; SC.t = 5;`, 'coRoomDraw()'],
   ['rank', `goScene('rank', { kind: 'tower', i: 2, win: true, S: towerScore(11, 12, 5, 2), best: { rank: 'S', total: 290, days: 9 }, record: false, co: 'misty' }); SC.t = 5;`, 'rankDraw()'],
   ['safari', `goScene('rank', { kind: 'safari', result: 'win', score: [14, 9], catches: [[{ num: 147, level: 12, pts: 8 }, { num: 16, level: 11, pts: 1 }, { num: 123, level: 12, pts: 5 }], [{ num: 115, level: 12, pts: 5 }, { num: 111, level: 10, pts: 3 }, { num: 19, level: 9, pts: 1 }]], best: 10, record: true }); SC.t = 5;`, 'rankDraw()'],
   ['results', `goScene('results', { win: true, turns: 5, kills: 3, par: 8, rewards: { pokeball: 3 }, caught: [{ num: 16, level: 5 }, { num: 19, level: 4 }], trained: ['Charmeleon trained from Lv14 to Lv17'], evolved: ['Charmander evolved into Charmeleon!'], next: () => {} }); SC.t = 5;`, 'resultsDraw()'],
