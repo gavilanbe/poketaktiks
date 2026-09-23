@@ -4315,7 +4315,8 @@ function drawCoVs(V) {
     if (!tall) { if (team === 0) { ctx.moveTo(-40, top); ctx.lineTo(seamX(top), top); ctx.lineTo(seamX(bot), bot); ctx.lineTo(-40, bot); } else { ctx.moveTo(seamX(top) + 3, top); ctx.lineTo(W + 40, top); ctx.lineTo(W + 40, bot); ctx.lineTo(seamX(bot) + 3, bot); } }
     else if (team === 1) { ctx.moveTo(-40, top); ctx.lineTo(W + 40, top); ctx.lineTo(W + 40, seamY(W + 40)); ctx.lineTo(-40, seamY(-40)); } else { ctx.moveTo(-40, seamY(-40) + 3); ctx.lineTo(W + 40, seamY(W + 40) + 3); ctx.lineTo(W + 40, bot); ctx.lineTo(-40, bot); }
     ctx.closePath(); ctx.clip();
-    rect(-40, top, W + 80, bot - top, shade(c.col, -.6)); ctx.fillStyle = shade(c.col, -.38); const drift = REDUCED ? 0 : Math.floor(t * 60) % 24;
+    // each half in its army's colour (blue for P1/you, red for the other side) tinted by its commander, bands in the commander's own
+    rect(-40, top, W + 80, bot - top, shade(mix(team === 0 ? '#2d58c8' : '#c02c3c', c.col, .3), -.5)); ctx.fillStyle = shade(c.col, -.3); const drift = REDUCED ? 0 : Math.floor(t * 60) % 24;
     for (let x = -bot + (team ? -drift : drift); x < W + 40; x += 24) { ctx.beginPath(); ctx.moveTo(x, bot); ctx.lineTo(x + (bot - top), top); ctx.lineTo(x + (bot - top) + 9, top); ctx.lineTo(x + 9, bot); ctx.fill(); }
     const img = trainerCanvas(trainer ? c.tr : 'red', team === 1, false), shadow = trainerCanvas(trainer ? c.tr : 'red', team === 1, true);
     const cx = tall ? (team === 1 ? W - Math.round(size / 2) - 4 : Math.round(size / 2) + 4) : Math.round(team === 0 ? W * .26 : W * .74), feet = tall ? (team === 1 ? Math.min(seamY(cx) - 2, top + 44 + size) : bot - 30) : bot - (sc > 1 ? 34 : 26);
