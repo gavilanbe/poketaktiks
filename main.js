@@ -100,12 +100,34 @@ function resumeSuspend() {
   goScene('battle'); Audio.playMusic(map.music); beginPhase(0, true, true);
 }
 // ---------------------------------------------------------------- skirmish
+// Skirmish against the CPU on a random battlefield, Advance Wars style: both sides start with an HQ, a Poké Center and
+// funds. You open with four of your Pokémon (the rest of your collection waits in the PC Box, topped up with loaners
+// to six); the foe commander opens with a squad and their Ace and deploys the rest of their army as they earn.
 function startSkirmishSetup() {
   SAVE = loadSave(); let party = SAVE && SAVE.party.length ? SAVE.party : null; let preset = false;
   if (!party) { preset = true; party = [partyUnit(25, 12), partyUnit(5, 12), partyUnit(8, 12), partyUnit(2, 12), partyUnit(133, 11), partyUnit(66, 11)]; }
-  const avg = Math.round(party.reduce((a, p) => a + p.level, 0) / party.length);
-  const S = { seed: Math.floor(Math.random() * 1000), level: clamp(avg, 3, 48), party, preset, go: null };
-  S.go = () => { const ch = { title: S.map.name, num: 0, level: S.level, slots: Math.min(8, Math.max(3, Math.floor(party.length))), par: 10, map: S.map, rewards: {} }; const P = { chapter: ch, party, bag: preset ? { pokeball: 3 } : SAVE.bag, deploy: [], preset, back: () => goScene('skirmish', S) }; autoDeploy(P); P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, party[i], { pid: i })); goScene('card', { chapter: ch, next: () => { BACKDROP = makeBackdrop(S.map); startBattle(S.map, deployed, Object.assign({}, P.bag), { skirmish: true, seed: S.seed * 131 + 7, defer: true, captain: preset ? { pid: 0, root: 4, chapter: 8 } : { pid: SAVE.captainPid, root: SAVE.starter, chapter: SAVE.chapter } }); B.map.def = S.map; for (const u of alive(0)) { const src = deployed.find(d => d.pid != null && d.num === u.num && !d._used); if (src) { src._used = true; u.pid = src.pid; } } SC.data = { preset }; goScene('battle'); SC.data = { preset }; beginPhase(0, true); } }); }; goScene('prep', P); };
+  const avg = Math.round(party.reduce((a, p) => a + p.level, 0) / party.length), cos = coUnlocked(preset ? null : SAVE), last = (SAVE && SAVE.skirmishSetup) || {};
+  const level = SKIRMISH.levels.reduce((b, l) => Math.abs(l - avg) < Math.abs(b - avg) ? l : b, SKIRMISH.levels[0]);
+  const S = { seed: Math.floor(Math.random() * 1000), level, party, preset, cos, co: cos.includes(last.co) ? last.co : 'you', foe: CO_FOES.includes(last.foe) ? last.foe : pick(CO_FOES.slice(0, 4)), funds: SKIRMISH.funds.includes(last.funds) ? last.funds : 1000, weather: SKIRMISH.weather.includes(last.weather) ? last.weather : 'none', go: null };
+  S.go = () => {
+    const map = S.map, ch = { title: map.name, num: 0, level: S.level, slots: SKIRMISH.slots, par: map.par, map, rewards: {} };
+    if (SAVE && !preset) { SAVE.skirmishSetup = { co: S.co, foe: S.foe, funds: S.funds, weather: S.weather }; writeSave(); }
+    // loaners (plain stats, never saved to the collection) make up an army of twelve
+    const army = party.concat(skirmishLoaners(party, S.level, SKIRMISH.slots + SKIRMISH.box - party.length).map(l => Object.assign(partyUnit(l.num, l.level, 1), { loaner: true })));
+    const P = { chapter: ch, party: army, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: preset ? { pokeball: 3 } : SAVE.bag, deploy: [], preset, back: () => goScene('skirmish', S) }; autoDeploy(P);
+    P.start = () => {
+      const pid = i => i < party.length ? i : null, deployed = P.deploy.map(i => Object.assign({}, army[i], { pid: pid(i) })), box = army.map((p, i) => Object.assign({}, p, { pid: pid(i) })).filter((p, i) => !P.deploy.includes(i));
+      const onMap = map.units.filter(u => u.team == null || u.team === 1).map(u => u.mon);
+      const weather = S.weather === 'random' ? pick(['none', 'none', 'rain', 'sun', 'sand', 'snow']) : S.weather; map.weather = weather === 'none' ? null : weather;
+      goScene('card', { chapter: ch, next: () => {
+        BACKDROP = makeBackdrop(map);
+        startBattle(map, deployed, Object.assign({}, P.bag), { skirmish: true, seed: S.seed * 131 + 7, defer: true, cos: [S.co, S.foe], box, box2: coTeam(S.foe, S.level, 8, S.seed + 1, onMap), war: { funds: [S.funds, S.funds] },
+          captain: preset ? { pid: 0, root: 4, chapter: 8 } : { pid: SAVE.captainPid, root: SAVE.starter, chapter: SAVE.chapter } });
+        B.map.def = map; SC.data = { preset }; goScene('battle'); SC.data = { preset }; beginPhase(0, true);
+      } });
+    };
+    goScene('prep', P);
+  };
   goScene('skirmish', S);
 }
 

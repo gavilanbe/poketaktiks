@@ -245,25 +245,47 @@ const CHAPTERS = [
     },
   },
 ];
-// Random skirmish map generator: value noise → water / mountains / forests / tall grass, a road, a Poké Center.
-function skirmishMap(seed, w = 16, h = 11, avgLevel = 12) {
+// Random Skirmish battlefield: value noise → water / mountains / forests / tall grass, a road from HQ to HQ, each side's
+// own Poké Center and two neutral ones in the middle, placed point-symmetrically so neither side starts on better
+// ground. The foe commander's opening squad waits by their HQ; wild Pokémon roam in between (and breed in the grass).
+// opt.foe: the enemy commander (CO_TEAMS picks the squad). Objective: rout the foe or take their HQ.
+function skirmishMap(seed, w = 16, h = 11, avgLevel = 12, opt = {}) {
   const r = mulberry32(seed); const noise = (x, y, s) => { const n = Math.sin((x * 12.9898 + y * 78.233 + s) * 43758.5453) * 1e4; return n - Math.floor(n); };
   const grid = []; const base = r() * 1000;
   for (let y = 0; y < h; y++) { const row = []; for (let x = 0; x < w; x++) { let v = 0; for (let o = 1; o <= 3; o++) { const s = o * 2; const fx = x / s, fy = y / s; const x0 = Math.floor(fx), y0 = Math.floor(fy); const tx = fx - x0, ty = fy - y0; const a = noise(x0, y0, base + o), b = noise(x0 + 1, y0, base + o), c = noise(x0, y0 + 1, base + o), d = noise(x0 + 1, y0 + 1, base + o); v += lerp(lerp(a, b, tx), lerp(c, d, tx), ty) / o; } row.push(v / 1.83); } grid.push(row); }
   const rows = []; const theme = Math.floor(r() * 3);
   for (let y = 0; y < h; y++) { let s = ''; for (let x = 0; x < w; x++) { const v = grid[y][x]; let ch = '.'; if (x <= 1 || x >= w - 2) ch = v > .62 ? 'T' : v > .5 ? 't' : '.'; else if (v < .3) ch = '~'; else if (v < .36) ch = 's'; else if (v > .74) ch = theme === 2 ? '^' : 'M'; else if (v > .62) ch = 'T'; else if (v > .52) ch = 't'; else if (r() < .08) ch = ','; s += ch; } rows.push(s); }
-  // a road across the middle with bridges over water
+  const put = (x, y, ch) => { rows[y] = rows[y].slice(0, x) + ch + rows[y].slice(x + 1); };
+  // the road across the middle, bridged over water, with an HQ at each end
   const ry = Math.floor(h / 2) + Math.floor(r() * 3) - 1; rows[ry] = rows[ry].split('').map(c => c === '~' ? '=' : (c === 'M' || c === '^') ? '.' : '#').join('');
-  const cx = Math.floor(w / 2) + Math.floor(r() * 3) - 1; const cy = ry > 2 ? ry - 2 : ry + 2; rows[cy] = rows[cy].slice(0, cx) + 'C' + rows[cy].slice(cx + 1);
-  const deploy = []; for (let y = 0; y < h && deploy.length < 8; y++) for (let x = 0; x < 2 && deploy.length < 8; x++) if ('.,t#'.includes(rows[y][x])) deploy.push({ x, y });
-  const pool = DEX_LIST.filter(d => d.num !== 150 && d.num !== 151 && d.num < 144 && d.num !== 132); const units = []; const taken = new Set(deploy.map(d => key(d.x, d.y)));
-  const spot = (minX) => { for (let i = 0; i < 200; i++) { const x = minX + Math.floor(r() * (w - minX)), y = Math.floor(r() * h); const ch = rows[y][x]; if ('.,t#TsM'.includes(ch) && !taken.has(key(x, y))) { taken.add(key(x, y)); return { x, y }; } } return null; };
-  const n = 5 + Math.floor(r() * 3);
-  for (let i = 0; i < n; i++) { const s = spot(Math.floor(w * .55)); if (!s) break; const d = pool[Math.floor(r() * pool.length)]; const lvl = Math.max(2, avgLevel + Math.floor(r() * 5) - 2); units.push({ mon: d.num, level: lvl, x: s.x, y: s.y, ai: r() < .6 ? 'aggro' : 'guard', boss: i === 0, nick: i === 0 ? 'Rival ' + d.name : null }); if (i === 0) units[0].level += 3; }
-  for (let i = 0; i < 3; i++) { const s = spot(3); if (!s) break; const d = pool[Math.floor(r() * pool.length)]; units.push({ mon: d.num, level: Math.max(2, avgLevel - 2 + Math.floor(r() * 4)), x: s.x, y: s.y, team: 2, ai: 'aggro' }); }
-  const items = []; for (let i = 0; i < 2; i++) { const s = spot(3); if (s) items.push({ x: s.x, y: s.y, item: 'pokeball' }); }
-  return { name: 'Skirmish #' + (seed % 1000), seed, objective: { type: 'boss', bossName: 'the Rival' }, rows, deploy, units, items, par: 10, music: pick(['player', 'calm']) };
+  put(1, ry, 'Q'); put(w - 2, ry, 'Q');
+  // a center: a path to the road (a causeway over water, a pass through rock) and walkable ground beside it
+  const center = (x, y) => { const step = y < ry ? 1 : -1; for (let yy = y + step; yy !== ry; yy += step) if ('~M^'.includes(rows[yy][x])) put(x, yy, '#'); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < w && Y < h && '~^'.includes(rows[Y][X])) put(X, Y, '.'); } put(x, y, 'C'); };
+  const dy = r() < .5 ? -3 : 3, cy = (y) => clamp(y, 1, h - 2), mx = Math.floor(w / 2);
+  const own = [{ x: 3, y: cy(ry + dy) }, { x: w - 4, y: cy(ry - dy) }], neutral = [{ x: mx - 2, y: cy(ry - dy) }, { x: w - 1 - (mx - 2), y: cy(ry + dy) }];
+  for (const c of own.concat(neutral)) center(c.x, c.y);
+  // deploy tiles: open ground in the first three columns, nearest the HQ first
+  const order = []; for (let y = 0; y < h; y++) for (let x = 0; x < 3; x++) order.push({ x, y }); order.sort((a, b) => (Math.abs(a.x - 1) + Math.abs(a.y - ry)) - (Math.abs(b.x - 1) + Math.abs(b.y - ry)));
+  const deploy = order.filter(c => '.,t#'.includes(rows[c.y][c.x])).slice(0, 8);
+  const taken = new Set(deploy.map(d => key(d.x, d.y)));
+  const spot = (x0, x1, near) => { const opts = []; for (let y = 0; y < h; y++) for (let x = x0; x <= x1; x++) if ('.,t#TsM'.includes(rows[y][x]) && !taken.has(key(x, y))) opts.push({ x, y }); if (near) opts.sort((a, b) => dist(a, near) - dist(b, near) || r() - .5); const s = near ? opts[Math.floor(r() * Math.min(4, opts.length))] : opts[Math.floor(r() * opts.length)]; if (s) taken.add(key(s.x, s.y)); return s || null; };
+  // the foe's opening squad: three of their commander's Pokémon by their HQ (the Ace joins them at the start)
+  const units = [], foe = opt.foe && CO_TEAMS[opt.foe] ? opt.foe : 'rocket', hq = { x: w - 2, y: ry };
+  const squad = CO_TEAMS[foe].filter(n => n !== (COS[foe] && COS[foe].ace)).slice(0, 5).sort(() => r() - .5).slice(0, 3);
+  squad.forEach((num, i) => { const s = spot(w - 5, w - 1, hq), level = Math.max(2, avgLevel + (i === 0 ? 1 : Math.floor(r() * 3) - 1)); if (s) units.push({ mon: formAt(num, level), level, x: s.x, y: s.y, ai: 'aggro', box: true }); });
+  // wild Pokémon in the middle band (their species breed in the tall grass later)
+  const pool = DEX_LIST.filter(d => d.num < 144 && d.num !== 132 && d.num !== 143 && LINE_ROOT[d.num] === d.num);
+  for (let i = 0; i < 3; i++) { const s = spot(4, w - 5); if (!s) break; const d = pool[Math.floor(r() * pool.length)], level = Math.max(2, avgLevel - 2 + Math.floor(r() * 3)); units.push({ mon: formAt(d.num, level), level, x: s.x, y: s.y, team: 2, ai: 'aggro' }); }
+  const items = []; for (let i = 0; i < 2; i++) { const s = spot(4, w - 5); if (s) items.push({ x: s.x, y: s.y, item: 'pokeball' }); }
+  const war = { owners: { [key(own[0].x, own[0].y)]: 0, [key(own[1].x, own[1].y)]: 1 }, names: { [key(1, ry)]: 'YOUR HQ', [key(w - 2, ry)]: (COS[foe] ? COS[foe].name.toUpperCase() : 'FOE') + "'S HQ" } };
+  return { name: 'Skirmish #' + (seed % 1000), seed, objective: { type: 'war' }, rows, deploy, units, items, par: 12, music: pick(['player', 'calm']), war, foe };
 }
+
+// Skirmish options (the setup screen's rules). Both armies count twelve: four on the map and eight in the Box (the rest of
+// your collection, topped up with loaners from Oak's lab when it is small; the foe's squad, Ace and army).
+const SKIRMISH = { slots: 4, box: 8, funds: [0, 1000, 2000, 5000, 10000], weather: ['none', 'rain', 'sun', 'sand', 'snow', 'random'], levels: [5, 8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 30, 33, 36, 40, 45, 50] };
+const LOANERS = [16, 19, 25, 1, 4, 7, 74, 63, 43, 60, 66, 92, 41, 23, 56, 100, 109, 111];
+function skirmishLoaners(party, level, n) { const have = new Set(party.map(p => LINE_ROOT[p.num])); return LOANERS.filter(num => !have.has(LINE_ROOT[num])).slice(0, Math.max(0, n)).map(num => ({ num: formAt(num, level), level })); }
 
 // ---------------------------------------------------------------- versus arenas
 // Mirror-symmetric arena for two trainers: the left half is generated with value noise and reflected.

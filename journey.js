@@ -137,7 +137,7 @@ function drawPowerMenu() {
   hudPanel(x, y, w, h, { light: false, fill: '#161a44', border: c.col });
   // the captain, its style and the charge
   const pnum = u ? (u.fx.showNum || u.num) : s.root, portrait = coTrainer(s) ? trainerFace(c.tr) : null; requestAnim(pnum); ctx.save(); ctx.beginPath(); ctx.rect(x + 6, y + 5, 26, 22); ctx.clip(); portraitBg(x + 6, y + 5, 26, 22, team); if (portrait) ctx.drawImage(portrait, x + 10, y + 6, 18, 18); else drawMon(pnum, x + 19, y + 27, { outline: c.col }); ctx.restore(); drawCrown(x + 7, y + 6);
-  bigText(coTrainer(s) ? c.name.toUpperCase() : 'TEAM POWER', x + 38, y + 7, c.col, { shadow: UI.inset }); text(fitLabel(c.passive ? 'Ace ' + (u ? u.name : DEX[COS[s.co].ace].name) + ': ' + c.passive.text : (u ? u.name : DEX[s.root].name) + ' · ' + c.style, w - 120), x + 38, y + 18, UI.muted);
+  bigText(coTrainer(s) ? c.name.toUpperCase() : 'TEAM POWER', x + 38, y + 7, c.col, { shadow: UI.inset }); text(fitLabel(c.passive ? (coTrainer(s) ? 'Ace ' + (u ? u.name : DEX[COS[s.co].ace].name) + ': ' : '') + c.passive.text : (u ? u.name : DEX[s.root].name) + ' · ' + c.style, w - 120), x + 38, y + 18, UI.muted);
   const mw = Math.min(90, w - 150), mx = x + w - 8 - mw; textR(s.charge + '/100', x + w - 8, y + 7, UI.gold); bar(mx, y + 18, mw, 5, s.charge / 100, c.col);
   for (let i = 0; i < 2; i++) {
     const card = r.cards[i], why = powerBlock(team, i === 1), hot = BT.powerIndex === i, lift = hot && !REDUCED ? -2 : 0, cx = card.x, cy = card.y + lift, ready = !why;

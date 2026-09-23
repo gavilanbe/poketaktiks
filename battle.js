@@ -72,13 +72,14 @@ function startBattle(mapDef, party, bag, opts = {}) {
   // versus rules: fog of war, capture-the-flag bases, the hill
   B.fog = !!map.fog; B.vis = null; B.captureBy = null; B.endReason = null; B.flags = map.flags ? map.flags.map(f => ({ team: f.team, home: { x: f.x, y: f.y }, x: f.x, y: f.y, carrier: null })) : null; B.hill = map.hill ? { x: map.hill.x, y: map.hill.y, r: map.hill.r || 1, score: [0, 0], need: 3 } : null;
   // enemies / wild / allies from the map definition
-  for (const d of mapDef.units) { const u = makeUnit(d.mon, d.level, d.team == null ? 1 : d.team, { x: d.x, y: d.y, ai: d.ai, boss: d.boss, nick: d.nick }); if (d.hp) u.hp = Math.max(1, Math.floor(u.maxHp * d.hp)); u.provoked = false; B.units.push(u); }
+  // (box: the unit belongs to its side's PC Box, so it recovers there when it faints, like a deployed one)
+  for (const d of mapDef.units) { const u = makeUnit(d.mon, d.level, d.team == null ? 1 : d.team, { x: d.x, y: d.y, ai: d.ai, boss: d.boss, nick: d.nick }); if (d.hp) u.hp = Math.max(1, Math.floor(u.maxHp * d.hp)); u.provoked = false; if (d.box) u.fromBox = true; B.units.push(u); }
   // player party on deploy tiles: the campaign party keeps its HP edge, Versus trainers are built identically
   // id: 0 drops the id a serialized party member carried from an earlier battle so restoreUnit assigns a fresh
   // one: enemies were just numbered 1..N, and a duplicate id would make the duel scene overlay both sides.
   if (opts.territory) territoryInit(opts.captains);
   const fresh = { acted: false, status: null, recharge: 0, cd: 0, brace: 0, root: 0, id: 0 }; // battle-temporary state never crosses encounters (suspend keeps it)
-  party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus ? 1 : BOND_HP })); u.hp = u.maxHp; u.pid = p.pid; u.leader = i === 0; u.fromBox = true; B.units.push(u); });
+  party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus || p.loaner ? 1 : BOND_HP })); u.hp = u.maxHp; u.pid = p.pid; u.leader = i === 0; u.fromBox = true; B.units.push(u); });
   if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fromBox = true; u.fx.facing = -1; B.units.push(u); });
   if (!opts.territory) warSetup(mapDef, opts);
   initBattleCaptains(opts); initCampaignLessons(mapDef, opts);
@@ -95,7 +96,8 @@ function startBattle(mapDef, party, bag, opts = {}) {
 function warSetup(mapDef, opts) {
   warInit(mapDef, { war: Object.assign({ centers: opts.versus || opts.skirmish ? -1 : 0 }, opts.war || {}) });
   for (const u of B.units) if (u.fromBox && u.team <= 1) { const e = warEntry({ num: u.num, level: u.level, data: serializeUnit(u), pid: u.pid }); e.state = 'field'; e.unitId = u.id; B.war.box[u.team].push(e); }
-  [opts.box || [], opts.box2 || []].forEach((list, team) => { for (const d of list) B.war.box[team].push(warEntry({ data: d, pid: d.pid })); });
+  // a serialized Pokémon keeps its moves and experience; a plain { num, level } is made fresh when deployed
+  [opts.box || [], opts.box2 || []].forEach((list, team) => { for (const d of list) B.war.box[team].push(warEntry('xp' in d ? { data: d, pid: d.pid } : d)); });
   wildSetup(mapDef);
   const w = opts.weather || mapDef.weather; B.weather = null; B.map.weather = WEATHER[w] ? w : null; if (B.map.weather) setWeather(w, 0);
 }
@@ -110,7 +112,7 @@ function beginPhase(team, first, resumed = false) {
   const ev = resumed ? [] : upkeep(team);
   if (B.versus && !resumed) { const hv = versusPhaseStart(team); if (hv && B.hill) floatText(B.hill.x * TILE + TILE / 2, B.hill.y * TILE - 8, 'HILL ' + hv.score + '/' + B.hill.need + ' · ' + teamName(team), teamColorL(team), { big: true, life: 1.6, outline: '#000' }); if (checkObjective()) { endBattle(); return; } }
   if (B.fog) refreshVision(team);
-  if (B.war && !resumed) { warUpkeep(team); if (checkObjective()) { endBattle(); return; } if (!isHuman(team)) for (const u of warAiDeploy(team)) { u.ai = 'war'; ev.push({ type: 'spawn', unit: u, deploy: true }); } }
+  if (B.war && !resumed) { const before = team <= 1 ? B.war.funds[team] : 0; warUpkeep(team); if (team <= 1 && isHuman(team) && B.war.funds[team] > before) { BT.income = { t: BT.time + .6, amount: B.war.funds[team] - before, team }; BT.fundsShow = before; BT.fundsTeam = team; } if (checkObjective()) { endBattle(); return; } if (!isHuman(team)) for (const u of warAiDeploy(team)) { u.ai = 'war'; ev.push({ type: 'spawn', unit: u, deploy: true }); } }
   if (team === 0 && !B.versus && !resumed) { saveSuspend(); }
   const teamsPresent = [0, 1, 2, 3].filter(t => alive(t).length);
   if (!teamsPresent.includes(team) && team !== 0 && !warCanPlay(team)) { nextPhase(); return; }
@@ -949,7 +951,9 @@ function objectiveProgress() {
   if (o.type === 'boss') { const b = B.units.find(u => u.boss && u.team === 1); const name = o.bossName || (b ? b.name : 'the boss'); return { text: 'Defeat ' + name, right: b && b.hp > 0 ? b.hp + '/' + b.maxHp : 'down!', ratio: b ? b.hp / b.maxHp : 0, col: UI.red, boss: true }; }
   if (o.type === 'survive') return { text: 'Survive ' + o.turns + ' turns', right: Math.min(B.turn, o.turns) + '/' + o.turns, ratio: (B.turn - 1) / o.turns, col: UI.blue };
   if (o.type === 'seize') { const p = B.war && B.war.props.find(q => q.goal); return { text: 'Seize the ' + (o.what || 'gym'), right: p ? (p.owner === HT() ? 'taken!' : (p.captor != null ? p.progress : 0) + '/20') : '', ratio: p ? (p.owner === HT() ? 1 : (p.captor != null ? p.progress : 0) / 20) : 0, col: UI.gold }; }
-  const total = B.units.filter(u => u.team === 1).length, left = alive(1).length; return { text: 'Defeat every foe', right: left + ' left', ratio: 1 - left / Math.max(1, total), col: UI.gold };
+  const total = B.units.filter(u => u.team === 1).length, left = alive(1).length;
+  if (o.type === 'war') { const hq = B.war && B.war.props.find(p => p.kind === 'hq' && p.hq === 1), cap = hq && hq.captor != null ? B.units.find(u => u.id === hq.captor) : null; if (cap && cap.team === 0) return { text: 'Take their HQ', right: hq.progress + '/20', ratio: hq.progress / 20, col: UI.gold }; return { text: 'Rout them or take HQ', right: left + ' left', ratio: 1 - left / Math.max(1, total), col: UI.gold }; }
+  return { text: 'Defeat every foe', right: left + ' left', ratio: 1 - left / Math.max(1, total), col: UI.gold };
 }
 // The objective tracker (top-left): the turn and one pip per Pokémon that can still act in the header band; the goal
 // with its progress under it; on taller cards a progress bar and each side's head count.
@@ -960,6 +964,10 @@ function drawTurnCard(r) {
   const pipsW = mine.length * 6, pips = mine.length <= 8 && textWidth(head) + pipsW + 16 <= r.w;
   hudPanel(r.x, r.y, r.w, r.h, { header: head, headerRight: pips ? null : 'READY ' + ready + '/' + mine.length, headerRightCol: ready ? UI.green : UI.muted, headerFill: teamColorD(HT()) });
   if (pips) mine.forEach((u, i) => { const px0 = r.x + r.w - 7 - (mine.length - 1 - i) * 6, py0 = r.y + 8; circle(px0, py0, 2, UI.inset); if (!u.acted) { circle(px0, py0, 2, UI.green); px(px0 - 1, py0 - 1, '#d8ffe0'); } else circle(px0, py0, 1, shade(teamColorD(HT()), -.3)); });
+  // the war chest, beside the turn: the figure rolls to its new value, and each day's income rises out of it
+  if (B.war && B.war.props.length && HT() <= 1) { const f = B.war.funds[HT()]; if (BT.fundsShow == null || BT.fundsTeam !== HT() || REDUCED) { BT.fundsShow = f; BT.fundsTeam = HT(); } const inc = BT.income, waiting = inc && inc.team === HT() && BT.time < inc.t; if (!waiting) BT.fundsShow += (f - BT.fundsShow) * Math.min(1, CLOCK.dt * 7); if (Math.abs(f - BT.fundsShow) < 10) BT.fundsShow = f;
+    const fx = r.x + 10 + textWidth(head), roll = BT.fundsShow !== f; circle(fx + 3, r.y + 8, 3, UI.inset); circle(fx + 3, r.y + 8, 2, roll ? '#fff4b0' : UI.gold); px(fx + 2, r.y + 7, '#fffbe0'); text(money(Math.round(BT.fundsShow / 10) * 10), fx + 8, r.y + 5, roll ? '#fff4b0' : UI.gold, { shadow: shade(teamColorD(HT()), -.55) });
+    if (inc && inc.team === HT() && !waiting && BT.time - inc.t < 1.4 && inc.amount > 0) { const k = (BT.time - inc.t) / 1.4; if (!inc.rung) { inc.rung = true; Audio.sfx('coin'); } ctx.globalAlpha = clamp((1 - k) * 2, 0, 1); text('+' + money(inc.amount), fx + 8, r.y + 17 - Math.round(easeOut(Math.min(1, k * 1.6)) * 9), UI.green, { outline: UI.inset }); ctx.globalAlpha = 1; } }
   const P = objectiveProgress(), y1 = r.y + 17; iconAt('flag', r.x + 5, y1 - 1, P.col);
   const rw = textWidth(P.right); let s = P.text; while (textWidth(s) > r.w - 22 - rw - 6 && s.length > 4) s = s.slice(0, -1); text(s, r.x + 16, y1, UI.ink); textR(P.right, r.x + r.w - 6, y1, P.col);
   if (tall) {

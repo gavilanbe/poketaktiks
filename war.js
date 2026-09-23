@@ -123,7 +123,7 @@ function warAiDeploy(team) {
   const sites = warDeploySites(team).slice().sort((a, b) => Math.min(...foes.map(u => dist(u, a)), 99) - Math.min(...foes.map(u => dist(u, b)), 99));
   for (const p of sites) {
     const options = W.box[team].map((e, i) => ({ e, i })).filter(o => !warDeployBlock(team, o.i, p));
-    const score = e => { const d = DEX[e.num], power = bstOf(e.num) * (e.level + 10) / 400; const matches = foes.length ? Math.max(...d.types.map(t => foes.reduce((s, u) => s + effRaw(t, u.types), 0) / foes.length)) : 1; return power * matches + (roleFor(d) === 'support' && alive(team).some(u => u.hp < u.maxHp / 2) ? 4 : 0) + (e.fresh ? 3 : 0) - warEntryCost(e) / 2000; };
+    const score = e => { const d = DEX[e.num], power = bstOf(e.num) * (e.level + 10) / 400; const matches = foes.length ? Math.max(...d.types.map(t => foes.reduce((s, u) => s + effRaw(t, u.types), 0) / foes.length)) : 1; const ace = powerState(team); return power * matches + (roleFor(d) === 'support' && alive(team).some(u => u.hp < u.maxHp / 2) ? 4 : 0) + (e.fresh ? 3 : 0) + (ace && e.unitId != null && e.unitId === ace.captainId ? 6 : 0) - warEntryCost(e) / 2000; };
     options.sort((a, b) => score(b.e) - score(a.e) || a.i - b.i);
     if (options.length) { const u = warDeploy(team, options[0].i, p); if (u) out.push(u); }
   }
@@ -188,4 +188,21 @@ function weatherMult(type) { const k = weatherKind(); if (k === 'rain') return t
 function weatherSpares(u, k) { return k === 'sand' ? u.types.some(t => t === 'Rock' || t === 'Ground' || t === 'Steel') : k === 'snow' ? u.types.includes('Ice') : true; }
 function weatherDay(ev) { const W = B && B.weather; if (!W || !W.days) return; if (--W.days <= 0) { const kind = W.kind; B.weather = B.map.weather ? { kind: B.map.weather, days: 0 } : null; if (!B.weather || B.weather.kind !== kind) ev.push({ type: 'weatherEnd', kind }); } }
 // Does this unit play the war (capture and roam) rather than a scripted role?
-function warRoams(u) { return !!(B && B.war && u.team <= 1 && !u.boss && (!u.ai || u.ai === 'aggro') && B.war.props.some(p => p.owner !== u.team)); }
+// Deployed Pokémon ('war') and free attackers ('aggro') do; guards, bosses and scripted roles keep their own AI.
+function warRoams(u) { return !!(B && B.war && u.team <= 1 && !u.boss && (!u.ai || u.ai === 'aggro' || u.ai === 'war') && B.war.props.some(p => p.owner !== u.team)); }
+// Model-only run of a whole war battle (Skirmish, Versus, the Tower): the AI plays both sides (upkeep and income,
+// deployments, powers, captures, attacks) with wild Pokémon acting in between, until it ends or maxTurns pass.
+function simWar(maxTurns = 40) {
+  const log = [];
+  for (; B.turn <= maxTurns && !B.result; B.turn++) {
+    for (const team of [0, 1, 2]) {
+      if (!alive(team).length && !(team <= 1 && warCanPlay(team))) continue;
+      B.phase = team; upkeep(team);
+      if (team <= 1) { warUpkeep(team); if (checkObjective()) break; for (const u of warAiDeploy(team)) { u.ai = 'war'; log.push('T' + B.turn + ' ' + team + ' deploys ' + u.name); } const power = aiPower(team); if (power) log.push('T' + B.turn + ' ' + team + ' uses ' + power[0].name); }
+      if (team === 0 && B.turn > 1) for (const u of wildSpawn()) log.push('T' + B.turn + ' wild ' + u.name);
+      for (const u of alive(team).slice().sort((a, b) => b.level - a.level)) { if (u.acted || !canTakeAction(u)) continue; const d = aiDecide(u); if (d) aiAct(u, d, log); u.acted = true; if (checkObjective()) break; }
+      if (B.result) break;
+    }
+  }
+  return { result: B.result, turn: B.turn, reason: B.war.reason, funds: B.war.funds.slice(), captures: B.war.stats.captures.slice(), deployments: B.war.stats.deployments.slice(), alive: [alive(0).length, alive(1).length, alive(2).length], log };
+}

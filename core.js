@@ -440,6 +440,7 @@ const Audio = {
       case 'stamp': this.tone('square', 170, 55, .09, .18); this.noise(.05, .12, 0, 260); break;
       case 'tick': this.tone('triangle', 900, 700, .03, .06); break;
       case 'chime': [1319, 1760].forEach((f, i) => this.tone('sine', f, f, .12, .08, i * .05)); break;
+      case 'coin': this.tone('square', 988, 988, .05, .07); this.tone('square', 1319, 1319, .14, .07, .05); break;
       // attack juice: a rising charge, a dash, a heavy body blow
       case 'charge': this.tone('sine', 220, 900, .26, .07); this.tone('square', 440, 1400, .22, .025, .03); break;
       case 'whoosh': this.noise(.14, .18, 0, 1800); this.tone('sine', 700, 180, .12, .06); break;

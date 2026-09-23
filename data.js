@@ -211,6 +211,8 @@ function applyDex(u, dex) {
   u.rngMin = Math.min(...u.moves.map(m => m.rng[0])); u.rngMax = Math.max(...u.moves.map(m => m.rng[1]));
 }
 function levelUp(u) { const before = { maxHp: u.maxHp, atk: u.atk, def: u.def, spa: u.spa, spd: u.spd, spe: u.spe }; u.level++; const oldMax = u.maxHp; applyDex(u, u.dex); u.hp = Math.min(u.maxHp, u.hp + (u.maxHp - oldMax)); return { maxHp: u.maxHp - before.maxHp, atk: u.atk - before.atk, def: u.def - before.def, spa: u.spa - before.spa, spd: u.spd - before.spd, spe: u.spe - before.spe }; }
+// The form a species takes at a level when it grew up in the wild (or in a trainer's team): each first evolution it reached.
+function formAt(num, level) { let d = DEX[num]; for (let i = 0; i < 3 && d && d.evos.length && DEX[d.evos[0][0]] && level >= d.evos[0][1]; i++) d = DEX[d.evos[0][0]]; return d ? d.num : num; }
 function evolutionFor(u) { const evs = u.dex.evos.filter(e => u.level >= e[1] && DEX[e[0]]); if (!evs.length) return null; return DEX[pick(evs)[0]]; }
 function evolve(u, dex) { const oldMax = u.maxHp; u.dex = dex; applyDex(u, dex); u.hp = Math.min(u.maxHp, u.hp + (u.maxHp - oldMax)); }
 function xpToNext() { return 100; }

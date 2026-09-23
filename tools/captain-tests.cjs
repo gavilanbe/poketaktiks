@@ -6,7 +6,8 @@ const tests = [], test = (name, fn) => tests.push([name, fn]);
 const json = x => JSON.stringify(x);
 function field(root = 4, chapter = 8) {
   const T = loadGame(); arena(T);
-  const captain = place(T, root, 20, 0, 1, 1), ally = place(T, 25, 20, 0, 2, 2), foe = place(T, 143, 20, 1, 3, 2);
+  // the ally stands out of the captain's reach (3+ tiles), so the Tactician's partner bond does not mix into the power maths
+  const captain = place(T, root, 20, 0, 0, 0), ally = place(T, 25, 20, 0, 3, 2), foe = place(T, 143, 20, 1, 4, 2);
   T.g.addCaptain(0, captain, root, chapter); T.G('rnd = () => .5');
   return Object.assign(T, { captain, ally, foe });
 }
@@ -98,7 +99,7 @@ test('practice target stays put, cannot faint even on a double, and capture is f
 });
 test('campaign outposts take two full-HP actions, heal their owner and charge only on completion', () => {
   const T = field(7), { g, ally } = T, B = T.B(), s = g.powerState(0);
-  const post = { x: 2, y: 2, kind: 'outpost', ch: '.', name: 'OUTPOST', hq: -1, owner: -1, progress: 0, captor: null, goal: true }; B.war.props.push(post);
+  const post = { x: ally.x, y: ally.y, kind: 'outpost', ch: '.', name: 'OUTPOST', hq: -1, owner: -1, progress: 0, captor: null, goal: true }; B.war.props.push(post);
   assert(!g.warHeals(ally)); assert(!g.warCapture(ally).done); assert.equal(s.charge, 0);
   assert.equal(g.warCapture(ally), null); g.upkeep(0); assert(g.warCapture(ally).done); assert.equal(s.charge, 20); assert(B.seized); assert(g.warHeals(ally));
   post.owner = -1; ally.acted = false; g.warCapture(ally); ally.x--; g.warSettle(); assert.equal(post.progress, 0);
@@ -123,12 +124,15 @@ test('Territory rematch retains the chosen captain and uses fresh charge', () =>
   assert(rematch); rematch.run(); assert.equal(g.powerState(0).root, 4); assert.equal(g.powerState(1).root, 4); assert.equal(g.powerState(0).charge, 0);
 });
 test('full Territory simulations finish with each captain and legal powers on both teams', () => {
+  const sims = [];
   for (const root of [4, 7, 1]) {
     const T = loadGame(), r = T.g.simTerritory(7, 41, [root, root]);
     assert(['win', 'lose', 'draw'].includes(r.result)); assert(r.turn <= 41);
-    for (const team of [0, 1]) { assert(r.actions.some(a => a.team === team && a.kind === 'power')); assert(T.g.powerState(team).charge >= 0); }
-    console.log(`       captain ${root}: ${r.result}, turn ${r.turn}, ${r.actions.filter(a=>a.kind==='power').length} powers`);
+    for (const team of [0, 1]) assert(T.g.powerState(team).charge >= 0);
+    sims.push(r); console.log(`       captain ${root}: ${r.result}, turn ${r.turn}, ${r.actions.filter(a=>a.kind==='power').length} powers`);
   }
+  // short matches can end before one side fills its meter: across the three captains both sides use powers
+  for (const team of [0, 1]) assert(sims.some(r => r.actions.some(a => a.team === team && a.kind === 'power')), 'team ' + team + ' used a power');
 });
 test('suspend preserves charge, active effects, used attacks, outposts, lesson and RNG without replaying upkeep', () => {
   const T = loadGame(), { g, G } = T; g.launchTerritory(7, true, [4, 4]);

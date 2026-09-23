@@ -129,6 +129,26 @@ test('war rules outside Conquest: campaign centers, catches to the Box with a fr
   G('rnd = () => 0.01'); const spawned = g.wildSpawn(); assert.equal(spawned.length, 1); const s0 = spawned[0]; assert.equal(B.map.tiles[s0.y][s0.x].id, 'tall'); assert(B.units.every(v => v === s0 || v.hp <= 0 || g.dist(v, s0) > 2));
   g.wildSpawn(); assert(g.alive(2).length <= 2, 'the cap holds'); G('rnd = () => 0.99'); const before = g.alive(2).length; g.wildSpawn(); assert.equal(g.alive(2).length, before, 'no spawn on a failed roll');
 });
+test('Skirmish battlefields: HQ vs HQ with point-symmetric centers, Box-owned squads and Aces, deployed Pokémon that roam, a full war', () => {
+  for (const seed of [3, 42, 77]) {
+    const T = loadGame(), { g } = T, map = g.skirmishMap(seed, 16, 11, 14, { foe: 'brock' }), ry = map.rows.findIndex(r => r[1] === 'Q');
+    const props = []; map.rows.forEach((r, y) => [...r].forEach((c, x) => { if ('QCK'.includes(c)) props.push({ x, y, c }); }));
+    assert.equal(props.filter(p => p.c === 'Q').length, 2); assert.equal(props.filter(p => p.c === 'C').length, 4);
+    for (const p of props) assert(props.some(q => q.c === p.c && q.x === 15 - p.x && q.y === 2 * ry - p.y), 'mirror of ' + json(p));
+    assert.equal(map.objective.type, 'war'); assert(map.units.filter(u => u.team == null).every(u => u.box && u.ai === 'aggro'));
+    const party = [4, 16, 25, 7, 1, 74].map((n, i) => Object.assign(g.partyUnit(n, 14), { pid: i }));
+    g.startBattle(map, party.slice(0, 4), {}, { skirmish: true, seed: 9, defer: true, cos: ['you', 'brock'], box: party.slice(4), box2: g.coTeam('brock', 14, 8, 2), war: { funds: [1000, 1000] }, captain: { pid: 0, root: 4, chapter: 8 } });
+    const B = T.B(), W = B.war, owner = (x, y) => W.props.find(p => p.x === x && p.y === y).owner;
+    assert.equal(owner(1, ry), 0); assert.equal(owner(14, ry), 1); assert.deepEqual(W.props.filter(p => p.kind === 'center').map(p => p.owner).sort(), [-1, -1, 0, 1]);
+    const ace = g.alive(1).find(u => u.num === 95); assert(ace && ace.leader, 'Onix leads Brock\'s side');
+    assert.equal(W.box[1].length, 12, 'squad, Ace and army'); assert(W.box[1].some(e => e.unitId === ace.id && e.state === 'field'), 'the Ace comes back through the Box');
+    assert.equal(W.box[0].length, 6);
+    const grunt = g.alive(1).find(u => u !== ace); grunt.ai = 'war'; assert(g.warRoams(grunt), 'deployed Pokémon play the war');
+    const r = g.simWar(40); assert(B.turn <= 41); assert(r.deployments[0] + r.deployments[1] > 0, json(r)); for (const t of [0, 1]) assert(W.funds[t] >= 0);
+    if (r.result) assert(['win', 'lose', 'draw'].includes(r.result));
+    console.log('       seed ' + seed + ': ' + (r.result || 'unfinished') + ' turn ' + r.turn + ', ' + (r.reason || 'rout'));
+  }
+});
 let failed = 0;
 for (const [name, fn] of tests) { try { fn(); console.log('  ok   ' + name); } catch (e) { failed++; console.error('  FAIL ' + name + '\n' + e.stack); } }
 console.log(`${tests.length - failed}/${tests.length} territory tests passed`); process.exitCode = failed ? 1 : 0;

@@ -17,7 +17,8 @@ const CAPTAINS = {
 //   enemyStatus [status, how many], enemyMove, steal (₽), future (share at the next turn), weather [kind, days],
 //   and the passive-only statusBonus, centerHeal, income, waterMove.
 const COS = {
-  you: { name: 'You', tr: 'red', col: '#e04848', blurb: 'Your own style: it follows your partner' },
+  you: { name: 'You', tr: 'red', col: '#e04848', blurb: 'Your own style: it follows your partner',
+    passive: { text: 'Partner bond: allies near your partner deal 10% more, take 10% less', atk: .1, def: .1 } },
   brock: { name: 'Brock', tr: 'brock', col: '#c89858', ace: 95, blurb: 'Rock-solid defence',
     passive: { text: 'Rock and Ground allies take 15% less', def: .15, types: ['Rock', 'Ground'] },
     power: { name: 'Rock Tomb', text: 'Enemies lose 1 move next turn and take 10%', enemyMove: -1, enemyDmg: .1, quake: true },
@@ -60,16 +61,32 @@ const COS = {
     super: { name: 'Rocket Rush', text: 'Allies +25% damage and +1 move', atk: .25, move: 1 } },
 };
 const CO_ORDER = ['you', 'brock', 'misty', 'surge', 'erika', 'koga', 'sabrina', 'blaine', 'blue', 'giovanni'];
+// Each commander's army: base species (they grow into their evolutions with the level), their Ace not included.
+const CO_TEAMS = {
+  you: [16, 19, 25, 1, 4, 7, 74, 63], brock: [74, 27, 95, 138, 140, 104, 111, 50], misty: [120, 54, 118, 60, 116, 90, 86, 72],
+  surge: [25, 100, 81, 125, 21, 84, 66, 128], erika: [43, 69, 102, 114, 1, 46, 48, 113], koga: [41, 109, 88, 48, 23, 13, 29, 32],
+  sabrina: [63, 96, 79, 122, 124, 102, 92, 137], blaine: [37, 58, 77, 4, 126, 109, 74, 133], blue: [16, 63, 58, 102, 111, 129, 7, 133],
+  giovanni: [52, 27, 104, 111, 50, 32, 29, 128], rocket: [19, 41, 23, 109, 52, 88, 96, 92],
+};
+// Trainers freed on the campaign route lead your side in the other modes: each one after clearing that chapter (all of
+// them once the journey is complete). Without a campaign save: You, Brock and Misty.
+const CO_UNLOCK = { brock: 3, misty: 4, erika: 5, surge: 6, koga: 7, blaine: 7, sabrina: 8, blue: 8, giovanni: 8 };
+function coUnlocked(save = typeof SAVE !== 'undefined' ? SAVE : null) { if (!save) return ['you', 'brock', 'misty']; return CO_ORDER.filter(c => c === 'you' || save.beaten || (save.chapter || 0) >= CO_UNLOCK[c]); }
+// Who can command the other side against you.
+const CO_FOES = ['rocket', 'brock', 'misty', 'surge', 'erika', 'koga', 'sabrina', 'blaine', 'blue', 'giovanni'];
+// A commander's army as Box entries at a level, each species in the form it has grown into (the first `n`, or `n`
+// picked by the seed); `skip` leaves out species already on the map.
+function coTeam(co, level, n = 8, seed = 0, skip = []) { const list = (CO_TEAMS[co] || CO_TEAMS.rocket).map(num => formAt(num, level)).filter((num, i, a) => a.indexOf(num) === i && !skip.includes(num)); if (seed) { const r = mulberry32(seed); list.sort(() => r() - .5); } return list.slice(0, n).map(num => ({ num, level })); }
 // What a side's command looks like, whichever kind it is: name, portrait, colour, passive and both powers.
 function coOf(s) {
   if (!s) return null; const co = COS[s.co];
   if (co && s.co !== 'you') return Object.assign({ id: s.co, style: co.blurb }, co);
-  const c = CAPTAINS[s.root] || CAPTAINS[7]; return { id: 'you', name: 'You', tr: 'red', col: c.col, style: c.style, blurb: c.role, passive: null, power: { name: c.name, text: c.normal }, super: { name: c.superName, text: c.super } };
+  const c = CAPTAINS[s.root] || CAPTAINS[7]; return { id: 'you', name: 'You', tr: 'red', col: c.col, style: c.style, blurb: c.role, passive: COS.you.passive, power: { name: c.name, text: c.normal }, super: { name: c.superName, text: c.super } };
 }
 function coTrainer(s) { const co = s && COS[s.co]; return co && s.co !== 'you' ? co : null; }
 // The effects working for (or against) a unit right now.
 function coNear(u) { const ace = powerCaptain(u.team); return !!(ace && dist(ace, u) <= 2); }
-function coPassive(u) { const co = coTrainer(powerState(u.team)); return co && co.passive && coNear(u) ? co.passive : null; }
+function coPassive(u) { const s = powerState(u.team), co = s && COS[s.co]; return co && co.passive && coNear(u) ? co.passive : null; }
 function coActive(team) { const s = powerState(team), co = coTrainer(s); return co && s.active ? (s.active === 'super' ? co.super : co.power) : null; }
 function coAtkMult(att, move) { let m = 1; for (const f of [coPassive(att), coActive(att.team)]) if (f) { if (f.atk && (!f.atkTypes || f.atkTypes.includes(move.type))) m *= 1 + f.atk; if (f.spAtk && move.kind !== 'P') m *= 1 + f.spAtk; } return m; }
 function coDefMult(def) { let m = 1; for (const f of [coPassive(def), coActive(def.team)]) if (f && f.def && (!f.types || def.types.some(t => f.types.includes(t)))) m *= 1 - f.def; return m; }
@@ -91,7 +108,7 @@ function migrateCaptain(save) {
   save.starter = captainRoot(save.party[pid].num) || (CAPTAINS[save.starter] ? save.starter : 7);
   return save;
 }
-function prepCaptain(P) { return P && !P.preset && typeof SAVE !== 'undefined' && SAVE && P.party === SAVE.party ? (migrateCaptain(SAVE), SAVE.captainPid) : null; }
+function prepCaptain(P) { if (P && P.captain != null) return P.captain; return P && !P.preset && typeof SAVE !== 'undefined' && SAVE && P.party === SAVE.party ? (migrateCaptain(SAVE), SAVE.captainPid) : null; }
 function powerState(team) { return B && B.command && B.command.teams[team] || null; }
 function powerCaptain(team) { const s = powerState(team); return s && B.units.find(u => u.id === s.captainId && u.team === team && u.hp > 0); }
 function addCaptain(team, unit, root, chapter = 8, co = 'you') {
@@ -106,7 +123,10 @@ function addCaptain(team, unit, root, chapter = 8, co = 'you') {
 function coAce(team, co, level) {
   const C = COS[co]; if (!C || !C.ace) return null; let u = alive(team).find(v => v.num === C.ace); if (u) return u;
   const anchor = alive(team)[0]; if (!anchor) return null; const spot = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1], [2, 0], [-2, 0]].map(([dx, dy]) => ({ x: anchor.x + dx, y: anchor.y + dy })).find(p => inMap(p.x, p.y) && !unitAt(p.x, p.y));
-  if (!spot) return null; u = makeUnit(C.ace, level, team, { x: spot.x, y: spot.y }); u.loaned = true; B.units.push(u); requestBigSprite(u.num); return u;
+  if (!spot) return null; u = makeUnit(C.ace, level, team, { x: spot.x, y: spot.y }); u.loaned = true; B.units.push(u); requestBigSprite(u.num);
+  // the Ace belongs to its side's Box too: when it faints it recovers and can be deployed again, crown and all
+  if (B.war && team <= 1) { const e = warEntry({ num: u.num, level: u.level }); e.state = 'field'; e.unitId = u.id; B.war.box[team].push(e); }
+  return u;
 }
 function initBattleCaptains(opts) {
   B.command = null;

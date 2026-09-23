@@ -463,6 +463,7 @@ const Audio = {
       case 'stamp': this.tone('square', 170, 55, .09, .18); this.noise(.05, .12, 0, 260); break;
       case 'tick': this.tone('triangle', 900, 700, .03, .06); break;
       case 'chime': [1319, 1760].forEach((f, i) => this.tone('sine', f, f, .12, .08, i * .05)); break;
+      case 'coin': this.tone('square', 988, 988, .05, .07); this.tone('square', 1319, 1319, .14, .07, .05); break;
       // attack juice: a rising charge, a dash, a heavy body blow
       case 'charge': this.tone('sine', 220, 900, .26, .07); this.tone('square', 440, 1400, .22, .025, .03); break;
       case 'whoosh': this.noise(.14, .18, 0, 1800); this.tone('sine', 700, 180, .12, .06); break;
@@ -959,6 +960,8 @@ function applyDex(u, dex) {
   u.rngMin = Math.min(...u.moves.map(m => m.rng[0])); u.rngMax = Math.max(...u.moves.map(m => m.rng[1]));
 }
 function levelUp(u) { const before = { maxHp: u.maxHp, atk: u.atk, def: u.def, spa: u.spa, spd: u.spd, spe: u.spe }; u.level++; const oldMax = u.maxHp; applyDex(u, u.dex); u.hp = Math.min(u.maxHp, u.hp + (u.maxHp - oldMax)); return { maxHp: u.maxHp - before.maxHp, atk: u.atk - before.atk, def: u.def - before.def, spa: u.spa - before.spa, spd: u.spd - before.spd, spe: u.spe - before.spe }; }
+// The form a species takes at a level when it grew up in the wild (or in a trainer's team): each first evolution it reached.
+function formAt(num, level) { let d = DEX[num]; for (let i = 0; i < 3 && d && d.evos.length && DEX[d.evos[0][0]] && level >= d.evos[0][1]; i++) d = DEX[d.evos[0][0]]; return d ? d.num : num; }
 function evolutionFor(u) { const evs = u.dex.evos.filter(e => u.level >= e[1] && DEX[e[0]]); if (!evs.length) return null; return DEX[pick(evs)[0]]; }
 function evolve(u, dex) { const oldMax = u.maxHp; u.dex = dex; applyDex(u, dex); u.hp = Math.min(u.maxHp, u.hp + (u.maxHp - oldMax)); }
 function xpToNext() { return 100; }
@@ -2598,14 +2601,14 @@ function checkObjective() {
     return null;
   }
   if (!alive(0).length) return B.result = 'lose';
-  if (o.type === 'rout' && !alive(1).length && (!B.lesson || B.lesson.complete)) return B.result = 'win';
+  if ((o.type === 'rout' || o.type === 'war') && !alive(1).length && (!B.lesson || B.lesson.complete)) return B.result = 'win';
   if (o.type === 'boss' && !B.units.some(u => u.boss && u.hp > 0 && u.team === 1)) return B.result = 'win';
   if (o.type === 'survive' && B.turn > o.turns) return B.result = 'win';
   if (o.type === 'seize' && B.seized) return B.result = 'win';
   if (B.map.turnLimit && o.type !== 'survive' && B.turn > B.map.turnLimit) return B.result = 'lose';
   return null;
 }
-function objectiveText() { if (B.lesson && !B.lesson.complete) return 'Catch Caterpie + defeat foes'; const o = B.map.objective; switch (o.type) { case 'rout': return 'Defeat all enemies'; case 'boss': return 'Defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Survive ' + o.turns + ' turns'; case 'seize': return 'Seize the ' + (o.what || 'gym'); case 'versus': return versusObjectiveText(); } return ''; }
+function objectiveText() { if (B.lesson && !B.lesson.complete) return 'Catch Caterpie + defeat foes'; const o = B.map.objective; switch (o.type) { case 'rout': return 'Defeat all enemies'; case 'war': return 'Rout the foe or take their HQ'; case 'boss': return 'Defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Survive ' + o.turns + ' turns'; case 'seize': return 'Seize the ' + (o.what || 'gym'); case 'versus': return versusObjectiveText(); } return ''; }
 
 // ---------------------------------------------------------------- versus rules: modes, flags, the hill, fog of war
 const VS_MODES = {
@@ -2724,7 +2727,8 @@ const CAPTAINS = {
 //   enemyStatus [status, how many], enemyMove, steal (₽), future (share at the next turn), weather [kind, days],
 //   and the passive-only statusBonus, centerHeal, income, waterMove.
 const COS = {
-  you: { name: 'You', tr: 'red', col: '#e04848', blurb: 'Your own style: it follows your partner' },
+  you: { name: 'You', tr: 'red', col: '#e04848', blurb: 'Your own style: it follows your partner',
+    passive: { text: 'Partner bond: allies near your partner deal 10% more, take 10% less', atk: .1, def: .1 } },
   brock: { name: 'Brock', tr: 'brock', col: '#c89858', ace: 95, blurb: 'Rock-solid defence',
     passive: { text: 'Rock and Ground allies take 15% less', def: .15, types: ['Rock', 'Ground'] },
     power: { name: 'Rock Tomb', text: 'Enemies lose 1 move next turn and take 10%', enemyMove: -1, enemyDmg: .1, quake: true },
@@ -2767,16 +2771,32 @@ const COS = {
     super: { name: 'Rocket Rush', text: 'Allies +25% damage and +1 move', atk: .25, move: 1 } },
 };
 const CO_ORDER = ['you', 'brock', 'misty', 'surge', 'erika', 'koga', 'sabrina', 'blaine', 'blue', 'giovanni'];
+// Each commander's army: base species (they grow into their evolutions with the level), their Ace not included.
+const CO_TEAMS = {
+  you: [16, 19, 25, 1, 4, 7, 74, 63], brock: [74, 27, 95, 138, 140, 104, 111, 50], misty: [120, 54, 118, 60, 116, 90, 86, 72],
+  surge: [25, 100, 81, 125, 21, 84, 66, 128], erika: [43, 69, 102, 114, 1, 46, 48, 113], koga: [41, 109, 88, 48, 23, 13, 29, 32],
+  sabrina: [63, 96, 79, 122, 124, 102, 92, 137], blaine: [37, 58, 77, 4, 126, 109, 74, 133], blue: [16, 63, 58, 102, 111, 129, 7, 133],
+  giovanni: [52, 27, 104, 111, 50, 32, 29, 128], rocket: [19, 41, 23, 109, 52, 88, 96, 92],
+};
+// Trainers freed on the campaign route lead your side in the other modes: each one after clearing that chapter (all of
+// them once the journey is complete). Without a campaign save: You, Brock and Misty.
+const CO_UNLOCK = { brock: 3, misty: 4, erika: 5, surge: 6, koga: 7, blaine: 7, sabrina: 8, blue: 8, giovanni: 8 };
+function coUnlocked(save = typeof SAVE !== 'undefined' ? SAVE : null) { if (!save) return ['you', 'brock', 'misty']; return CO_ORDER.filter(c => c === 'you' || save.beaten || (save.chapter || 0) >= CO_UNLOCK[c]); }
+// Who can command the other side against you.
+const CO_FOES = ['rocket', 'brock', 'misty', 'surge', 'erika', 'koga', 'sabrina', 'blaine', 'blue', 'giovanni'];
+// A commander's army as Box entries at a level, each species in the form it has grown into (the first `n`, or `n`
+// picked by the seed); `skip` leaves out species already on the map.
+function coTeam(co, level, n = 8, seed = 0, skip = []) { const list = (CO_TEAMS[co] || CO_TEAMS.rocket).map(num => formAt(num, level)).filter((num, i, a) => a.indexOf(num) === i && !skip.includes(num)); if (seed) { const r = mulberry32(seed); list.sort(() => r() - .5); } return list.slice(0, n).map(num => ({ num, level })); }
 // What a side's command looks like, whichever kind it is: name, portrait, colour, passive and both powers.
 function coOf(s) {
   if (!s) return null; const co = COS[s.co];
   if (co && s.co !== 'you') return Object.assign({ id: s.co, style: co.blurb }, co);
-  const c = CAPTAINS[s.root] || CAPTAINS[7]; return { id: 'you', name: 'You', tr: 'red', col: c.col, style: c.style, blurb: c.role, passive: null, power: { name: c.name, text: c.normal }, super: { name: c.superName, text: c.super } };
+  const c = CAPTAINS[s.root] || CAPTAINS[7]; return { id: 'you', name: 'You', tr: 'red', col: c.col, style: c.style, blurb: c.role, passive: COS.you.passive, power: { name: c.name, text: c.normal }, super: { name: c.superName, text: c.super } };
 }
 function coTrainer(s) { const co = s && COS[s.co]; return co && s.co !== 'you' ? co : null; }
 // The effects working for (or against) a unit right now.
 function coNear(u) { const ace = powerCaptain(u.team); return !!(ace && dist(ace, u) <= 2); }
-function coPassive(u) { const co = coTrainer(powerState(u.team)); return co && co.passive && coNear(u) ? co.passive : null; }
+function coPassive(u) { const s = powerState(u.team), co = s && COS[s.co]; return co && co.passive && coNear(u) ? co.passive : null; }
 function coActive(team) { const s = powerState(team), co = coTrainer(s); return co && s.active ? (s.active === 'super' ? co.super : co.power) : null; }
 function coAtkMult(att, move) { let m = 1; for (const f of [coPassive(att), coActive(att.team)]) if (f) { if (f.atk && (!f.atkTypes || f.atkTypes.includes(move.type))) m *= 1 + f.atk; if (f.spAtk && move.kind !== 'P') m *= 1 + f.spAtk; } return m; }
 function coDefMult(def) { let m = 1; for (const f of [coPassive(def), coActive(def.team)]) if (f && f.def && (!f.types || def.types.some(t => f.types.includes(t)))) m *= 1 - f.def; return m; }
@@ -2798,7 +2818,7 @@ function migrateCaptain(save) {
   save.starter = captainRoot(save.party[pid].num) || (CAPTAINS[save.starter] ? save.starter : 7);
   return save;
 }
-function prepCaptain(P) { return P && !P.preset && typeof SAVE !== 'undefined' && SAVE && P.party === SAVE.party ? (migrateCaptain(SAVE), SAVE.captainPid) : null; }
+function prepCaptain(P) { if (P && P.captain != null) return P.captain; return P && !P.preset && typeof SAVE !== 'undefined' && SAVE && P.party === SAVE.party ? (migrateCaptain(SAVE), SAVE.captainPid) : null; }
 function powerState(team) { return B && B.command && B.command.teams[team] || null; }
 function powerCaptain(team) { const s = powerState(team); return s && B.units.find(u => u.id === s.captainId && u.team === team && u.hp > 0); }
 function addCaptain(team, unit, root, chapter = 8, co = 'you') {
@@ -2813,7 +2833,10 @@ function addCaptain(team, unit, root, chapter = 8, co = 'you') {
 function coAce(team, co, level) {
   const C = COS[co]; if (!C || !C.ace) return null; let u = alive(team).find(v => v.num === C.ace); if (u) return u;
   const anchor = alive(team)[0]; if (!anchor) return null; const spot = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1], [2, 0], [-2, 0]].map(([dx, dy]) => ({ x: anchor.x + dx, y: anchor.y + dy })).find(p => inMap(p.x, p.y) && !unitAt(p.x, p.y));
-  if (!spot) return null; u = makeUnit(C.ace, level, team, { x: spot.x, y: spot.y }); u.loaned = true; B.units.push(u); requestBigSprite(u.num); return u;
+  if (!spot) return null; u = makeUnit(C.ace, level, team, { x: spot.x, y: spot.y }); u.loaned = true; B.units.push(u); requestBigSprite(u.num);
+  // the Ace belongs to its side's Box too: when it faints it recovers and can be deployed again, crown and all
+  if (B.war && team <= 1) { const e = warEntry({ num: u.num, level: u.level }); e.state = 'field'; e.unitId = u.id; B.war.box[team].push(e); }
+  return u;
 }
 function initBattleCaptains(opts) {
   B.command = null;
@@ -3023,13 +3046,14 @@ function startBattle(mapDef, party, bag, opts = {}) {
   // versus rules: fog of war, capture-the-flag bases, the hill
   B.fog = !!map.fog; B.vis = null; B.captureBy = null; B.endReason = null; B.flags = map.flags ? map.flags.map(f => ({ team: f.team, home: { x: f.x, y: f.y }, x: f.x, y: f.y, carrier: null })) : null; B.hill = map.hill ? { x: map.hill.x, y: map.hill.y, r: map.hill.r || 1, score: [0, 0], need: 3 } : null;
   // enemies / wild / allies from the map definition
-  for (const d of mapDef.units) { const u = makeUnit(d.mon, d.level, d.team == null ? 1 : d.team, { x: d.x, y: d.y, ai: d.ai, boss: d.boss, nick: d.nick }); if (d.hp) u.hp = Math.max(1, Math.floor(u.maxHp * d.hp)); u.provoked = false; B.units.push(u); }
+  // (box: the unit belongs to its side's PC Box, so it recovers there when it faints, like a deployed one)
+  for (const d of mapDef.units) { const u = makeUnit(d.mon, d.level, d.team == null ? 1 : d.team, { x: d.x, y: d.y, ai: d.ai, boss: d.boss, nick: d.nick }); if (d.hp) u.hp = Math.max(1, Math.floor(u.maxHp * d.hp)); u.provoked = false; if (d.box) u.fromBox = true; B.units.push(u); }
   // player party on deploy tiles: the campaign party keeps its HP edge, Versus trainers are built identically
   // id: 0 drops the id a serialized party member carried from an earlier battle so restoreUnit assigns a fresh
   // one: enemies were just numbered 1..N, and a duplicate id would make the duel scene overlay both sides.
   if (opts.territory) territoryInit(opts.captains);
   const fresh = { acted: false, status: null, recharge: 0, cd: 0, brace: 0, root: 0, id: 0 }; // battle-temporary state never crosses encounters (suspend keeps it)
-  party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus ? 1 : BOND_HP })); u.hp = u.maxHp; u.pid = p.pid; u.leader = i === 0; u.fromBox = true; B.units.push(u); });
+  party.forEach((p, i) => { const slot = map.deploy[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 0, x: slot.x, y: slot.y, hpBonus: opts.versus || p.loaner ? 1 : BOND_HP })); u.hp = u.maxHp; u.pid = p.pid; u.leader = i === 0; u.fromBox = true; B.units.push(u); });
   if (opts.party2) opts.party2.forEach((p, i) => { const slot = (map.deploy2 || [])[i]; if (!slot) return; const u = restoreUnit(Object.assign({}, p, fresh, { team: 1, x: slot.x, y: slot.y, hpBonus: 1 })); u.hp = u.maxHp; u.leader = i === 0; u.fromBox = true; u.fx.facing = -1; B.units.push(u); });
   if (!opts.territory) warSetup(mapDef, opts);
   initBattleCaptains(opts); initCampaignLessons(mapDef, opts);
@@ -3046,7 +3070,8 @@ function startBattle(mapDef, party, bag, opts = {}) {
 function warSetup(mapDef, opts) {
   warInit(mapDef, { war: Object.assign({ centers: opts.versus || opts.skirmish ? -1 : 0 }, opts.war || {}) });
   for (const u of B.units) if (u.fromBox && u.team <= 1) { const e = warEntry({ num: u.num, level: u.level, data: serializeUnit(u), pid: u.pid }); e.state = 'field'; e.unitId = u.id; B.war.box[u.team].push(e); }
-  [opts.box || [], opts.box2 || []].forEach((list, team) => { for (const d of list) B.war.box[team].push(warEntry({ data: d, pid: d.pid })); });
+  // a serialized Pokémon keeps its moves and experience; a plain { num, level } is made fresh when deployed
+  [opts.box || [], opts.box2 || []].forEach((list, team) => { for (const d of list) B.war.box[team].push(warEntry('xp' in d ? { data: d, pid: d.pid } : d)); });
   wildSetup(mapDef);
   const w = opts.weather || mapDef.weather; B.weather = null; B.map.weather = WEATHER[w] ? w : null; if (B.map.weather) setWeather(w, 0);
 }
@@ -3061,7 +3086,7 @@ function beginPhase(team, first, resumed = false) {
   const ev = resumed ? [] : upkeep(team);
   if (B.versus && !resumed) { const hv = versusPhaseStart(team); if (hv && B.hill) floatText(B.hill.x * TILE + TILE / 2, B.hill.y * TILE - 8, 'HILL ' + hv.score + '/' + B.hill.need + ' · ' + teamName(team), teamColorL(team), { big: true, life: 1.6, outline: '#000' }); if (checkObjective()) { endBattle(); return; } }
   if (B.fog) refreshVision(team);
-  if (B.war && !resumed) { warUpkeep(team); if (checkObjective()) { endBattle(); return; } if (!isHuman(team)) for (const u of warAiDeploy(team)) { u.ai = 'war'; ev.push({ type: 'spawn', unit: u, deploy: true }); } }
+  if (B.war && !resumed) { const before = team <= 1 ? B.war.funds[team] : 0; warUpkeep(team); if (team <= 1 && isHuman(team) && B.war.funds[team] > before) { BT.income = { t: BT.time + .6, amount: B.war.funds[team] - before, team }; BT.fundsShow = before; BT.fundsTeam = team; } if (checkObjective()) { endBattle(); return; } if (!isHuman(team)) for (const u of warAiDeploy(team)) { u.ai = 'war'; ev.push({ type: 'spawn', unit: u, deploy: true }); } }
   if (team === 0 && !B.versus && !resumed) { saveSuspend(); }
   const teamsPresent = [0, 1, 2, 3].filter(t => alive(t).length);
   if (!teamsPresent.includes(team) && team !== 0 && !warCanPlay(team)) { nextPhase(); return; }
@@ -3900,7 +3925,9 @@ function objectiveProgress() {
   if (o.type === 'boss') { const b = B.units.find(u => u.boss && u.team === 1); const name = o.bossName || (b ? b.name : 'the boss'); return { text: 'Defeat ' + name, right: b && b.hp > 0 ? b.hp + '/' + b.maxHp : 'down!', ratio: b ? b.hp / b.maxHp : 0, col: UI.red, boss: true }; }
   if (o.type === 'survive') return { text: 'Survive ' + o.turns + ' turns', right: Math.min(B.turn, o.turns) + '/' + o.turns, ratio: (B.turn - 1) / o.turns, col: UI.blue };
   if (o.type === 'seize') { const p = B.war && B.war.props.find(q => q.goal); return { text: 'Seize the ' + (o.what || 'gym'), right: p ? (p.owner === HT() ? 'taken!' : (p.captor != null ? p.progress : 0) + '/20') : '', ratio: p ? (p.owner === HT() ? 1 : (p.captor != null ? p.progress : 0) / 20) : 0, col: UI.gold }; }
-  const total = B.units.filter(u => u.team === 1).length, left = alive(1).length; return { text: 'Defeat every foe', right: left + ' left', ratio: 1 - left / Math.max(1, total), col: UI.gold };
+  const total = B.units.filter(u => u.team === 1).length, left = alive(1).length;
+  if (o.type === 'war') { const hq = B.war && B.war.props.find(p => p.kind === 'hq' && p.hq === 1), cap = hq && hq.captor != null ? B.units.find(u => u.id === hq.captor) : null; if (cap && cap.team === 0) return { text: 'Take their HQ', right: hq.progress + '/20', ratio: hq.progress / 20, col: UI.gold }; return { text: 'Rout them or take HQ', right: left + ' left', ratio: 1 - left / Math.max(1, total), col: UI.gold }; }
+  return { text: 'Defeat every foe', right: left + ' left', ratio: 1 - left / Math.max(1, total), col: UI.gold };
 }
 // The objective tracker (top-left): the turn and one pip per Pokémon that can still act in the header band; the goal
 // with its progress under it; on taller cards a progress bar and each side's head count.
@@ -3911,6 +3938,10 @@ function drawTurnCard(r) {
   const pipsW = mine.length * 6, pips = mine.length <= 8 && textWidth(head) + pipsW + 16 <= r.w;
   hudPanel(r.x, r.y, r.w, r.h, { header: head, headerRight: pips ? null : 'READY ' + ready + '/' + mine.length, headerRightCol: ready ? UI.green : UI.muted, headerFill: teamColorD(HT()) });
   if (pips) mine.forEach((u, i) => { const px0 = r.x + r.w - 7 - (mine.length - 1 - i) * 6, py0 = r.y + 8; circle(px0, py0, 2, UI.inset); if (!u.acted) { circle(px0, py0, 2, UI.green); px(px0 - 1, py0 - 1, '#d8ffe0'); } else circle(px0, py0, 1, shade(teamColorD(HT()), -.3)); });
+  // the war chest, beside the turn: the figure rolls to its new value, and each day's income rises out of it
+  if (B.war && B.war.props.length && HT() <= 1) { const f = B.war.funds[HT()]; if (BT.fundsShow == null || BT.fundsTeam !== HT() || REDUCED) { BT.fundsShow = f; BT.fundsTeam = HT(); } const inc = BT.income, waiting = inc && inc.team === HT() && BT.time < inc.t; if (!waiting) BT.fundsShow += (f - BT.fundsShow) * Math.min(1, CLOCK.dt * 7); if (Math.abs(f - BT.fundsShow) < 10) BT.fundsShow = f;
+    const fx = r.x + 10 + textWidth(head), roll = BT.fundsShow !== f; circle(fx + 3, r.y + 8, 3, UI.inset); circle(fx + 3, r.y + 8, 2, roll ? '#fff4b0' : UI.gold); px(fx + 2, r.y + 7, '#fffbe0'); text(money(Math.round(BT.fundsShow / 10) * 10), fx + 8, r.y + 5, roll ? '#fff4b0' : UI.gold, { shadow: shade(teamColorD(HT()), -.55) });
+    if (inc && inc.team === HT() && !waiting && BT.time - inc.t < 1.4 && inc.amount > 0) { const k = (BT.time - inc.t) / 1.4; if (!inc.rung) { inc.rung = true; Audio.sfx('coin'); } ctx.globalAlpha = clamp((1 - k) * 2, 0, 1); text('+' + money(inc.amount), fx + 8, r.y + 17 - Math.round(easeOut(Math.min(1, k * 1.6)) * 9), UI.green, { outline: UI.inset }); ctx.globalAlpha = 1; } }
   const P = objectiveProgress(), y1 = r.y + 17; iconAt('flag', r.x + 5, y1 - 1, P.col);
   const rw = textWidth(P.right); let s = P.text; while (textWidth(s) > r.w - 22 - rw - 6 && s.length > 4) s = s.slice(0, -1); text(s, r.x + 16, y1, UI.ink); textR(P.right, r.x + r.w - 6, y1, P.col);
   if (tall) {
@@ -4997,25 +5028,47 @@ const CHAPTERS = [
     },
   },
 ];
-// Random skirmish map generator: value noise → water / mountains / forests / tall grass, a road, a Poké Center.
-function skirmishMap(seed, w = 16, h = 11, avgLevel = 12) {
+// Random Skirmish battlefield: value noise → water / mountains / forests / tall grass, a road from HQ to HQ, each side's
+// own Poké Center and two neutral ones in the middle, placed point-symmetrically so neither side starts on better
+// ground. The foe commander's opening squad waits by their HQ; wild Pokémon roam in between (and breed in the grass).
+// opt.foe: the enemy commander (CO_TEAMS picks the squad). Objective: rout the foe or take their HQ.
+function skirmishMap(seed, w = 16, h = 11, avgLevel = 12, opt = {}) {
   const r = mulberry32(seed); const noise = (x, y, s) => { const n = Math.sin((x * 12.9898 + y * 78.233 + s) * 43758.5453) * 1e4; return n - Math.floor(n); };
   const grid = []; const base = r() * 1000;
   for (let y = 0; y < h; y++) { const row = []; for (let x = 0; x < w; x++) { let v = 0; for (let o = 1; o <= 3; o++) { const s = o * 2; const fx = x / s, fy = y / s; const x0 = Math.floor(fx), y0 = Math.floor(fy); const tx = fx - x0, ty = fy - y0; const a = noise(x0, y0, base + o), b = noise(x0 + 1, y0, base + o), c = noise(x0, y0 + 1, base + o), d = noise(x0 + 1, y0 + 1, base + o); v += lerp(lerp(a, b, tx), lerp(c, d, tx), ty) / o; } row.push(v / 1.83); } grid.push(row); }
   const rows = []; const theme = Math.floor(r() * 3);
   for (let y = 0; y < h; y++) { let s = ''; for (let x = 0; x < w; x++) { const v = grid[y][x]; let ch = '.'; if (x <= 1 || x >= w - 2) ch = v > .62 ? 'T' : v > .5 ? 't' : '.'; else if (v < .3) ch = '~'; else if (v < .36) ch = 's'; else if (v > .74) ch = theme === 2 ? '^' : 'M'; else if (v > .62) ch = 'T'; else if (v > .52) ch = 't'; else if (r() < .08) ch = ','; s += ch; } rows.push(s); }
-  // a road across the middle with bridges over water
+  const put = (x, y, ch) => { rows[y] = rows[y].slice(0, x) + ch + rows[y].slice(x + 1); };
+  // the road across the middle, bridged over water, with an HQ at each end
   const ry = Math.floor(h / 2) + Math.floor(r() * 3) - 1; rows[ry] = rows[ry].split('').map(c => c === '~' ? '=' : (c === 'M' || c === '^') ? '.' : '#').join('');
-  const cx = Math.floor(w / 2) + Math.floor(r() * 3) - 1; const cy = ry > 2 ? ry - 2 : ry + 2; rows[cy] = rows[cy].slice(0, cx) + 'C' + rows[cy].slice(cx + 1);
-  const deploy = []; for (let y = 0; y < h && deploy.length < 8; y++) for (let x = 0; x < 2 && deploy.length < 8; x++) if ('.,t#'.includes(rows[y][x])) deploy.push({ x, y });
-  const pool = DEX_LIST.filter(d => d.num !== 150 && d.num !== 151 && d.num < 144 && d.num !== 132); const units = []; const taken = new Set(deploy.map(d => key(d.x, d.y)));
-  const spot = (minX) => { for (let i = 0; i < 200; i++) { const x = minX + Math.floor(r() * (w - minX)), y = Math.floor(r() * h); const ch = rows[y][x]; if ('.,t#TsM'.includes(ch) && !taken.has(key(x, y))) { taken.add(key(x, y)); return { x, y }; } } return null; };
-  const n = 5 + Math.floor(r() * 3);
-  for (let i = 0; i < n; i++) { const s = spot(Math.floor(w * .55)); if (!s) break; const d = pool[Math.floor(r() * pool.length)]; const lvl = Math.max(2, avgLevel + Math.floor(r() * 5) - 2); units.push({ mon: d.num, level: lvl, x: s.x, y: s.y, ai: r() < .6 ? 'aggro' : 'guard', boss: i === 0, nick: i === 0 ? 'Rival ' + d.name : null }); if (i === 0) units[0].level += 3; }
-  for (let i = 0; i < 3; i++) { const s = spot(3); if (!s) break; const d = pool[Math.floor(r() * pool.length)]; units.push({ mon: d.num, level: Math.max(2, avgLevel - 2 + Math.floor(r() * 4)), x: s.x, y: s.y, team: 2, ai: 'aggro' }); }
-  const items = []; for (let i = 0; i < 2; i++) { const s = spot(3); if (s) items.push({ x: s.x, y: s.y, item: 'pokeball' }); }
-  return { name: 'Skirmish #' + (seed % 1000), seed, objective: { type: 'boss', bossName: 'the Rival' }, rows, deploy, units, items, par: 10, music: pick(['player', 'calm']) };
+  put(1, ry, 'Q'); put(w - 2, ry, 'Q');
+  // a center: a path to the road (a causeway over water, a pass through rock) and walkable ground beside it
+  const center = (x, y) => { const step = y < ry ? 1 : -1; for (let yy = y + step; yy !== ry; yy += step) if ('~M^'.includes(rows[yy][x])) put(x, yy, '#'); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < w && Y < h && '~^'.includes(rows[Y][X])) put(X, Y, '.'); } put(x, y, 'C'); };
+  const dy = r() < .5 ? -3 : 3, cy = (y) => clamp(y, 1, h - 2), mx = Math.floor(w / 2);
+  const own = [{ x: 3, y: cy(ry + dy) }, { x: w - 4, y: cy(ry - dy) }], neutral = [{ x: mx - 2, y: cy(ry - dy) }, { x: w - 1 - (mx - 2), y: cy(ry + dy) }];
+  for (const c of own.concat(neutral)) center(c.x, c.y);
+  // deploy tiles: open ground in the first three columns, nearest the HQ first
+  const order = []; for (let y = 0; y < h; y++) for (let x = 0; x < 3; x++) order.push({ x, y }); order.sort((a, b) => (Math.abs(a.x - 1) + Math.abs(a.y - ry)) - (Math.abs(b.x - 1) + Math.abs(b.y - ry)));
+  const deploy = order.filter(c => '.,t#'.includes(rows[c.y][c.x])).slice(0, 8);
+  const taken = new Set(deploy.map(d => key(d.x, d.y)));
+  const spot = (x0, x1, near) => { const opts = []; for (let y = 0; y < h; y++) for (let x = x0; x <= x1; x++) if ('.,t#TsM'.includes(rows[y][x]) && !taken.has(key(x, y))) opts.push({ x, y }); if (near) opts.sort((a, b) => dist(a, near) - dist(b, near) || r() - .5); const s = near ? opts[Math.floor(r() * Math.min(4, opts.length))] : opts[Math.floor(r() * opts.length)]; if (s) taken.add(key(s.x, s.y)); return s || null; };
+  // the foe's opening squad: three of their commander's Pokémon by their HQ (the Ace joins them at the start)
+  const units = [], foe = opt.foe && CO_TEAMS[opt.foe] ? opt.foe : 'rocket', hq = { x: w - 2, y: ry };
+  const squad = CO_TEAMS[foe].filter(n => n !== (COS[foe] && COS[foe].ace)).slice(0, 5).sort(() => r() - .5).slice(0, 3);
+  squad.forEach((num, i) => { const s = spot(w - 5, w - 1, hq), level = Math.max(2, avgLevel + (i === 0 ? 1 : Math.floor(r() * 3) - 1)); if (s) units.push({ mon: formAt(num, level), level, x: s.x, y: s.y, ai: 'aggro', box: true }); });
+  // wild Pokémon in the middle band (their species breed in the tall grass later)
+  const pool = DEX_LIST.filter(d => d.num < 144 && d.num !== 132 && d.num !== 143 && LINE_ROOT[d.num] === d.num);
+  for (let i = 0; i < 3; i++) { const s = spot(4, w - 5); if (!s) break; const d = pool[Math.floor(r() * pool.length)], level = Math.max(2, avgLevel - 2 + Math.floor(r() * 3)); units.push({ mon: formAt(d.num, level), level, x: s.x, y: s.y, team: 2, ai: 'aggro' }); }
+  const items = []; for (let i = 0; i < 2; i++) { const s = spot(4, w - 5); if (s) items.push({ x: s.x, y: s.y, item: 'pokeball' }); }
+  const war = { owners: { [key(own[0].x, own[0].y)]: 0, [key(own[1].x, own[1].y)]: 1 }, names: { [key(1, ry)]: 'YOUR HQ', [key(w - 2, ry)]: (COS[foe] ? COS[foe].name.toUpperCase() : 'FOE') + "'S HQ" } };
+  return { name: 'Skirmish #' + (seed % 1000), seed, objective: { type: 'war' }, rows, deploy, units, items, par: 12, music: pick(['player', 'calm']), war, foe };
 }
+
+// Skirmish options (the setup screen's rules). Both armies count twelve: four on the map and eight in the Box (the rest of
+// your collection, topped up with loaners from Oak's lab when it is small; the foe's squad, Ace and army).
+const SKIRMISH = { slots: 4, box: 8, funds: [0, 1000, 2000, 5000, 10000], weather: ['none', 'rain', 'sun', 'sand', 'snow', 'random'], levels: [5, 8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 30, 33, 36, 40, 45, 50] };
+const LOANERS = [16, 19, 25, 1, 4, 7, 74, 63, 43, 60, 66, 92, 41, 23, 56, 100, 109, 111];
+function skirmishLoaners(party, level, n) { const have = new Set(party.map(p => LINE_ROOT[p.num])); return LOANERS.filter(num => !have.has(LINE_ROOT[num])).slice(0, Math.max(0, n)).map(num => ({ num: formAt(num, level), level })); }
 
 // ---------------------------------------------------------------- versus arenas
 // Mirror-symmetric arena for two trainers: the left half is generated with value noise and reflected.
@@ -5167,7 +5220,7 @@ function warAiDeploy(team) {
   const sites = warDeploySites(team).slice().sort((a, b) => Math.min(...foes.map(u => dist(u, a)), 99) - Math.min(...foes.map(u => dist(u, b)), 99));
   for (const p of sites) {
     const options = W.box[team].map((e, i) => ({ e, i })).filter(o => !warDeployBlock(team, o.i, p));
-    const score = e => { const d = DEX[e.num], power = bstOf(e.num) * (e.level + 10) / 400; const matches = foes.length ? Math.max(...d.types.map(t => foes.reduce((s, u) => s + effRaw(t, u.types), 0) / foes.length)) : 1; return power * matches + (roleFor(d) === 'support' && alive(team).some(u => u.hp < u.maxHp / 2) ? 4 : 0) + (e.fresh ? 3 : 0) - warEntryCost(e) / 2000; };
+    const score = e => { const d = DEX[e.num], power = bstOf(e.num) * (e.level + 10) / 400; const matches = foes.length ? Math.max(...d.types.map(t => foes.reduce((s, u) => s + effRaw(t, u.types), 0) / foes.length)) : 1; const ace = powerState(team); return power * matches + (roleFor(d) === 'support' && alive(team).some(u => u.hp < u.maxHp / 2) ? 4 : 0) + (e.fresh ? 3 : 0) + (ace && e.unitId != null && e.unitId === ace.captainId ? 6 : 0) - warEntryCost(e) / 2000; };
     options.sort((a, b) => score(b.e) - score(a.e) || a.i - b.i);
     if (options.length) { const u = warDeploy(team, options[0].i, p); if (u) out.push(u); }
   }
@@ -5232,7 +5285,24 @@ function weatherMult(type) { const k = weatherKind(); if (k === 'rain') return t
 function weatherSpares(u, k) { return k === 'sand' ? u.types.some(t => t === 'Rock' || t === 'Ground' || t === 'Steel') : k === 'snow' ? u.types.includes('Ice') : true; }
 function weatherDay(ev) { const W = B && B.weather; if (!W || !W.days) return; if (--W.days <= 0) { const kind = W.kind; B.weather = B.map.weather ? { kind: B.map.weather, days: 0 } : null; if (!B.weather || B.weather.kind !== kind) ev.push({ type: 'weatherEnd', kind }); } }
 // Does this unit play the war (capture and roam) rather than a scripted role?
-function warRoams(u) { return !!(B && B.war && u.team <= 1 && !u.boss && (!u.ai || u.ai === 'aggro') && B.war.props.some(p => p.owner !== u.team)); }
+// Deployed Pokémon ('war') and free attackers ('aggro') do; guards, bosses and scripted roles keep their own AI.
+function warRoams(u) { return !!(B && B.war && u.team <= 1 && !u.boss && (!u.ai || u.ai === 'aggro' || u.ai === 'war') && B.war.props.some(p => p.owner !== u.team)); }
+// Model-only run of a whole war battle (Skirmish, Versus, the Tower): the AI plays both sides (upkeep and income,
+// deployments, powers, captures, attacks) with wild Pokémon acting in between, until it ends or maxTurns pass.
+function simWar(maxTurns = 40) {
+  const log = [];
+  for (; B.turn <= maxTurns && !B.result; B.turn++) {
+    for (const team of [0, 1, 2]) {
+      if (!alive(team).length && !(team <= 1 && warCanPlay(team))) continue;
+      B.phase = team; upkeep(team);
+      if (team <= 1) { warUpkeep(team); if (checkObjective()) break; for (const u of warAiDeploy(team)) { u.ai = 'war'; log.push('T' + B.turn + ' ' + team + ' deploys ' + u.name); } const power = aiPower(team); if (power) log.push('T' + B.turn + ' ' + team + ' uses ' + power[0].name); }
+      if (team === 0 && B.turn > 1) for (const u of wildSpawn()) log.push('T' + B.turn + ' wild ' + u.name);
+      for (const u of alive(team).slice().sort((a, b) => b.level - a.level)) { if (u.acted || !canTakeAction(u)) continue; const d = aiDecide(u); if (d) aiAct(u, d, log); u.acted = true; if (checkObjective()) break; }
+      if (B.result) break;
+    }
+  }
+  return { result: B.result, turn: B.turn, reason: B.war.reason, funds: B.war.funds.slice(), captures: B.war.stats.captures.slice(), deployments: B.war.stats.deployments.slice(), alive: [alive(0).length, alive(1).length, alive(2).length], log };
+}
 // Territory (Conquest): Three Bridges, the same captain on both sides, six teammates each (three start on the map,
 // three wait in the Box), income from the HQ and the three middle centers, the enemy HQ to take or two middle centers
 // to hold for three turn starts. Built on the shared war rules (war.js); this file keeps the map, the setup screen,
@@ -5381,11 +5451,12 @@ const VS_RULES = [
   { k: 'co0', label: 'P1 COMMANDER', vals: CO_ORDER.slice(1), show: v => COS[v].name },
   { k: 'co1', label: 'P2 COMMANDER', vals: CO_ORDER.slice(1), show: v => COS[v].name },
 ];
-function vsCycle(S, rule, dir) { if (rule.vals) { const i = rule.vals.indexOf(S[rule.k]); S[rule.k] = rule.vals[(Math.max(0, i) + dir + rule.vals.length) % rule.vals.length]; } else S.seed = (S.seed + dir + 1000) % 1000; Audio.sfx('menu'); }
-function vsRuleRows(S, x, y, w, rh, rules) {
-  rules.forEach((rule, i) => { const ry = y + i * rh; const val = rule.show(S[rule.k]); const bw = 16, bhh = rh - 2;
+function vsCycle(S, rule, dir) { const vals = typeof rule.vals === 'function' ? rule.vals(S) : rule.vals; if (vals) { const i = vals.indexOf(S[rule.k]); S[rule.k] = vals[(Math.max(0, i) + dir + vals.length) % vals.length]; } else S.seed = (S.seed + dir + 1000) % 1000; Audio.sfx('menu'); }
+function vsRuleRows(S, x, y, w, rh, rules, focus = -1) {
+  rules.forEach((rule, i) => { const ry = y + i * rh; const val = rule.show(S[rule.k], S); const bw = 16, bhh = rh - 2;
     if (i % 2) { ctx.globalAlpha = .18; rect(x, ry, w, rh, '#ffffff'); ctx.globalAlpha = 1; }
-    text(rule.label, x + 4, ry + (rh - 7) / 2, UI.muted);
+    if (i === focus) { rect(x, ry, 2, rh, UI.gold); outline(x, ry, w, rh, UI.goldDark); }
+    text(rule.label, x + 4, ry + (rh - 7) / 2, i === focus ? UI.gold : UI.muted);
     bigButton(x + w - bw, ry + 1, bw, bhh, '▸', () => vsCycle(S, rule, 1), { small: true, variant: 'dark' }); bigButton(x + w - 2 * bw - 3, ry + 1, bw, bhh, '◂', () => vsCycle(S, rule, -1), { small: true, variant: 'dark' });
     // the test harness and screen readers see the arrows as LABEL- / LABEL+
     SC.hits[SC.hits.length - 1].label = rule.label + '-'; SC.hits[SC.hits.length - 2].label = rule.label + '+';
@@ -5483,7 +5554,7 @@ function cardDraw() {
 }
 // drawStampWord with an explicit time (the chapter card starts its letters later than the end screen).
 function drawStampWordAt(word, cx, y, t, col, dark, scale) { return drawStampWord(word, cx, y, t + END_BEATS.letters, col, dark, scale); }
-function objectiveTextFor(o) { switch (o.type) { case 'rout': return 'Objective: defeat all enemies'; case 'boss': return 'Objective: defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Objective: survive ' + o.turns + ' turns'; case 'seize': return 'Objective: seize the ' + (o.what || 'gym'); case 'versus': return 'Objective: defeat the other trainer'; } return ''; }
+function objectiveTextFor(o) { switch (o.type) { case 'rout': return 'Objective: defeat all enemies'; case 'war': return 'Objective: rout the foe or take their HQ'; case 'boss': return 'Objective: defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Objective: survive ' + o.turns + ' turns'; case 'seize': return 'Objective: seize the ' + (o.what || 'gym'); case 'versus': return 'Objective: defeat the other trainer'; } return ''; }
 function cardInput(ev) { if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) SC.skip = true; }
 
 // ---------------------------------------------------------------- story dialogue (drawn over the battle board)
@@ -5516,6 +5587,26 @@ const TRAINER_HEADS = { beauty: [37, 4], biker: [42, 1], bill: [38, 6], birdkeep
 function trainerFace(tr) {
   const key = 'face:' + tr; if (TRAINERS.cache[key]) return TRAINERS.cache[key]; const img = trainerImg(tr); if (!img) return null;
   const [cx, top] = TRAINER_HEADS[tr] || [40, 6], f = document.createElement('canvas'); f.width = 18; f.height = 18; f.getContext('2d').drawImage(img, cx - 9, Math.max(0, top - 1), 18, 18, 0, 0, 18, 18); TRAINERS.cache[key] = f; return f;
+}
+// A trainer's bust for commander cards: a 48×48 crop around the head and shoulders, mirrored to face left. Cached.
+function trainerBust(tr, flip) {
+  const key = 'bust:' + tr + (flip ? 'f' : ''); if (TRAINERS.cache[key]) return TRAINERS.cache[key]; const img = trainerImg(tr); if (!img) return null;
+  const [cx, top] = TRAINER_HEADS[tr] || [40, 6], c = document.createElement('canvas'); c.width = 48; c.height = 48; const g = c.getContext('2d'); if (flip) { g.translate(48, 0); g.scale(-1, 1); }
+  const sx = clamp(cx - 24, 0, 32), sy = clamp(top - 3, 0, 32); g.drawImage(img, sx, sy, 48, 48, 0, 0, 48, 48); TRAINERS.cache[key] = c; return c;
+}
+// A commander card, Advance Wars style: the trainer's bust over bands of their colour, the name on a strip below;
+// side 1 faces left. Tapping it runs `run` (cycling the choice on setup screens).
+function coCard(x, y, w, h, id, side, run, opt = {}) {
+  const co = COS[id] || COS.you, col = opt.col || co.col, t = SC.t; trainerImg(co.tr);
+  rrect(x, y, w, h, opt.hot ? UI.gold : UI.inset, 2); ctx.save(); ctx.beginPath(); ctx.rect(x + 1, y + 1, w - 2, h - 2); ctx.clip();
+  rect(x + 1, y + 1, w - 2, h - 2, shade(col, -.62)); ctx.fillStyle = shade(col, -.35); const drift = REDUCED ? 0 : Math.floor(t * 8) % 12;
+  for (let k = -h - 12 + (side ? -drift : drift); k < w + 12; k += 12) { ctx.beginPath(); ctx.moveTo(x + k, y + h); ctx.lineTo(x + k + h, y); ctx.lineTo(x + k + h + 5, y); ctx.lineTo(x + k + 5, y + h); ctx.fill(); }
+  const bust = trainerBust(co.tr, side === 1), by = y + h - 10 - 48 + (opt.pop ? Math.round((1 - easeOutBack(clamp(opt.pop / .25, 0, 1), 2)) * 10) : 0);
+  if (bust) { ctx.globalAlpha = .5; ctx.drawImage(bust, x + Math.round((w - 48) / 2) + (side ? 2 : -2), by + 1); ctx.globalAlpha = 1; ctx.drawImage(bust, x + Math.round((w - 48) / 2), by); }
+  ctx.restore(); rect(x + 1, y + h - 10, w - 2, 9, '#07061ae0'); hline(x + 1, y + h - 11, w - 2, col);
+  textC(fitLabel(id === 'you' ? 'TACTICIAN' : co.name.toUpperCase(), w - 6), x + w / 2, y + h - 9, opt.hot ? UI.gold : '#ffffff');
+  if (opt.tag) { const tw = textWidth(opt.tag) + 6, tx = side ? x + w - tw - 2 : x + 2; rrect(tx, y + 2, tw, 9, side ? teamColorD(1) : teamColorD(0), 1); text(opt.tag, tx + 3, y + 3, '#ffffff'); }
+  if (run) hit(x, y, w, h, run, opt.label || (side ? 'FOE CO' : 'YOUR CO'));
 }
 // A line's text with its *emphasis* resolved: the plain text and which letters to colour.
 function richLine(line) { if (line._rich) return line._rich; const em = []; let plain = '', on = false; for (const c of line.text) { if (c === '*') { on = !on; continue; } if (on) em[plain.length] = true; plain += c; } return (line._rich = { plain, em }); }
@@ -5599,6 +5690,7 @@ function prepDraw() {
     ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2 + lift, 30, L.ch - 4); ctx.clip(); rect(x + 2, y + 2 + lift, 30, L.ch - 4, on ? '#17306e' : '#141736'); drawMon(u.num, x + 17, y + L.ch - 2 + lift - (on && !REDUCED ? Math.round(Math.abs(Math.sin(t * 5 + i)) * 1) : 0), { outline: on ? teamColor(0) : null }); ctx.restore();
     const nx = x + 35, lv = 'Lv' + u.level, avail = L.cw - 39 - textWidth(lv) - (on || i === cap ? 14 : 0); text(fitLabel(u.name, avail), nx, y + 4 + lift, UI.ink); textR(lv, x + L.cw - 5 - (on || i === cap ? 14 : 0), y + 4 + lift, UI.gold);
     let bx = nx; for (const tp of u.types) { if (bx + 24 > x + L.cw - 4) break; bx += typeBadge(tp, bx, y + 13 + lift, 24) + 2; } hpBar(nx, y + L.ch - 7 + lift, L.cw - 40, u.hp, u.maxHp);
+    if (p.loaner && bx + 28 <= x + L.cw - 4) textR('LOAN', x + L.cw - 5, y + 14 + lift, UI.info);
     if (i === cap) { rrect(x + L.cw - 15, y + 3 + lift, 12, 10, UI.gold, 1); drawCrown(x + L.cw - 13, y + 5 + lift); } else if (on) { circle(x + L.cw - 9, y + 8 + lift, 5, UI.inset); circle(x + L.cw - 9, y + 8 + lift, 4, '#6a9aff'); textC(String(slot + 1), x + L.cw - 8, y + 5 + lift, '#ffffff'); }
     hit(x, y, L.cw, L.ch, () => { SC.i = i; toggleDeploy(P, i); });
   });
@@ -5705,7 +5797,7 @@ function creditsInput(ev) { if (ev.type === 'up' || ev.type === 'key') SC.skip =
 
 // ---------------------------------------------------------------- quick battle: pick a mode against the CPU
 const QUICK_MODES = [
-  { id: 'skirmish', label: 'SKIRMISH', tag: 'ROUT', lines: ['A random map every time.', 'Beat the Rival and catch', 'wild Pokémon on the way.'], goal: 'Defeat the Rival', run: () => startSkirmishSetup() },
+  { id: 'skirmish', label: 'SKIRMISH', tag: 'HQ vs HQ', lines: ['A random battlefield.', 'Earn funds, deploy your Box,', 'catch wild Pokémon mid-war.'], goal: 'Rout them or take their HQ', run: () => startSkirmishSetup() },
   { id: 'conquest', label: 'CONQUEST', tag: 'CENTERS', lines: ['Three bridges, six teammates.', 'Capture centers to earn points', 'and call reserves.'], goal: 'Take the HQ or hold 2 centers', run: () => startTerritorySetup() },
 ];
 function quickPreview(m) { const S = SC.data || (SC.data = {}); if (!S[m.id]) S[m.id] = makeBackdrop(m.id === 'conquest' ? TERRITORY_MAP : skirmishMap(412, 16, 11, 12)); return S[m.id]; }
@@ -5741,35 +5833,61 @@ function quickInput(ev) {
 }
 
 // ---------------------------------------------------------------- skirmish setup
-// Skirmish setup: the random map framed on the left with a dice to roll another, the Rival (the boss) on the right with
-// the foe and wild counts and the foe level, then your team. The map regenerates when the seed or the level changes.
+// Skirmish setup: the battlefield framed on the left (a dice rolls another) with both HQs, the centers and the foe's
+// squad; on the right the two commanders face each other over the rules. Arrows pick a row, ◂▸ change it.
+const SK_RULES = [
+  { k: 'co', label: 'YOU', vals: S => S.cos, show: v => v === 'you' ? 'Tactician' : COS[v].name },
+  { k: 'foe', label: 'FOE', vals: CO_FOES, show: v => COS[v].name },
+  { k: 'level', label: 'LEVEL', vals: SKIRMISH.levels, show: v => 'Lv ' + v },
+  { k: 'funds', label: 'FUNDS', vals: SKIRMISH.funds, show: v => money(v) + ' each' },
+  { k: 'weather', label: 'WEATHER', vals: SKIRMISH.weather, show: v => v === 'none' ? 'Clear' : v === 'random' ? 'Random' : WEATHER[v].name },
+  { k: 'seed', label: 'MAP', vals: null, show: v => 'Skirmish #' + v },
+];
+function skirmishRoot() { return typeof SAVE !== 'undefined' && SAVE && SAVE.starter && !(SC.data && SC.data.preset) ? SAVE.starter : 4; }
+// The battlefield in miniature: deploy tiles, each property under its owner's colour (HQs flagged), every Pokémon.
+function drawWarPreview(map, bd, px0, py0, pw, ph) {
+  const cell = pw / bd.canvas.width * TILE, c = Math.max(3, Math.ceil(cell)), owners = (map.war && map.war.owners) || {}, W = bd.map.w;
+  for (const d of map.deploy) { const ux = Math.round(px0 + d.x * cell), uy = Math.round(py0 + d.y * cell); ctx.globalAlpha = .22; rect(ux, uy, c, c, '#8ab4ff'); ctx.globalAlpha = .8; outline(ux + 1, uy + 1, c - 2, c - 2, teamColor(0)); ctx.globalAlpha = 1; }
+  map.rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const ch = row[x]; if (!PROP_KIND[ch]) continue; const k = x + ',' + y, owner = owners[k] != null ? owners[k] : ch === 'Q' ? (x < W / 2 ? 0 : 1) : -1, col = owner < 0 ? '#d8d8e8' : teamColor(owner);
+    const ux = Math.round(px0 + x * cell), uy = Math.round(py0 + y * cell); outline(ux, uy, c, c, col); outline(ux + 1, uy + 1, c - 2, c - 2, UI.inset);
+    if (ch === 'Q') { const fx = ux + Math.round(c / 2), fy = uy - 5; vline(fx, fy, 7, '#e8e0d0'); rect(fx + 1, fy, 4, 3, col); } } });
+  for (const u of map.units) { const d = DEX[u.mon], ux = px0 + (u.x + .5) * cell, uy = py0 + (u.y + 1) * cell, iw = Math.max(12, Math.round(cell * 1.1)); ellipse(Math.round(ux), Math.round(uy), Math.round(iw / 3), 2, teamColor(u.team == null ? 1 : u.team)); ctx.drawImage(monIcon(d.num, true), Math.round(ux - iw / 2), Math.round(uy - iw * .75), iw, Math.round(iw * .75)); }
+}
 function skirmishDraw() {
   const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t; rect(0, 0, W, H, UI.bg);
-  if (!S.bd || S.bdSeed !== S.seed || S.bdLevel !== S.level) { S.map = skirmishMap(S.seed, 16, 11, S.level); S.bd = makeBackdrop(S.map); S.bdSeed = S.seed; S.bdLevel = S.level; S.rolledAt = SC.t; }
+  const mapKey = [S.seed, S.level, S.foe].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = skirmishMap(S.seed, 16, 11, S.level, { foe: S.foe }); S.bd = makeBackdrop(S.map); if (S.bdKey && S.bdKey.split('|')[0] !== String(S.seed)) S.rolledAt = SC.t; S.bdKey = mapKey; }
   drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 + 40 - t * 4, (H - S.bd.canvas.height) / 2 + 30, .84); drawCloudShadows(t);
-  const narrow = narrowView() || portraitView(), bh = btnH(), sbh = narrow ? 18 : 15; SC.hits = [];
-  const top = screenTitle('SKIRMISH', narrow ? null : 'A random map · beat the Rival · catch wild Pokémon', 4), fy = footerBand(bh + 12) + 6;
-  const sideW = narrow ? W - 12 : Math.min(170, Math.floor(W * .34)), mapW = narrow ? W - 12 : W - 18 - sideW, mapH = narrow ? Math.round((fy - 12 - top) * .46) : fy - 12 - top;
-  // the map, framed, with the deploy tiles and every Pokémon on it; a dice to reroll
+  const narrow = narrowView() || portraitView(), bh = btnH(); SC.hits = []; S.focus = clamp(S.focus || 0, 0, SK_RULES.length - 1);
+  const top = screenTitle('SKIRMISH', narrow ? null : 'Random battlefield · rout the foe or take their HQ', 4), foot = footerBand(bh + 12), fy = foot + 6;
+  const rh = narrow ? 16 : 14, cardH = narrow ? 58 : clamp(foot - top - 8 - 22 - SK_RULES.length * rh - 40, 50, 66), sideH = 22 + cardH + 14 + SK_RULES.length * rh + 28;
+  const sideW = narrow ? W - 12 : Math.min(190, Math.floor(W * .36)), mapW = narrow ? W - 12 : W - 18 - sideW, mapH = narrow ? Math.max(60, foot - 8 - top - sideH) : foot - 10 - top;
+  // the map, framed, with a dice to reroll it; it shakes when rolled
   const sc = Math.min((mapW - 8) / S.bd.canvas.width, (mapH - 8) / S.bd.canvas.height), pw = Math.floor(S.bd.canvas.width * sc), ph = Math.floor(S.bd.canvas.height * sc), px0 = 6 + Math.floor((mapW - pw) / 2), py0 = top + 2 + Math.floor((mapH - ph) / 2);
-  const shake = REDUCED ? 0 : Math.round(Math.sin(clamp((t - (S.rolledAt || 0)) / .3, 0, 1) * Math.PI * 3) * 2 * (1 - clamp((t - (S.rolledAt || 0)) / .3, 0, 1)));
+  const k = clamp((t - (S.rolledAt || -9)) / .3, 0, 1), shake = REDUCED ? 0 : Math.round(Math.sin(k * Math.PI * 3) * 2 * (1 - k));
   rrect(px0 - 5, py0 - 5 + shake, pw + 10, ph + 10, UI.inset, 2); rect(px0 - 3, py0 - 3 + shake, pw + 6, ph + 6, UI.border2); ctx.drawImage(S.bd.canvas, px0, py0 + shake, pw, ph); outline(px0 - 1, py0 - 1 + shake, pw + 2, ph + 2, UI.border);
-  const cell = TILE * sc; for (const d of S.map.deploy) { const ux = px0 + d.x * cell, uy = py0 + d.y * cell + shake; rect(ux, uy, Math.ceil(cell), Math.ceil(cell), '#3d7dff50'); outline(ux, uy, Math.ceil(cell), Math.ceil(cell), teamColor(0)); }
-  for (const u of S.map.units) { const d = DEX[u.mon], ux = px0 + (u.x + .5) * cell, uy = py0 + (u.y + 1) * cell + shake, iw = Math.max(14, Math.round(cell * 1.1)); ellipse(Math.round(ux), Math.round(uy), Math.round(iw / 3), 2, teamColor(u.team == null ? 1 : u.team)); ctx.drawImage(monIcon(d.num, true), Math.round(ux - iw / 2), Math.round(uy - iw * .75), iw, Math.round(iw * .75)); if (u.boss) drawSkull(Math.round(ux - 2), Math.round(uy - iw * .75 - 6)); }
+  if (S.weather !== 'none' && S.weather !== 'random' && !REDUCED) { ctx.save(); ctx.beginPath(); ctx.rect(px0, py0 + shake, pw, ph); ctx.clip(); ctx.translate(px0, py0 + shake); drawWeather(S.weather, pw, ph, t); ctx.restore(); }
+  drawWarPreview(S.map, S.bd, px0, py0 + shake, pw, ph);
   const dz = 18; bigButton(px0 + pw - dz - 2, py0 + 3 + shake, dz, dz, '', () => { S.seed = (S.seed + 1 + Math.floor(Math.random() * 97)) % 1000; Audio.sfx('shake'); }, { small: true, variant: 'dark', icon: 'dice' }); SC.hits[SC.hits.length - 1].label = 'REROLL';
   { const nw = textWidth(S.map.name) + 8; ctx.globalAlpha = .8; rrect(px0 + 3, py0 + ph - 14 + shake, nw, 11, UI.inset, 2); ctx.globalAlpha = 1; text(S.map.name, px0 + 7, py0 + ph - 12 + shake, UI.ink); }
-  // the Rival and the settings
-  const sx = narrow ? 6 : 12 + mapW, sy = narrow ? top + mapH + 6 : top + 2, sh = fy - 8 - sy, boss = S.map.units.find(u => u.boss), foes = S.map.units.filter(u => u.team == null || u.team === 1), wild = S.map.units.filter(u => u.team === 2);
-  const pnl = panel(sx, sy, sideW, sh, { header: 'RIVAL', headerRight: foes.length + ' foes · ' + wild.length + ' wild', headerRightCol: UI.muted, headerFill: '#5a1d2e' }); let y = pnl.cy;
-  if (boss) { const bnum = boss.mon, room = narrow ? 30 : 46; requestAnim(bnum); ctx.save(); ctx.beginPath(); ctx.rect(sx + 6, y, 44, room); ctx.clip(); portraitBg(sx + 6, y, 44, room, 1); if (animReady(bnum) && room >= 40) drawAnim(bnum, sx + 28, y + room - 3, t); else drawMon(bnum, sx + 28, y + room - 2, { flip: true }); ctx.restore(); outline(sx + 5, y - 1, 46, room + 2, UI.border2);
-    text(fitLabel(DEX[bnum].name, sideW - 64), sx + 56, y + 2, UI.ink); text('Lv ' + boss.level, sx + 56, y + 12, UI.gold); let bx = sx + 56; for (const tp of DEX[bnum].types) { if (bx + 24 > sx + sideW - 6) break; bx += typeBadge(tp, bx, y + 22, 24) + 2; } y += room + 6; }
-  const setting = (label, val, dec, inc) => { text(label, sx + 8, y + Math.round((sbh - 7) / 2), UI.muted); bigButton(sx + sideW - 62, y, 18, sbh, '-', dec, { small: true }); textC(String(val), sx + sideW - 32, y + Math.round((sbh - 7) / 2), UI.gold); bigButton(sx + sideW - 24, y, 18, sbh, '+', inc, { small: true }); y += sbh + 4; };
-  if (y + sbh < sy + sh - 4) setting('Foe level', S.level, () => { S.level = Math.max(3, S.level - 2); Audio.sfx('menu'); }, () => { S.level = Math.min(48, S.level + 2); Audio.sfx('menu'); });
-  if (y + 20 < sy + sh - 4) { sectionLabel(S.preset ? 'Loaner team' : 'Your team', sx + 8, y, sideW - 16, UI.gold); y += 10; const per = Math.max(1, Math.floor((sideW - 12) / 22)); S.party.slice(0, per * 2).forEach((p, i) => { const ix = sx + 8 + (i % per) * 22, iy = y + Math.floor(i / per) * 18; if (iy + 16 > sy + sh - 3) return; ctx.drawImage(monIcon(p.num), ix - 2, iy, 24, 18); }); }
+  // the commanders face to face, then the rules
+  const sx = narrow ? 6 : 12 + mapW, sy = narrow ? top + mapH + 4 : top + 2, pnl = panel(sx, sy, sideW, Math.min(foot - 6 - sy, sideH), { header: 'COMMANDERS', headerRight: S.preset ? 'loaner team' : null, headerRightCol: UI.muted });
+  let y = pnl.cy; const cw = Math.floor((sideW - 30) / 2), cycle = (k, dir) => vsCycle(S, SK_RULES.find(r => r.k === k), dir);
+  coCard(sx + 6, y, cw, cardH, S.co, 0, () => { S.focus = 0; cycle('co', 1); S.coAt = SC.t; }, { hot: S.focus === 0, tag: 'YOU', pop: SC.t - (S.coAt || -9), col: S.co === 'you' ? CAPTAINS[skirmishRoot()].col : null });
+  coCard(sx + sideW - 6 - cw, y, cw, cardH, S.foe, 1, () => { S.focus = 1; cycle('foe', 1); S.foeAt = SC.t; }, { hot: S.focus === 1, tag: 'FOE', pop: SC.t - (S.foeAt || -9) });
+  { const vx = sx + sideW / 2, vy = y + Math.round(cardH / 2) - 6, pulse = REDUCED ? 0 : Math.round(Math.sin(t * 5)); circle(Math.round(vx), vy + 5, 9 + pulse, UI.inset); circle(Math.round(vx), vy + 5, 8 + pulse, '#2a1646'); bigC('VS', vx, vy + 1, UI.gold, { shadow: '#000' }); }
+  y += cardH + 3; { const a = coOf({ co: S.co, root: skirmishRoot() }), b = coOf({ co: S.foe }); text(fitLabel(a.power.name, cw), sx + 6, y, UI.info); textR(fitLabel(b.power.name, cw), sx + sideW - 6, y, UI.info); } y += 11;
+  vsRuleRows(S, sx + 4, y, sideW - 8, rh, SK_RULES, S.focus); y += SK_RULES.length * rh + 4;
+  if (y + 18 <= pnl.y + pnl.h) { const box = SKIRMISH.slots, rest = Math.max(SKIRMISH.slots + SKIRMISH.box, S.party.length) - box; text(fitLabel('You: ' + box + ' on the map · ' + rest + ' in the Box', sideW - 12), sx + 6, y, UI.muted); text(fitLabel(COS[S.foe].name + ': squad + Ace · 8 in the Box', sideW - 12), sx + 6, y + 9, UI.muted); }
   bigButton(W - 96, fy, 90, bh, 'PREPARE', () => { Audio.sfx('select'); S.go(); }, { variant: 'primary' }); bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('quick'); }, { variant: 'ghost' });
-  if (!narrow) hintLine([['◂▸', 'map'], ['▲▼', 'level'], ['Z', 'prepare']], W / 2, fy + (bh - 7) / 2, { pill: false });
+  if (!narrow && W > 360) hintLine([['▲▼', 'rule'], ['◂▸', 'change'], ['Z', 'prepare']], W / 2, fy + (bh - 7) / 2, { pill: false });
 }
-function skirmishInput(ev) { const S = SC.data; if (ev.type === 'key') { if (ev.key === 'left') S.seed = (S.seed + 999) % 1000; else if (ev.key === 'right') S.seed = (S.seed + 1) % 1000; else if (ev.key === 'up') S.level = Math.min(48, S.level + 2); else if (ev.key === 'down') S.level = Math.max(3, S.level - 2); else if (ev.key === 'ok') S.go(); else if (ev.key === 'back') goScene('quick'); return; } if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); } }
+function skirmishInput(ev) {
+  const S = SC.data; if (ev.type === 'key') { const n = SK_RULES.length; S.focus = S.focus || 0;
+    if (ev.key === 'up') { S.focus = (S.focus + n - 1) % n; Audio.sfx('cursor'); } else if (ev.key === 'down') { S.focus = (S.focus + 1) % n; Audio.sfx('cursor'); }
+    else if (ev.key === 'left' || ev.key === 'right') { const rule = SK_RULES[S.focus]; vsCycle(S, rule, ev.key === 'left' ? -1 : 1); if (rule.k === 'co') S.coAt = SC.t; if (rule.k === 'foe') S.foeAt = SC.t; }
+    else if (ev.key === 'ok' || ev.key === 'next') { Audio.sfx('select'); S.go(); } else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick'); } else if (ev.key === 'mute') Audio.toggle(); return; }
+  if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
+}
 // ============================================================================
 // title.js — the title screen, drawn as pixel art at the game's own resolution: a dusk sky in dithered bands, a
 // striped sun, parallax mountains, a shimmering lake, a cliff where the starters wait, and a hand-drawn wordmark.
@@ -6407,7 +6525,7 @@ function drawPowerMenu() {
   hudPanel(x, y, w, h, { light: false, fill: '#161a44', border: c.col });
   // the captain, its style and the charge
   const pnum = u ? (u.fx.showNum || u.num) : s.root, portrait = coTrainer(s) ? trainerFace(c.tr) : null; requestAnim(pnum); ctx.save(); ctx.beginPath(); ctx.rect(x + 6, y + 5, 26, 22); ctx.clip(); portraitBg(x + 6, y + 5, 26, 22, team); if (portrait) ctx.drawImage(portrait, x + 10, y + 6, 18, 18); else drawMon(pnum, x + 19, y + 27, { outline: c.col }); ctx.restore(); drawCrown(x + 7, y + 6);
-  bigText(coTrainer(s) ? c.name.toUpperCase() : 'TEAM POWER', x + 38, y + 7, c.col, { shadow: UI.inset }); text(fitLabel(c.passive ? 'Ace ' + (u ? u.name : DEX[COS[s.co].ace].name) + ': ' + c.passive.text : (u ? u.name : DEX[s.root].name) + ' · ' + c.style, w - 120), x + 38, y + 18, UI.muted);
+  bigText(coTrainer(s) ? c.name.toUpperCase() : 'TEAM POWER', x + 38, y + 7, c.col, { shadow: UI.inset }); text(fitLabel(c.passive ? (coTrainer(s) ? 'Ace ' + (u ? u.name : DEX[COS[s.co].ace].name) + ': ' : '') + c.passive.text : (u ? u.name : DEX[s.root].name) + ' · ' + c.style, w - 120), x + 38, y + 18, UI.muted);
   const mw = Math.min(90, w - 150), mx = x + w - 8 - mw; textR(s.charge + '/100', x + w - 8, y + 7, UI.gold); bar(mx, y + 18, mw, 5, s.charge / 100, c.col);
   for (let i = 0; i < 2; i++) {
     const card = r.cards[i], why = powerBlock(team, i === 1), hot = BT.powerIndex === i, lift = hot && !REDUCED ? -2 : 0, cx = card.x, cy = card.y + lift, ready = !why;
@@ -6607,12 +6725,34 @@ function resumeSuspend() {
   goScene('battle'); Audio.playMusic(map.music); beginPhase(0, true, true);
 }
 // ---------------------------------------------------------------- skirmish
+// Skirmish against the CPU on a random battlefield, Advance Wars style: both sides start with an HQ, a Poké Center and
+// funds. You open with four of your Pokémon (the rest of your collection waits in the PC Box, topped up with loaners
+// to six); the foe commander opens with a squad and their Ace and deploys the rest of their army as they earn.
 function startSkirmishSetup() {
   SAVE = loadSave(); let party = SAVE && SAVE.party.length ? SAVE.party : null; let preset = false;
   if (!party) { preset = true; party = [partyUnit(25, 12), partyUnit(5, 12), partyUnit(8, 12), partyUnit(2, 12), partyUnit(133, 11), partyUnit(66, 11)]; }
-  const avg = Math.round(party.reduce((a, p) => a + p.level, 0) / party.length);
-  const S = { seed: Math.floor(Math.random() * 1000), level: clamp(avg, 3, 48), party, preset, go: null };
-  S.go = () => { const ch = { title: S.map.name, num: 0, level: S.level, slots: Math.min(8, Math.max(3, Math.floor(party.length))), par: 10, map: S.map, rewards: {} }; const P = { chapter: ch, party, bag: preset ? { pokeball: 3 } : SAVE.bag, deploy: [], preset, back: () => goScene('skirmish', S) }; autoDeploy(P); P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, party[i], { pid: i })); goScene('card', { chapter: ch, next: () => { BACKDROP = makeBackdrop(S.map); startBattle(S.map, deployed, Object.assign({}, P.bag), { skirmish: true, seed: S.seed * 131 + 7, defer: true, captain: preset ? { pid: 0, root: 4, chapter: 8 } : { pid: SAVE.captainPid, root: SAVE.starter, chapter: SAVE.chapter } }); B.map.def = S.map; for (const u of alive(0)) { const src = deployed.find(d => d.pid != null && d.num === u.num && !d._used); if (src) { src._used = true; u.pid = src.pid; } } SC.data = { preset }; goScene('battle'); SC.data = { preset }; beginPhase(0, true); } }); }; goScene('prep', P); };
+  const avg = Math.round(party.reduce((a, p) => a + p.level, 0) / party.length), cos = coUnlocked(preset ? null : SAVE), last = (SAVE && SAVE.skirmishSetup) || {};
+  const level = SKIRMISH.levels.reduce((b, l) => Math.abs(l - avg) < Math.abs(b - avg) ? l : b, SKIRMISH.levels[0]);
+  const S = { seed: Math.floor(Math.random() * 1000), level, party, preset, cos, co: cos.includes(last.co) ? last.co : 'you', foe: CO_FOES.includes(last.foe) ? last.foe : pick(CO_FOES.slice(0, 4)), funds: SKIRMISH.funds.includes(last.funds) ? last.funds : 1000, weather: SKIRMISH.weather.includes(last.weather) ? last.weather : 'none', go: null };
+  S.go = () => {
+    const map = S.map, ch = { title: map.name, num: 0, level: S.level, slots: SKIRMISH.slots, par: map.par, map, rewards: {} };
+    if (SAVE && !preset) { SAVE.skirmishSetup = { co: S.co, foe: S.foe, funds: S.funds, weather: S.weather }; writeSave(); }
+    // loaners (plain stats, never saved to the collection) make up an army of twelve
+    const army = party.concat(skirmishLoaners(party, S.level, SKIRMISH.slots + SKIRMISH.box - party.length).map(l => Object.assign(partyUnit(l.num, l.level, 1), { loaner: true })));
+    const P = { chapter: ch, party: army, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: preset ? { pokeball: 3 } : SAVE.bag, deploy: [], preset, back: () => goScene('skirmish', S) }; autoDeploy(P);
+    P.start = () => {
+      const pid = i => i < party.length ? i : null, deployed = P.deploy.map(i => Object.assign({}, army[i], { pid: pid(i) })), box = army.map((p, i) => Object.assign({}, p, { pid: pid(i) })).filter((p, i) => !P.deploy.includes(i));
+      const onMap = map.units.filter(u => u.team == null || u.team === 1).map(u => u.mon);
+      const weather = S.weather === 'random' ? pick(['none', 'none', 'rain', 'sun', 'sand', 'snow']) : S.weather; map.weather = weather === 'none' ? null : weather;
+      goScene('card', { chapter: ch, next: () => {
+        BACKDROP = makeBackdrop(map);
+        startBattle(map, deployed, Object.assign({}, P.bag), { skirmish: true, seed: S.seed * 131 + 7, defer: true, cos: [S.co, S.foe], box, box2: coTeam(S.foe, S.level, 8, S.seed + 1, onMap), war: { funds: [S.funds, S.funds] },
+          captain: preset ? { pid: 0, root: 4, chapter: 8 } : { pid: SAVE.captainPid, root: SAVE.starter, chapter: SAVE.chapter } });
+        B.map.def = map; SC.data = { preset }; goScene('battle'); SC.data = { preset }; beginPhase(0, true);
+      } });
+    };
+    goScene('prep', P);
+  };
   goScene('skirmish', S);
 }
 
