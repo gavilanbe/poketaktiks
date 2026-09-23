@@ -117,7 +117,7 @@ function versusInput(ev) {
 function starterDraw() { captainChoiceDraw(); }
 
 function starterInput(ev) {
-  if (ev.type === 'key') { if (ev.key === 'left' || ev.key === 'up') { SC.i = (SC.i + 2) % 3; Audio.sfx('cursor'); } else if (ev.key === 'right' || ev.key === 'down') { SC.i = (SC.i + 1) % 3; Audio.sfx('cursor'); } else if (ev.key === 'ok') { Audio.sfx('select'); pickStarter(STARTERS[SC.i]); } else if (ev.key === 'back') goScene('title'); return; }
+  if (ev.type === 'key') { if (ev.key === 'left' || ev.key === 'up') starterFocus((SC.i + 2) % 3); else if (ev.key === 'right' || ev.key === 'down') starterFocus((SC.i + 1) % 3); else if (ev.key === 'ok') confirmStarter(); else if (ev.key === 'back') goScene('title'); return; }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
 
@@ -156,48 +156,67 @@ function storyDraw() {
 function storyInput(ev) { const d = SC.dialog; if (!d) return; if (ev.type === 'key' && ev.key === 'back') { finishDialog(); return; } if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) { const line = d.lines[d.i]; if (d.chars < line.text.length) { d.chars = line.text.length; return; } d.i++; d.chars = 0; d.t = 0; d.focused = false; Audio.sfx('ok'); if (d.i >= d.lines.length) finishDialog(); } }
 function finishDialog() { const d = SC.dialog; SC.dialog = null; if (d && d.done) d.done(); }
 
-// ---------------------------------------------------------------- prep: party + bag
+// ---------------------------------------------------------------- prep: choose who deploys
+// Layout: the headline, a TEAM bar with one box per slot (captain first, crowned), the collection as cards, and on wide
+// screens a MISSION column (goal, foes, the battlefield with deploy tiles and foes) with the focused Pokémon under it.
+function prepLayout(P) {
+  const W = VIEW.w, H = VIEW.h, narrow = narrowView(), bh = btnH(), foot = narrow ? 2 * (bh + 4) + 12 : bh + 12, side = W >= 400 && H >= 200;
+  const top = 4 + (H >= 240 && !narrow ? 28 : 16), sideW = side ? Math.min(170, Math.floor(W * .34)) : 0, lw = W - 12 - (side ? sideW + 6 : 0);
+  const slots = { x: 6, y: top, w: lw, h: narrow ? 30 : 32 };
+  const cols = narrow ? 1 : lw >= 380 ? 3 : 2, gap = 4, cw = Math.floor((lw - gap * (cols - 1)) / cols), ch = 30, gy = slots.y + slots.h + 6;
+  const rowsVisible = Math.max(1, Math.floor((H - foot - gy + 2) / (ch + 3)));
+  return { W, H, narrow, bh, foot, side, top, sideW, lw, slots, cols, gap, cw, ch, gx: 6, gy, rowsVisible, sideX: W - 6 - sideW };
+}
 function prepDraw() {
-  const W = VIEW.w, H = VIEW.h; const P = SC.data; const ch = P.chapter; rect(0, 0, W, H, '#0e0c10'); if (!P.bd) P.bd = makeBackdrop(ch.map); drawBackdrop(P.bd, (W - P.bd.canvas.width) / 2, (H - P.bd.canvas.height) / 2, .75);
-  SC.hits = [];
-  const narrow = narrowView(), bh = btnH(); const foot = narrow ? 2 * (bh + 4) + 12 : 30;
-  screenTitle((ch.num ? 'CHAPTER ' + ch.num + ' · ' : '') + ch.title.toUpperCase(), narrow ? 'Deploy up to ' + ch.slots : objectiveTextFor(ch.map.objective) + ' · deploy up to ' + ch.slots, 4);
-  // party grid (left)
-  const cols = narrow ? 1 : W < 420 ? 2 : 3; const cw = narrow ? W - 12 : 118, chh = 30; const gx = 6, gy = 38; const rowsVisible = Math.floor((H - gy - foot) / (chh + 3));
-  const party = P.party; const total = Math.ceil(party.length / cols); SC.scroll = clamp(SC.scroll, 0, Math.max(0, total - rowsVisible));
-  ctx.save(); ctx.beginPath(); ctx.rect(0, gy - 2, cols * (cw + 4) + 8, rowsVisible * (chh + 3) + 2); ctx.clip();
+  const P = SC.data, ch = P.chapter, L = prepLayout(P), W = L.W, H = L.H, t = SC.t; rect(0, 0, W, H, UI.bg); if (!P.bd) P.bd = makeBackdrop(ch.map); drawBackdrop(P.bd, (W - P.bd.canvas.width) / 2 - t * 3, (H - P.bd.canvas.height) / 2, .8);
+  SC.hits = []; const cap = prepCaptain(P);
+  screenTitle((ch.num ? 'CHAPTER ' + ch.num + ' · ' : '') + ch.title.toUpperCase(), H >= 240 && !L.narrow ? objectiveTextFor(ch.map.objective) : null, 4);
+  // TEAM bar: one box per slot, filled in deploy order
+  const S = L.slots, bw = Math.max(20, Math.min(34, Math.floor((S.w - 60) / ch.slots) - 3));
+  panel(S.x, S.y, S.w, S.h, { fill: UI.panelDark, flat: true }); text('TEAM', S.x + 7, S.y + Math.round(S.h / 2) - 4, UI.gold); text(P.deploy.length + '/' + ch.slots, S.x + 7, S.y + Math.round(S.h / 2) + 4, P.deploy.length ? UI.ink : UI.muted);
+  for (let k = 0; k < ch.slots; k++) {
+    const bx = S.x + 44 + k * (bw + 3), by = S.y + 4, bhh = S.h - 8, pid = P.deploy[k]; if (bx + bw > S.x + S.w - 4) break;
+    if (pid == null) { for (let q = 0; q < bw; q += 3) { px(bx + q, by, UI.border2); px(bx + q, by + bhh - 1, UI.border2); } for (let q = 0; q < bhh; q += 3) { px(bx, by + q, UI.border2); px(bx + bw - 1, by + q, UI.border2); } textC('+', bx + bw / 2, by + Math.round(bhh / 2) - 4, UI.dim); continue; }
+    const u = P.party[pid], pop = easeOutBack(clamp(appear('slot' + k + ':' + pid) / .25, 0, 1), 2.5); rrect(bx, by, bw, bhh, pid === cap ? '#4a3a10' : '#1c3a8a', 1); outline(bx, by, bw, bhh, pid === cap ? UI.gold : '#6a9aff');
+    ctx.save(); ctx.beginPath(); ctx.rect(bx + 1, by + 1, bw - 2, bhh - 2); ctx.clip(); const sc = Math.max(.3, pop); drawMon(u.num, bx + bw / 2, by + bhh + 2 - Math.round((1 - Math.min(1, pop)) * 6), { sx: .8 * sc, sy: .8 * sc }); ctx.restore();
+    if (pid === cap) drawCrown(bx + 1, by + 1);
+  }
+  // the collection: one card per Pokémon, deployed ones lit and numbered, the captain locked in with its crown
+  const party = P.party, total = Math.ceil(party.length / L.cols); SC.scroll = clamp(SC.scroll, 0, Math.max(0, total - L.rowsVisible));
+  ctx.save(); ctx.beginPath(); ctx.rect(0, L.gy - 2, L.lw + 12, L.rowsVisible * (L.ch + 3) + 2); ctx.clip();
   party.forEach((p, i) => {
-    const r = Math.floor(i / cols) - SC.scroll, c = i % cols; if (r < 0 || r >= rowsVisible) return; const x = gx + c * (cw + 4), y = gy + r * (chh + 3); const slot = P.deploy.indexOf(i); const on = slot >= 0; const hot = SC.i === i;
-    panel(x, y, cw, chh, { fill: on ? '#24406a' : UI.panel, border: hot ? UI.gold : on ? '#8fb4ff' : UI.border2, flat: true });
-    const u = restoreUnit(p); ctx.save(); ctx.beginPath(); ctx.rect(x + 3, y + 3, 30, chh - 6); ctx.clip(); rect(x + 3, y + 3, 30, chh - 6, on ? '#1c3a8a' : '#101a30'); drawMon(u.num, x + 18, y + chh - 3 + (on ? Math.round(Math.sin(SC.t * 6 + i) * 1) : 0), { sy: 1 }); ctx.restore();
-    text(u.name.slice(0, 12), x + 36, y + 4, UI.ink); textR('Lv' + u.level, x + cw - 4, y + 4, UI.gold); u.types.forEach((t, j) => typeBadge(t, x + 36 + j * 26, y + 13, 24)); hpBar(x + 36, y + 24, cw - 42, u.hp, u.maxHp);
-    if (on) { rrect(x + cw - 14, y + 12, 11, 9, UI.gold, 1); textC(i === prepCaptain(P) ? 'C' : String(slot + 1), x + cw - 9, y + 13, '#3a2000'); }
-    hit(x, y, cw, chh, () => { SC.i = i; toggleDeploy(P, i); });
+    const r = Math.floor(i / L.cols) - SC.scroll, c = i % L.cols; if (r < 0 || r >= L.rowsVisible) return; const x = L.gx + c * (L.cw + L.gap), y = L.gy + r * (L.ch + 3), slot = P.deploy.indexOf(i), on = slot >= 0, hot = SC.i === i;
+    const u = restoreUnit(p), lift = hot && !REDUCED ? -1 : 0; rrect(x + 1, y + 2, L.cw, L.ch, UI.shadow, 1);
+    rrect(x, y + lift, L.cw, L.ch, hot ? UI.gold : on ? '#6a9aff' : UI.inset, 1); rrect(x + 1, y + 1 + lift, L.cw - 2, L.ch - 2, on ? '#223f86' : UI.panel, 1); hline(x + 2, y + 1 + lift, L.cw - 4, on ? '#3a5eb0' : shade(UI.panel, .25));
+    ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2 + lift, 30, L.ch - 4); ctx.clip(); rect(x + 2, y + 2 + lift, 30, L.ch - 4, on ? '#17306e' : '#141736'); drawMon(u.num, x + 17, y + L.ch - 2 + lift - (on && !REDUCED ? Math.round(Math.abs(Math.sin(t * 5 + i)) * 1) : 0), { outline: on ? teamColor(0) : null }); ctx.restore();
+    const nx = x + 35, lv = 'Lv' + u.level, avail = L.cw - 39 - textWidth(lv) - (on || i === cap ? 14 : 0); text(fitLabel(u.name, avail), nx, y + 4 + lift, UI.ink); textR(lv, x + L.cw - 5 - (on || i === cap ? 14 : 0), y + 4 + lift, UI.gold);
+    let bx = nx; for (const tp of u.types) { if (bx + 24 > x + L.cw - 4) break; bx += typeBadge(tp, bx, y + 13 + lift, 24) + 2; } hpBar(nx, y + L.ch - 7 + lift, L.cw - 40, u.hp, u.maxHp);
+    if (i === cap) { rrect(x + L.cw - 15, y + 3 + lift, 12, 10, UI.gold, 1); drawCrown(x + L.cw - 13, y + 5 + lift); } else if (on) { circle(x + L.cw - 9, y + 8 + lift, 5, UI.inset); circle(x + L.cw - 9, y + 8 + lift, 4, '#6a9aff'); textC(String(slot + 1), x + L.cw - 8, y + 5 + lift, '#ffffff'); }
+    hit(x, y, L.cw, L.ch, () => { SC.i = i; toggleDeploy(P, i); });
   });
   ctx.restore();
-  if (total > rowsVisible) { textC('▲▼ scroll', gx + cols * (cw + 4) / 2, gy + rowsVisible * (chh + 3), UI.muted); }
-  // right column: bag + start
-  const rx = Math.min(W - 128, gx + cols * (cw + 4) + 6), ry = gy; const rw = W - rx - 6; if (rx > gx + 200) {
-    panel(rx, ry, rw, 62, { title: 'SUPPLIES' }); const balls = normalizeBag(P.bag).pokeball; drawBall(rx + 11, ry + 12, ITEMS.pokeball.col, 4); text('Poké Balls', rx + 20, ry + 9, UI.ink); textR('×' + balls, rx + rw - 6, ry + 9, UI.gold);
-    wrap('Catch weakened wild Pokémon. Centers, Mend and your captain do the healing.', rw - 14).slice(0, 3).forEach((l, j) => text(l, rx + 7, ry + 22 + j * 9, UI.muted));
+  if (total > L.rowsVisible) { const sy = L.gy + L.rowsVisible * (L.ch + 3) - 1; textC((SC.scroll > 0 ? '▲ ' : '') + 'more' + (SC.scroll < total - L.rowsVisible ? ' ▼' : ''), L.gx + L.lw / 2, Math.min(sy, H - L.foot - 9), UI.muted); }
+  // MISSION column: goal, foes and the battlefield, then the focused Pokémon
+  if (L.side) {
+    const x = L.sideX, w = L.sideW; let y = L.slots.y; const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2), lv = foes.map(u => u.level);
+    const bd = P.bd, previewH = Math.max(0, Math.min(Math.round(w * bd.canvas.height / bd.canvas.width), H - L.foot - y - 110)), mh = 34 + (previewH > 24 ? previewH + 6 : 0);
+    const mp = panel(x, y, w, mh, { header: 'MISSION', headerRight: foes.length + ' foes' + (lv.length ? ' · Lv' + Math.min(...lv) : ''), headerRightCol: UI.red });
+    const goal = objectiveTextFor(ch.map.objective).replace('Objective: ', ''); iconAt('flag', x + 6, mp.cy - 1, UI.gold); text(fitLabel(goal[0].toUpperCase() + goal.slice(1), w - 22), x + 17, mp.cy, UI.ink);
+    if (previewH > 24) { const sc = previewH / bd.canvas.height, pw = Math.round(bd.canvas.width * sc), px0 = x + Math.round((w - pw) / 2), py0 = mp.cy + 11; rect(px0 - 1, py0 - 1, pw + 2, previewH + 2, UI.inset); ctx.drawImage(bd.canvas, px0, py0, pw, previewH); const cell = TILE * sc;
+      for (const d of bd.map.deploy) { const X = px0 + d.x * cell, Y = py0 + d.y * cell; rect(X, Y, Math.ceil(cell), Math.ceil(cell), '#3d7dff70'); outline(X, Y, Math.ceil(cell), Math.ceil(cell), teamColor(0)); }
+      for (const u of ch.map.units || []) { const team = u.team == null ? 1 : u.team, ux = px0 + (u.x + .5) * cell, uy = py0 + (u.y + 1) * cell; ctx.drawImage(monIcon(u.mon, true), Math.round(ux - 8), Math.round(uy - 12), 16, 12); if (u.boss) drawSkull(Math.round(ux - 2), Math.round(uy - 18)); else { rect(Math.round(ux) - 1, Math.round(uy), 3, 2, teamColor(team)); } } }
+    y += mh + 6;
+    const sel = party[SC.i]; if (sel && y + 60 <= H - L.foot - 4) { const u = restoreUnit(sel), R = ROLES[u.role], hh = Math.min(H - L.foot - 4 - y, 96); const up = panel(x, y, w, hh, { header: fitLabel(u.name, w - 50), headerRight: 'Lv' + u.level, headerRightCol: UI.gold, headerFill: '#1c3a8a' });
+      let yy = up.cy; iconAt(R.icon, x + 6, yy - 1, R.col); text(R.name, x + 17, yy, R.col); textR('MOVE ' + u.mov, x + w - 6, yy, UI.ink); yy += 10;
+      for (const m of u.moves.slice(0, 3)) { if (yy + 9 > y + hh - 4) break; typeBadge(m.type, x + 6, yy - 1, 24); text(fitLabel(m.name + ' ' + m.pow, w - 40), x + 33, yy, UI.ink); yy += 10; }
+      if (yy + 7 <= y + hh - 4) { const ev = u.dex.evos.length ? 'Evolves Lv' + Math.min(...u.dex.evos.map(e => e[1])) : 'Final form'; text(fitLabel(ev, w - 12), x + 6, yy, UI.info); } }
   }
-  const sel = party[SC.i]; if (sel && rx > gx + 200) { const u = restoreUnit(sel); panel(rx, ry + 68, rw, 48, { title: u.name.toUpperCase() }); const st = [['ATK', u.atk], ['DEF', u.def], ['SPA', u.spa], ['SPD', u.spd], ['SPE', u.spe], ['MOV', u.mov]]; st.forEach((s, j) => { const sx = rx + 6 + (j % 3) * 38, sy = ry + 74 + Math.floor(j / 3) * 10; text(s[0], sx, sy, UI.muted); textR(String(s[1]), sx + 34, sy, UI.ink); }); text(fitLabel(u.moves.map(m => m.name).join(', '), rw - 12), rx + 6, ry + 96, '#98d8f8'); const ev = u.dex.evos.length ? 'Evolves Lv' + Math.min(...u.dex.evos.map(e => e[1])) : 'Final form'; let rl = ROLES[u.role].name + ' · ' + ev; while (textWidth(rl) > rw - 12 && rl.length > 6) rl = rl.slice(0, -1); text(rl, rx + 6, ry + 106, UI.green); }
-  // battlefield preview under the stats: deploy slots, every foe (and the boss) where it starts, the seize target
-  if (rx > gx + 200) { const py = ry + 122, avail = H - foot - py - 4; const bd = P.bd; const sc = Math.min((rw - 12) / bd.canvas.width, (avail - 27) / bd.canvas.height);
-    if (sc >= .22) { const pw2 = Math.round(bd.canvas.width * sc), ph2 = Math.round(bd.canvas.height * sc); const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2); const lv = foes.map(u => u.level);
-      const p = panel(rx, py, rw, ph2 + 27, { header: fitLabel(foes.length + ' foes' + (wild.length ? ' · ' + wild.length + ' wild' : '') + (lv.length ? ' · Lv' + Math.min(...lv) : ''), rw - 16) });
-      const px0 = rx + Math.round((rw - pw2) / 2), py0 = p.cy; ctx.drawImage(bd.canvas, px0, py0, pw2, ph2); outline(px0 - 1, py0 - 1, pw2 + 2, ph2 + 2, UI.border2);
-      for (const d of bd.map.deploy) { const X = px0 + d.x * TILE * sc, Y = py0 + d.y * TILE * sc; rect(X, Y, Math.ceil(TILE * sc), Math.ceil(TILE * sc), '#3d7dff70'); outline(X, Y, Math.ceil(TILE * sc), Math.ceil(TILE * sc), teamColor(0)); }
-      if (bd.map.seize) { const X = px0 + bd.map.seize.x * TILE * sc, Y = py0 + bd.map.seize.y * TILE * sc; outline(X, Y, Math.ceil(TILE * sc), Math.ceil(TILE * sc), UI.gold); }
-      for (const u of ch.map.units || []) { const team = u.team == null ? 1 : u.team; const ux = px0 + (u.x + .5) * TILE * sc, uy = py0 + (u.y + 1) * TILE * sc; ellipse(ux, uy, 5, 2, teamColor(team)); ctx.drawImage(monIcon(u.mon, true), Math.round(ux - 8), Math.round(uy - 13), 16, 12); if (u.boss) drawSkull(Math.round(ux - 2), Math.round(uy - 19)); }
-    } }
   const start = () => { if (!P.deploy.length) { Audio.sfx('error'); return; } Audio.sfx('select'); P.start(); }, auto = () => { Audio.sfx('ok'); autoDeploy(P); }, back = () => { Audio.sfx('cancel'); if (P.back) P.back(); else goScene('title'); };
-  if (narrow) { footerBand(foot); const r1 = H - 2 * (bh + 4), r2 = H - bh - 4; text('Deployed ' + P.deploy.length + '/' + ch.slots + ' · C: captain locked', 6, r1 - 10, UI.muted);
-    bigButton(6, r1, 60, bh, 'BACK', back, { variant: 'ghost' }); bigButton(72, r1, W - 78, bh, 'AUTO PICK', auto); bigButton(6, r2, W - 12, bh, 'START', start, P.deploy.length ? { variant: 'primary' } : { disabled: true }); return; }
-  const by = footerBand(28) + 5; bigButton(W - 96, by, 90, 18, 'START', start, P.deploy.length ? { variant: 'primary' } : { disabled: true });
-  bigButton(W - 190, by, 88, 18, 'AUTO PICK', auto);
-  bigButton(6, by, 70, 18, 'BACK', back, { variant: 'ghost' });
-  text(fitLabel(P.deploy.length + '/' + ch.slots + ' · ' + (prepCaptain(P) == null ? 'Z: toggle' : 'C locked · Z: toggle'), W - 278), 82, by + 5, UI.muted);
+  if (L.narrow) { footerBand(L.foot); const r1 = H - 2 * (L.bh + 4), r2 = H - L.bh - 4;
+    bigButton(6, r1, 60, L.bh, 'BACK', back, { variant: 'ghost' }); bigButton(72, r1, W - 78, L.bh, 'AUTO PICK', auto); bigButton(6, r2, W - 12, L.bh, 'START', start, P.deploy.length ? { variant: 'primary' } : { disabled: true }); return; }
+  const by = footerBand(L.foot) + 6; bigButton(W - 96, by, 90, L.bh, 'START', start, P.deploy.length ? { variant: 'primary' } : { disabled: true });
+  bigButton(W - 190, by, 88, L.bh, 'AUTO PICK', auto); bigButton(6, by, 70, L.bh, 'BACK', back, { variant: 'ghost' });
+  if (W - 278 > 60) text(fitLabel(VIEW.touch ? 'Tap a Pokémon to add or remove it' : 'Z add / remove · Tab start', W - 278), 82, by + Math.round((L.bh - 7) / 2), UI.muted);
 }
 function toggleDeploy(P, i) { if (i === prepCaptain(P)) { Audio.sfx('error'); return; } const k = P.deploy.indexOf(i); if (k >= 0) { P.deploy.splice(k, 1); Audio.sfx('cancel'); } else if (P.deploy.length < P.chapter.slots) { P.deploy.push(i); Audio.sfx('ok'); } else Audio.sfx('error'); }
 function autoDeploy(P) {
@@ -206,8 +225,8 @@ function autoDeploy(P) {
 }
 
 function prepInput(ev) {
-  const P = SC.data; const cols = narrowView() ? 1 : VIEW.w < 420 ? 2 : 3;
-  if (ev.type === 'key') { if (ev.key === 'left') SC.i = Math.max(0, SC.i - 1); else if (ev.key === 'right') SC.i = Math.min(P.party.length - 1, SC.i + 1); else if (ev.key === 'up') SC.i = Math.max(0, SC.i - cols); else if (ev.key === 'down') SC.i = Math.min(P.party.length - 1, SC.i + cols); else if (ev.key === 'ok') toggleDeploy(P, SC.i); else if (ev.key === 'next') { if (P.deploy.length) P.start(); } else if (ev.key === 'back') { Audio.sfx('cancel'); if (P.back) P.back(); else goScene('title'); } else if (ev.key === 'mute') Audio.toggle(); if (['left', 'right', 'up', 'down'].includes(ev.key)) { Audio.sfx('cursor'); const r = Math.floor(SC.i / cols); if (r < SC.scroll) SC.scroll = r; const rowsVisible = Math.floor((VIEW.h - 38 - (narrowView() ? 2 * (btnH() + 4) + 12 : 30)) / 33); if (r >= SC.scroll + rowsVisible) SC.scroll = r - rowsVisible + 1; } return; }
+  const P = SC.data; const cols = prepLayout(P).cols;
+  if (ev.type === 'key') { if (ev.key === 'left') SC.i = Math.max(0, SC.i - 1); else if (ev.key === 'right') SC.i = Math.min(P.party.length - 1, SC.i + 1); else if (ev.key === 'up') SC.i = Math.max(0, SC.i - cols); else if (ev.key === 'down') SC.i = Math.min(P.party.length - 1, SC.i + cols); else if (ev.key === 'ok') toggleDeploy(P, SC.i); else if (ev.key === 'next') { if (P.deploy.length) P.start(); } else if (ev.key === 'back') { Audio.sfx('cancel'); if (P.back) P.back(); else goScene('title'); } else if (ev.key === 'mute') Audio.toggle(); if (['left', 'right', 'up', 'down'].includes(ev.key)) { Audio.sfx('cursor'); const r = Math.floor(SC.i / cols); if (r < SC.scroll) SC.scroll = r; const rowsVisible = prepLayout(P).rowsVisible; if (r >= SC.scroll + rowsVisible) SC.scroll = r - rowsVisible + 1; } return; }
   if (ev.type === 'wheel') { SC.scroll += ev.dy > 0 ? 1 : -1; return; }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }

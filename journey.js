@@ -18,36 +18,66 @@ function journeyInput(ev) {
   else if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
 
-function captainChoiceDraw() {
-  const W = VIEW.w, H = VIEW.h, stacked = W < 330;
-  if (!BACKDROP) BACKDROP = makeBackdrop(CHAPTERS[0].map);
-  drawBackdrop(BACKDROP, 0, 0, .3); SC.hits = [];
-  screenTitle('CHOOSE YOUR CAPTAIN', null, 10);
-  textC('Your partner leads a team of any type.', W / 2, 27, UI.ink, { outline: UI.shadow });
-  const cw = stacked ? W - 16 : Math.floor((W - 32) / 3), ch = stacked ? Math.min(76, Math.floor((H - 74) / 3)) : Math.min(144, H - 87);
-  STARTERS.forEach((n, i) => {
-    const c = CAPTAINS[n], x = stacked ? 8 : 8 + i * (cw + 8), y = stacked ? 43 + i * (ch + 3) : 44, sel = SC.i === i;
-    panel(x, y, cw, ch, { fill: sel ? UI.panel2 : UI.panelDark, border: sel ? c.col : UI.border2 });
-    const mx = stacked ? x + 24 : x + cw / 2, my = stacked ? y + 39 : y + (ch < 132 ? 30 : 42);
-    requestBigSprite(n); drawBig(n, mx, my, { sx: stacked || ch < 132 ? .4 : .6, sy: stacked || ch < 132 ? .4 : .6 });
-    if (stacked) {
-      text(DEX[n].name, x + 48, y + 9, sel ? c.col : UI.ink);
-      text(c.style, x + 48, y + 21, UI.muted);
-      text(fitLabel('POWER: ' + c.name, cw - 16), x + 8, y + ch - 26, UI.ink);
-      text(fitLabel('SUPER: ' + c.superName, cw - 16), x + 8, y + ch - 14, c.col);
-    } else {
-      textC(DEX[n].name, x + cw / 2, y + (ch < 132 ? 37 : 48), sel ? c.col : UI.ink);
-      textC(c.style, x + cw / 2, y + (ch < 132 ? 49 : 61), UI.muted);
-      const desc = ch < 132 ? [] : wrap(c.normal, cw - 16); desc.forEach((l, j) => textC(l, x + cw / 2, y + 77 + j * 9, UI.ink));
-      textC(c.name, x + cw / 2, y + ch - 28, c.col);
-      textC(fitLabel('SUPER ' + c.superName, cw - 14), x + cw / 2, y + ch - 15, UI.ink);
-    }
-    hit(x, y, cw, ch, () => { if (SC.i === i) { Audio.sfx('select'); pickStarter(n); } else { SC.i = i; Audio.sfx('cursor'); } });
-  });
-  textC('Pidgey joins you. Catch more companions.', W / 2, H - 28, UI.ink, { outline: UI.shadow });
-  hintLine(VIEW.touch ? ['tap twice to choose'] : [['◂▸', 'choose'], ['Z', 'confirm']], W / 2, H - 14);
+// Choosing a partner in Oak's lab: a window on the dusk, shelves, a wooden floor and a long table with three Poké Balls.
+// The focused ball pops open and its Pokémon hops out onto the table; the card beside (or under) the lab says what kind of
+// captain it makes. Tap a ball to look, CHOOSE to confirm.
+const STARTER_ROLE = { 1: 'Controller · roots foes', 4: 'Striker · hits twice when faster', 7: 'Amphibious · at home in water' };
+function drawLab(st, tableY) {
+  const { x, y, w, h } = st, wallB = tableY + 4, r = mulberry32(88);
+  rect(x, y, w, wallB - y, '#3a3468'); for (let yy = y; yy < wallB; yy += 8) hline(x, yy, w, '#403a72'); rect(x, wallB - 7, w, 7, '#2c2854'); hline(x, wallB - 7, w, '#4a4480');
+  // the window on the left: the dusk sky from the title, a star or two, a frame with a cross
+  const ww = Math.round(w * .3), wh = Math.round((wallB - y) * .5), wx = x + Math.round(w * .08), wy = y + Math.round((wallB - y) * .14);
+  if (wh > 10) { for (let yy = 0; yy < wh; yy++) rect(wx, wy + yy, ww, 1, DUSK[Math.min(DUSK.length - 1, Math.floor(yy / wh * DUSK.length))]); px(wx + 5, wy + 3, '#ffffff'); px(wx + ww - 8, wy + 5, '#d8c8ff'); circle(wx + ww - 10, wy + wh - 6, 3, '#ffe39a');
+    outline(wx - 1, wy - 1, ww + 2, wh + 2, '#8a6a4a'); outline(wx - 2, wy - 2, ww + 4, wh + 4, '#5a4030'); vline(wx + Math.round(ww / 2), wy, wh, '#8a6a4a'); hline(wx, wy + Math.round(wh / 2), ww, '#8a6a4a'); rect(wx - 3, wy + wh + 1, ww + 6, 2, '#6a4e38'); }
+  // shelves with books on the right
+  const sx = x + Math.round(w * .56), sw = Math.round(w * .36);
+  for (let k = 0; k < 2; k++) { const sy = y + Math.round((wallB - y) * (.28 + k * .3)); if (sy + 2 > wallB - 8) break; rect(sx, sy, sw, 2, '#8a6a4a'); hline(sx, sy + 2, sw, '#4a3428'); let bx = sx + 2; while (bx < sx + sw - 4) { const bw = 2 + Math.floor(r() * 3), bh = 6 + Math.floor(r() * 5); rect(bx, sy - bh, bw, bh, ['#c04848', '#4878c0', '#58a058', '#d8a838', '#8a58b0'][Math.floor(r() * 5)]); px(bx, sy - bh, '#ffffff40'); bx += bw + 1; } }
+  // the floor: planks with staggered seams
+  rect(x, wallB, w, y + h - wallB, '#5a4038'); for (let yy = wallB + 3, row = 0; yy < y + h; yy += 5, row++) { hline(x, yy, w, '#4a3230'); for (let xx = x + (row % 2) * 13; xx < x + w; xx += 26) vline(xx, yy - 4, 4, '#4a3230'); }
 }
-
+function captainChoiceDraw() {
+  const W = VIEW.w, H = VIEW.h, t = SC.t, wide = W >= 380 && W > H, bh = btnH(); SC.hits = [];
+  rect(0, 0, W, H, '#120f2a');
+  const top = screenTitle('CHOOSE YOUR PARTNER', H >= 240 ? 'Your partner becomes your captain' : null, 5), foot = H - bh - 10;
+  const stage = wide ? { x: 6, y: top, w: Math.round(W * .54) - 6, h: foot - top - 4 } : { x: 6, y: top, w: W - 12, h: Math.max(64, Math.round((foot - top) * .48)) };
+  const card = wide ? { x: stage.x + stage.w + 6, y: top + 4, w: W - stage.w - 18, h: foot - top - 10 } : { x: 8, y: stage.y + stage.h + 6, w: W - 16, h: foot - stage.y - stage.h - 12 };
+  const big = stage.h >= 150 && stage.w >= 240 ? 2 : 1, tableY = stage.y + Math.round(stage.h * .72), gap = Math.min(96, Math.round(stage.w / 3.1));
+  ctx.save(); ctx.beginPath(); ctx.rect(stage.x, stage.y, stage.w, stage.h); ctx.clip(); drawLab(stage, tableY);
+  // the table
+  const tx0 = stage.x + 8, tw = stage.w - 16; rect(tx0, tableY, tw, 5, '#c08a58'); hline(tx0, tableY, tw, '#e8b27a'); rect(tx0, tableY + 5, tw, 7, '#8a5a34'); hline(tx0, tableY + 11, tw, '#5a3a22'); rect(tx0 + 4, tableY + 12, 4, stage.y + stage.h - tableY - 12, '#6a4428'); rect(tx0 + tw - 8, tableY + 12, 4, stage.y + stage.h - tableY - 12, '#6a4428');
+  if (SC.popAt == null) SC.popAt = -9; const popK = clamp((t - SC.popAt) / .35, 0, 1);
+  STARTERS.forEach((n, i) => {
+    const cx = Math.round(stage.x + stage.w / 2 + (i - 1) * gap), sel = SC.i === i, c = CAPTAINS[n], by = tableY;
+    if (sel) { // light, the open ball and the Pokémon on the table
+      const u = REDUCED ? 1 : easeOutBack(popK, 2.4), glowR = 16 * big + Math.round(Math.sin(t * 3) * 2);
+      if (!REDUCED) { ctx.globalAlpha = .16; circle(cx, by - 14 * big, glowR, c.col); ctx.globalAlpha = .1; circle(cx, by - 14 * big, glowR + 6, '#ffffff'); ctx.globalAlpha = 1; for (let k = 0; k < 7; k++) { const a = t * 1.5 + k * .9, rr = 12 * big + ((t * 18 + k * 7) % (12 * big)); px(Math.round(cx + Math.cos(a) * rr), Math.round(by - 14 * big + Math.sin(a) * rr * .6), k % 2 ? '#ffffff' : shade(c.col, .4)); } }
+      // the open ball: its top half flipped back, the bottom half on the table
+      circle(cx + 7 * big, by - 3, 5, '#10133e'); circle(cx + 7 * big, by - 3, 4, '#e6343e'); rect(cx + 7 * big - 5, by - 3, 11, 4, '#f2eee6'); hline(cx + 7 * big - 5, by - 3, 11, '#10133e'); hline(cx + 7 * big - 4, by + 1, 9, '#10133e');
+      requestAnim(n); requestBigSprite(n); const hop = REDUCED ? 0 : Math.round(Math.abs(Math.sin(t * 3.2)) * 2 * big), grow = Math.max(.3, Math.min(1.25, u)) * big;
+      ctx.globalAlpha = .4; ellipse(cx, by + 1, 11 * big, 2, '#000'); ctx.globalAlpha = 1;
+      if (animReady(n)) drawAnim(n, cx, by + 1 - hop, t, { sx: grow, sy: grow }); else drawBig(n, cx, by + 1 - hop, { sx: .45 * grow, sy: .45 * grow });
+    } else { const wob = !REDUCED && (t + i) % 3 < .3 ? Math.round(Math.sin((t + i) * 40)) : 0; ctx.globalAlpha = .4; ellipse(cx, by + 1, 7, 2, '#000'); ctx.globalAlpha = 1; drawTitleBall(cx + wob, by - 6, 6, t + i); }
+  });
+  ctx.restore();
+  STARTERS.forEach((n, i) => { const cx = Math.round(stage.x + stage.w / 2 + (i - 1) * gap); hit(cx - Math.round(gap / 2) + 1, stage.y, gap - 2, stage.h, () => { if (SC.i === i) confirmStarter(); else starterFocus(i); }, DEX[n].name.toUpperCase()); });
+  // the card for the focused partner
+  const n = STARTERS[SC.i], c = CAPTAINS[n], d = DEX[n], tok = unfold('starter' + SC.i, card.x, card.y, card.w, card.h, .18);
+  const p = panel(card.x, card.y, card.w, card.h, { header: c.style, headerFill: shade(c.col, -.45), headerCol: '#ffffff', headerRight: 'CAPTAIN', headerRightCol: shade(c.col, .5), border: c.col });
+  let y = p.cy; const x = card.x + 8, w = card.w - 16, room = card.y + card.h - 6;
+  const line = (str, col, bigText2) => { if (y + (bigText2 ? 9 : 7) > room) return false; if (bigText2) bigText(fitLabel(str.toUpperCase(), w), x, y, col, { shadow: UI.inset }); else text(fitLabel(str, w), x, y, col); y += bigText2 ? 12 : 9; return true; };
+  if (y + 9 <= room) { bigText(d.name.toUpperCase(), x, y, c.col, { shadow: UI.inset }); let bx = x + textWidth(d.name.toUpperCase(), BIG) + 6; for (const tp of d.types) { if (bx + 24 > x + w) break; bx += typeBadge(tp, bx, y, 24) + 2; } y += 12; }
+  line(STARTER_ROLE[n], UI.muted);
+  if (y + 30 <= room) { y += 3; sectionLabel('Team power', x, y, w, UI.gold); y += 10; }
+  for (const [nm, dd] of [[c.name + ' (50)', c.normal], [c.superName + ' (100)', c.super]]) { if (!line(nm, UI.ink)) break; for (const l of wrap(dd, w - 6).slice(0, 2)) { if (y + 7 > room) break; text(l, x + 6, y, UI.muted); y += 9; } y += 2; }
+  // base stats as bars, when there is room
+  const stats = [['HP', d.base.hp], ['ATK', d.base.atk], ['DEF', d.base.def], ['SP.A', d.base.spa], ['SPE', d.base.spe]];
+  if (y + 12 + stats.length * 9 <= room) { y += 2; sectionLabel('Strengths', x, y, w, UI.gold); y += 10; for (const [lb, v] of stats) { text(lb, x, y, UI.muted); bar(x + 28, y + 1, w - 28, 5, v / 110, v >= 60 ? c.col : shade(c.col, -.25)); y += 9; } }
+  unfoldEnd(tok);
+  const fy = foot + 3; bigButton(6, fy, 64, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
+  const cw = Math.min(150, W - 82); bigButton(W - cw - 6, fy, cw, bh, 'CHOOSE ' + d.name.toUpperCase(), confirmStarter, { variant: 'primary', small: textWidth('CHOOSE ' + d.name.toUpperCase(), BIG) > cw - 8 });
+}
+function starterFocus(i) { if (SC.i === i) return; SC.i = i; SC.popAt = SC.t; Audio.sfx('catch'); }
+function confirmStarter() { Audio.sfx('select'); pickStarter(STARTERS[SC.i]); }
 function powerRibbonHeight() { return powerState(HT()) ? (powerState(1 - HT()) ? 38 : 27) : 0; }
 // The power meter under the objective card: ten cells in the captain's colour with the 50 mark, READY / SUPER READY
 // when a power can be bought (the cells glow and sparkle), the foe's charge as a thin second bar. Tapping it opens POWER.
