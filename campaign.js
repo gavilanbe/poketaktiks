@@ -294,7 +294,7 @@ function skirmishMap(seed, w = 16, h = 11, avgLevel = 12, opt = {}) {
   put(1, ry, 'Q'); put(w - 2, ry, 'Q');
   // a center: a path to the road (a causeway over water, a pass through rock) and walkable ground beside it
   const center = (x, y) => { const step = y < ry ? 1 : -1; for (let yy = y + step; yy !== ry; yy += step) if (blocked.includes(rows[yy][x])) put(x, yy, path); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < w && Y < h && '~^wLW'.includes(rows[Y][X])) put(X, Y, ground); } put(x, y, Bm.center || 'C'); };
-  const dy = r() < .5 ? -3 : 3, cy = (y) => clamp(y, 1, h - 2), mx = Math.floor(w / 2);
+  const dy = (r() < .5 ? -1 : 1) * Math.max(1, Math.min(3, ry - 1, h - 2 - ry)), cy = (y) => clamp(y, 1, h - 2), mx = Math.floor(w / 2); // as far off the road as the map allows, the same on both sides
   const own = [{ x: 3, y: cy(ry + dy) }, { x: w - 4, y: cy(ry - dy) }], neutral = [{ x: mx - 2, y: cy(ry - dy) }, { x: w - 1 - (mx - 2), y: cy(ry + dy) }];
   for (const c of own.concat(neutral)) center(c.x, c.y);
   // deploy tiles: open ground in the first three columns, nearest the HQ first
@@ -316,7 +316,7 @@ function skirmishMap(seed, w = 16, h = 11, avgLevel = 12, opt = {}) {
 
 // Skirmish options (the setup screen's rules). Both armies count twelve: four on the map and eight in the Box (the rest of
 // your collection, topped up with loaners from Oak's lab when it is small; the foe's squad, Ace and army).
-const SKIRMISH = { biomes: ['field', 'forest', 'sea', 'mountain', 'snow', 'volcano', 'cave', 'random'], slots: 4, box: 8, funds: [0, 1000, 2000, 5000, 10000], weather: ['none', 'rain', 'sun', 'sand', 'snow', 'random'], levels: [5, 8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 30, 33, 36, 40, 45, 50] };
+const SKIRMISH = { sizes: { s: [14, 9, 'Small'], m: [16, 11, 'Medium'], l: [20, 13, 'Large'] }, biomes: ['field', 'forest', 'sea', 'mountain', 'snow', 'volcano', 'cave', 'random'], slots: 4, box: 8, funds: [0, 1000, 2000, 5000, 10000], weather: ['none', 'rain', 'sun', 'sand', 'snow', 'random'], levels: [5, 8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 30, 33, 36, 40, 45, 50] };
 const LOANERS = [16, 19, 25, 1, 4, 7, 74, 63, 43, 60, 66, 92, 41, 23, 56, 100, 109, 111];
 function skirmishBiome(S) { return S.biome === 'random' || !BIOMES[S.biome] ? SKIRMISH.biomes[S.seed % 7] : S.biome; }
 function skirmishLoaners(party, level, n) { const have = new Set(party.map(p => LINE_ROOT[p.num])); return LOANERS.filter(num => !have.has(LINE_ROOT[num])).slice(0, Math.max(0, n)).map(num => ({ num: formAt(num, level), level })); }
