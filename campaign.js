@@ -230,7 +230,7 @@ const CHAPTERS = [
     },
   },
   {
-    id: 'cave', title: 'Cerulean Cave', num: 8, level: 30, slots: 7, par: 12, music: 'boss',
+    id: 'cave', title: 'Cerulean Cave', num: 8, level: 30, slots: 7, par: 14, army: 3, music: 'boss',
     co: 'giovanni', brief: 'My greatest creation waits for you, Tactician. It will be the last thing you see.',
     intro: [
       { who: 'Giovanni', mon: 34, text: 'You again. Meet my greatest creation. It does not obey me, but it hates you *plenty*.' },

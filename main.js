@@ -28,7 +28,7 @@ function prepChapter(idx) {
 // commander with their army waiting at the Rocket-held centers (from Mt. Moon on).
 function chapterOpts(idx, box, seed) {
   const ch = CHAPTERS[idx], onMap = ch.map.units.filter(u => u.team == null || u.team === 1).map(u => u.mon);
-  return { chapter: idx, seed, defer: true, box, captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx }, co: SAVE.co, enemyCo: ch.co || null, box2: ch.co ? coTeam(ch.co, Math.max(3, ch.level - 1), 5, ch.num, onMap) : [], war: { funds: [0, 0] }, lesson: idx === 0 && SAVE.journey && !SAVE.journey.firstCatch };
+  return { chapter: idx, seed, defer: true, box, captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx }, co: SAVE.co, enemyCo: ch.co || null, box2: ch.co ? coTeam(ch.co, Math.max(3, ch.level - 1), ch.army || 5, ch.num, onMap) : [], war: { funds: [0, 0] }, lesson: idx === 0 && SAVE.journey && !SAVE.journey.firstCatch };
 }
 function launchChapter(idx, deployed) {
   const ch = CHAPTERS[idx]; BACKDROP = makeBackdrop(ch.map);
