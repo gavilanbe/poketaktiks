@@ -2980,7 +2980,7 @@ function initCampaignLessons(mapDef, opts) {
 const CHAPTER_LESSONS = [
   ['YOUR FIRST FRONT', 'Your partner wears the crown. Pidgey scouts ahead.', 'Move, attack, then catch Oak\'s Caterpie at half HP: the practice ball is free.', 'Your Poké Center pays ₽1,000 a day. Open the PC there to deploy from your Box.', 'Catches wait in your Box: their first deployment is free.'],
   ['TEAM POWER UNLOCKED', 'Your partner now commands a shared team power.', 'Open POWER or press P. Normal costs 50 charge.', 'Combat, catches and captures refill the bar.', 'Claim the outpost: capture twice at full HP, then heal there.'],
-  ['ENEMY COMMANDERS', 'Brock leads the other side: his Ace, Onix, wears the crown.', 'A commander\'s passive helps allies within 2 tiles of the Ace.', 'The Rocket center deploys his army each day. Capture it to stop them.', 'Fainted Pokémon go back to the Box and recover in two days.'],
+  ['ENEMY COMMANDERS', 'Brock leads the other side: his Ace, Onix, wears the crown.', 'A commander\'s passive helps allies within 2 tiles of the Ace.', 'The Rocket center sends his reinforcements. Capture it to cut them off.', 'Fainted Pokémon go back to the Box and recover in two days.'],
   ['SUPERPOWER UNLOCKED', 'Spend 50 on a power, or save 100 for its super version.', 'Freed Gym Leaders can command your side: pick one in the briefing.', 'Capture the bridge outpost, then occupy and capture the gym.', 'Capturing uses an action. Leaving resets your progress.'],
 ];
 // ============================================================================
@@ -3108,7 +3108,7 @@ function beginPhase(team, first, resumed = false) {
   BT.banner = { text: label, t: 0, team, sub: isHuman(team) ? 'Turn ' + B.turn + (B.map.turnLimit && B.map.objective.type !== 'survive' ? ' / ' + B.map.turnLimit : '') + (B.map.objective.type === 'survive' ? ' / ' + B.map.objective.turns : '') : null };
   BT.mode = 'banner'; Audio.sfx(isHuman(team) ? 'phase' : 'enemyphase');
   // the opening of a battle between two commanders: their portraits face off before the first phase
-  if (first && !resumed && B.command && B.command.teams[0] && B.command.teams[1] && !B.coVsShown) { B.coVsShown = true; BT.banner.vs = { t: 0 }; if (BT.income) BT.income.t += COVS_DUR; }
+  if (first && !resumed && !B.territory && B.command && B.command.teams[0] && B.command.teams[1] && (coTrainer(B.command.teams[0]) || coTrainer(B.command.teams[1])) && !B.coVsShown) { B.coVsShown = true; BT.banner.vs = { t: 0 }; if (BT.income) BT.income.t += COVS_DUR; }
   Audio.playMusic(isHuman(team) ? (B.units.some(u => u.boss && u.hp > 0 && u.provoked) ? 'boss' : B.map.music) : 'enemy');
   if (B.versus && isHuman(team)) { BT.mode = 'handoff'; BT.handoff = { team, t: 0 }; }
   BT.queue = ev.map(e => ({ kind: 'event', ev: e }));
@@ -5591,7 +5591,8 @@ function versusDraw() {
   } else {
     // team panels left / right, arena preview in the middle
     const pw = Math.min(140, Math.floor((W - 110) / 2) - 8), ph = 56, py = 28; const p1x = 6, p2x = W - pw - 6;
-    const teamPanel = (t, x) => { panel(x, py, pw, ph, { title: 'PLAYER ' + (t + 1), fill: t === 0 ? '#17264a' : '#3a1a22', border: cur === t ? UI.gold : UI.border });
+    const teamPanel = (t, x) => { const coId = t === 0 ? S.co0 : S.co1, co = COS[coId]; panel(x, py, pw, ph, { title: 'PLAYER ' + (t + 1) + (co ? ' · ' + co.name.toUpperCase() : ''), fill: t === 0 ? '#17264a' : '#3a1a22', border: cur === t ? UI.gold : UI.border });
+      { const face = co && trainerFace(co.tr); if (face) { const fx = x + pw - 22, fy = py - 9; rect(fx - 1, fy - 1, 20, 20, co.col); ctx.drawImage(face, fx, fy); outline(fx - 2, fy - 2, 22, 22, UI.inset); hit(fx - 2, fy - 2, 22, 22, () => vsCycle(S, VS_RULES.find(r => r.k === (t === 0 ? 'co0' : 'co1')), 1), 'P' + (t + 1) + ' CO'); } }
       const sw = Math.floor((pw - 12) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 6 + i * sw; portraitBg(sx, py + 8, sw - 2, 34, t); const n = S.teams[t][i]; if (n != null) { drawMon(n, sx + (sw - 2) / 2, py + 40, { flip: t === 1, outline: i === 0 ? UI.gold : null }); if (i === 0) drawCrown(sx + 2, py + 10); hit(sx, py + 8, sw - 2, 34, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 8, sw - 2, 34, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 22, '#ffffff40'); }
       text(S.teams[t].length + '/' + S.size + ' picked', x + 6, py + ph - 10, UI.muted); textR(S.teams[t].length >= S.size ? 'READY' : cur === t ? 'PICKING…' : 'waiting', x + pw - 6, py + ph - 10, S.teams[t].length >= S.size ? UI.green : cur === t ? UI.gold : UI.muted); };
     teamPanel(0, p1x); teamPanel(1, p2x);
@@ -5689,7 +5690,7 @@ function trainerCanvas(tr, flip, dim) {
 }
 // A trainer's face for small badges (the power meter, the power menu): an 18×18 crop around the head. The head
 // positions were measured from the sprites' opaque pixels (a canvas cannot read them back on file://). Cached.
-const TRAINER_HEADS = { beauty: [37, 4], biker: [42, 1], bill: [38, 6], birdkeeper: [37, 8], blackbelt: [39, 9], blaine: [43, 1], blue: [37, 2], brock: [34, 14], bugcatcher: [44, 14], burglar: [40, 6], camper: [38, 23], erika: [41, 6], fisherman: [44, 16], gentleman: [35, 6], giovanni: [40, 1], hiker: [39, 4], juggler: [33, 5], koga: [37, 6], lass: [31, 8], ltsurge: [44, 5], misty: [34, 5], nurse: [33, 8], oak: [41, 6], psychic: [41, 6], red: [38, 8], rocketgrunt: [45, 9], rocketgruntf: [32, 9], sabrina: [41, 5], scientist: [42, 5], supernerd: [50, 17], swimmer: [36, 34], teamrocket: [41, 1], youngster: [41, 23] };
+const TRAINER_HEADS = { beauty: [37, 4], biker: [42, 1], bill: [38, 6], birdkeeper: [37, 8], blackbelt: [39, 9], blaine: [42, 6], blue: [37, 2], brock: [34, 14], bugcatcher: [44, 20], burglar: [40, 6], camper: [38, 23], erika: [41, 6], fisherman: [44, 16], gentleman: [35, 6], giovanni: [42, 8], hiker: [39, 4], juggler: [33, 5], koga: [37, 6], lass: [31, 8], ltsurge: [38, 6], misty: [34, 5], nurse: [33, 8], oak: [41, 6], psychic: [41, 6], red: [38, 8], rocketgrunt: [45, 9], rocketgruntf: [32, 9], sabrina: [41, 5], scientist: [42, 5], supernerd: [50, 17], swimmer: [36, 34], teamrocket: [41, 1], youngster: [41, 23] };
 function trainerFace(tr) {
   const key = 'face:' + tr; if (TRAINERS.cache[key]) return TRAINERS.cache[key]; const img = trainerImg(tr); if (!img) return null;
   const [cx, top] = TRAINER_HEADS[tr] || [40, 6], f = document.createElement('canvas'); f.width = 18; f.height = 18; f.getContext('2d').drawImage(img, cx - 9, Math.max(0, top - 1), 18, 18, 0, 0, 18, 18); TRAINERS.cache[key] = f; return f;
@@ -6768,7 +6769,7 @@ function briefDraw() {
   const foes = ch.map.units.filter(u => u.team == null || u.team === 1), wild = ch.map.units.filter(u => u.team === 2), rocket = ch.map.war && ch.map.war.owners ? Object.keys(ch.map.war.owners).length : 0, per = Math.max(1, Math.floor((mw - 12) / 20));
   const row = (label, list, col, flip) => { if (!list.length || y + 26 > my + mh - 4) return; sectionLabel(label, mx + 8, y, mw - 16, col); y += 10; list.slice(0, per).forEach((n, k) => { const bob = !REDUCED && k === Math.floor(t * 3) % Math.min(per, list.length) ? -1 : 0; ctx.drawImage(monIcon(n, flip), mx + 4 + k * 20, y + bob, 24, 18); if (k === 0 && label.startsWith('ENEMY') && co) drawCrown(mx + 17 + k * 20, y); }); y += 20; };
   row('ENEMY FORCES · ' + foes.length, (lead ? [lead.mon] : []).concat(foes.filter(u => u !== lead).map(u => u.mon)), '#ff9a9a', true); // their Ace first
-  if (rocket && y + 9 <= my + mh - 4) { text(fitLabel((rocket > 1 ? rocket + ' Rocket centers deploy ' : 'A Rocket center deploys ') + (co ? co.name + '\'s' : 'their') + ' army each day: take ' + (rocket > 1 ? 'them' : 'it') + '!', mw - 16), mx + 8, y, UI.red); y += 12; }
+  if (rocket && y + 9 <= my + mh - 4) { text(fitLabel((rocket > 1 ? rocket + ' Rocket centers send ' : 'A Rocket center sends ') + (co ? co.name + '\'s' : 'their') + ' reinforcements: take ' + (rocket > 1 ? 'them' : 'it') + '!', mw - 16), mx + 8, y, UI.red); y += 12; }
   row('WILD POKéMON', wild.map(u => u.mon), '#fff0a0', true);
   if (SAVE && y + 9 <= my + mh - 4) { text(fitLabel('Your collection: ' + SAVE.party.length + ' · ' + ch.slots + ' open the battle, the rest wait in the PC Box', mw - 16), mx + 8, y, UI.muted); y += 12; }
   // your commander
@@ -6890,7 +6891,8 @@ function towerDraw() {
   const T = SC.data, L = towerLayout(), { W, H } = L, t = SC.t; T.i = clamp(T.i, 0, TOWER.length - 1); const F = TOWER[T.i], open = towerOpen(T.recs, T.i);
   rect(0, 0, W, H, '#100c24'); for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .5 * (1 - y / H); hline(0, y, W, '#2a1c5a'); } ctx.globalAlpha = 1; // dusk sky
   for (let k = 0; k < 40; k++) { const sx = (k * 97) % W, sy = (k * 53) % Math.round(H * .6), tw2 = Math.sin(t * 2 + k) > .6; px(sx, sy, tw2 ? '#ffffff' : '#6a64a0'); }
-  SC.hits = []; screenTitle('BATTLE TOWER', L.narrow ? null : 'Ten floors · one commander on each · ranked S to C', 4);
+  const recs = Object.values(T.recs.tower || {}), sub = recs.length ? 'Cleared ' + recs.length + '/' + TOWER.length + ' · S ranks ' + recs.filter(r => r.rank === 'S').length + ' · best total ' + recs.reduce((a, r) => a + r.total, 0) : 'Ten floors · one commander on each · ranked S to C';
+  SC.hits = []; screenTitle('BATTLE TOWER', L.narrow ? null : sub, 4);
   // the tower: a spire, then the floors from the top (10F) down to 1F
   const { tx, ty, tw, rowH } = L, cx = tx + Math.round(tw / 2);
   for (let k = 0; k < L.roof; k++) { const half = Math.round((tw / 2 - 6) * (k + 1) / L.roof); hline(cx - half, ty + k, half * 2, k % 3 === 0 ? '#5a4a9a' : '#46387e'); } vline(cx, ty - 6, 6, '#c8c0e8'); rect(cx + 1, ty - 6, 5, 3, UI.red);
@@ -7069,19 +7071,29 @@ function safariEnd(result) {
   if (!S.preset && SAVE) { applyBattleToParty(); writeSave(); }
   clearSuspend(); goScene('rank', { kind: 'safari', result, score: S.score.slice(), catches: S.catches.map(c => c.slice()), best, record });
 }
-// Results: both hauls side by side, each catch with its points, the totals racing up, the winner stamped.
+// Results: a scoreboard (both trainers, the totals racing up, the winner crowned), then both hauls with each catch's
+// rarity and points; NEW RECORD when your score beats the best.
 function safariResultsDraw(R) {
-  const W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), w = Math.min(narrow ? W - 12 : 380, W - 12), colW = narrow ? w - 12 : Math.floor((w - 18) / 2);
-  const rowsN = Math.max(1, ...R.catches.map(c => c.length)), h = narrow ? Math.min(H - 50, 70 + R.catches.reduce((a, c) => a + Math.max(1, c.length), 0) * 11 + 40) : Math.min(H - 50, 60 + rowsN * 11 + 26), x = Math.round((W - w) / 2), y = Math.max(6, Math.round((H - 30 - h) / 2));
+  const W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), w = Math.min(narrow ? W - 12 : 380, W - 12), colW = narrow ? w - 12 : Math.floor((w - 18) / 2), rowH = 14;
+  const listH = narrow ? R.catches.reduce((a, c) => a + Math.max(1, c.length), 0) * rowH + 30 : Math.max(1, ...R.catches.map(c => c.length)) * rowH + 14, h = Math.min(H - 50, 16 + 44 + listH + 24), x = Math.round((W - w) / 2), y = Math.max(6, Math.round((H - 30 - h) / 2));
   const win = R.result === 'win', draw = R.result === 'draw', tok = unfold('safariRes', x, y, w, h, .25);
-  const p = panel(x, y, w, h, { header: 'SAFARI ZONE', headerRight: win ? 'YOU WIN!' : draw ? 'DRAW' : 'BLUE WINS', headerRightCol: win ? UI.gold : draw ? UI.ink : UI.red, headerFill: '#2a4a1a' });
-  const side = (k, cx, cy) => { const list = R.catches[k], who = k === 0 ? 'YOU' : 'BLUE', col = k === 0 ? '#8ab4ff' : '#ff9a9a', tot = countUp('saf:tot' + k, R.score[k], .8, .5);
-    sectionLabel(who, cx, cy, colW - 30, col); textR(tot + ' pts', cx + colW, cy, k === 0 && win || k === 1 && R.result === 'lose' ? UI.gold : UI.ink); cy += 11;
-    if (!list.length) { text('No catches', cx + 2, cy, UI.dim); return cy + 11; }
-    list.forEach((c, i) => { const T = safariTier(c.num), a = clamp((appear('saf:' + k + ':' + i) - .3 - i * .08) / .2, 0, 1); if (a <= 0) return; ctx.globalAlpha = a; ctx.drawImage(monIcon(c.num, k === 1), cx - 2, cy - 5, 16, 12); text(fitLabel(DEX[c.num].name, colW - 60), cx + 16, cy, UI.ink); textR('+' + c.pts, cx + colW, cy, T.col); text(T.name, cx + colW - 58, cy, T.col); ctx.globalAlpha = 1; cy += 11; });
+  const p = panel(x, y, w, h, { header: 'SAFARI ZONE · ' + SAFARI.days + ' DAYS', headerRight: win ? 'YOU WIN!' : draw ? 'DRAW' : 'BLUE WINS', headerRightCol: win ? UI.gold : draw ? UI.ink : UI.red, headerFill: '#2a4a1a' });
+  // the scoreboard
+  const sy = p.cy + 2, mid = x + w / 2; rrect(x + 6, sy, w - 12, 38, '#10200c', 2); outline(x + 6, sy, w - 12, 38, '#3a6a2a');
+  [[0, 'red', 'YOU', '#8ab4ff'], [1, 'blue', 'BLUE', '#ff9a9a']].forEach(([k, tr, who, col]) => { const face = trainerFace(tr), side = k === 0 ? -1 : 1, fx = Math.round(mid + side * (w / 2 - 34)) - 9, won = k === 0 ? win : R.result === 'lose', tot = countUp('saf:tot' + k, R.score[k], .9, .4);
+    rect(fx - 1, sy + 5, 20, 20, shade(col, -.5)); if (face) ctx.drawImage(face, fx, sy + 6); outline(fx - 2, sy + 4, 22, 22, won ? UI.gold : col); if (won && t > 1.3) drawCrown(fx + 5, sy - 1); textC(who, fx + 9, sy + 28, col);
+    ctx.save(); ctx.translate(Math.round(mid + side * 30), sy + 8); ctx.scale(2, 2); bigC(String(tot), 0, 0, won || draw ? UI.gold : UI.muted, { outline: UI.inset }); ctx.restore(); });
+  bigC('-', mid, sy + 13, UI.muted);
+  if (!R.stamped && t > 1.3) { R.stamped = true; Audio.sfx(win ? 'levelup' : draw ? 'chime' : 'lose'); if (!REDUCED) shake(2); }
+  // both hauls
+  const side = (k, cx, cy) => { const list = R.catches[k], col = k === 0 ? '#8ab4ff' : '#ff9a9a';
+    sectionLabel((k === 0 ? 'YOUR' : 'BLUE\'S') + ' CATCHES · ' + list.length, cx, cy, colW, col); cy += 11;
+    if (!list.length) { text('Nothing caught', cx + 2, cy + 3, UI.dim); return cy + rowH; }
+    list.forEach((c, i) => { const T = safariTier(c.num), a = clamp((appear('saf:' + k + ':' + i) - .3 - i * .08) / .2, 0, 1); if (a <= 0) { cy += rowH; return; } ctx.globalAlpha = a; const bob = !REDUCED && T.pts >= 5 ? Math.round(Math.sin(t * 5 + i) * 1) : 0;
+      ctx.drawImage(monIcon(c.num, k === 1), cx - 3, cy - 4 + bob, 20, 15); text(fitLabel(DEX[c.num].name, colW - 74), cx + 19, cy + 1, UI.ink); text(T.name, cx + colW - 62, cy + 1, T.col); textR('+' + c.pts, cx + colW, cy + 1, T.col); if (T.pts >= 8 && !REDUCED) sparkle(cx + 14, cy - 2, 1 + Math.round(Math.abs(Math.sin(t * 4))), '#fff2b0'); ctx.globalAlpha = 1; cy += rowH; });
     return cy; };
-  if (narrow) { let cy = side(0, x + 6, p.cy); side(1, x + 6, cy + 4); } else { side(0, x + 6, p.cy); side(1, x + 12 + colW, p.cy); }
-  if (R.record && t > 1) { const k = clamp((t - 1) / .25, 0, 1); ctx.globalAlpha = k; const rw = textWidth('NEW RECORD · ' + R.score[0] + ' PTS') + 10; rrect(Math.round(W / 2 - rw / 2), y + h - 16, rw, 11, UI.gold, 1); textC('NEW RECORD · ' + R.score[0] + ' PTS', W / 2, y + h - 14, '#3a2400'); ctx.globalAlpha = 1; if (!R.recSfx) { R.recSfx = true; Audio.sfx('chime'); } }
+  const ly = sy + 44; if (narrow) { const cy = side(0, x + 6, ly); side(1, x + 6, cy + 4); } else { side(0, x + 6, ly); side(1, x + 12 + colW, ly); }
+  if (R.record && t > 1.6) { const k = clamp((t - 1.6) / .25, 0, 1); ctx.globalAlpha = k; const rw = textWidth('NEW RECORD · ' + R.score[0] + ' PTS') + 10; rrect(Math.round(W / 2 - rw / 2), y + h - 16, rw, 11, UI.gold, 1); textC('NEW RECORD · ' + R.score[0] + ' PTS', W / 2, y + h - 14, '#3a2400'); ctx.globalAlpha = 1; if (!R.recSfx) { R.recSfx = true; Audio.sfx('chime'); } }
   else if (R.best) textC('Best ' + R.best + ' pts', W / 2, y + h - 14, UI.dim);
   unfoldEnd(tok);
   const bh = btnH(), fy = footerBand(bh + 12) + 6, bw = Math.min(110, Math.floor((W - 18) / 2));

@@ -123,7 +123,7 @@ function beginPhase(team, first, resumed = false) {
   BT.banner = { text: label, t: 0, team, sub: isHuman(team) ? 'Turn ' + B.turn + (B.map.turnLimit && B.map.objective.type !== 'survive' ? ' / ' + B.map.turnLimit : '') + (B.map.objective.type === 'survive' ? ' / ' + B.map.objective.turns : '') : null };
   BT.mode = 'banner'; Audio.sfx(isHuman(team) ? 'phase' : 'enemyphase');
   // the opening of a battle between two commanders: their portraits face off before the first phase
-  if (first && !resumed && B.command && B.command.teams[0] && B.command.teams[1] && !B.coVsShown) { B.coVsShown = true; BT.banner.vs = { t: 0 }; if (BT.income) BT.income.t += COVS_DUR; }
+  if (first && !resumed && !B.territory && B.command && B.command.teams[0] && B.command.teams[1] && (coTrainer(B.command.teams[0]) || coTrainer(B.command.teams[1])) && !B.coVsShown) { B.coVsShown = true; BT.banner.vs = { t: 0 }; if (BT.income) BT.income.t += COVS_DUR; }
   Audio.playMusic(isHuman(team) ? (B.units.some(u => u.boss && u.hp > 0 && u.provoked) ? 'boss' : B.map.music) : 'enemy');
   if (B.versus && isHuman(team)) { BT.mode = 'handoff'; BT.handoff = { team, t: 0 }; }
   BT.queue = ev.map(e => ({ kind: 'event', ev: e }));

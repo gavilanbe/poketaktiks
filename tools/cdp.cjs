@@ -67,8 +67,8 @@ async function main() {
     }
     if (script === 'flow' || script === 'full') {
       await nav('silent&nosave'); await ev('localStorage.clear()'); await nav('silent'); await sleep(300);
-      const s = await scale(); const h = JSON.parse(await ev('JSON.stringify(__pk.SC.hits.find(h=>h.label==="NEW GAME"))')); await tap((h.x + h.w / 2) * s, (h.y + h.h / 2) * s); await waitScene('starter'); await shot('13-starter');
-      await key('ArrowRight'); await key('z', 'KeyZ'); await waitScene('journey'); await sleep(900); await shot('13b-journey'); await key('z', 'KeyZ'); await waitScene('route'); await sleep(900); await shot('13c-route'); await key('z', 'KeyZ'); await waitScene('prep'); await sleep(300); await shot('14-prep');
+      const s = await scale(); const h = JSON.parse(await ev('JSON.stringify(__pk.SC.hits.find(h=>h.label==="NEW GAME"))')); await tap((h.x + h.w / 2) * s, (h.y + h.h / 2) * s); await waitScene('story'); await sleep(1800); await shot('12-prologue'); await key('x', 'KeyX'); await waitScene('starter'); await shot('13-starter');
+      await key('ArrowRight'); await key('z', 'KeyZ'); await waitScene('journey'); await sleep(900); await shot('13b-journey'); await key('z', 'KeyZ'); await waitScene('route'); await sleep(900); await shot('13c-route'); await key('z', 'KeyZ'); await waitScene('brief'); await sleep(900); await shot('13d-brief'); await key('z', 'KeyZ'); await waitScene('prep'); await sleep(300); await shot('14-prep');
       const st = JSON.parse(await ev('JSON.stringify(__pk.SC.hits.find(h=>h.label==="START"))')); await tap((st.x + st.w / 2) * s, (st.y + st.h / 2) * s); await waitScene('card'); await shot('15-card'); await waitScene('story', 5000); await sleep(600); await shot('16-story'); await key('x', 'KeyX'); await waitScene('journey', 5000); await sleep(900); await shot('16b-lesson'); await key('z', 'KeyZ'); await waitScene('battle'); await waitMode('idle', 6000); out.push('flow battle ok, save=' + !!(await ev('localStorage.getItem("pk_save")')) + ' suspend=' + !!(await ev('localStorage.getItem("pk_suspend")')));
       // win instantly to check results
       await ev('if (__pk.B.lesson) __pk.B.lesson.complete = true; __pk.B.units.filter(u=>u.team===1).forEach(u=>u.hp=0); __pk.endTurn()'); await sleep(2600); await shot('17-victory'); await ev('__pk.BT.endTimer=99'); await sleep(300); await waitScene('story', 5000); await key('x', 'KeyX'); await waitScene('results', 5000); await sleep(300); await shot('18-results'); out.push('results: ' + await ev('JSON.stringify({trained:__pk.SC.data.trained, caught:__pk.SC.data.caught.length, chapter:__pk.SAVE.chapter})'));
@@ -169,12 +169,13 @@ async function main() {
     }
     if (script === 'ui2' || script === 'ui2-m') {
       // every non-battle screen plus the modal cards, for design review
-      await nav('silent&nosave'); await sleep(500); await ev('__pk.startNewGame()'); await waitScene('starter', 5000); await sleep(300); await shot('ui2-starter');
+      await nav('silent&nosave'); await sleep(500); await ev('__pk.startNewGame()'); await waitScene('story', 5000); await sleep(1500); await shot('ui2-prologue'); await key('x', 'KeyX'); await waitScene('starter', 5000); await sleep(300); await shot('ui2-starter');
+      await nav('ch=3&brief&silent&nosave'); await waitScene('brief', 5000); await sleep(600); await shot('ui2-brief'); await nav('tower=1&silent&nosave'); await waitScene('tower', 5000); await sleep(400); await shot('ui2-tower'); await nav('scene=quick&silent&nosave'); await sleep(700); await shot('ui2-quick');
       await nav('ch=1&prep&silent&nosave'); await waitScene('prep', 5000); await sleep(300); await shot('ui2-prep');
       await ev('__pk.SC.hits.find(h=>h.label==="START").run()'); await waitScene('card', 5000); await sleep(700); await shot('ui2-card');
       await nav('silent&nosave'); await sleep(500); await ev('__pk.startSkirmishSetup()'); await waitScene('skirmish', 5000); await sleep(300); await shot('ui2-skirmish');
       await nav('territory=3&silent&nosave&noguide'); await sleep(500); await shot('ui2-territory-setup');
-      await nav('territory=3&auto&silent&nosave'); await waitMode('territoryGuide', 8000); await sleep(300); await shot('ui2-territory-guide'); await key('z', 'KeyZ'); await waitMode('idle', 5000); await sleep(200); await shot('ui2-territory-idle');
+      await ev('localStorage.removeItem("pk_territoryGuide")'); await nav('territory=3&auto&silent&nosave'); await waitMode('territoryGuide', 8000); // the guide shows until it has been closed once await sleep(300); await shot('ui2-territory-guide'); await key('z', 'KeyZ'); await waitMode('idle', 5000); await sleep(200); await shot('ui2-territory-idle');
       await nav('ch=1&silent&nosave&seed=3'); await waitMode('idle', 6000);
       await ev('__pk.HUD.hits.find(h=>h.label==="END TURN").run()'); await sleep(250); await shot('ui2-endconfirm'); await key('x', 'KeyX'); await waitMode('idle', 3000);
       await key('h', 'KeyH'); await sleep(200); await shot('ui2-help'); await key('z', 'KeyZ'); await sleep(200); await shot('ui2-help-2'); await key('x', 'KeyX'); await sleep(200);

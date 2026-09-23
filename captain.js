@@ -262,6 +262,6 @@ function initCampaignLessons(mapDef, opts) {
 const CHAPTER_LESSONS = [
   ['YOUR FIRST FRONT', 'Your partner wears the crown. Pidgey scouts ahead.', 'Move, attack, then catch Oak\'s Caterpie at half HP: the practice ball is free.', 'Your Poké Center pays ₽1,000 a day. Open the PC there to deploy from your Box.', 'Catches wait in your Box: their first deployment is free.'],
   ['TEAM POWER UNLOCKED', 'Your partner now commands a shared team power.', 'Open POWER or press P. Normal costs 50 charge.', 'Combat, catches and captures refill the bar.', 'Claim the outpost: capture twice at full HP, then heal there.'],
-  ['ENEMY COMMANDERS', 'Brock leads the other side: his Ace, Onix, wears the crown.', 'A commander\'s passive helps allies within 2 tiles of the Ace.', 'The Rocket center deploys his army each day. Capture it to stop them.', 'Fainted Pokémon go back to the Box and recover in two days.'],
+  ['ENEMY COMMANDERS', 'Brock leads the other side: his Ace, Onix, wears the crown.', 'A commander\'s passive helps allies within 2 tiles of the Ace.', 'The Rocket center sends his reinforcements. Capture it to cut them off.', 'Fainted Pokémon go back to the Box and recover in two days.'],
   ['SUPERPOWER UNLOCKED', 'Spend 50 on a power, or save 100 for its super version.', 'Freed Gym Leaders can command your side: pick one in the briefing.', 'Capture the bridge outpost, then occupy and capture the gym.', 'Capturing uses an action. Leaving resets your progress.'],
 ];

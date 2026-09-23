@@ -78,7 +78,8 @@ function towerDraw() {
   const T = SC.data, L = towerLayout(), { W, H } = L, t = SC.t; T.i = clamp(T.i, 0, TOWER.length - 1); const F = TOWER[T.i], open = towerOpen(T.recs, T.i);
   rect(0, 0, W, H, '#100c24'); for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .5 * (1 - y / H); hline(0, y, W, '#2a1c5a'); } ctx.globalAlpha = 1; // dusk sky
   for (let k = 0; k < 40; k++) { const sx = (k * 97) % W, sy = (k * 53) % Math.round(H * .6), tw2 = Math.sin(t * 2 + k) > .6; px(sx, sy, tw2 ? '#ffffff' : '#6a64a0'); }
-  SC.hits = []; screenTitle('BATTLE TOWER', L.narrow ? null : 'Ten floors · one commander on each · ranked S to C', 4);
+  const recs = Object.values(T.recs.tower || {}), sub = recs.length ? 'Cleared ' + recs.length + '/' + TOWER.length + ' · S ranks ' + recs.filter(r => r.rank === 'S').length + ' · best total ' + recs.reduce((a, r) => a + r.total, 0) : 'Ten floors · one commander on each · ranked S to C';
+  SC.hits = []; screenTitle('BATTLE TOWER', L.narrow ? null : sub, 4);
   // the tower: a spire, then the floors from the top (10F) down to 1F
   const { tx, ty, tw, rowH } = L, cx = tx + Math.round(tw / 2);
   for (let k = 0; k < L.roof; k++) { const half = Math.round((tw / 2 - 6) * (k + 1) / L.roof); hline(cx - half, ty + k, half * 2, k % 3 === 0 ? '#5a4a9a' : '#46387e'); } vline(cx, ty - 6, 6, '#c8c0e8'); rect(cx + 1, ty - 6, 5, 3, UI.red);
@@ -257,19 +258,29 @@ function safariEnd(result) {
   if (!S.preset && SAVE) { applyBattleToParty(); writeSave(); }
   clearSuspend(); goScene('rank', { kind: 'safari', result, score: S.score.slice(), catches: S.catches.map(c => c.slice()), best, record });
 }
-// Results: both hauls side by side, each catch with its points, the totals racing up, the winner stamped.
+// Results: a scoreboard (both trainers, the totals racing up, the winner crowned), then both hauls with each catch's
+// rarity and points; NEW RECORD when your score beats the best.
 function safariResultsDraw(R) {
-  const W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), w = Math.min(narrow ? W - 12 : 380, W - 12), colW = narrow ? w - 12 : Math.floor((w - 18) / 2);
-  const rowsN = Math.max(1, ...R.catches.map(c => c.length)), h = narrow ? Math.min(H - 50, 70 + R.catches.reduce((a, c) => a + Math.max(1, c.length), 0) * 11 + 40) : Math.min(H - 50, 60 + rowsN * 11 + 26), x = Math.round((W - w) / 2), y = Math.max(6, Math.round((H - 30 - h) / 2));
+  const W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), w = Math.min(narrow ? W - 12 : 380, W - 12), colW = narrow ? w - 12 : Math.floor((w - 18) / 2), rowH = 14;
+  const listH = narrow ? R.catches.reduce((a, c) => a + Math.max(1, c.length), 0) * rowH + 30 : Math.max(1, ...R.catches.map(c => c.length)) * rowH + 14, h = Math.min(H - 50, 16 + 44 + listH + 24), x = Math.round((W - w) / 2), y = Math.max(6, Math.round((H - 30 - h) / 2));
   const win = R.result === 'win', draw = R.result === 'draw', tok = unfold('safariRes', x, y, w, h, .25);
-  const p = panel(x, y, w, h, { header: 'SAFARI ZONE', headerRight: win ? 'YOU WIN!' : draw ? 'DRAW' : 'BLUE WINS', headerRightCol: win ? UI.gold : draw ? UI.ink : UI.red, headerFill: '#2a4a1a' });
-  const side = (k, cx, cy) => { const list = R.catches[k], who = k === 0 ? 'YOU' : 'BLUE', col = k === 0 ? '#8ab4ff' : '#ff9a9a', tot = countUp('saf:tot' + k, R.score[k], .8, .5);
-    sectionLabel(who, cx, cy, colW - 30, col); textR(tot + ' pts', cx + colW, cy, k === 0 && win || k === 1 && R.result === 'lose' ? UI.gold : UI.ink); cy += 11;
-    if (!list.length) { text('No catches', cx + 2, cy, UI.dim); return cy + 11; }
-    list.forEach((c, i) => { const T = safariTier(c.num), a = clamp((appear('saf:' + k + ':' + i) - .3 - i * .08) / .2, 0, 1); if (a <= 0) return; ctx.globalAlpha = a; ctx.drawImage(monIcon(c.num, k === 1), cx - 2, cy - 5, 16, 12); text(fitLabel(DEX[c.num].name, colW - 60), cx + 16, cy, UI.ink); textR('+' + c.pts, cx + colW, cy, T.col); text(T.name, cx + colW - 58, cy, T.col); ctx.globalAlpha = 1; cy += 11; });
+  const p = panel(x, y, w, h, { header: 'SAFARI ZONE · ' + SAFARI.days + ' DAYS', headerRight: win ? 'YOU WIN!' : draw ? 'DRAW' : 'BLUE WINS', headerRightCol: win ? UI.gold : draw ? UI.ink : UI.red, headerFill: '#2a4a1a' });
+  // the scoreboard
+  const sy = p.cy + 2, mid = x + w / 2; rrect(x + 6, sy, w - 12, 38, '#10200c', 2); outline(x + 6, sy, w - 12, 38, '#3a6a2a');
+  [[0, 'red', 'YOU', '#8ab4ff'], [1, 'blue', 'BLUE', '#ff9a9a']].forEach(([k, tr, who, col]) => { const face = trainerFace(tr), side = k === 0 ? -1 : 1, fx = Math.round(mid + side * (w / 2 - 34)) - 9, won = k === 0 ? win : R.result === 'lose', tot = countUp('saf:tot' + k, R.score[k], .9, .4);
+    rect(fx - 1, sy + 5, 20, 20, shade(col, -.5)); if (face) ctx.drawImage(face, fx, sy + 6); outline(fx - 2, sy + 4, 22, 22, won ? UI.gold : col); if (won && t > 1.3) drawCrown(fx + 5, sy - 1); textC(who, fx + 9, sy + 28, col);
+    ctx.save(); ctx.translate(Math.round(mid + side * 30), sy + 8); ctx.scale(2, 2); bigC(String(tot), 0, 0, won || draw ? UI.gold : UI.muted, { outline: UI.inset }); ctx.restore(); });
+  bigC('-', mid, sy + 13, UI.muted);
+  if (!R.stamped && t > 1.3) { R.stamped = true; Audio.sfx(win ? 'levelup' : draw ? 'chime' : 'lose'); if (!REDUCED) shake(2); }
+  // both hauls
+  const side = (k, cx, cy) => { const list = R.catches[k], col = k === 0 ? '#8ab4ff' : '#ff9a9a';
+    sectionLabel((k === 0 ? 'YOUR' : 'BLUE\'S') + ' CATCHES · ' + list.length, cx, cy, colW, col); cy += 11;
+    if (!list.length) { text('Nothing caught', cx + 2, cy + 3, UI.dim); return cy + rowH; }
+    list.forEach((c, i) => { const T = safariTier(c.num), a = clamp((appear('saf:' + k + ':' + i) - .3 - i * .08) / .2, 0, 1); if (a <= 0) { cy += rowH; return; } ctx.globalAlpha = a; const bob = !REDUCED && T.pts >= 5 ? Math.round(Math.sin(t * 5 + i) * 1) : 0;
+      ctx.drawImage(monIcon(c.num, k === 1), cx - 3, cy - 4 + bob, 20, 15); text(fitLabel(DEX[c.num].name, colW - 74), cx + 19, cy + 1, UI.ink); text(T.name, cx + colW - 62, cy + 1, T.col); textR('+' + c.pts, cx + colW, cy + 1, T.col); if (T.pts >= 8 && !REDUCED) sparkle(cx + 14, cy - 2, 1 + Math.round(Math.abs(Math.sin(t * 4))), '#fff2b0'); ctx.globalAlpha = 1; cy += rowH; });
     return cy; };
-  if (narrow) { let cy = side(0, x + 6, p.cy); side(1, x + 6, cy + 4); } else { side(0, x + 6, p.cy); side(1, x + 12 + colW, p.cy); }
-  if (R.record && t > 1) { const k = clamp((t - 1) / .25, 0, 1); ctx.globalAlpha = k; const rw = textWidth('NEW RECORD · ' + R.score[0] + ' PTS') + 10; rrect(Math.round(W / 2 - rw / 2), y + h - 16, rw, 11, UI.gold, 1); textC('NEW RECORD · ' + R.score[0] + ' PTS', W / 2, y + h - 14, '#3a2400'); ctx.globalAlpha = 1; if (!R.recSfx) { R.recSfx = true; Audio.sfx('chime'); } }
+  const ly = sy + 44; if (narrow) { const cy = side(0, x + 6, ly); side(1, x + 6, cy + 4); } else { side(0, x + 6, ly); side(1, x + 12 + colW, ly); }
+  if (R.record && t > 1.6) { const k = clamp((t - 1.6) / .25, 0, 1); ctx.globalAlpha = k; const rw = textWidth('NEW RECORD · ' + R.score[0] + ' PTS') + 10; rrect(Math.round(W / 2 - rw / 2), y + h - 16, rw, 11, UI.gold, 1); textC('NEW RECORD · ' + R.score[0] + ' PTS', W / 2, y + h - 14, '#3a2400'); ctx.globalAlpha = 1; if (!R.recSfx) { R.recSfx = true; Audio.sfx('chime'); } }
   else if (R.best) textC('Best ' + R.best + ' pts', W / 2, y + h - 14, UI.dim);
   unfoldEnd(tok);
   const bh = btnH(), fy = footerBand(bh + 12) + 6, bw = Math.min(110, Math.floor((W - 18) / 2));

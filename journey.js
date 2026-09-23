@@ -263,7 +263,7 @@ function briefDraw() {
   const foes = ch.map.units.filter(u => u.team == null || u.team === 1), wild = ch.map.units.filter(u => u.team === 2), rocket = ch.map.war && ch.map.war.owners ? Object.keys(ch.map.war.owners).length : 0, per = Math.max(1, Math.floor((mw - 12) / 20));
   const row = (label, list, col, flip) => { if (!list.length || y + 26 > my + mh - 4) return; sectionLabel(label, mx + 8, y, mw - 16, col); y += 10; list.slice(0, per).forEach((n, k) => { const bob = !REDUCED && k === Math.floor(t * 3) % Math.min(per, list.length) ? -1 : 0; ctx.drawImage(monIcon(n, flip), mx + 4 + k * 20, y + bob, 24, 18); if (k === 0 && label.startsWith('ENEMY') && co) drawCrown(mx + 17 + k * 20, y); }); y += 20; };
   row('ENEMY FORCES · ' + foes.length, (lead ? [lead.mon] : []).concat(foes.filter(u => u !== lead).map(u => u.mon)), '#ff9a9a', true); // their Ace first
-  if (rocket && y + 9 <= my + mh - 4) { text(fitLabel((rocket > 1 ? rocket + ' Rocket centers deploy ' : 'A Rocket center deploys ') + (co ? co.name + '\'s' : 'their') + ' army each day: take ' + (rocket > 1 ? 'them' : 'it') + '!', mw - 16), mx + 8, y, UI.red); y += 12; }
+  if (rocket && y + 9 <= my + mh - 4) { text(fitLabel((rocket > 1 ? rocket + ' Rocket centers send ' : 'A Rocket center sends ') + (co ? co.name + '\'s' : 'their') + ' reinforcements: take ' + (rocket > 1 ? 'them' : 'it') + '!', mw - 16), mx + 8, y, UI.red); y += 12; }
   row('WILD POKéMON', wild.map(u => u.mon), '#fff0a0', true);
   if (SAVE && y + 9 <= my + mh - 4) { text(fitLabel('Your collection: ' + SAVE.party.length + ' · ' + ch.slots + ' open the battle, the rest wait in the PC Box', mw - 16), mx + 8, y, UI.muted); y += 12; }
   // your commander

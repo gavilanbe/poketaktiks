@@ -193,6 +193,26 @@ test('commander effects: passives near the Ace, damage and defence powers, enemy
   // Rocket's Pickpocket takes money when the enemy has it
   s1.co = 'rocket'; s1.charge = 50; s1.spent = false; s1.active = null; B.phase = 1; B.war.funds[0] = 1500; B.war.funds[1] = 0; const ev4 = g.activatePower(1, false); assert(ev4 && ev4.some(e => e.type === 'steal')); assert.equal(B.war.funds[1], 1000); assert.equal(B.war.funds[0], 500);
 });
+test('campaign fronts: enemy commanders from Mt. Moon with their Aces, Rocket centers and armies, freed Gym Leaders who unlock and lead', () => {
+  const T = loadGame(), { g, G, C } = T;
+  const fronts = C.CHAPTERS.map(ch => ch.co || null); assert.deepEqual(fronts, [null, null, 'brock', 'misty', 'giovanni', 'surge', 'blaine', 'giovanni']);
+  for (const ch of C.CHAPTERS) { assert(ch.intro.length && ch.outro.length && ch.brief, ch.id + ' has its words'); for (const l of ch.intro.concat(ch.outro)) assert(G('SPEAKERS')[l.who] || l.mon, ch.id + ': ' + l.who + ' has a portrait'); }
+  // front 3: Brock commands with Onix crowned; the Rocket center is his and deploys his army
+  G('SAVE = { chapter: 2, party: [partyUnit(4, 10), partyUnit(16, 9), partyUnit(25, 10), partyUnit(74, 9), partyUnit(7, 9)], bag: { pokeball: 3 }, stars: {}, captainPid: 0, starter: 4, co: "you", journey: { version: 1, firstCatch: true } }');
+  const party = G('SAVE.party').map((p, pid) => Object.assign({}, p, { pid })), ch = C.CHAPTERS[2];
+  g.startBattle(ch.map, party.slice(0, 4), {}, g.chapterOpts(2, party.slice(4), 5)); const B = T.B();
+  const s1 = g.powerState(1), ace = B.units.find(u => u.id === s1.captainId); assert.equal(s1.co, 'brock'); assert.equal(ace.num, 95, 'Onix wears the crown'); assert(ace.leader);
+  const rc = B.war.props.find(p => p.name === 'ROCKET CENTER'); assert(rc && rc.owner === 1); assert.equal(B.war.box[1].length, 5, 'Brock\'s army waits in his Box');
+  B.war.funds[1] = 5000; B.phase = 1; assert.equal(g.warAiDeploy(1).length, 0, 'ten on the map already: the cap holds reinforcements back');
+  g.alive(1).filter(u => u !== ace && !u.boss).slice(0, 3).forEach(u => { u.hp = 0; }); const dep = g.warAiDeploy(1); assert(dep.length === 1 && dep[0].x === rc.x && dep[0].y === rc.y, 'with losses, the Rocket center deploys');
+  // clearing the front frees Brock: he unlocks and can lead the next one
+  G('SAVE.chapter = 3'); assert(g.coUnlocked(G('SAVE')).includes('brock')); G('SAVE.co = "brock"');
+  const ch4 = C.CHAPTERS[3]; g.startBattle(ch4.map, party.slice(0, 4), {}, g.chapterOpts(3, party.slice(4), 5)); const B4 = T.B();
+  const s0 = g.powerState(0), lead = B4.units.find(u => u.id === s0.captainId); assert.equal(s0.co, 'brock'); assert.equal(lead.num, 95, 'Brock\'s Onix joins your side'); assert(s0.superUnlocked);
+  assert.equal(g.powerState(1).co, 'misty'); assert(B4.war.props.some(p => p.owner === 0), 'a center of your own on the bridge\'s near side');
+  // the prep screen does not lock the partner in while a Gym Leader leads
+  g.prepChapter(3); assert.equal(g.prepCaptain(G('SC.data')), null);
+});
 let failed = 0;
 for (const [name, fn] of tests) { try { fn(); console.log('  ok   ' + name); } catch (e) { failed++; console.error('  FAIL ' + name + '\n' + e.stack); } }
 console.log(`${tests.length-failed}/${tests.length} captain tests passed`); process.exitCode = failed ? 1 : 0;
