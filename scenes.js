@@ -143,7 +143,7 @@ function cardDraw() {
   const tw = textWidth(ch.title.toUpperCase(), BIG), scale = W >= tw * 3 + 24 ? 3 : W >= tw * 2 + 16 ? 2 : 1;
   drawStampWordAt(ch.title, W / 2, cy - Math.round(4.5 * scale) - 4, t - .25, UI.gold, UI.goldDark, scale);
   const landed = [...ch.title].filter((c2, i) => c2 !== ' ' && t - .25 >= i * .06 + .2).length; if (landed > (SC.data.stamped || 0)) { SC.data.stamped = landed; if (!REDUCED) Audio.sfx(landed === [...ch.title].filter(c2 => c2 !== ' ').length ? 'hit' : 'stamp'); }
-  if (t > .9) { ctx.globalAlpha = clamp((t - .9) / .3, 0, 1); const goal = objectiveTextFor(ch.map.objective).replace('Objective: ', ''); const gl = goal[0].toUpperCase() + goal.slice(1), gw = textWidth(gl) + 14; iconAt('flag', Math.round(W / 2 - gw / 2), cy + Math.round(4.5 * scale) + 5, UI.gold); text(gl, Math.round(W / 2 - gw / 2) + 14, cy + Math.round(4.5 * scale) + 6, UI.ink, { outline: UI.inset });
+  if (t > .9) { ctx.globalAlpha = clamp((t - .9) / .3, 0, 1); const goal = objectiveTextFor(ch.map.objective, ch.map).replace('Objective: ', ''); const gl = goal[0].toUpperCase() + goal.slice(1), gw = textWidth(gl) + 14; iconAt('flag', Math.round(W / 2 - gw / 2), cy + Math.round(4.5 * scale) + 5, UI.gold); text(gl, Math.round(W / 2 - gw / 2) + 14, cy + Math.round(4.5 * scale) + 6, UI.ink, { outline: UI.inset });
     const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2); if (foes.length) textC(foes.length + ' foes' + (wild.length ? ' · ' + wild.length + ' wild' : '') + ' · Lv ' + Math.min(...foes.map(u => u.level)) + '-' + Math.max(...foes.map(u => u.level)), W / 2, cy + Math.round(4.5 * scale) + 18, UI.muted, { outline: UI.inset }); ctx.globalAlpha = 1; }
   // the boss slides in from the right on boss maps
   const boss = (ch.map.units || []).find(u => u.boss && (u.team == null || u.team === 1)); if (boss && H >= 200) { requestAnim(boss.mon); const bx = Math.round(W - 44 + (REDUCED ? 0 : (1 - easeOut(clamp((t - .6) / .4, 0, 1))) * 80)), by = H - bars - 6; if (bx < W + 40) { ctx.globalAlpha = .5; ellipse(bx, by, 16, 3, '#000'); ctx.globalAlpha = 1; if (animReady(boss.mon)) drawAnim(boss.mon, bx, by, t); else drawMon(boss.mon, bx, by, { flip: true }); if (t > 1.1) { const mh = typeof ANIM_META !== 'undefined' && ANIM_META[boss.mon] ? ANIM_META[boss.mon].b : 30; textC('BOSS', bx, Math.max(bars + 2, by - mh - 10), UI.red, { outline: UI.inset }); } } }
@@ -151,7 +151,9 @@ function cardDraw() {
 }
 // drawStampWord with an explicit time (the chapter card starts its letters later than the end screen).
 function drawStampWordAt(word, cx, y, t, col, dark, scale) { return drawStampWord(word, cx, y, t + END_BEATS.letters, col, dark, scale); }
-function objectiveTextFor(o) { switch (o.type) { case 'rout': return 'Objective: defeat all enemies'; case 'war': return 'Objective: rout the foe or take their HQ'; case 'safari': return 'Objective: out-catch Blue in ' + o.days + ' days'; case 'boss': return 'Objective: defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Objective: survive ' + o.turns + ' turns'; case 'seize': return 'Objective: seize the ' + (o.what || 'gym'); case 'versus': return 'Objective: defeat the other trainer'; } return ''; }
+// The goal of a map, and on campaign fronts the other way to win: taking the enemy base.
+function objectiveTextFor(o, map) { const hq = map && map.war && map.war.names && Object.entries(map.war.owners || {}).find(([k, t]) => t === 1 && /HQ|CAMP/.test(map.war.names[k] || '')), alt = hq && o.type !== 'war' && o.type !== 'versus' ? ' or take ' + (/CAMP/.test(map.war.names[hq[0]]) ? 'their camp' : 'the Rocket HQ') : ''; return objectiveTextOnly(o) + alt; }
+function objectiveTextOnly(o) { switch (o.type) { case 'rout': return 'Objective: defeat all enemies'; case 'war': return 'Objective: rout the foe or take their HQ'; case 'safari': return 'Objective: out-catch Blue in ' + o.days + ' days'; case 'boss': return 'Objective: defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Objective: survive ' + o.turns + ' turns'; case 'seize': return 'Objective: seize the ' + (o.what || 'gym'); case 'versus': return 'Objective: defeat the other trainer'; } return ''; }
 function cardInput(ev) { if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) SC.skip = true; }
 
 // ---------------------------------------------------------------- story dialogue (drawn over the battle board)
@@ -268,7 +270,7 @@ function prepLayout(P) {
 function prepDraw() {
   const P = SC.data, ch = P.chapter, L = prepLayout(P), W = L.W, H = L.H, t = SC.t; rect(0, 0, W, H, UI.bg); if (!P.bd) P.bd = makeBackdrop(ch.map); drawBackdrop(P.bd, (W - P.bd.canvas.width) / 2 - t * 3, (H - P.bd.canvas.height) / 2, .8);
   SC.hits = []; const cap = prepCaptain(P);
-  screenTitle((ch.num ? 'FRONT ' + ch.num + ' · ' : '') + ch.title.toUpperCase(), H >= 240 && !L.narrow ? objectiveTextFor(ch.map.objective) : null, 4);
+  screenTitle((ch.num ? 'FRONT ' + ch.num + ' · ' : '') + ch.title.toUpperCase(), H >= 240 && !L.narrow ? objectiveTextFor(ch.map.objective, ch.map) : null, 4);
   // TEAM bar: one box per slot, filled in deploy order
   const S = L.slots, bw = Math.max(20, Math.min(34, Math.floor((S.w - 60) / ch.slots) - 3));
   panel(S.x, S.y, S.w, S.h, { fill: UI.panelDark, flat: true }); text('TEAM', S.x + 7, S.y + Math.round(S.h / 2) - 4, UI.gold); text(P.deploy.length + '/' + ch.slots, S.x + 7, S.y + Math.round(S.h / 2) + 4, P.deploy.length ? UI.ink : UI.muted);
@@ -300,7 +302,7 @@ function prepDraw() {
     const x = L.sideX, w = L.sideW; let y = L.slots.y; const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2), lv = foes.map(u => u.level);
     const bd = P.bd, previewH = Math.max(0, Math.min(Math.round(w * bd.canvas.height / bd.canvas.width), H - L.foot - y - 110)), mh = 34 + (previewH > 24 ? previewH + 6 : 0);
     const mp = panel(x, y, w, mh, { header: 'MISSION', headerRight: foes.length + ' foes' + (lv.length ? ' · Lv' + Math.min(...lv) : ''), headerRightCol: UI.red });
-    const goal = objectiveTextFor(ch.map.objective).replace('Objective: ', ''); iconAt('flag', x + 6, mp.cy - 1, UI.gold); text(fitLabel(goal[0].toUpperCase() + goal.slice(1), w - 22), x + 17, mp.cy, UI.ink);
+    const goal = objectiveTextFor(ch.map.objective, ch.map).replace('Objective: ', ''); iconAt('flag', x + 6, mp.cy - 1, UI.gold); text(fitLabel(goal[0].toUpperCase() + goal.slice(1), w - 22), x + 17, mp.cy, UI.ink);
     if (previewH > 24) { const sc = previewH / bd.canvas.height, pw = Math.round(bd.canvas.width * sc), px0 = x + Math.round((w - pw) / 2), py0 = mp.cy + 11; rect(px0 - 1, py0 - 1, pw + 2, previewH + 2, UI.inset); ctx.drawImage(bd.canvas, px0, py0, pw, previewH); const cell = TILE * sc;
       for (const d of bd.map.deploy) { const X = px0 + d.x * cell, Y = py0 + d.y * cell; rect(X, Y, Math.ceil(cell), Math.ceil(cell), '#3d7dff70'); outline(X, Y, Math.ceil(cell), Math.ceil(cell), teamColor(0)); }
       for (const u of ch.map.units || []) { const team = u.team == null ? 1 : u.team, ux = px0 + (u.x + .5) * cell, uy = py0 + (u.y + 1) * cell; ctx.drawImage(monIcon(u.mon, true), Math.round(ux - 8), Math.round(uy - 12), 16, 12); if (u.boss) drawSkull(Math.round(ux - 2), Math.round(uy - 18)); else { rect(Math.round(ux) - 1, Math.round(uy), 3, 2, teamColor(team)); } } }
@@ -457,9 +459,9 @@ function skirmishRoot() { return typeof SAVE !== 'undefined' && SAVE && SAVE.sta
 function drawWarPreview(map, bd, px0, py0, pw, ph, centers = -1) {
   const cell = pw / bd.canvas.width * TILE, c = Math.max(3, Math.ceil(cell)), owners = (map.war && map.war.owners) || {}, W = bd.map.w;
   for (const d of map.deploy) { const ux = Math.round(px0 + d.x * cell), uy = Math.round(py0 + d.y * cell); ctx.globalAlpha = .22; rect(ux, uy, c, c, '#8ab4ff'); ctx.globalAlpha = .8; outline(ux + 1, uy + 1, c - 2, c - 2, teamColor(0)); ctx.globalAlpha = 1; }
-  map.rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const ch = row[x]; if (!PROP_KIND[ch]) continue; const k = x + ',' + y, owner = owners[k] != null ? owners[k] : ch === 'Q' ? (x < W / 2 ? 0 : 1) : centers, col = owner < 0 ? '#d8d8e8' : teamColor(owner);
+  map.rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const ch = row[x]; if (!PROP_KIND[ch]) continue; const k = x + ',' + y, owner = owners[k] != null ? owners[k] : PROP_KIND[ch] === 'hq' ? (x < W / 2 ? 0 : 1) : centers, col = owner < 0 ? '#d8d8e8' : teamColor(owner);
     const ux = Math.round(px0 + x * cell), uy = Math.round(py0 + y * cell); outline(ux, uy, c, c, col); outline(ux + 1, uy + 1, c - 2, c - 2, UI.inset);
-    if (ch === 'Q') { const fx = ux + Math.round(c / 2), fy = uy - 5; vline(fx, fy, 7, '#e8e0d0'); rect(fx + 1, fy, 4, 3, col); } } });
+    if (PROP_KIND[ch] === 'hq') { const fx = ux + Math.round(c / 2), fy = uy - 5; vline(fx, fy, 7, '#e8e0d0'); rect(fx + 1, fy, 4, 3, col); } } });
   for (const u of map.units) { const d = DEX[u.mon], ux = px0 + (u.x + .5) * cell, uy = py0 + (u.y + 1) * cell, iw = Math.max(12, Math.round(cell * 1.1)); ellipse(Math.round(ux), Math.round(uy), Math.round(iw / 3), 2, teamColor(u.team == null ? 1 : u.team)); ctx.drawImage(monIcon(d.num, true), Math.round(ux - iw / 2), Math.round(uy - iw * .75), iw, Math.round(iw * .75)); }
 }
 function skirmishDraw() {

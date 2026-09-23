@@ -147,7 +147,7 @@ function drawRouteCard(S, L) {
   const p = panel(c.x, c.y, c.w, c.h, { title: 'FRONT ' + ch.num, fill: UI.panel });
   let y = p.cy + 2; const x = c.x + 8, w = c.w - 16;
   bigText(fitLabel(ch.title.toUpperCase(), w), x, y, UI.gold, { shadow: UI.goldDark }); y += 13;
-  const goal = objectiveTextFor(o).replace('Objective: ', ''); iconAt('flag', x, y - 1, UI.gold); text(fitLabel(goal[0].toUpperCase() + goal.slice(1), w - 12), x + 12, y, UI.ink); y += 11;
+  const goal = objectiveTextFor(o, ch.map).replace('Objective: ', ''); iconAt('flag', x, y - 1, UI.gold); text(fitLabel(goal[0].toUpperCase() + goal.slice(1), w - 12), x + 12, y, UI.ink); y += 11;
   text('Foes Lv ' + ch.level + ' · Deploy ' + ch.slots, x, y, UI.muted); y += 12;
   // who holds the front (a Gym Leader shown as freed once the front is cleared)
   { const co = ch.co ? COS[ch.co] : null, sp = ch.foe ? SPEAKERS[ch.foe] : null, tr = co ? co.tr : sp && sp.tr, face = tr && trainerFace(tr), col = co ? co.col : sp ? sp.col : UI.red, freed = cleared && co && CO_UNLOCK[ch.co]; if (face) { rect(x, y - 3, 14, 14, shade(col, -.4)); ctx.save(); ctx.beginPath(); ctx.rect(x, y - 3, 14, 14); ctx.clip(); ctx.drawImage(face, x - 2, y - 4); ctx.restore(); outline(x - 1, y - 4, 16, 16, col); } text(fitLabel((freed ? 'Freed: ' : 'Held by ') + (co ? co.name : ch.foe || 'Team Rocket'), w - 20), x + 19, y, freed ? UI.green : col); y += 15; }

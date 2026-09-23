@@ -405,6 +405,19 @@ function drawTile(ch, variant, frame, g, owner = null) {
       p.R(11, 17, 10, 11, BOUT); p.R(12, 18, 8, 10, '#5a3a24'); for (let x = 12; x < 20; x += 2) p.V(x, 18, 10, '#6a4a30'); p.H(12, 18, 8, '#8a6a48'); p.H(12, 21, 8, '#3a3a44'); p.H(12, 25, 8, '#3a3a44'); p.P(13, 21, '#c8c8d4'); p.P(18, 21, '#c8c8d4'); p.P(13, 25, '#c8c8d4'); p.P(18, 25, '#c8c8d4'); p.V(16, 18, 10, '#2a1a10');
       p.R(10, 28, 12, 2, '#9a9aa8'); p.H(10, 28, 12, '#c8c8d4');
       flag(16, 0, RF[3] || '#d8d8e0'); break;
+    // Bunker HQ (caves, hideouts, volcanoes): a steel bunker on a floor plate with hazard stripes, a roof slab and a stripe
+    // in the owner's colour, a blast door, status lights and the owner's banner on the antenna.
+    case 'J': { const M = PAL.metal; p.R(0, 0, 32, 32, M.d); p.R(1, 1, 30, 30, mix(M.m, M.d, .35)); p.H(1, 1, 30, M.m); p.V(1, 1, 30, M.m); p.H(1, 30, 30, shade(M.d, -.3)); p.V(30, 1, 30, shade(M.d, -.3));
+      for (let i = 0; i < 30; i++) { const c = ((i >> 1) & 1) ? '#2a2a30' : '#e8c040'; p.P(1 + i, 30, c); }
+      p.R(29, 12, 2, 17, shade(M.d, -.35)); p.R(3, 9, 26, 21, BOUT); // its shadow falls on the plate, not on grass p.R(4, 11, 24, 18, '#7c7c8c');
+      for (let y = 12; y < 29; y++) for (let x = 4; x < 28; x++) if (dith(x, y) < .18) p.P(x, y, '#6a6a7a');
+      p.H(4, 11, 24, '#a8a8b8'); p.V(4, 11, 18, '#9a9aaa'); p.V(27, 11, 18, '#5a5a68');
+      for (const [rx, ry] of [[6, 13], [25, 13], [6, 27], [25, 27]]) { p.P(rx, ry, '#c8c8d4'); p.P(rx + 1, ry + 1, '#4a4a58'); }
+      p.R(4, 15, 24, 2, RR[3]); p.H(4, 15, 24, RR[4]); p.H(4, 16, 24, RR[2]);
+      p.R(2, 7, 28, 5, BOUT); p.R(3, 8, 26, 3, RR[3]); p.H(3, 8, 26, RR[4]); p.H(3, 10, 26, RR[1]);
+      p.R(11, 18, 10, 11, BOUT); p.R(12, 19, 8, 10, '#4a4a58'); for (let k = 0; k < 8; k += 2) { p.P(12 + k, 23, '#e8c040'); p.P(13 + k, 24, '#e8c040'); } p.V(16, 19, 10, '#2a2a34'); p.H(12, 19, 8, '#6a6a7a');
+      p.R(6, 19, 3, 3, BOUT); p.P(7, 20, '#7cf0a0'); p.R(23, 19, 3, 3, BOUT); p.P(24, 20, '#ff5a4a');
+      p.V(16, 2, 6, '#9a9aaa'); p.P(16, 1, '#ffffff'); flag(17, 1, RF[3] || '#d8d8e0'); break; }
     // Field Center: a healing machine bolted to a floor plate, so it sits in caves, bases and volcanoes alike
     case 'K': { const M = PAL.metal; p.R(0, 0, 32, 32, M.d); p.R(1, 1, 30, 30, mix(M.m, M.d, .35)); p.H(1, 1, 30, M.m); p.V(1, 1, 30, M.m); p.H(1, 30, 30, shade(M.d, -.3)); p.V(30, 1, 30, shade(M.d, -.3));
       for (let i = 0; i < 30; i++) { const c = ((i >> 1) & 1) ? '#2a2a30' : '#e8c040'; if (i < 7 || i > 23) { p.P(1 + i, 2, c); p.P(1 + i, 29, c); } }
@@ -483,7 +496,7 @@ function buildTileset() {
 function tileImg(ch, v, f, owner = null) {
   if (ch === 't' && TALL_ART.ready && TALL_ART.enabled) return tallTerrainImg(v, 0, f);
   const frames = tileFrames(ch); const key = ch + (v % VARIANTS) + (f % frames);
-  if (owner == null || !(ch === 'C' || ch === 'Q')) return TILESET[key] || TILESET['.00'];
+  if (owner == null || !(ch === 'C' || ch === 'Q' || ch === 'J')) return TILESET[key] || TILESET['.00'];
   const ok = key + 'o' + owner; if (!TILESET[ok]) { const c = tileCanvas(); drawTile(ch, v % VARIANTS, f % frames, c.getContext('2d'), owner); TILESET[ok] = c; } return TILESET[ok];
 }
 

@@ -204,7 +204,7 @@ test('campaign fronts: enemy commanders from Mt. Moon with their Aces, Rocket ce
   const s1 = g.powerState(1), ace = B.units.find(u => u.id === s1.captainId); assert.equal(s1.co, 'brock'); assert.equal(ace.num, 95, 'Onix wears the crown'); assert(ace.leader);
   const rc = B.war.props.find(p => p.name === 'ROCKET CENTER'); assert(rc && rc.owner === 1); assert.equal(B.war.box[1].length, 5, 'Brock\'s army waits in his Box');
   B.war.funds[1] = 5000; B.phase = 1; assert.equal(g.warAiDeploy(1).length, 0, 'ten on the map already: the cap holds reinforcements back');
-  g.alive(1).filter(u => u !== ace && !u.boss).slice(0, 3).forEach(u => { u.hp = 0; }); const dep = g.warAiDeploy(1); assert(dep.length === 1 && dep[0].x === rc.x && dep[0].y === rc.y, 'with losses, the Rocket center deploys');
+  g.alive(1).filter(u => u !== ace && !u.boss).slice(0, 3).forEach(u => { u.hp = 0; }); const dep = g.warAiDeploy(1); assert(dep.length >= 1 && dep.every(u => B.war.props.some(p => p.owner === 1 && p.x === u.x && p.y === u.y)), 'with losses, the Rocket HQ and center deploy'); assert(B.war.props.some(p => p.kind === 'hq' && p.owner === 1 && p.name === 'ROCKET HQ'), 'the enemy has its own base');
   // clearing the front frees Brock: he unlocks and can lead the next one
   G('SAVE.chapter = 3'); assert(g.coUnlocked(G('SAVE')).includes('brock')); G('SAVE.co = "brock"');
   const ch4 = C.CHAPTERS[3]; g.startBattle(ch4.map, party.slice(0, 4), {}, g.chapterOpts(3, party.slice(4), 5)); const B4 = T.B();

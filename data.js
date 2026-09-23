@@ -97,6 +97,7 @@ const TERRAIN = {
   'K': { id: 'center', name: 'Field Center', cost: { walk: 1 }, def: 10, eva: 0, heal: .3 },
   'G': { id: 'gym', name: 'Gym', cost: { walk: 1 }, def: 20, eva: 0 },
   'Q': { id: 'hq', name: 'HQ', cost: { walk: 1 }, def: 20, eva: 0, heal: .3 },
+  'J': { id: 'hq', name: 'HQ', cost: { walk: 1 }, def: 20, eva: 0, heal: .3 }, // the same base as a steel bunker, for caves and hideouts
   'H': { id: 'house', name: 'House', cost: { walk: 99, fly: 99 }, def: 0, eva: 0 },
   'c': { id: 'cave', name: 'Cave Floor', cost: { walk: 1 }, def: 0, eva: 0 },
   'r': { id: 'rubble', name: 'Rubble', cost: { walk: 2, fly: 1, climb: 1 }, def: 15, eva: 5 },

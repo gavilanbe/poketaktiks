@@ -7,7 +7,7 @@
 // ============================================================================
 'use strict';
 const WAR = { income: 1000, cap: 10, capture: 20, recovery: 2, ball: 500 };
-const PROP_KIND = { Q: 'hq', C: 'center', K: 'center' };
+const PROP_KIND = { Q: 'hq', J: 'hq', C: 'center', K: 'center' };
 // Deploy price: base stat total × (level + 10) / 4, to the ₽100, at least ₽1000 (a Lv 5 Pidgey ₽1000, a Lv 20
 // Pidgey ₽1900, a Lv 16 Ivysaur ₽2600, a Lv 30 Charizard ₽5300).
 function bstOf(num) { const b = DEX[num].base; return b.hp + b.atk + b.def + b.spa + b.spd + b.spe; }
@@ -108,7 +108,8 @@ function warBallPrice() { return B && B.war ? WAR.ball : Infinity; }
 function warObjective() {
   if (!B || !B.war || B.result) return B && B.result; warSettle(); const W = B.war;
   const finish = (winner, reason) => { W.reason = reason; if (B.versus) B.endReason = reason + '!'; return B.result = B.versus ? (winner < 0 ? 'draw' : winner === 0 ? 'p1' : 'p2') : winner < 0 ? 'draw' : winner === 0 ? 'win' : 'lose'; };
-  for (const p of W.props) if (p.kind === 'hq' && p.hq >= 0 && p.owner !== p.hq) return finish(p.owner === 2 || p.owner === 3 || p.owner < 0 ? 1 - p.hq : p.owner, p.name + ' captured');
+  // an HQ taken ends it (not while Oak's first lesson is still running: the catch comes first)
+  if (!(B.lesson && !B.lesson.complete)) for (const p of W.props) if (p.kind === 'hq' && p.hq >= 0 && p.owner !== p.hq) return finish(p.owner === 2 || p.owner === 3 || p.owner < 0 ? 1 - p.hq : p.owner, p.name + ' captured');
   if (W.hold) for (const t of [0, 1]) if (W.hold.count[t] >= W.hold.turns) return finish(t, (t === 0 ? 'You' : 'The enemy') + ' held ' + W.hold.need + ' centers for ' + W.hold.turns + ' turn starts');
   if (B.territory) for (const t of [0, 1]) if (!alive(t).length && !warDeploySites(t).length) return finish(1 - t, 'No Pokémon and no centers left');
   if (W.turns && B.turn > W.turns) { const a = warMiddleHeld(0), b = warMiddleHeld(1); return finish(a === b ? -1 : a > b ? 0 : 1, 'Turn limit: centers ' + a + '-' + b); }

@@ -244,7 +244,7 @@ function briefGo(S) { if (SAVE) { SAVE.co = S.co; writeSave(); } Audio.sfx('sele
 function briefDraw() {
   const S = SC.data, ch = CHAPTERS[S.idx], W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), bh = btnH(); if (!S.bd) S.bd = makeBackdrop(ch.map);
   rect(0, 0, W, H, UI.bg); drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 - t * 3, (H - S.bd.canvas.height) / 2, .8); SC.hits = [];
-  const top = screenTitle('FRONT ' + ch.num + ' · ' + ch.title.toUpperCase(), narrow ? null : objectiveTextFor(ch.map.objective), 4), foot = narrow ? H - 2 * (bh + 4) - 8 : footerBand(bh + 12);
+  const top = screenTitle('FRONT ' + ch.num + ' · ' + ch.title.toUpperCase(), narrow ? null : objectiveTextFor(ch.map.objective, ch.map), 4), foot = narrow ? H - 2 * (bh + 4) - 8 : footerBand(bh + 12);
   const co = ch.co ? COS[ch.co] : null, sp = ch.foe ? SPEAKERS[ch.foe] : null, as = co ? null : { tr: sp ? sp.tr : 'rocketgrunt', name: ch.foe || 'Rocket', col: sp ? sp.col : UI.red };
   const lw = narrow ? W - 12 : Math.min(250, Math.floor(W * .42)), lx = 6, ly = top + 2, cardW = narrow ? 70 : 84, cardH = narrow ? 60 : 76;
   // the enemy commander and their words
@@ -259,7 +259,7 @@ function briefDraw() {
   // the mission
   const mx = narrow ? 6 : lx + lw + 6, my = narrow ? ly + cardH + 24 : ly, mw = narrow ? W - 12 : W - mx - 6, mh = foot - 6 - my;
   const mp = panel(mx, my, mw, mh, { header: 'MISSION', headerRight: 'Lv ' + ch.level + ' · par ' + ch.par + ' days', headerRightCol: UI.gold }); let y = mp.cy;
-  const goal = objectiveTextFor(ch.map.objective).replace('Objective: ', ''); iconAt('flag', mx + 6, y - 1, UI.gold); text(fitLabel(goal[0].toUpperCase() + goal.slice(1), mw - 22), mx + 17, y, UI.ink); y += 12;
+  const goal = objectiveTextFor(ch.map.objective, ch.map).replace('Objective: ', ''); iconAt('flag', mx + 6, y - 1, UI.gold); text(fitLabel(goal[0].toUpperCase() + goal.slice(1), mw - 22), mx + 17, y, UI.ink); y += 12;
   const foes = ch.map.units.filter(u => u.team == null || u.team === 1), wild = ch.map.units.filter(u => u.team === 2), rocket = ch.map.war && ch.map.war.owners ? Object.keys(ch.map.war.owners).length : 0, per = Math.max(1, Math.floor((mw - 12) / 20));
   const row = (label, list, col, flip) => { if (!list.length || y + 26 > my + mh - 4) return; sectionLabel(label, mx + 8, y, mw - 16, col); y += 10; list.slice(0, per).forEach((n, k) => { const bob = !REDUCED && k === Math.floor(t * 3) % Math.min(per, list.length) ? -1 : 0; ctx.drawImage(monIcon(n, flip), mx + 4 + k * 20, y + bob, 24, 18); if (k === 0 && label.startsWith('ENEMY') && co) drawCrown(mx + 17 + k * 20, y); }); y += 20; };
   row('ENEMY FORCES · ' + foes.length, (lead ? [lead.mon] : []).concat(foes.filter(u => u !== lead).map(u => u.mon)), '#ff9a9a', true); // their Ace first
