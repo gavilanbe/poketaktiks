@@ -54,8 +54,9 @@ or fainting resets it. Any Pokémon can capture (a full-HP one takes two actions
   Versus the shared **catalog** (every side has the same species, at the same level) plus captures.
 - **Deploy**: select a free property you own (or press Z on it) to open the PC. Pay the Pokémon's cost;
   it appears on the property and cannot act until your next turn.
-- **Cost**: `round(BST × level × 0.8, to 100)`, at least ₽1000. A Lv 5 Pidgey costs ₽1000, a Lv 16
-  Ivysaur ₽5200, a Lv 30 Charizard ₽12800.
+- **Cost**: `BST × (level + 10) / 4`, to the ₽100, at least ₽1000. A Lv 5 Pidgey costs ₽1000, a Lv 20
+  Pidgey ₽1900, a Lv 16 Ivysaur ₽2600, a Lv 30 Charizard ₽5300 (the first formula, BST × level × 0.8,
+  priced a Lv 16 Ivysaur at five days of income; this one lets a side deploy about one Pokémon a day).
 - A deployed Pokémon **faints** back into the Box and **recovers for two of its side's days**; after that
   it can be deployed again at full HP for its cost. No Pokémon is lost for good.
 - A side has at most **10 Pokémon on the map**.
@@ -82,7 +83,7 @@ wearing the crown.
 
 | Trainer | Ace | Passive (near the Ace) | Power (50) | Super Power (100) |
 | --- | --- | --- | --- | --- |
-| You (Tactician) | your starter | – | by your starter: Rally / Shell Guard / Life Link | Blaze Rush / Tidal Shield / Verdant Bloom |
+| You (Tactician) | your starter | Partner bond: allies deal 10% more, take 10% less | by your starter: Rally / Shell Guard / Life Link | Blaze Rush / Tidal Shield / Verdant Bloom |
 | Brock | Onix | Rock/Ground take 15% less | Rock Tomb: enemies −1 move, 10% damage | Sandstorm Fort: allies take 30% less, 2 days of sandstorm |
 | Misty | Starmie | +1 move on water, Water +10% | Rain Dance: 2 days of rain | Hydro Surge: 3 days of rain, Water +30%, heal 20% on water |
 | Lt. Surge | Raichu | +10% critical chance | Thunder Wave: paralyse the three strongest enemies | Thunderstorm: lightning hits every enemy for 20% |
@@ -133,9 +134,35 @@ scenes draw it; the forecast includes it.
 
 ## Phases
 
+All five are built (2026-09-23):
+
 1. Advance Wars battle screen (backgrounds, panels, effects).
 2. Economy everywhere: properties on every map, funds, the Box, the PC deploy menu, captures to the Box,
    AI that deploys and captures, HQ victory.
 3. Trainers: roster, portraits, passive near the Ace, powers with cut-ins and map effects, unlocks.
 4. Weather.
 5. Modes: Skirmish/Versus setup, Battle Tower, Safari Zone, the campaign rewritten around the lore.
+
+## As built: notes and numbers
+
+- **Balance by simulation.** The AI plays both sides of whole battles model-only (`simWar` in war.js).
+  Mirror Skirmishes favour the side that moves first (13 of 15), so the player's side, which a human
+  plays better than the AI, starts with that edge. The Tactician got a passive (partner bond) because
+  without one the AI's trainer commanders, with an evolved Ace, won 17 of 20 Skirmishes; with it the
+  player-side AI wins about 40%, which a human turns into a comfortable but earned win.
+- **Commander armies** are base species that evolve with the level (`formAt`), so a Lv 14 Brock fields
+  Geodude and Onix, a Lv 40 one Graveler and Golem. The Ace joins its side's Box: it can be deployed
+  again after it faints.
+- **Skirmish** maps are point-symmetric: HQs at the road's ends, each side's own center three columns in,
+  two neutral centers mirrored through the middle. Both armies count twelve (four on the map, eight in
+  the Box). Biomes: fields, forest, coast, mountains, snowfield (packed snow `n` walks like a plain,
+  drifts `S` cost 2), volcano (lava and rubble on cave floor) and cave, each with its own wild Pokémon.
+- **Versus** arenas are mirrored: HQs at the road's ends, each player's center, two neutral ones; the
+  flag bases for Capture the Flag moved behind the HQs. Both players deploy from the same catalog.
+- **Battle Tower** floors and **Safari Zone** rules are in `modes.js`; records live in `pk_records`,
+  apart from the campaign save. The rival AI of the Safari weakens without knocking out, throws when
+  the odds and points are worth it, and fights your team when the trade is good.
+- **Campaign**: from Mt. Moon each front has an enemy commander (Brock, Misty, Giovanni, Lt. Surge,
+  Blaine, Giovanni), their Ace on the map and a Rocket center that deploys their army (five Pokémon at
+  the front's level) until you capture it. Fronts 1-2 keep local trainers. Gym Leaders unlock after
+  their front (`CO_UNLOCK`) and lead your side from the briefing from front 4 on.

@@ -173,7 +173,8 @@ test('Battle Tower: floors open in order, rentals at the floor level, rank maths
   assert(map.units.filter(u => u.team == null).length === 3 && map.par === F.par);
   g.startBattle(map, army.slice(0, 4), {}, { skirmish: true, tower: 0, seed: 5, defer: true, cos: ['you', F.co], box: army.slice(4), box2: g.coTeam(F.co, F.level, 8, F.seed), war: { funds: [2000, 2000] }, captain: { pid: null, root: 4, chapter: 8 } });
   const B = T.B(); assert.equal(B.tower, 0); assert(g.alive(0).every(u => u.level === F.level && u.hpBonus === 1), 'rentals are plain and level');
-  const r = g.simWar(30); const result = r.result || 'lose'; B.result = result; g.towerEnd(result);
+  g.simWar(2); if (!B.result) { B.phase = 0; g.saveSuspend(); g.resumeSuspend(); const B2 = T.B(); assert.equal(B2.tower, 0, 'a suspended floor resumes as a Tower battle'); assert.equal(B2.war.props.length, B.war.props.length); assert.equal(B2.command.teams[1].co, F.co); }
+  const r = g.simWar(30); const result = T.B().result || 'lose'; T.B().result = result; g.towerEnd(result);
   const R = JSON.parse(T.store.get('pk_records') || '{}'); if (result === 'win') { assert(R.tower && R.tower[0] && 'SABC'.includes(R.tower[0].rank)); } else assert(!R.tower || !R.tower[0]);
   assert.equal(G('SC.name'), 'rank'); g.rankDraw(); for (const h of G('SC.hits')) assert(h.w > 0);
   console.log('       floor 1: ' + result + ' in ' + r.turn + ' days' + (R.tower && R.tower[0] ? ', rank ' + R.tower[0].rank : ''));
@@ -185,7 +186,8 @@ test('Safari Zone: weighted rarity pool, a race both sides play (weaken, throw, 
   const map = g.safariMap(7, 16); assert.equal(map.objective.type, 'safari'); assert(map.units.filter(u => u.team === 2).every(u => u.ai === 'guard'));
   const party = [4, 16, 25, 7].map((n, i) => Object.assign(g.partyUnit(n, 16), { pid: i }));
   g.startBattle(map, party, { pokeball: 12 }, { skirmish: true, safari: { days: 8, score: [0, 0], catches: [[], []], balls: [12, 12], preset: true }, seed: 3, defer: true, cos: ['you', 'blue'], captain: { pid: 0, root: 4, chapter: 8 } });
-  const B = T.B(), r = g.simWar(12); assert(['win', 'lose', 'draw'].includes(r.result), json(r.result)); assert(B.turn >= 9 || !g.alive(0).length);
+  g.simWar(3); T.B().phase = 0; g.saveSuspend(); g.resumeSuspend(); const B = T.B(); assert(B.safari && B.safari.balls.length === 2, 'a suspended race resumes with its score and balls'); assert.equal(B.map.turnLimit, 8);
+  const r = g.simWar(12); assert(['win', 'lose', 'draw'].includes(r.result), json(r.result)); assert(B.turn >= 9 || !g.alive(0).length);
   const caught = B.safari.catches[0].length + B.safari.catches[1].length; assert(caught > 0, 'somebody caught something');
   for (const t of [0, 1]) assert.equal(B.safari.score[t], B.safari.catches[t].reduce((a, c) => a + c.pts, 0)); assert(B.bag.pokeball <= 12 && B.safari.balls[1] <= 12);
   assert(r.log.some(l => /throws at/.test(l)), 'the AI throws Safari Balls'); assert(!r.log.some(l => /KO .* by .*\(1\)/.test(l) && false));

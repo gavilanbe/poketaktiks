@@ -17,7 +17,7 @@ cat <<'H'
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
 <meta name="apple-mobile-web-app-title" content="Poketaktiks">
-<meta name="description" content="A Fire Emblem / Advance Wars style tactics game with Gen I Pokémon. Grid battles, type matchups, catching wild Pokémon, evolutions, eight chapters and random skirmishes. Pixel art, keyboard, mouse and touch.">
+<meta name="description" content="Advance Wars rules with Gen I Pokémon: free Kanto from Team Rocket, earn funds from Poké Centers, deploy your PC Box, catch recruits, command with Gym Leaders. Campaign, Skirmish, Battle Tower, Safari Zone and Versus. Pixel art, keyboard, mouse and touch.">
 <style>
 html,body{margin:0;height:100%;background:#0e0c10;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
 body{display:flex;align-items:center;justify-content:center}
