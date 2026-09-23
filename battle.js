@@ -96,6 +96,7 @@ function warSetup(mapDef, opts) {
   warInit(mapDef, { war: Object.assign({ centers: opts.versus || opts.skirmish ? -1 : 0 }, opts.war || {}) });
   for (const u of B.units) if (u.fromBox && u.team <= 1) { const e = warEntry({ num: u.num, level: u.level, data: serializeUnit(u), pid: u.pid }); e.state = 'field'; e.unitId = u.id; B.war.box[u.team].push(e); }
   [opts.box || [], opts.box2 || []].forEach((list, team) => { for (const d of list) B.war.box[team].push(warEntry({ data: d, pid: d.pid })); });
+  wildSetup(mapDef);
 }
 // Can a side still play a phase with nothing on the map? Only if it can deploy.
 function warCanPlay(team) { return !!(B.war && team <= 1 && warDeploySites(team).length && B.war.box[team].some(e => e.state === 'box')); }
@@ -114,6 +115,7 @@ function beginPhase(team, first, resumed = false) {
   if (!teamsPresent.includes(team) && team !== 0 && !warCanPlay(team)) { nextPhase(); return; }
   // reinforcements at the start of the enemy phase
   if (team === 1) for (const u of spawnReinforcements()) ev.push({ type: 'spawn', unit: u });
+  if (team === 0 && !first && !resumed) for (const u of wildSpawn()) ev.push({ type: 'wildSpawn', unit: u });
   const label = phaseLabel(team);
   BT.banner = { text: label, t: 0, team, sub: isHuman(team) ? 'Turn ' + B.turn + (B.map.turnLimit && B.map.objective.type !== 'survive' ? ' / ' + B.map.turnLimit : '') + (B.map.objective.type === 'survive' ? ' / ' + B.map.objective.turns : '') : null };
   BT.mode = 'banner'; Audio.sfx(isHuman(team) ? 'phase' : 'enemyphase');
@@ -167,6 +169,10 @@ function setupEvent(q) {
         const c = teamColorL(e.unit.team); Audio.sfx('caught'); e.unit.fx.sy = .5; e.unit.fx.sx = 1.4; spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 26, life: .5, col: c }); spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 14, life: .4, col: '#ffffff', delay: .06 }); spawnSprite('flash', ux(e.unit), uy(e.unit) + 6, { size: 12, life: .25, col: '#ffffff' });
         spawnParts(ux(e.unit), uy(e.unit) + 6, 18, [c, '#ffffff', '#ff5a5a'], { speed: 70, life: .6, grav: 60 }); floatText(ux(e.unit), uy(e.unit) - 12, 'Go, ' + e.unit.name + '!', c, { big: true, outline: '#000', life: 1.2 }); break; }
       Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 8, 12, ['#ffffff', '#ff4b4b'], { speed: 50, life: .5, grav: 0 }); floatText(ux(e.unit), uy(e.unit) - 10, 'Reinforcements!', UI.red); break;
+    // a wild Pokémon steps out of the tall grass: the blades burst, a "!" pops over it, its name is announced
+    case 'wildSpawn': q.dur = BT.fast ? .5 : 1.1; centerCam(e.unit.x, e.unit.y); Audio.sfx('grass'); e.unit.fx.sy = .4; e.unit.fx.sx = 1.5;
+      for (let i = 0; i < 8; i++) spawnSprite('leaf', ux(e.unit) + (i - 3.5) * 3, uy(e.unit) + 18, { size: 3, life: .7, col: '#3d8a3c', col2: '#a6dc7c', vx: (i - 3.5) * 16, vy: -60 - (i % 3) * 14, grav: 120, rot: i, spin: 10 });
+      e.unit.fx.alert = BT.time; floatText(ux(e.unit), uy(e.unit) - 16, 'A wild ' + e.unit.name + ' appeared!', UI.gold, { outline: '#000', life: 1.3, delay: .15 }); break;
     case 'capture': q.dur = (CATCH_T.result + e.shakes * CATCH_T.shake + (e.ok ? 1.35 : .8)) / (BT.fast ? 1.8 : 1); centerCam(e.unit.x, e.unit.y); break; // the catch plays in the middle of the view
     case 'miss': q.dur = BT.fast ? .3 : .55; break;
     case 'status': floatText(ux(e.unit), uy(e.unit) - 6, STATUS[e.status].text.toUpperCase() + '!', STATUS[e.status].col, { outline: '#000' }); Audio.sfx(e.status === 'par' ? 'para' : e.status === 'brn' ? 'burn' : 'poison'); break;
@@ -801,6 +807,7 @@ function drawUnit(u) {
   if (u.boss) { ctx.globalAlpha = f.alpha * .9; const k = Math.floor(BT.time * 4) % 2; ellipseRing(cx, gy, 14 + k, 5, 1, '#ffd24a'); ctx.globalAlpha = 1; }
   // a wild Pokémon weak enough to catch wears a small ball that bobs over it; one that broke free steams for a moment
   if (u.team === 2 && u.hp > 0 && u.hp <= u.maxHp / 2 && f.alpha > 0 && !u.boss) drawBall(cx + 10, by - 26 + (REDUCED ? 0 : Math.round(Math.sin(BT.time * 5 + u.id) * 1.5)), ITEMS.pokeball.col, 3);
+  if (f.alert != null && BT.time - f.alert < 1.1) { const k = BT.time - f.alert, pop = k < .12 ? 1 : 0; rect(cx - 2 - pop, by - 36 - pop * 2, 5 + pop * 2, 9 + pop * 2, '#1e1a24'); rect(cx - 1, by - 35 - pop * 2, 3, 5 + pop, '#ffffff'); rect(cx - 1, by - 29 - pop, 3, 2, '#ffffff'); }
   if (f.anger != null && BT.time - f.anger < 1.3 && !REDUCED) { const k = Math.floor((BT.time - f.anger) * 8) % 2; stampAt(cx + 7, by - 30 - k, ['R.R.R', '.RRR.', 'RR.RR', '.RRR.', 'R.R.R'], { R: '#ff4a4a' }); }
   const sh = Math.max(.4, 1 - air / 18); ctx.globalAlpha = .3 * f.alpha * sh; ellipse(cx, gy, Math.round(10 * sh), Math.max(1, Math.round(3 * sh)), '#000000'); ctx.globalAlpha = 1;
   if (sel && !REDUCED) { const k = (BT.time * 1.4) % 1; ctx.globalAlpha = (1 - k) * .7 * f.alpha; ellipseRing(cx, gy, Math.round(11 + k * 8), Math.round(4 + k * 3), 1, teamColorL(u.team)); ctx.globalAlpha = 1; }

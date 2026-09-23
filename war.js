@@ -164,5 +164,19 @@ function warDecide(u) {
   }
   return best;
 }
+// Tall grass breeds encounters: B.wild = { pool: [{mon, level, ai}], cap, chance } comes from the map's wild Pokémon
+// (or mapDef.wildPool / wildCap). At the start of each day after the first, while fewer wild Pokémon than the cap are
+// out, one of the pool may step out of an empty patch of tall grass away from everyone (gameplay RNG, 30%).
+function wildSetup(mapDef) {
+  const pool = (mapDef.wildPool || (mapDef.units || []).filter(d => d.team === 2)).map(d => ({ mon: d.mon, level: d.level, ai: d.ai || 'aggro' }));
+  const grass = B.map.tiles.some(row => row.some(t => t.id === 'tall'));
+  B.wild = pool.length && grass ? { pool, cap: mapDef.wildCap != null ? mapDef.wildCap : Math.max(2, pool.length), chance: mapDef.wildChance != null ? mapDef.wildChance : .3 } : null;
+}
+function wildSpawn() {
+  const W = B.wild; if (!W || B.result || alive(2).length >= W.cap || rnd() >= W.chance) return [];
+  const spots = []; for (let y = 0; y < B.map.h; y++) for (let x = 0; x < B.map.w; x++) if (B.map.tiles[y][x].id === 'tall' && !unitAt(x, y) && !B.units.some(u => u.hp > 0 && dist(u, { x, y }) <= 2)) spots.push({ x, y });
+  if (!spots.length) return []; const p = spots[Math.floor(rnd() * spots.length)], d = W.pool[Math.floor(rnd() * W.pool.length)];
+  const u = makeUnit(d.mon, d.level, 2, { x: p.x, y: p.y, ai: d.ai }); u.provoked = false; B.units.push(u); requestBigSprite(u.num); return [u];
+}
 // Does this unit play the war (capture and roam) rather than a scripted role?
 function warRoams(u) { return !!(B && B.war && u.team <= 1 && !u.boss && (!u.ai || u.ai === 'aggro') && B.war.props.some(p => p.owner !== u.team)); }

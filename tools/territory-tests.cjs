@@ -113,6 +113,22 @@ test('fixed-seed matches complete with legal movement, capture, skills and deplo
     console.log('       seed ' + seed + ': ' + r.result + ' turn ' + r.turn + ', ' + r.reason);
   }
 });
+test('war rules outside Conquest: campaign centers, catches to the Box with a free deploy, bought balls, tall-grass spawns', () => {
+  const { place } = require('./model-tests.cjs');
+  const T = loadGame(), { g, G } = T;
+  g.startBattle({ name: 'war', seed: 3, rows: ['C.....', '..tttt', '..tttt', '......'], deploy: [{ x: 1, y: 0 }], units: [{ mon: 16, level: 3, team: 2, x: 5, y: 3 }, { mon: 19, level: 3, team: 1, x: 5, y: 0 }], objective: { type: 'rout' } }, [g.partyUnit(7, 8)], { pokeball: 0 }, { defer: true, seed: 5 });
+  const B = T.B(), W = B.war, pc = W.props[0];
+  assert.equal(pc.owner, 0, 'a campaign center belongs to the player'); assert.equal(W.box[0].length, 1, 'the deployed partner is in the Box'); assert.equal(W.box[0][0].state, 'field');
+  assert(B.wild && B.wild.pool.length === 1 && B.wild.cap === 2, 'wild pool from the map');
+  // catching with no ball left buys one; the catch lands in the Box, fresh: its first deployment is free
+  const sq = g.alive(0)[0], wild = g.alive(2)[0]; sq.x = 4; sq.y = 3; wild.hp = 1; W.funds[0] = 600; B.phase = 0; G('rnd = () => 0.01');
+  const BT = G('BT'); BT.sel = sq; BT.targets = [wild]; BT.tIdx = 0; BT.ball = 'pokeball'; g.confirmCatch(); assert.equal(W.funds[0], 100, 'a ball bought for ₽500');
+  while (BT.queue.length || BT.anim) { g.nextAnim(); } assert(wild.captured, 'caught'); const e = W.box[0].find(x => x.num === 16); assert(e && e.fresh && e.state === 'box');
+  assert.equal(g.warDeployBlock(0, W.box[0].indexOf(e), pc), null, 'free even with ₽100'); const u = g.warDeploy(0, W.box[0].indexOf(e), pc); assert(u && u.team === 0 && u.num === 16); assert.equal(W.funds[0], 100);
+  // tall grass spawns: at most the cap, never next to anyone
+  G('rnd = () => 0.01'); const spawned = g.wildSpawn(); assert.equal(spawned.length, 1); const s0 = spawned[0]; assert.equal(B.map.tiles[s0.y][s0.x].id, 'tall'); assert(B.units.every(v => v === s0 || v.hp <= 0 || g.dist(v, s0) > 2));
+  g.wildSpawn(); assert(g.alive(2).length <= 2, 'the cap holds'); G('rnd = () => 0.99'); const before = g.alive(2).length; g.wildSpawn(); assert.equal(g.alive(2).length, before, 'no spawn on a failed roll');
+});
 let failed = 0;
 for (const [name, fn] of tests) { try { fn(); console.log('  ok   ' + name); } catch (e) { failed++; console.error('  FAIL ' + name + '\n' + e.stack); } }
 console.log(`${tests.length - failed}/${tests.length} territory tests passed`); process.exitCode = failed ? 1 : 0;

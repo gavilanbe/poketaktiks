@@ -93,6 +93,7 @@ function resumeSuspend() {
   for (const u of B.units) requestBigSprite(u.num);
   if (s.skirmish && s.preset) SC.data = { preset: true };
   if (B.war) { map.ownerAt = warOwnerAt; if (B.territory) for (const u of B.units) if (u.team <= 1) u.reserveSlot = B.war.box[u.team].findIndex(e => e.unitId === u.id); }
+  if (B.war) wildSetup(mapDef);
   else warSetup(mapDef, { skirmish: B.skirmish }); // a suspend from before the war rules: rebuild them from the map
   if (!s.command) initBattleCaptains(B.territory ? {} : SAVE ? { captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: s.chapter == null ? 8 : s.chapter } } : {});
   // the save was written after this phase's upkeep: resume without applying it again
