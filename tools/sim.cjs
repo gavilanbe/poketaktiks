@@ -3,6 +3,7 @@
 // Loads the game like model-tests.cjs, launches each chapter the way the ?ch= deep link does (loaner party at
 // the chapter level, cautious AI playing the player side) and runs simBattle. Prints one line per chapter:
 // result letter, turn, player and enemy survivors per seed, and the win count. Model only: no browser.
+// The player side leads with a Charmander-family captain as in the campaign (SIM_CAPTAIN=0 runs without powers).
 'use strict';
 const path = require('path');
 const { loadGame } = require(path.join(__dirname, 'model-tests.cjs'));
@@ -13,7 +14,7 @@ function launch(T, idx, seed) {
   const { g, C } = T; const ch = C.CHAPTERS[idx]; const L = ch.level;
   const party = [g.partyUnit(4, L), g.partyUnit(7, L), g.partyUnit(1, L), g.partyUnit(25, L), g.partyUnit(133, L - 1), g.partyUnit(66, L - 1), g.partyUnit(74, L - 1), g.partyUnit(16, L - 2)];
   const deployed = party.slice(0, ch.slots).map((p, i) => Object.assign({}, p, { pid: i }));
-  g.startBattle(ch.map, deployed, { pokeball: 5 }, { chapter: idx, seed, defer: true });
+  g.startBattle(ch.map, deployed, { pokeball: 5 }, Object.assign({ chapter: idx, seed, defer: true }, process.env.SIM_CAPTAIN !== '0' ? { captain: { pid: 0, root: 4, chapter: idx } } : {}));
   T.G('B.units.forEach(u => { u.provoked = u.provoked || false; })');
 }
 let wins = 0, total = 0; const out = [];
