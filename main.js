@@ -116,14 +116,14 @@ function launchVersus(S) {
 // ---------------------------------------------------------------- main loop
 let lastT = 0;
 function frame(t) {
-  requestAnimationFrame(frame); const dt = Math.min(.05, (t - lastT) / 1000 || 0); lastT = t; SC.t += dt;
+  requestAnimationFrame(frame); const dt = Math.min(.05, (t - lastT) / 1000 || 0); lastT = t; SC.t += dt; CLOCK.t += dt; CLOCK.dt = dt; CLOCK.frame++;
   // input
   const q = INPUT.queue; INPUT.queue = [];
   for (const ev of q) {
     if (ev.type === 'key' && ev.key === 'mute' && SC.name !== 'battle') { Audio.toggle(); continue; }
     switch (SC.name) {
       case 'journey': journeyInput(ev); break; case 'territory': case 'territoryResults': territorySceneInput(ev); break; case 'title': titleInput(ev); break; case 'starter': starterInput(ev); break; case 'card': cardInput(ev); break; case 'story': storyInput(ev); break;
-      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break;
+      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break;
     }
   }
   // update
@@ -133,10 +133,10 @@ function frame(t) {
   switch (SC.name) {
     case 'loading': rect(0, 0, VIEW.w, VIEW.h, '#0e0c10'); textC('loading sprites…', VIEW.w / 2, VIEW.h / 2, UI.muted); break;
     case 'journey': journeyDraw(); break; case 'territory': territorySetupDraw(); break; case 'territoryResults': territoryResultsDraw(); break; case 'title': titleDraw(); break; case 'starter': starterDraw(); break; case 'card': cardDraw(); break; case 'story': storyDraw(); break;
-    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break;
+    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break;
   }
-  // every scene change fades up from black (the story overlay excepted: it sits on the board it follows)
-  if (SC.t < .3 && SC.name !== 'story' && SC.name !== 'loading' && !REDUCED) { ctx.globalAlpha = 1 - easeOut(SC.t / .3); rect(0, 0, VIEW.w, VIEW.h, '#070a14'); ctx.globalAlpha = 1; }
+  // every scene change closes and reopens a Poké Ball over the screen (see captureTransition)
+  drawTransition(dt);
 }
 // Deep links for testing: ?ch=3 jumps into chapter 3 with a loaner party; ?skirmish=42 a skirmish; ?silent mutes.
 function boot() {

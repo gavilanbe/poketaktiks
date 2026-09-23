@@ -159,6 +159,6 @@ function territorySetupDraw() {
     const mw = Math.floor(bd.canvas.width * scale), mh = Math.floor(bd.canvas.height * scale), mx = Math.floor((W - mw) / 2), my = Math.floor(iy + 5 + (available - mh) / 2);
     outline(mx - 2, my - 2, mw + 4, mh + 4, UI.border2); ctx.drawImage(bd.canvas, mx, my, mw, mh);
   }
-  bigButton(x, by, Math.floor(w * .3), 20, 'BACK', () => goScene('title'), { variant: 'ghost', hot: SC.i === 3 });
+  bigButton(x, by, Math.floor(w * .3), 20, 'BACK', () => goScene('quick'), { variant: 'ghost', hot: SC.i === 3 });
   bigButton(x + Math.floor(w * .3) + 4, by, w - Math.floor(w * .3) - 4, 20, 'START', () => launchTerritory(S.seed, false, [S.captain, S.captain]), { variant: 'primary', hot: SC.i === 4 });
 }

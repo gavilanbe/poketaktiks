@@ -118,54 +118,103 @@ function alpha(a, fn) { const o = ctx.globalAlpha; ctx.globalAlpha = a; fn(); ct
 function circle(cx, cy, r, c) { ctx.fillStyle = c; for (let y = -r; y <= r; y++) { const w = Math.floor(Math.sqrt(r * r - y * y) + .5); ctx.fillRect(cx - w, cy + y, 2 * w + 1, 1); } }
 function ellipse(cx, cy, rx, ry, c) { ctx.fillStyle = c; for (let y = -ry; y <= ry; y++) { const w = Math.floor(rx * Math.sqrt(1 - (y * y) / (ry * ry)) + .5); ctx.fillRect(cx - w, cy + y, 2 * w + 1, 1); } }
 
+// ---------------------------------------------------------------- clock & motion
+// CLOCK.t: seconds since boot, advanced by the main loop; CLOCK.frame counts frames. The motion helpers read it so any
+// screen can animate without timers of its own. Outside the loop (tests, tools) CLOCK.frame stays 0 and every entrance
+// reports itself finished, so layouts are always measured at rest.
+const CLOCK = { t: 0, frame: 0, dt: 0 };
+const APPEAR = new Map();
+// Seconds since `id` started being drawn on consecutive frames; it re-arms when the element is gone for a few frames.
+function appear(id) { if (!CLOCK.frame || REDUCED) return 99; let a = APPEAR.get(id); if (!a || CLOCK.frame - a.f > 2) { a = { t0: CLOCK.t, f: CLOCK.frame }; APPEAR.set(id, a); } a.f = CLOCK.frame; return CLOCK.t - a.t0; }
+function easeOutBack(t, s = 1.7) { t = clamp(t, 0, 1) - 1; return 1 + (s + 1) * t * t * t + s * t * t; }
+function easeOutElastic(t) { t = clamp(t, 0, 1); if (t === 0 || t === 1) return t; return Math.pow(2, -10 * t) * Math.sin((t * 10 - .75) * (2 * Math.PI) / 3) + 1; }
+function wobble(t, amp, freq = 9, decay = 7) { return amp * Math.sin(t * freq * Math.PI * 2 / 3) * Math.exp(-t * decay); }
+// Entrance for a box, pixel-crisp: it unfolds from its middle row and settles with a small bounce. Draw between
+// unfold(...) and unfoldEnd(token). Returns null (nothing to undo) once the entrance is over.
+function unfold(id, x, y, w, h, dur = .2) {
+  const k = appear(id) / dur; if (k >= 1) return null;
+  const e = easeOutBack(k, 2.2), hh = Math.max(2, Math.round(h * clamp(e, 0, 1.08))), dy = Math.round((1 - clamp(e, 0, 1)) * 6);
+  ctx.save(); ctx.globalAlpha *= clamp(k * 3, 0, 1); ctx.beginPath(); ctx.rect(x - 4, Math.round(y + h / 2 - hh / 2) - 4 + dy, w + 10, hh + 10); ctx.clip(); ctx.translate(0, dy); return true;
+}
+function unfoldEnd(tok) { if (tok) ctx.restore(); }
+// Count-up for numbers that just changed (results, points): the shown value runs from 0 to v over `dur` after `delay`.
+function countUp(id, v, dur = .6, delay = 0) { const t = appear(id) - delay; if (t >= dur) return v; if (t <= 0) return 0; return Math.round(v * easeOut(t / dur)); }
+
+// ---------------------------------------------------------------- scene transition (Poké Ball wipe)
+// goScene snapshots the last frame; the two halves of a Poké Ball close over it, then open on the new scene.
+const TRANS = { snap: null, t: 0, on: false };
+function captureTransition() {
+  if (REDUCED || !CLOCK.frame) return;
+  try { if (!TRANS.snap) TRANS.snap = document.createElement('canvas'); TRANS.snap.width = cv.width; TRANS.snap.height = cv.height; TRANS.snap.getContext('2d').drawImage(cv, 0, 0); TRANS.t = 0; TRANS.on = true; } catch (_) { TRANS.on = false; }
+}
+function drawTransition(dt) {
+  if (!TRANS.on) return; TRANS.t += dt; const T = TRANS.t, CLOSE = .17, HOLD = .07, OPEN = .28;
+  if (T >= CLOSE + HOLD + OPEN) { TRANS.on = false; return; }
+  const W = VIEW.w, H = VIEW.h;
+  let k; if (T < CLOSE) { k = easeIn(T / CLOSE); ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(TRANS.snap, 0, 0); ctx.restore(); } else if (T < CLOSE + HOLD) k = 1; else k = 1 - easeInOut((T - CLOSE - HOLD) / OPEN);
+  const half = Math.ceil((H / 2 + 3) * k), cx = Math.round(W / 2), r = Math.max(9, Math.round(Math.min(W, H) * .07));
+  // top: red shell with a highlight band; bottom: white shell; both carry a black rim on the closing edge and half of the button
+  rect(0, 0, W, half, '#e2343e'); rect(0, 0, W, Math.max(0, half - Math.round(H * .35)), '#f04a52'); hline(0, half - 5, W, '#a81c27'); rect(0, half - 3, W, 3, '#141020');
+  rect(0, H - half, W, half, '#f2eee6'); hline(0, H - half + 3, W, '#ffffff'); rect(0, H - half, W, 3, '#141020'); hline(0, H - 1, W, '#c9c2b4');
+  for (const [top, y0] of [[true, half], [false, H - half]]) { ctx.save(); ctx.beginPath(); if (top) ctx.rect(0, 0, W, half); else ctx.rect(0, H - half, W, half); ctx.clip(); const cy = top ? y0 : y0; circle(cx, cy, r + 3, '#141020'); circle(cx, cy, r, '#f2eee6'); circle(cx, cy, r - 3, '#141020'); circle(cx, cy, r - 5, k > .98 ? '#ffffff' : '#e8e2d6'); if (k > .98) circle(cx - 2, cy - 2, 2, '#ffffff'); ctx.restore(); }
+}
+
 // ---------------------------------------------------------------- UI design system
-// One vocabulary for every screen: a bevelled cream frame on slate panels, gold for headings and the
-// selection, cyan-blue for informational values, green/red for outcomes. Everything is 1-px pixel art.
+// One vocabulary for every screen: raised cream-framed windows on deep indigo, gold for headings and the selection,
+// sky blue for information, green/red for outcomes. Everything is 1-px pixel art; motion comes from the helpers above.
 const UI = {
-  panel: '#1b2236', panel2: '#26304c', panelDark: '#111726', panelLight: '#2d3a5e',
-  border: '#e6dcc0', borderHi: '#fff8e2', borderLo: '#a4956e', border2: '#8c7e5a', inset: '#0a0e1a',
-  ink: '#f4f1e8', muted: '#9ea7bc', dim: '#6b7490', info: '#98d8f8',
-  gold: '#f7c94b', goldDark: '#3a2400', red: '#ff6262', green: '#5fe07a', blue: '#66a8ff', shadow: '#080b14', hi: '#ffffff',
-  menuSel: '#2f4a88', sel: '#2f4a88',
-  bg: '#0e0c10', hpGreen: '#48d05a', hpYellow: '#f4c430', hpRed: '#f04848', hpBack: '#22252f',
-  btn: { neutral: '#2b3656', primary: '#2c7a44', danger: '#8a2f2f', ghost: '#4a4034', gold: '#b8862a', dark: '#1a2238' },
+  panel: '#1f2452', panel2: '#2b3274', panelDark: '#141736', panelLight: '#272d66',
+  border: '#f4e9cb', borderHi: '#fffbef', borderLo: '#b9a67a', border2: '#5b619e', inset: '#0b0a1d',
+  ink: '#f7f3e7', muted: '#a8aed3', dim: '#6c72a2', info: '#9cdbff',
+  gold: '#ffd049', goldDark: '#4a2a00', red: '#ff5d67', green: '#62e58d', blue: '#6cb0ff', shadow: '#06051a', hi: '#ffffff',
+  menuSel: '#3646aa', sel: '#3646aa',
+  bg: '#0d0b1e', hpGreen: '#4cd96c', hpYellow: '#f8c63a', hpRed: '#f2484c', hpBack: '#1a1c34',
+  btn: { neutral: '#36428f', primary: '#2f9b56', danger: '#c63a46', ghost: '#5d4f78', gold: '#d8991f', dark: '#242b5e' },
 };
-// Panel: 1-px dark outline, 2-px cream frame with a light top-left / dark bottom-right bevel, 1-px inset, slate
-// fill with a soft top highlight. opt: fill, border (accent frame colour), flat (no fill bevel), title (a tab
-// riding the top edge, 9 px above y), header (a band inside the panel; content starts at the returned cy).
+// Two-tone body with a dithered seam a third of the way down: reads as a lit surface without gradients.
+function bodyFill(x, y, w, h, fill) { const top = shade(fill, .07), s = Math.round(h * .38); rect(x, y, w, h, fill); if (h > 8) { rect(x, y, w, s, top); dither(x, y + s, w, 1, top, 0); } }
+// Panel: soft drop shadow, ink outline with round corners, a cream frame lit top-left, an ink inner line and an indigo
+// body. opt: fill, border (accent frame colour, e.g. the selection), flat (plain body), title (a gold ribbon riding the
+// top edge, 9 px above y), header (a band inside; content starts at the returned cy), headerFill/headerCol/headerRight.
 function panel(x, y, w, h, opt = {}) {
   x |= 0; y |= 0; w |= 0; h |= 0;
   if (opt.light) return lightPanel(x, y, w, h, opt);
   const fill = opt.fill || UI.panel, border = opt.border || UI.border, accent = !!opt.border && opt.border !== UI.border;
-  const hi = accent ? shade(border, .35) : UI.borderHi, lo = accent ? shade(border, -.35) : UI.borderLo;
-  rrect(x + 1, y + 2, w, h, UI.shadow, 2);                 // drop shadow
-  rrect(x, y, w, h, UI.inset, 2);                          // dark outline
-  rrect(x + 1, y + 1, w - 2, h - 2, border, 1);            // cream frame
+  const hi = accent ? shade(border, .4) : UI.borderHi, lo = accent ? shade(border, -.35) : UI.borderLo;
+  ctx.globalAlpha = .6; rrect(x + 2, y + 3, w, h, UI.shadow, 2); ctx.globalAlpha = 1;   // drop shadow
+  rrect(x, y, w, h, UI.inset, 2);                                                          // ink outline
+  rrect(x + 1, y + 1, w - 2, h - 2, border, 1);                                            // cream frame
   hline(x + 2, y + 1, w - 4, hi); vline(x + 1, y + 2, h - 4, hi); hline(x + 2, y + h - 2, w - 4, lo); vline(x + w - 2, y + 2, h - 4, lo);
-  rect(x + 3, y + 3, w - 6, h - 6, UI.inset);              // inset line
-  rect(x + 4, y + 4, w - 8, h - 8, fill);
-  if (!opt.flat) { hline(x + 4, y + 4, w - 8, shade(fill, .16)); vline(x + 4, y + 5, h - 10, shade(fill, .07)); hline(x + 4, y + h - 5, w - 8, shade(fill, -.28)); }
+  rect(x + 3, y + 3, w - 6, h - 6, UI.inset);                                              // inner line
+  if (opt.flat) rect(x + 4, y + 4, w - 8, h - 8, fill); else { bodyFill(x + 4, y + 4, w - 8, h - 8, fill); hline(x + 4, y + 4, w - 8, shade(fill, .22)); hline(x + 4, y + h - 5, w - 8, shade(fill, -.3)); }
   let cy = y + 6;
-  if (opt.header) { const bh = 12; rect(x + 4, y + 4, w - 8, bh, opt.headerFill || UI.panelDark); hline(x + 4, y + 4 + bh, w - 8, UI.border2); hline(x + 4, y + 5 + bh, w - 8, shade(fill, -.3)); text(opt.header, x + 8, y + 7, opt.headerCol || UI.gold); if (opt.headerRight) textR(opt.headerRight, x + w - 8, y + 7, opt.headerRightCol || UI.muted); cy = y + 4 + bh + 5; }
-  if (opt.title) { const tw = textWidth(opt.title) + 10, tx = x + 5; rrect(tx, y - 9, tw, 12, UI.inset, 1); rect(tx + 1, y - 8, tw - 2, 10, border); hline(tx + 2, y - 8, tw - 4, hi); rect(tx + 2, y - 7, tw - 4, 8, UI.panelDark); hline(tx + 2, y - 7, tw - 4, shade(UI.panelDark, .3)); text(opt.title, tx + 5, y - 7, opt.titleCol || UI.gold); }
+  if (opt.header) { const bh = 12, hf = opt.headerFill || UI.panelDark; rect(x + 4, y + 4, w - 8, bh, hf); hline(x + 4, y + 4, w - 8, shade(hf, .25)); hline(x + 4, y + 4 + bh, w - 8, UI.border2); hline(x + 4, y + 5 + bh, w - 8, shade(fill, -.3)); text(opt.header, x + 8, y + 7, opt.headerCol || UI.gold, { shadow: shade(hf, -.55) }); if (opt.headerRight) textR(opt.headerRight, x + w - 8, y + 7, opt.headerRightCol || UI.muted, { shadow: shade(hf, -.55) }); cy = y + 4 + bh + 5; }
+  if (opt.title) ribbonTab(opt.title, x + 5, y - 9, opt.titleCol);
   return { x, y, w, h, cx: x + 6, cy, cw: w - 12 };
 }
-// Light panel (in-battle HUD): a 1-px frame on a slightly lighter slate, a soft shadow and, with opt.header, a 12-px band
-// in opt.headerFill (a team colour) carrying opt.header left and opt.headerRight right. Same return shape as panel().
+// A gold ribbon tab (12 px tall) with a notched tail, carrying dark text. Returns its width.
+function ribbonTab(label, x, y, col) {
+  const face = col && col !== UI.gold ? col : UI.gold, tw = textWidth(label) + 12;
+  rrect(x, y, tw, 12, UI.inset, 1); rect(x + 1, y + 1, tw - 2, 10, face); hline(x + 2, y + 1, tw - 4, shade(face, .45)); hline(x + 1, y + 10, tw - 2, shade(face, -.3));
+  px(x + tw - 2, y + 5, UI.inset); px(x + tw - 2, y + 6, UI.inset); px(x + tw - 3, y + 6, shade(face, -.3));
+  text(label, x + 5, y + 3, shade(face, -.82)); return tw;
+}
+// Light panel (in-battle HUD): a 1-px cream frame around a lighter indigo body, a soft shadow and, with opt.header, a 12-px
+// band in opt.headerFill (a team colour) carrying opt.header left and opt.headerRight right. Same return shape as panel().
 function lightPanel(x, y, w, h, opt) {
   const fill = opt.fill || UI.panelLight, border = opt.border || UI.border;
-  ctx.globalAlpha = .5; rrect(x + 1, y + 2, w, h, UI.shadow, 2); ctx.globalAlpha = 1;
-  rrect(x, y, w, h, UI.inset, 2); rrect(x + 1, y + 1, w - 2, h - 2, border, 1); rect(x + 2, y + 2, w - 4, h - 4, fill);
-  if (!opt.flat) { hline(x + 2, y + 2, w - 4, shade(fill, .14)); hline(x + 2, y + h - 3, w - 4, shade(fill, -.22)); }
+  ctx.globalAlpha = .5; rrect(x + 2, y + 3, w, h, UI.shadow, 2); ctx.globalAlpha = 1;
+  rrect(x, y, w, h, UI.inset, 2); rrect(x + 1, y + 1, w - 2, h - 2, border, 1); hline(x + 2, y + 1, w - 4, UI.borderHi);
+  if (opt.flat) rect(x + 2, y + 2, w - 4, h - 4, fill); else { bodyFill(x + 2, y + 2, w - 4, h - 4, fill); hline(x + 2, y + 2, w - 4, shade(fill, .18)); hline(x + 2, y + h - 3, w - 4, shade(fill, -.25)); }
   let cy = y + 5;
-  if (opt.header) { const bh = 12, hf = opt.headerFill || UI.panelDark; rect(x + 2, y + 2, w - 4, bh, hf); hline(x + 2, y + 2, w - 4, shade(hf, .18)); hline(x + 2, y + 2 + bh, w - 4, shade(hf, -.35)); text(opt.header, x + 6, y + 5, opt.headerCol || UI.ink, { shadow: shade(hf, -.5) }); if (opt.headerRight) textR(opt.headerRight, x + w - 6, y + 5, opt.headerRightCol || UI.ink, { shadow: shade(hf, -.5) }); cy = y + 2 + bh + 4; }
-  if (opt.title) { const tw = textWidth(opt.title) + 8, tx = x + 4; rrect(tx, y - 8, tw, 11, UI.inset, 1); rect(tx + 1, y - 7, tw - 2, 9, border); text(opt.title, tx + 4, y - 6, '#1a1f2e'); }
+  if (opt.header) { const bh = 12, hf = opt.headerFill || UI.panelDark; rect(x + 2, y + 2, w - 4, bh, hf); hline(x + 2, y + 2, w - 4, shade(hf, .3)); hline(x + 2, y + 3, w - 4, shade(hf, .12)); hline(x + 2, y + 2 + bh, w - 4, shade(hf, -.4)); text(opt.header, x + 6, y + 5, opt.headerCol || UI.ink, { shadow: shade(hf, -.55) }); if (opt.headerRight) textR(opt.headerRight, x + w - 6, y + 5, opt.headerRightCol || UI.ink, { shadow: shade(hf, -.55) }); cy = y + 2 + bh + 4; }
+  if (opt.title) ribbonTab(opt.title, x + 4, y - 9, opt.titleCol);
   return { x, y, w, h, cx: x + 4, cy, cw: w - 8 };
 }
 // Filled progress bar with an inset frame; opt.notch draws quarter marks on wide bars.
 function bar(x, y, w, h, ratio, col, back = UI.hpBack, opt = {}) {
   x |= 0; y |= 0; w |= 0; h |= 0; rect(x, y, w, h, back); const f = Math.round(clamp(ratio, 0, 1) * (w - 2));
-  if (f > 0) { rect(x + 1, y + 1, f, h - 2, col); hline(x + 1, y + 1, f, shade(col, .4)); if (h > 4) hline(x + 1, y + h - 2, f, shade(col, -.3)); }
+  if (f > 0) { rect(x + 1, y + 1, f, h - 2, col); hline(x + 1, y + 1, f, shade(col, .45)); if (h > 4) hline(x + 1, y + h - 2, f, shade(col, -.3)); if (f > 2 && h > 3) px(x + f, y + 1, shade(col, .7)); }
   if (opt.notch && w >= 40) for (let q = 1; q < 4; q++) { const nx = x + 1 + Math.round((w - 2) * q / 4); vline(nx, y + 1, h - 2, shade(back, .25)); if (nx < x + 1 + f) vline(nx, y + 1, h - 2, shade(col, -.35)); }
   outline(x, y, w, h, UI.inset); hline(x + 1, y + h - 1, w - 2, shade(back, .35));
 }
@@ -173,30 +222,36 @@ function bar(x, y, w, h, ratio, col, back = UI.hpBack, opt = {}) {
 function defStars(def) { const n = Math.min(4, Math.round(def / 10)); return n ? '★'.repeat(n) : '-'; }
 function hpColor(r) { return r > .5 ? UI.hpGreen : r > .2 ? UI.hpYellow : UI.hpRed; }
 function hpBar(x, y, w, cur, max) { bar(x, y, w, 5, cur / max, hpColor(cur / max), UI.hpBack, { notch: true }); }
-// Button face (no hit registration): dark outline, bevelled face, label. opt: hot, variant (neutral | primary |
-// danger | ghost | gold | dark), big (headline font), ink, disabled, icon, col (explicit face colour).
+// Button face (no hit registration): a raised key with a 2-px base that the face sinks into while pressed. opt: hot
+// (pointer over it / keyboard focus: gold rim, brighter face, a travelling shine), pressed, variant (neutral | primary |
+// danger | ghost | gold | dark), big (headline font), ink, disabled, icon, on (toggle lamp), col (explicit face colour).
 function uiButton(x, y, w, h, label, opt = {}) {
-  x |= 0; y |= 0; w |= 0; h |= 0; const dis = !!opt.disabled; let face = opt.col || UI.btn[opt.variant || 'neutral'] || UI.btn.neutral; if (dis) face = '#262a38'; else if (opt.hot) face = shade(face, .22);
-  rrect(x + 1, y + 2, w, h, UI.shadow, 1); rrect(x, y, w, h, opt.hot && !dis ? UI.gold : UI.inset, 1); rrect(x + 1, y + 1, w - 2, h - 2, face, 1);
-  hline(x + 2, y + 1, w - 4, shade(face, .42)); hline(x + 2, y + 2, w - 4, shade(face, .12)); hline(x + 2, y + h - 2, w - 4, shade(face, -.45)); vline(x + 1, y + 2, h - 4, shade(face, .15)); vline(x + w - 2, y + 2, h - 4, shade(face, -.25));
-  if (opt.hot && !dis) { hline(x + 2, y + h - 3, w - 4, shade(UI.gold, -.2)); }
+  x |= 0; y |= 0; w |= 0; h |= 0; const dis = !!opt.disabled; let face = opt.col || UI.btn[opt.variant || 'neutral'] || UI.btn.neutral; if (dis) face = '#2a2d48'; else if (opt.hot) face = shade(face, .2);
+  const depth = h >= 16 && !dis ? 2 : 1, down = opt.pressed && !dis ? depth : 0, fh = h - depth; // face height above the base
+  ctx.globalAlpha = .5; rrect(x + 1, y + 2, w, h, UI.shadow, 1); ctx.globalAlpha = 1;
+  rrect(x, y, w, h, opt.hot && !dis ? UI.gold : UI.inset, 1);
+  rrect(x + 1, y + 1 + fh - 2, w - 2, h - fh, shade(face, -.5), 1);                          // the base under the key
+  const fy = y + 1 + down; rrect(x + 1, fy, w - 2, fh - 2 + (down ? 0 : 0), face, 1);           // the key face
+  hline(x + 2, fy, w - 4, shade(face, .45)); hline(x + 2, fy + 1, w - 4, shade(face, .14)); vline(x + 1, fy + 1, fh - 4, shade(face, .15)); vline(x + w - 2, fy + 1, fh - 4, shade(face, -.2)); hline(x + 2, fy + fh - 3, w - 4, shade(face, -.28));
+  if (opt.hot && !dis && !REDUCED && CLOCK.frame) { const sx = Math.round(((CLOCK.t * 70) % (w + 40)) - 20); ctx.save(); ctx.beginPath(); ctx.rect(x + 2, fy + 1, w - 4, fh - 4); ctx.clip(); ctx.globalAlpha = .22; for (let i = 0; i < 3; i++) vline(x + sx + i, fy + 1, fh - 4, '#ffffff'); ctx.restore(); }
   const ink = dis ? UI.dim : opt.ink || (opt.hot ? UI.hi : UI.ink); const iw = opt.icon ? 12 : 0;
   const big = opt.big && h >= 15; const lw = textWidth(big ? String(label).toUpperCase() : label, big ? BIG : FONT) + iw; let lx = x + Math.round((w - lw) / 2);
-  if (opt.icon) { iconAt(opt.icon, lx, y + Math.round((h - 9) / 2), dis ? UI.dim : ink); lx += iw; }
-  if (opt.on != null) { const ly = y + Math.round((h - 5) / 2); lx -= 5; rect(lx + lw + 4, ly, 5, 5, UI.inset); rect(lx + lw + 5, ly + 1, 3, 3, opt.on ? UI.gold : '#3a4058'); if (opt.on) px(lx + lw + 5, ly + 1, '#fff3b0'); } // toggle lamp
-  if (big) bigText(label, lx, y + Math.round((h - 9) / 2), ink, { shadow: shade(face, -.6) }); else text(label, lx, y + Math.round((h - 7) / 2), ink, { shadow: dis ? null : shade(face, -.55) });
+  const cy = fy + Math.round((fh - 2) / 2);
+  if (opt.icon) { iconAt(opt.icon, lx, cy - 5, dis ? UI.dim : ink); lx += iw; }
+  if (opt.on != null) { const ly = cy - 3; lx -= 5; rect(lx + lw + 4, ly, 5, 5, UI.inset); rect(lx + lw + 5, ly + 1, 3, 3, opt.on ? UI.gold : '#3a4068'); if (opt.on) px(lx + lw + 5, ly + 1, '#fff3b0'); } // toggle lamp
+  if (big) bigText(label, lx, cy - 5, ink, { shadow: shade(face, -.6) }); else text(label, lx, cy - 4, ink, { shadow: dis ? null : shade(face, -.6) });
 }
-// Menu row highlight: filled band with a gold marker at the left edge.
-function selRow(x, y, w, h, col = UI.sel) { rrect(x, y, w, h, col, 1); hline(x + 1, y, w - 2, shade(col, .28)); hline(x + 1, y + h - 1, w - 2, shade(col, -.3)); rect(x, y + 1, 2, h - 2, UI.gold); }
-// Keycap: cream cap with a dark letter; touch screens get a plain word instead.
-function keycap(k, x, y) { const w = textWidth(k) + 6; rrect(x, y - 1, w, 10, UI.inset, 1); rect(x + 1, y, w - 2, 8, UI.border); hline(x + 1, y, w - 2, UI.borderHi); hline(x + 1, y + 7, w - 2, UI.borderLo); text(k, x + 3, y, '#1a1f2e'); return w; }
+// Menu row highlight: a lit band with a gold edge and a marker that nudges right while it is fresh.
+function selRow(x, y, w, h, col = UI.sel) { rrect(x, y, w, h, col, 1); hline(x + 1, y, w - 2, shade(col, .32)); hline(x + 1, y + h - 1, w - 2, shade(col, -.35)); rect(x, y + 1, 2, h - 2, UI.gold); px(x + 2, y + 1, '#fff2b8'); }
+// Keycap: cream cap with a dark letter and a 1-px base; touch screens get a plain word instead.
+function keycap(k, x, y) { const w = textWidth(k) + 6; rrect(x, y - 1, w, 10, UI.inset, 1); rect(x + 1, y - 1 + 1, w - 2, 7, UI.border); hline(x + 1, y, w - 2, UI.borderHi); hline(x + 1, y + 7, w - 2, UI.borderLo); text(k, x + 3, y, '#1b1834'); return w; }
 // Hint line: [['Z', 'attack'], ['X', 'back'], 'plain text'] centred at cx, on a dark pill so it reads over any board.
 // Returns the drawn width. opt: left (x is the left edge), pill=false (no background), col.
 function hintLine(items, cx, y, opt = {}) {
   const parts = items.filter(Boolean).map(it => Array.isArray(it) ? { k: it[0], t: it[1] } : { t: it });
   const kw = p => (p.k && !VIEW.touch ? textWidth(p.k) + 6 + 3 : 0) + textWidth(p.t);
   const gap = 9; const tot = parts.reduce((s, p) => s + kw(p), 0) + gap * (parts.length - 1);
-  let x = opt.left ? cx : opt.right ? Math.round(cx - tot) : Math.round(cx - tot / 2); if (opt.pill !== false) { ctx.globalAlpha = .72; rrect(x - 5, y - 3, tot + 10, 13, UI.inset, 2); ctx.globalAlpha = 1; }
+  let x = opt.left ? cx : opt.right ? Math.round(cx - tot) : Math.round(cx - tot / 2); if (opt.pill !== false) { ctx.globalAlpha = .78; rrect(x - 5, y - 3, tot + 10, 13, UI.inset, 2); ctx.globalAlpha = 1; }
   for (const p of parts) { if (p.k && !VIEW.touch) x += keycap(p.k, x, y) + 3; text(p.t, x, y, opt.col || UI.muted); x += textWidth(p.t) + gap; }
   return tot;
 }
@@ -204,10 +259,22 @@ function hintLine(items, cx, y, opt = {}) {
 function hintWidth(items) { const parts = items.filter(Boolean).map(it => Array.isArray(it) ? { k: it[0], t: it[1] } : { t: it }); const kw = p => (p.k && !VIEW.touch ? textWidth(p.k) + 6 + 3 : 0) + textWidth(p.t); return parts.reduce((s, p) => s + kw(p), 0) + 9 * (parts.length - 1) + 10; }
 // Small-caps section label with a rule running to the right edge.
 function sectionLabel(s, x, y, w, col = UI.muted) { const t = String(s).toUpperCase(); text(t, x, y, col); const rx = x + textWidth(t) + 5; if (w && rx < x + w) { hline(rx, y + 4, x + w - rx, UI.border2); hline(rx, y + 5, x + w - rx, UI.inset); } }
-function dimScreen(a = .55, col = '#050815') { ctx.globalAlpha = a; rect(0, 0, VIEW.w, VIEW.h, col); ctx.globalAlpha = 1; }
+function dimScreen(a = .55, col = '#07061a') { ctx.globalAlpha = a; rect(0, 0, VIEW.w, VIEW.h, col); ctx.globalAlpha = 1; }
+// Headline in the display face with a gold fill, a dark outline and a shine that sweeps across it every few seconds.
+function shinyTitle(s, cx, y, col = UI.gold, dark = UI.goldDark) {
+  const t = String(s).toUpperCase(), tw = textWidth(t, BIG), x = Math.round(cx - tw / 2);
+  bigText(t, x, y, col, { outline: dark }); hline(x, y + 9, tw, shade(col, -.25));
+  if (!REDUCED && CLOCK.frame) { const k = (CLOCK.t % 3.2) / .7; if (k < 1) { const sx = x - 6 + Math.round((tw + 12) * k); ctx.save(); ctx.beginPath(); ctx.rect(sx, y - 1, 3, 11); ctx.clip(); bigText(t, x, y, '#fffbe6'); ctx.restore(); } }
+  return tw;
+}
 // Screen chrome for setup / result scenes: a headline with a gold rule, and a footer band for buttons and hints.
-function screenTitle(title, sub, y = 6) { const W = VIEW.w; bigC(title, W / 2, y, UI.gold, { outline: UI.goldDark }); const tw = textWidth(String(title).toUpperCase(), BIG); rect(W / 2 - tw / 2 - 14, y + 11, tw + 28, 1, UI.gold); rect(W / 2 - tw / 2 - 14, y + 12, tw + 28, 1, UI.goldDark); if (sub) textC(sub, W / 2, y + 16, UI.muted, { outline: UI.shadow }); return y + (sub ? 27 : 15); }
-function footerBand(h) { const W = VIEW.w, H = VIEW.h; ctx.globalAlpha = .82; rect(0, H - h, W, h, '#070a14'); ctx.globalAlpha = 1; hline(0, H - h, W, UI.border2); hline(0, H - h + 1, W, UI.inset); return H - h; }
+function screenTitle(title, sub, y = 6) {
+  const W = VIEW.w, k = easeOutBack(clamp(appear('title:' + title) / .35, 0, 1)); const tw = textWidth(String(title).toUpperCase(), BIG);
+  const yy = y + Math.round((1 - k) * -14); shinyTitle(title, W / 2, yy, UI.gold, UI.goldDark);
+  const rw = Math.round((tw + 28) * clamp(k, 0, 1)); rect(W / 2 - rw / 2, y + 12, rw, 1, UI.gold); rect(W / 2 - rw / 2, y + 13, rw, 1, UI.goldDark); if (rw > 8) { px(W / 2 - rw / 2 - 2, y + 12, UI.gold); px(W / 2 + rw / 2 + 1, y + 12, UI.gold); }
+  if (sub) textC(sub, W / 2, y + 17, UI.muted, { outline: UI.shadow }); return y + (sub ? 28 : 16);
+}
+function footerBand(h) { const W = VIEW.w, H = VIEW.h; ctx.globalAlpha = .88; rect(0, H - h, W, h, '#08071a'); ctx.globalAlpha = 1; hline(0, H - h, W, UI.gold); hline(0, H - h + 1, W, UI.goldDark); hline(0, H - h + 2, W, UI.inset); return H - h; }
 
 // ---------------------------------------------------------------- sprite atlas (Showdown minis)
 // The Showdown icon sheet is 12 icons per row, 40×30 each, indexed by dex number.
@@ -498,8 +565,6 @@ function textR(s, rx, y, col, opt = {}) { return text(s, rx - textWidth(s, opt.f
 function bigText(s, x, y, col = UI.ink, opt = {}) { return text(String(s).toUpperCase(), x, y, col, Object.assign({ font: BIG }, opt)); }
 function bigC(s, cx, y, col, opt = {}) { return bigText(s, cx - textWidth(String(s).toUpperCase(), BIG) / 2, y, col, opt); }
 function wrap(s, width, font = FONT) { const out = []; for (const para of String(s).split('\n')) { let line = ''; for (const w of para.split(' ')) { const t = line ? line + ' ' + w : w; if (textWidth(t, font) > width && line) { out.push(line); line = w; } else line = t; } out.push(line); } return out; }
-// Generated by tools/build-title-sprites.cjs. Coordinates are [x, y, width, height].
-const TITLE_SPRITES = {"letters":{"gold-P":{"frames":[[0,0,40,42],[40,0,40,42],[80,0,40,42],[120,0,40,42],[160,0,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27},"gold-O":{"frames":[[200,0,40,42],[240,0,40,42],[280,0,40,42],[320,0,40,42],[360,0,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27},"gold-K":{"frames":[[0,42,40,42],[40,42,40,42],[80,42,40,42],[120,42,40,42],[160,42,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27},"gold-É":{"frames":[[200,42,40,42],[240,42,40,42],[280,42,40,42],[320,42,40,42],[360,42,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27},"gold-T":{"frames":[[0,84,40,42],[40,84,40,42],[80,84,40,42],[120,84,40,42],[160,84,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27},"gold-A":{"frames":[[200,84,40,42],[240,84,40,42],[280,84,40,42],[320,84,40,42],[360,84,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27},"gold-I":{"frames":[[0,126,40,42],[40,126,40,42],[80,126,40,42],[120,126,40,42],[160,126,40,42]],"advance":15,"anchor":[5,4],"bodyHeight":27},"gold-S":{"frames":[[200,126,40,42],[240,126,40,42],[280,126,40,42],[320,126,40,42],[360,126,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27},"ivory-P":{"frames":[[0,168,40,42],[40,168,40,42],[80,168,40,42],[120,168,40,42],[160,168,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27},"ivory-O":{"frames":[[200,168,40,42],[240,168,40,42],[280,168,40,42],[320,168,40,42],[360,168,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27},"ivory-K":{"frames":[[0,210,40,42],[40,210,40,42],[80,210,40,42],[120,210,40,42],[160,210,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27},"ivory-É":{"frames":[[200,210,40,42],[240,210,40,42],[280,210,40,42],[320,210,40,42],[360,210,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27},"ivory-T":{"frames":[[0,252,40,42],[40,252,40,42],[80,252,40,42],[120,252,40,42],[160,252,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27},"ivory-A":{"frames":[[200,252,40,42],[240,252,40,42],[280,252,40,42],[320,252,40,42],[360,252,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27},"ivory-I":{"frames":[[0,294,40,42],[40,294,40,42],[80,294,40,42],[120,294,40,42],[160,294,40,42]],"advance":15,"anchor":[5,4],"bodyHeight":27},"ivory-S":{"frames":[[200,294,40,42],[240,294,40,42],[280,294,40,42],[320,294,40,42],[360,294,40,42]],"advance":24,"anchor":[5,4],"bodyHeight":27}},"icons":{"ball":{"frames":[[0,0,24,24],[24,0,24,24],[48,0,24,24],[72,0,24,24]],"fps":6},"map":{"frames":[[96,0,24,24],[120,0,24,24],[144,0,24,24],[168,0,24,24]],"fps":6},"dice":{"frames":[[0,24,24,24],[24,24,24,24],[48,24,24,24],[72,24,24,24]],"fps":6},"flag":{"frames":[[96,24,24,24],[120,24,24,24],[144,24,24,24],[168,24,24,24]],"fps":6},"vs":{"frames":[[0,48,24,24],[24,48,24,24],[48,48,24,24],[72,48,24,24]],"fps":7},"play":{"frames":[[96,48,24,24],[120,48,24,24],[144,48,24,24],[168,48,24,24]],"fps":6},"music":{"frames":[[0,72,24,24],[24,72,24,24],[48,72,24,24],[72,72,24,24]],"fps":6}},"buttons":{"idle":{"frames":[[0,0,80,32]],"cap":12,"content":[10,4,60,20]},"focus":{"frames":[[80,0,80,32]],"cap":12,"content":[10,4,60,20]},"pressed":{"frames":[[160,0,80,32]],"cap":12,"content":[10,4,60,20]}},"effects":{"spark":{"frames":[[0,0,16,16],[16,0,16,16],[32,0,16,16],[48,0,16,16]]},"diamond":{"frames":[[64,0,16,16],[80,0,16,16],[96,0,16,16],[112,0,16,16]]},"ring":{"frames":[[0,16,16,16],[16,16,16,16],[32,16,16,16],[48,16,16,16]]}}};
 // dex.js — Gen 1 roster from Pokémon Showdown (num, name, types, [hp,atk,def,spa,spd,spe], evos [[num,level]])
 const DEX_RAW = [
 [1,"Bulbasaur",["Grass","Poison"],[45,49,49,65,65,45],[[2,16]]],
@@ -4024,7 +4089,7 @@ function territorySceneInput(ev) {
   if (ev.type === 'key') {
     if (['left', 'up', 'right', 'down'].includes(ev.key)) { const count = Math.max(1, SC.hits.length); SC.i = (SC.i + (ev.key === 'left' || ev.key === 'up' ? count - 1 : 1)) % count; if (SC.name === 'territory' && SC.i < 3) SC.data.captain = STARTERS[SC.i]; Audio.sfx('cursor'); }
     else if (ev.key === 'ok' && SC.hits[SC.i]) SC.hits[SC.i].run();
-    else if (ev.key === 'back') goScene('title');
+    else if (ev.key === 'back') goScene(SC.name === 'territory' ? 'quick' : 'title');
   } else if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
 function closeTerritoryGuide() { BT.territoryGuide = false; setPref('territoryGuide', 'hide'); BT.mode = 'idle'; }
@@ -4119,7 +4184,9 @@ function simTerritory(seed = 7, maxTurns = TERRITORY.turns + 1, captains = [7, 7
 // ============================================================================
 'use strict';
 const SC = { name: 'loading', t: 0, i: 0, hits: [], dialog: null, data: null };
-function goScene(name, data) { SC.name = name; SC.t = 0; SC.i = 0; SC.hits = []; SC.data = data || null; SC.scroll = 0; if (name === 'title') { initTitle(); Audio.playMusic('title'); } }
+// Scene changes wipe through a Poké Ball, except between the board and the dialogue drawn over it.
+const NO_WIPE = new Set(['story>battle', 'battle>story', 'loading>title']);
+function goScene(name, data) { if (!NO_WIPE.has(SC.name + '>' + name) && SC.name !== name) captureTransition(); SC.name = name; SC.t = 0; SC.i = 0; SC.hits = []; SC.data = data || null; SC.scroll = 0; if (name === 'title') { initTitle(); Audio.playMusic('title'); } }
 function hit(x, y, w, h, run, label) { SC.hits.push({ x, y, w, h, run, label }); }
 function hitAt(px2, py) { for (const h of SC.hits) if (px2 >= h.x && py >= h.y && px2 < h.x + h.w && py < h.y + h.h) return h; return null; }
 function bigButton(x, y, w, h, label, run, opt = {}) {
@@ -4132,330 +4199,8 @@ let BACKDROP = null;
 function makeBackdrop(mapDef) { const m = parseMap(mapDef); const c = document.createElement('canvas'); c.width = m.w * TILE; c.height = m.h * TILE; const g = c.getContext('2d'); for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) drawTerrain(g, m, x, y, x * TILE, y * TILE, 0); return { canvas: c, map: m }; }
 function drawBackdrop(bd, ox, oy, dim = .45) { const bw = bd.canvas.width, bh = bd.canvas.height; for (let y = Math.round(oy) % bh - (Math.round(oy) % bh > 0 ? bh : 0); y < VIEW.h; y += bh) for (let x = Math.round(ox) % bw - (Math.round(ox) % bw > 0 ? bw : 0); x < VIEW.w; x += bw) ctx.drawImage(bd.canvas, x, y); if (dim > 0) { ctx.globalAlpha = dim; rect(0, 0, VIEW.w, VIEW.h, '#080a14'); ctx.globalAlpha = 1; } }
 
-// ---------------------------------------------------------------- title
-// Title illustrations load independently of the sprite atlas. A missing image never blocks play.
-const TITLE_ART = { image: null, ready: false };
-const TITLE_SHEETS = {};
-let TITLE_COMPOSITE = null;
-function titleSheet(kind) {
-  if (!TITLE_SHEETS[kind]) {
-    const sheet = TITLE_SHEETS[kind] = { image: new Image(), ready: false };
-    sheet.image.onload = () => { sheet.ready = true; };
-    sheet.image.onerror = () => { sheet.ready = false; };
-    sheet.image.src = 'assets/title/sprites/' + kind + '.png';
-  }
-  return TITLE_SHEETS[kind];
-}
-function titleSprite(kind, id, frame, x, y, w, h) {
-  const sheet = titleSheet(kind), def = TITLE_SPRITES[kind][id];
-  if (!sheet.ready || !def) return false;
-  const f = def.frames[Math.max(0, Math.floor(frame)) % def.frames.length];
-  ctx.drawImage(sheet.image, ...f, Math.round(x), Math.round(y), w == null ? f[2] : w, h == null ? f[3] : h);
-  return true;
-}
-function titleButtonSprite(state, x, y, w, h) {
-  const sheet = titleSheet('buttons'); if (!sheet.ready) return false;
-  const def = TITLE_SPRITES.buttons[state], f = def.frames[0], cap = def.cap;
-  const edge = Math.min(Math.round(h * cap / f[3]), Math.floor(w / 3));
-  // Stretch only the quiet middle; the handmade end caps retain their proportions.
-  ctx.drawImage(sheet.image, f[0], f[1], cap, f[3], x, y, edge, h);
-  ctx.drawImage(sheet.image, f[0] + cap, f[1], f[2] - 2 * cap, f[3], x + edge, y, w - 2 * edge, h);
-  ctx.drawImage(sheet.image, f[0] + f[2] - cap, f[1], cap, f[3], x + w - edge, y, edge, h);
-  return true;
-}
-function titleBurst(x, y, count = 9) {
-  const fx = SC.titleFx; if (!fx || REDUCED) return;
-  for (let i = 0; i < count; i++) {
-    const angle = i * Math.PI * 2 / count, speed = 16 + i % 4 * 8;
-    fx.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 9, age: 0, life: .35 + i % 3 * .12, kind: i % 2 ? 'spark' : 'diamond' });
-  }
-  fx.particles = fx.particles.slice(-64);
-}
-function titleSelect(i) {
-  if (SC.titleFx?.action || i === SC.i) return;
-  SC.i = i; SC.titleFx.focusAt = SC.t; Audio.sfx('titleFocus');
-  const b = SC.hits[i]; if (b) titleBurst(b.x + b.w - 5, b.y + b.h / 2, 5);
-}
-function titleActivate(i) {
-  const fx = SC.titleFx, item = SC.titleItems[i]; if (!fx || fx.action || !item) return;
-  SC.i = i; fx.down = null; Audio.sfx('titleConfirm');
-  if (REDUCED) { item.run(); return; }
-  const b = SC.hits[i]; if (b) titleBurst(b.x + b.w - 10, b.y + b.h / 2, 16);
-  fx.action = { i, t: 0, run: item.run };
-}
-function titleUpdate(dt) {
-  const fx = SC.titleFx; if (!fx) return;
-  SC.titleItems.forEach((item, i) => { item.hover = REDUCED ? +(i === SC.i) : lerp(item.hover, +(i === SC.i), 1 - Math.exp(-dt * 19)); });
-  for (const p of fx.particles) { p.age += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 24 * dt; }
-  fx.particles = fx.particles.filter(p => p.age < p.life);
-  if (fx.action) {
-    fx.action.t += dt;
-    if (fx.action.t >= .2) { const run = fx.action.run; fx.action = null; run(); }
-  }
-}
 const CLOUDS = [{ x: 40, y: 22, r: 36 }, { x: 260, y: 150, r: 48 }, { x: 420, y: 70, r: 30 }, { x: 150, y: 230, r: 42 }, { x: 330, y: 10, r: 26 }];
 function drawCloudShadows(t) { ctx.globalAlpha = .14; for (const c of CLOUDS) { const x = ((c.x + t * 9) % (VIEW.w + 140)) - 70, y = c.y; ellipse(x, y, c.r, Math.round(c.r * .42), '#000'); ellipse(x - Math.round(c.r * .5), y + 4, Math.round(c.r * .6), Math.round(c.r * .28), '#000'); ellipse(x + Math.round(c.r * .5), y + 3, Math.round(c.r * .55), Math.round(c.r * .26), '#000'); } ctx.globalAlpha = 1; }
-function titleArt() {
-  if (!TITLE_ART.image) {
-    const asset = TITLE_ART; asset.image = new Image();
-    asset.image.onload = () => { asset.ready = true; TITLE_COMPOSITE = null; };
-    asset.image.onerror = () => { asset.ready = false; };
-    asset.image.src = 'assets/title/kanto-landscape-v1.webp';
-  }
-  return TITLE_ART;
-}
-function initTitle() {
-  // Save state is a scene snapshot, not a localStorage read on every animation frame.
-  const save = loadSave(), suspended = loadSuspend();
-  const items = [];
-  if (suspended) items.push({ label: 'RESUME BATTLE', sub: 'Return to your last turn', icon: 'play', run: resumeSuspend });
-  if (save) {
-    const chapter = CHAPTERS[clamp(save.chapter || 0, 0, CHAPTERS.length - 1)];
-    items.push({ label: 'CONTINUE', sub: save.beaten ? 'Campaign complete · play again' : 'Chapter ' + chapter.num + ' · ' + chapter.title, icon: 'flag', run: continueCampaign });
-  }
-  items.push({ label: 'NEW GAME', sub: 'Campaign · 8 chapters', icon: 'map', run: () => { if (save && !confirm('Start a new game? Your campaign save will be replaced.')) return; startNewGame(); } });
-  items.push({ label: 'SKIRMISH', sub: 'Random maps · wild Pokémon', icon: 'dice', run: startSkirmishSetup });
-  items.push({ label: 'TERRITORY', sub: 'Capture · earn · deploy', icon: 'flag', run: startTerritorySetup });
-  items.push({ label: 'VERSUS', sub: 'Local two-player battles', icon: 'vs', run: startVersusSetup });
-  items.forEach((item, i) => { item.hover = i === 0 ? 1 : 0; });
-  SC.titleItems = items; SC.menuLen = items.length;
-  SC.titleFx = { particles: [], focusAt: -10, logoAt: -10, down: null, action: null };
-  for (const kind of ['letters', 'icons', 'buttons', 'effects']) titleSheet(kind);
-  titleArt();
-}
-function titleLayout(count) {
-  const W = VIEW.w, H = VIEW.h;
-  const portrait = H > W || W < 320, compact = !portrait && H < 245;
-  const shortPortrait = portrait && H < 360 && count > 4;
-  const gap = compact ? 2 : portrait ? 4 : 5, cols = compact && H < 190 && count > 4 ? 2 : 1;
-  const w = portrait ? Math.min(250, W - 28) : cols === 2 ? Math.floor((W - 44) / 2) : Math.min(216, Math.floor(W * .4));
-  const x = portrait ? Math.floor((W - w) / 2) : Math.max(16, Math.floor(W * .05));
-  const logoY = shortPortrait ? 8 : portrait ? Math.max(14, Math.floor(H * .035)) : compact ? 8 : Math.max(12, Math.min(26, Math.floor(H * .07)));
-  const logoH = shortPortrait ? 44 : compact ? (count > 4 ? 28 : 44) : portrait ? Math.min(69, W * .35) : count > 4 ? 58 : 70;
-  const rows = Math.ceil(count / cols), endY = H - (compact ? 29 : 34);
-  let rowH, menuY;
-  if (portrait) {
-    rowH = Math.min(count > 4 ? 28 : 34, Math.floor((endY - Math.max(H * .53, logoY + logoH + 32) - (rows - 1) * gap) / rows));
-    rowH = Math.max(20, rowH);
-    menuY = endY - rows * rowH - (rows - 1) * gap;
-  } else {
-    menuY = logoY + logoH + (compact ? 8 : 22);
-    rowH = Math.min(compact ? 30 : 36, Math.floor((endY - menuY - (rows - 1) * gap) / rows));
-    rowH = Math.max(18, rowH);
-  }
-  return { portrait, compact, shortPortrait, cols, x, w, logoY, logoH, menuY, rowH, gap };
-}
-function titleBackground(L) {
-  const W = VIEW.w, H = VIEW.h, art = titleArt();
-  const cacheKey = [W, H, L.portrait, L.logoH, L.menuY, art.ready].join(':');
-  if (!TITLE_COMPOSITE || TITLE_COMPOSITE.key !== cacheKey) {
-    const c = document.createElement('canvas'); c.width = W; c.height = H;
-    const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
-    g.fillStyle = '#102a2b'; g.fillRect(0, 0, W, H);
-    let imageTop = 0, imageBottom = H;
-    if (art.ready) {
-      const im = art.image;
-      if (L.portrait) {
-        // Frame the team's bounding band above the menu, preserving the illustration's proportions.
-        const top = L.logoY + L.logoH + (L.shortPortrait ? 9 : 20), bottom = L.menuY - 20;
-        const scale = Math.min(W / (im.naturalWidth * .56), Math.max(28, bottom - top) / (im.naturalHeight * .4));
-        const dw = Math.ceil(im.naturalWidth * scale), dh = Math.ceil(im.naturalHeight * scale);
-        imageTop = Math.round(top + (bottom - top - dh * .4) / 2 - dh * .43); imageBottom = imageTop + dh;
-        g.drawImage(im, W - dw, imageTop, dw, dh);
-      } else {
-        const scale = Math.max(W / im.naturalWidth, H / im.naturalHeight);
-        const dw = Math.ceil(im.naturalWidth * scale), dh = Math.ceil(im.naturalHeight * scale);
-        g.drawImage(im, W - dw, Math.round((H - dh) / 2), dw, dh);
-      }
-    } else {
-      const bd = makeBackdrop(CHAPTERS[3].map);
-      const scale = Math.max(W / bd.canvas.width, H / bd.canvas.height);
-      g.drawImage(bd.canvas, 0, 0, bd.canvas.width * scale, bd.canvas.height * scale);
-      g.fillStyle = '#09262bd9'; g.fillRect(0, 0, W, H);
-    }
-    // Bake the legibility scrims once at the game's native pixel resolution.
-    g.fillStyle = '#071e23';
-    if (L.portrait) {
-      for (let y = 0; y < H; y++) {
-        const edge = art.ready ? Math.max(clamp((imageTop + 24 - y) / 24, 0, 1), clamp((y - imageBottom + 24) / 24, 0, 1)) : 0;
-        g.globalAlpha = Math.max(edge, .08, .34 * Math.max(0, 1 - y / (H * .25)), .6 * clamp((y - L.menuY + 16) / 30, 0, 1));
-        g.fillRect(0, y, W, 1);
-      }
-    } else {
-      for (let x = 0; x < W; x++) {
-        g.globalAlpha = .83 * Math.pow(clamp(1 - x / (W * .64), 0, 1), 1.1);
-        g.fillRect(x, 0, 1, H);
-      }
-    }
-    for (let y = Math.floor(H * .83); y < H; y++) {
-      g.globalAlpha = .56 * (y / H - .83) / .17; g.fillRect(0, y, W, 1);
-    }
-    g.globalAlpha = 1;
-    TITLE_COMPOSITE = { key: cacheKey, canvas: c };
-  }
-  ctx.drawImage(TITLE_COMPOSITE.canvas, 0, 0);
-  if (REDUCED) return;
-  // Quiet floating motes, away from the controls; no camera movement or flashing logo.
-  for (let i = 0; i < 12; i++) {
-    const x = (L.portrait ? VIEW.w * .12 : VIEW.w * .49) + ((i * 43 + Math.sin(SC.t * .25 + i) * 8) % (VIEW.w * (L.portrait ? .8 : .46)));
-    const y = VIEW.h * (L.portrait ? .24 : .23) + ((i * 29 - SC.t * (2 + i % 3)) % (VIEW.h * .35) + VIEW.h * .35) % (VIEW.h * .35);
-    ctx.globalAlpha = .2 + .25 * (1 + Math.sin(SC.t * .7 + i)) / 2;
-    rect(x, y, i % 4 === 0 ? 2 : 1, 1, '#fff0ad');
-  }
-  ctx.globalAlpha = 1;
-}
-// The wordmark is assembled from independent letter sprites, never a flattened logo.
-function drawLogo(cx, y, w, h) {
-  SC.titleLetters = [];
-  const sheet = titleSheet('letters');
-  if (!sheet.ready) { // Keep the menu usable before the local sprite atlases finish decoding.
-    const scale = Math.min(h / 24, (w - 12) / (textWidth('TAKTIKS', BIG) + 6));
-    ctx.save(); ctx.translate(Math.round(cx), Math.round(y)); ctx.scale(scale, scale);
-    bigC('POKÉ', 6, 0, '#f4c563', { outline: '#142e32' });
-    bigC('TAKTIKS', 0, 12, '#f4f1d9', { outline: '#142e32' }); ctx.restore(); return;
-  }
-  const scale = Math.min(w / 174, h / 77), fx = SC.titleFx;
-  const line = (word, palette, rowY, row) => {
-    const letters = [...word], advance = letters.reduce((n, c) => n + TITLE_SPRITES.letters[palette + '-' + c].advance, 0) - 3;
-    let x = cx - advance * scale / 2 + (row === 0 ? 8 * scale : 0);
-    letters.forEach((c, i) => {
-      const id = palette + '-' + c, def = TITLE_SPRITES.letters[id];
-      const delay = .05 * i + row * .14, u = REDUCED ? 1 : clamp((SC.t - delay) / .48, 0, 1);
-      const back = 1 + 2.4 * Math.pow(u - 1, 3) + 1.4 * Math.pow(u - 1, 2);
-      const lift = REDUCED ? 0 : Math.sin(SC.t * 1.8 + i * .45 + row) * .65;
-      const wave = REDUCED ? 0 : Math.sin(clamp((SC.t - fx.logoAt - delay) / .4, 0, 1) * Math.PI) * 4;
-      const yy = y + rowY * scale + (1 - back) * -9 + lift - wave;
-      const gx = x - def.anchor[0] * scale, gy = yy - def.anchor[1] * scale;
-      const bw = (def.advance - 3) * scale, bh = def.bodyHeight * scale;
-      const hot = !VIEW.touch && INPUT.x >= x && INPUT.x < x + bw && INPUT.y >= yy && INPUT.y < yy + bh;
-      const gleam = (SC.t - i * .075 - row * .2) % 4.8;
-      const frame = REDUCED ? 0 : hot ? 3 : gleam >= .85 && gleam < 1.25 ? 1 + Math.floor((gleam - .85) * 10) : 0;
-      ctx.save(); ctx.globalAlpha = u;
-      // A small per-letter squash on arrival, with independent timing and glint frames.
-      const sy = REDUCED ? 1 : .78 + .22 * back;
-      ctx.translate(gx, gy + bh * (1 - sy)); ctx.scale(1, sy);
-      titleSprite('letters', id, frame, 0, 0, 40 * scale, 42 * scale); ctx.restore();
-      SC.titleLetters.push({ x, y: yy, w: bw, h: bh });
-      x += def.advance * scale;
-    });
-  };
-  line('POKÉ', 'gold', 4, 0); line('TAKTIKS', 'ivory', 42, 1);
-  const ballX = cx - 70 * scale, ballY = y + 4 * scale + (REDUCED ? 0 : Math.sin(SC.t * 2.2) * 1.2);
-  titleSprite('icons', 'ball', REDUCED ? 0 : SC.t * 5, ballX, ballY, 28 * scale, 28 * scale);
-  const underlineY = y + 75 * scale;
-  hline(cx - 65 * scale, underlineY, 130 * scale, '#ac803c');
-  hline(cx - 60 * scale, underlineY - 1, 120 * scale, '#ffe3a0');
-}
-function titleFitText(s, w) {
-  if (textWidth(s) <= w) return s;
-  while (s.length && textWidth(s + '…') > w) s = s.slice(0, -1);
-  return s.trimEnd() + '…';
-}
-function titleCard(x, y, w, h, item, selected, run, index) {
-  const fx = SC.titleFx, confirming = fx.action?.i === index;
-  const held = INPUT.down && fx.down === index, pressed = held || confirming;
-  const u = REDUCED ? 1 : clamp((SC.t - .16 - index * .045) / .34, 0, 1);
-  const slide = REDUCED ? 0 : Math.round(item.hover * 2 - Math.pow(1 - u, 3) * 7);
-  const down = REDUCED ? 0 : pressed ? 1 : -Math.round(item.hover);
-  const pressScale = REDUCED || !pressed ? 1 : confirming ? 1 - .035 * Math.sin(clamp(fx.action.t / .15, 0, 1) * Math.PI) : .97;
-  ctx.save(); ctx.translate(x + slide + w * (1 - pressScale) / 2, y + down); ctx.scale(pressScale, 1); ctx.globalAlpha = .3 + .7 * u;
-  if (!titleButtonSprite(pressed ? 'pressed' : selected ? 'focus' : 'idle', 0, 0, w, h + 3)) {
-    rrect(0, 2, w, h, '#051c23', 2); rrect(0, 0, w, h, selected ? '#e3bd69' : '#5c817a', 2);
-    rrect(2, 2, w - 4, h - 4, '#123442', 1);
-  }
-  const size = Math.min(23, h - 4), cy = (h - size) / 2;
-  const iconFrame = REDUCED || !selected ? 0 : Math.floor(SC.t * TITLE_SPRITES.icons[item.icon].fps);
-  if (!titleSprite('icons', item.icon, iconFrame, 8, cy, size, size)) iconAt(item.icon, 10, (h - 9) / 2, '#f8dd8e');
-  const sub = h >= 28, ty = sub ? (h >= 34 ? 7 : 6) : Math.round((h - 9) / 2) - 1;
-  bigText(item.label, 34, ty, selected ? '#fff0b6' : '#e0ebdd', { shadow: '#081a2b' });
-  if (sub) text(titleFitText(item.sub, w - 47), 34, h >= 34 ? 19 : 17, selected ? '#b5d9cd' : '#a1b8b3');
-  if (selected && !REDUCED) {
-    const sweep = (SC.t - fx.focusAt) / .5;
-    if (sweep >= 0 && sweep < 1) {
-      ctx.save(); ctx.beginPath(); ctx.rect(6, 3, w - 12, h - 5); ctx.clip();
-      ctx.globalAlpha *= .18 * Math.sin(sweep * Math.PI);
-      for (let k = 0; k < 5; k++) rect(sweep * (w + 20) - 20 + k, 3, 1, h - 5, '#fff6c9');
-      ctx.restore();
-    }
-    titleSprite('effects', 'spark', SC.t * 7, w - 15, 0, 13, 13);
-  }
-  ctx.restore();
-  if (selected) {
-    const bob = REDUCED ? 0 : Math.sin(SC.t * 4) * 1;
-    if (!titleSprite('icons', 'ball', REDUCED ? 0 : SC.t * 6, x - 10 + bob, y + (h - 13) / 2, 13, 13)) text('▸', x - 7, y + (h - 7) / 2, '#ffdf8d');
-  }
-  // Hit targets remain stable during squash, entrance and focus effects.
-  hit(x, y, w, h, run, item.label);
-}
-function titleDraw() {
-  if (!SC.titleItems) initTitle();
-  const items = SC.titleItems, W = VIEW.w, H = VIEW.h, L = titleLayout(items.length);
-  SC.i = clamp(SC.i, 0, items.length - 1); SC.titleCols = L.cols;
-  titleBackground(L);
-  drawLogo(L.x + L.w / 2, L.logoY, L.w, L.logoH);
-  if (!L.compact && !L.shortPortrait) {
-    const captionY = L.logoY + L.logoH + 6;
-    textC('A PIXEL TACTICS ADVENTURE', L.x + L.w / 2, captionY, '#e1dfbe', { shadow: '#09262b' });
-  }
-  if (L.portrait) textC('CHOOSE YOUR ADVENTURE', W / 2, L.menuY - 15, '#c4d1ac');
-  SC.hits = [];
-  items.forEach((item, i) => {
-    const x = L.cols === 2 ? 18 + (i % 2) * (L.w + 8) : L.x;
-    const y = L.menuY + Math.floor(i / L.cols) * (L.rowH + L.gap);
-    titleCard(x, y, L.w, L.rowH, item, SC.i === i, () => titleActivate(i), i);
-  });
-  // The sound control is a real touch target, separate from keyboard menu navigation.
-  const sound = Audio.muted ? 'SOUND OFF' : 'SOUND ON', sw = textWidth(sound) + 22;
-  SC.titleSound = { x: 8, y: H - 27, w: sw, h: 23 };
-  const soundHot = !VIEW.touch && INPUT.x >= 8 && INPUT.x < 8 + sw && INPUT.y >= H - 27;
-  if (soundHot) rrect(8, H - 25, sw, 20, '#345449b3', 2);
-  if (!titleSprite('icons', 'music', REDUCED || Audio.muted ? 0 : SC.t * 4, 10, H - 23, 17, 17)) text('♪', 14, H - 18, '#f2d382');
-  text(sound, 29, H - 18, '#c9d4bb');
-  if (!L.portrait) {
-    hintLine(VIEW.touch ? ['tap to begin'] : [['↑↓', 'select'], ['Z', 'confirm']], W / 2, H - 18, { pill: false, col: '#c9d4bb' });
-    textR('GEN I · FAN GAME', W - 14, H - 18, '#b6c8ab');
-  } else textR('GEN I · FAN GAME', W - 12, H - 18, '#b6c8ab');
-  if (!REDUCED) for (const p of SC.titleFx.particles) {
-    ctx.globalAlpha = 1 - p.age / p.life;
-    titleSprite('effects', p.kind, p.age * 9, p.x - 6, p.y - 6, 12, 12);
-  }
-  ctx.globalAlpha = 1;
-  const action = SC.titleFx.action;
-  if (action && !REDUCED && action.t > .12) {
-    ctx.globalAlpha = clamp((action.t - .12) / .08, 0, 1) * .75;
-    rect(0, 0, W, H, '#08192a'); ctx.globalAlpha = 1;
-  }
-}
-function titleInput(ev) {
-  const n = SC.menuLen || 0, fx = SC.titleFx;
-  if (!n || !fx || fx.action) return;
-  if (ev.type === 'key') {
-    const cols = SC.titleCols || 1;
-    if (ev.key === 'up' || ev.key === 'down' || ev.key === 'left' || ev.key === 'right' || ev.key === 'next') {
-      const delta = ev.key === 'up' ? -cols : ev.key === 'down' ? cols : ev.key === 'left' ? -1 : 1;
-      titleSelect((SC.i + delta + n) % n);
-    } else if (ev.key === 'ok') titleActivate(SC.i);
-    else if (ev.key === 'mute') Audio.toggle();
-    return;
-  }
-  if (ev.type === 'down' && (ev.btn == null || ev.btn === 0)) {
-    const b = hitAt(ev.x, ev.y); fx.down = b ? SC.hits.indexOf(b) : -1;
-    if (fx.down >= 0) titleSelect(fx.down); return;
-  }
-  if (ev.type === 'move' && !ev.touch && !INPUT.down) {
-    const b = hitAt(ev.x, ev.y); if (b) titleSelect(SC.hits.indexOf(b)); return;
-  }
-  if (ev.type === 'up' && (ev.btn == null || ev.btn === 0)) {
-    const from = fx.down; fx.down = null;
-    const s = SC.titleSound;
-    if (s && ev.x >= s.x && ev.x < s.x + s.w && ev.y >= s.y && ev.y < s.y + s.h) { Audio.toggle(); return; }
-    const b = hitAt(ev.x, ev.y), i = b ? SC.hits.indexOf(b) : -1;
-    if (i >= 0 && (from == null || from === i)) { titleActivate(i); return; }
-    if (SC.titleLetters?.some(l => ev.x >= l.x && ev.x <= l.x + l.w && ev.y >= l.y && ev.y <= l.y + l.h)) {
-      fx.logoAt = SC.t; titleBurst(ev.x, ev.y, 12); Audio.sfx('titleFocus');
-    }
-  }
-}
 
 // ---------------------------------------------------------------- versus setup (draft two teams, pick an arena)
 function vsPick(S, n) {
@@ -4692,6 +4437,43 @@ function creditsDraw() {
 }
 function creditsInput(ev) { if (ev.type === 'up' || ev.type === 'key') SC.skip = true; }
 
+// ---------------------------------------------------------------- quick battle: pick a mode against the CPU
+const QUICK_MODES = [
+  { id: 'skirmish', label: 'SKIRMISH', tag: 'ROUT', lines: ['A random map every time.', 'Beat the Rival and catch', 'wild Pokémon on the way.'], goal: 'Defeat the Rival', run: () => startSkirmishSetup() },
+  { id: 'conquest', label: 'CONQUEST', tag: 'CENTERS', lines: ['Three bridges, six teammates.', 'Capture centers to earn points', 'and call reserves.'], goal: 'Take the HQ or hold 2 centers', run: () => startTerritorySetup() },
+];
+function quickPreview(m) { const S = SC.data || (SC.data = {}); if (!S[m.id]) S[m.id] = makeBackdrop(m.id === 'conquest' ? TERRITORY_MAP : skirmishMap(412, 16, 11, 12)); return S[m.id]; }
+function quickDraw() {
+  const W = VIEW.w, H = VIEW.h, narrow = narrowView() || portraitView(), bh = btnH(); rect(0, 0, W, H, UI.bg); SC.hits = [];
+  const bd = quickPreview(QUICK_MODES[SC.i]); drawBackdrop(bd, (W - bd.canvas.width) / 2 - SC.t * 5, (H - bd.canvas.height) / 2, .78);
+  const top = screenTitle('QUICK BATTLE', 'Battle the CPU · your captain leads', 5);
+  const foot = footerBand(bh + 12), gap = 8, n = QUICK_MODES.length;
+  const cw = narrow ? W - 16 : Math.min(200, Math.floor((W - 24 - gap) / 2)), ch = narrow ? Math.floor((foot - top - 8 - gap) / 2) : Math.min(foot - top - 14, 170);
+  const x0 = narrow ? 8 : Math.round(W / 2 - (cw * 2 + gap) / 2), y0 = narrow ? top + 4 : top + Math.max(4, Math.round((foot - top - ch) / 2) - 4);
+  QUICK_MODES.forEach((m, i) => {
+    const sel = SC.i === i, x = narrow ? x0 : x0 + i * (cw + gap), y = narrow ? y0 + i * (ch + gap) : y0, lift = sel && !REDUCED ? -2 : 0;
+    const tok = unfold('quick' + i, x, y, cw, ch, .22 + i * .06);
+    const p = panel(x, y + lift, cw, ch, { header: m.label, headerRight: m.tag, headerRightCol: sel ? UI.gold : UI.muted, fill: sel ? UI.panel2 : UI.panel, border: sel ? UI.gold : UI.border });
+    const pv = quickPreview(m), room = ch - 76, sc = Math.min((cw - 16) / pv.canvas.width, room / pv.canvas.height);
+    const pw = Math.floor(pv.canvas.width * sc), ph = Math.floor(pv.canvas.height * sc), px0 = x + Math.round((cw - pw) / 2), py0 = p.cy;
+    if (ph >= 18) { rect(px0 - 2, py0 - 2, pw + 4, ph + 4, UI.inset); ctx.drawImage(pv.canvas, px0, py0, pw, ph); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, sel ? UI.gold : UI.border2); }
+    const tx = x + 8, ty = py0 + (ph >= 18 ? ph + 6 : 0), tw = x + cw - 8 - tx;
+    let ly = ty; for (const l of m.lines) { if (ly + 8 > y + lift + ch - 16) break; text(fitLabel(l, tw), tx, ly, UI.ink); ly += 9; }
+    const gy = y + lift + ch - 15; iconAt('flag', x + 8, gy - 1, sel ? UI.gold : UI.muted); text(fitLabel(m.goal, cw - 28), x + 20, gy, sel ? UI.gold : UI.muted);
+    unfoldEnd(tok);
+    if (sel && !REDUCED) { const k = SC.t * 2.2; sparkle(x + cw - 6, y + lift + 3 + Math.round(Math.sin(k) * 1), Math.round(1 + (Math.sin(k * 1.7) + 1)), '#fff2b0'); }
+    hit(x, y, cw, ch, () => { if (SC.i === i) quickGo(); else { SC.i = i; Audio.sfx('cursor'); } }, m.label);
+  });
+  const fy = foot + 6; bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
+  bigButton(W - 96, fy, 90, bh, 'CHOOSE', quickGo, { variant: 'primary' });
+  if (!narrow && W > 330) hintLine(VIEW.touch ? ['tap a card twice'] : [['◂▸', 'mode'], ['Z', 'choose']], W / 2, fy + (bh - 7) / 2, { pill: false });
+}
+function quickGo() { Audio.sfx('select'); QUICK_MODES[SC.i].run(); }
+function quickInput(ev) {
+  if (ev.type === 'key') { if (['left', 'right', 'up', 'down'].includes(ev.key)) { SC.i = 1 - SC.i; Audio.sfx('cursor'); } else if (ev.key === 'ok') quickGo(); else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('title'); } else if (ev.key === 'mute') Audio.toggle(); return; }
+  if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
+}
+
 // ---------------------------------------------------------------- skirmish setup
 function skirmishDraw() {
   const W = VIEW.w, H = VIEW.h; const S = SC.data; rect(0, 0, W, H, '#0e0c10'); if (!S.bd || S.bdSeed !== S.seed) { S.map = skirmishMap(S.seed, 16, 11, S.level); S.bd = makeBackdrop(S.map); S.bdSeed = S.seed; }
@@ -4705,9 +4487,341 @@ function skirmishDraw() {
   setting(10, by, 'Map seed', S.seed, () => { S.seed = (S.seed + 999) % 1000; Audio.sfx('menu'); }, () => { S.seed = (S.seed + 1) % 1000; Audio.sfx('menu'); });
   setting(10, by + sbh + 5, 'Enemy level', S.level, () => { S.level = Math.max(3, S.level - 2); Audio.sfx('menu'); }, () => { S.level = Math.min(48, S.level + 2); Audio.sfx('menu'); });
   const px1 = narrow ? 10 : 150, py1 = narrow ? by + 2 * (sbh + 5) + 2 : by; text('Party: ' + S.party.length + ' Pokémon' + (S.preset ? ' (loaner team)' : ' (campaign save)'), px1, py1 + 4, UI.ink, { outline: UI.shadow }); if (S.party.length) S.party.slice(0, 8).forEach((p, i) => { ctx.drawImage(monIcon(p.num), Math.round(px1 + i * 22), py1 + 12, 24, 18); });
-  { const fy = footerBand(bh + 12) + 6; bigButton(W - 96, fy, 90, bh, 'PREPARE', () => { Audio.sfx('select'); S.go(); }, { variant: 'primary' }); bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' }); if (!narrow) hintLine([['◂▸', 'seed'], ['▲▼', 'level'], ['Z', 'prepare']], W / 2, fy + (bh - 7) / 2, { pill: false }); }
+  { const fy = footerBand(bh + 12) + 6; bigButton(W - 96, fy, 90, bh, 'PREPARE', () => { Audio.sfx('select'); S.go(); }, { variant: 'primary' }); bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('quick'); }, { variant: 'ghost' }); if (!narrow) hintLine([['◂▸', 'seed'], ['▲▼', 'level'], ['Z', 'prepare']], W / 2, fy + (bh - 7) / 2, { pill: false }); }
 }
-function skirmishInput(ev) { const S = SC.data; if (ev.type === 'key') { if (ev.key === 'left') S.seed = (S.seed + 999) % 1000; else if (ev.key === 'right') S.seed = (S.seed + 1) % 1000; else if (ev.key === 'up') S.level = Math.min(48, S.level + 2); else if (ev.key === 'down') S.level = Math.max(3, S.level - 2); else if (ev.key === 'ok') S.go(); else if (ev.key === 'back') goScene('title'); return; } if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); } }
+function skirmishInput(ev) { const S = SC.data; if (ev.type === 'key') { if (ev.key === 'left') S.seed = (S.seed + 999) % 1000; else if (ev.key === 'right') S.seed = (S.seed + 1) % 1000; else if (ev.key === 'up') S.level = Math.min(48, S.level + 2); else if (ev.key === 'down') S.level = Math.max(3, S.level - 2); else if (ev.key === 'ok') S.go(); else if (ev.key === 'back') goScene('quick'); return; } if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); } }
+// ============================================================================
+// title.js — the title screen, drawn as pixel art at the game's own resolution: a dusk sky in dithered bands, a
+// striped sun, parallax mountains, a shimmering lake, a cliff where the starters wait, and a hand-drawn wordmark.
+// Nothing here loads an image except the Pokémon sprites, so the screen works (and is tested) before any art arrives.
+// ============================================================================
+'use strict';
+// ---------------------------------------------------------------- the wordmark
+// Glyphs on a 6×8 grid of cells ('#' = filled); a cell is 2-4 px depending on the screen. É carries two accent rows.
+const LOGO_GLYPHS = {
+  P: ['#####.', '######', '##..##', '##..##', '######', '#####.', '##....', '##....'],
+  K: ['##..##', '##.##.', '####..', '###...', '###...', '####..', '##.##.', '##..##'],
+  E: ['######', '######', '##....', '#####.', '#####.', '##....', '######', '######'],
+  'É': ['...##.', '..##..', '######', '######', '##....', '#####.', '#####.', '##....', '######', '######'],
+  T: ['######', '######', '..##..', '..##..', '..##..', '..##..', '..##..', '..##..'],
+  A: ['.####.', '######', '##..##', '##..##', '######', '######', '##..##', '##..##'],
+  I: ['####', '.##.', '.##.', '.##.', '.##.', '.##.', '.##.', '####'],
+  S: ['.#####', '######', '##....', '#####.', '.#####', '....##', '######', '#####.'],
+};
+const LOGO_FACE = ['#fffbe0', '#fff1a0', '#ffe04e', '#ffc823', '#f9a912', '#ee8c0a'];
+const LOGO = { cache: new Map() };
+// One letter as two canvases: `back` (drop shadow, navy and blue outline) and `face` (the gold fill with its lit edges),
+// drawn in two passes so neighbouring outlines never cut into a letter.
+function logoLetter(ch, cell) {
+  const key = ch + cell; let L = LOGO.cache.get(key); if (L) return L;
+  const rows = LOGO_GLYPHS[ch], P = 4, gw = rows[0].length * cell, gh = rows.length * cell, W = gw + P * 2, H = gh + P * 2 + 3;
+  const m = new Uint8Array(W * H), at = (x, y) => x >= 0 && y >= 0 && x < W && y < H ? m[y * W + x] : 0;
+  for (let r = 0; r < rows.length; r++) for (let c = 0; c < rows[r].length; c++) if (rows[r][c] === '#') for (let j = 0; j < cell; j++) for (let i = 0; i < cell; i++) m[(P + r * cell + j) * W + P + c * cell + i] = 1;
+  // round every outside corner by one pixel so the blocks read as lettering, not tiles
+  const cut = []; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (at(x, y) && ((!at(x - 1, y) && !at(x, y - 1)) || (!at(x + 1, y) && !at(x, y - 1)) || (!at(x - 1, y) && !at(x, y + 1)) || (!at(x + 1, y) && !at(x, y + 1)))) cut.push(y * W + x); for (const i of cut) m[i] = 0;
+  const grow = (src, diag) => { const o = new Uint8Array(W * H); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { if (src[y * W + x]) { o[y * W + x] = 1; continue; } let hit = 0; for (let dy = -1; dy <= 1 && !hit; dy++) for (let dx = -1; dx <= 1; dx++) { if (!diag && dx && dy) continue; const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < W && Y < H && src[Y * W + X]) { hit = 1; break; } } o[y * W + x] = hit; } return o; };
+  const blue = grow(grow(m, true), false), navy = grow(blue, true);
+  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+  const back = mk(), face = mk(), shine = mk(), bg = back.getContext('2d'), fg = face.getContext('2d'), sg = shine.getContext('2d');
+  const dot = (g, x, y, c) => { g.fillStyle = c; g.fillRect(x, y, 1, 1); };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (y >= 3 && navy[(y - 3) * W + x] && !navy[i]) dot(bg, x, y, 'rgba(8,6,30,.55)'); }
+  const top = P, bot = P + gh;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (navy[i] && !blue[i]) dot(bg, x, y, '#10133e'); else if (blue[i] && !m[i]) dot(bg, x, y, y < (top + bot) / 2 ? '#4a86ea' : '#2c58b6'); }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!m[y * W + x]) continue; const v = (y - top) / gh; let k = Math.min(LOGO_FACE.length - 1, Math.floor(v * LOGO_FACE.length));
+    if (((x + y) & 1) && v * LOGO_FACE.length - k > .7 && k < LOGO_FACE.length - 1) k++; // dithered seam between bands
+    let c = LOGO_FACE[k]; if (!at(x, y - 1)) c = '#ffffff'; else if (!at(x, y + 1)) c = '#c96a08'; else if (!at(x - 1, y) && v < .6) c = '#fff6c8'; else if (!at(x + 1, y) && v > .45) c = '#e07c06';
+    dot(fg, x, y, c); dot(sg, x, y, '#ffffff');
+  }
+  L = { back, face, shine, w: gw, h: gh, P }; LOGO.cache.set(key, L); return L;
+}
+// Wordmark geometry for a cell size: "POKÉ" on top (a Poké Ball stands in for its O) and "TAKTIKS" under it, arched.
+function logoMetrics(cell) {
+  const small = Math.max(2, cell - 1), gap = n => n; const width = (word, c) => [...word].reduce((s, ch) => s + (ch === 'O' ? 8 * c : LOGO_GLYPHS[ch][0].length * c) + gap(c), -gap(c));
+  const top = width('POKÉ', small), bottom = width('TAKTIKS', cell), h = 10 * small + 8 * cell + 5 + cell * 2;
+  return { cell, small, w: Math.max(top, bottom) + 8, h, top, bottom };
+}
+function logoCell(W, H, maxW) { for (const c of [4, 3, 2]) { const m = logoMetrics(c); if (m.w <= maxW && m.h <= H * .3) return c; } return 2; }
+// Draws the wordmark centred on cx with its top at y. Letters drop in one by one, land with a bounce, then breathe; a
+// shine sweeps through every few seconds and sparkles pop on the letters. Registers the letter boxes for taps.
+function drawLogo(cx, y, cell) {
+  const M = logoMetrics(cell), fx = SC.titleFx || {}, t = SC.t; SC.titleLetters = [];
+  const placed = [];
+  const line = (word, c, yy, row, arch) => {
+    const chars = [...word]; let x = Math.round(cx - (row ? M.bottom : M.top) / 2);
+    chars.forEach((ch, i) => {
+      const w = ch === 'O' ? 8 * c : LOGO_GLYPHS[ch][0].length * c, gh = (ch === 'É' ? 10 : 8) * c;
+      const delay = .08 + row * .32 + i * .055, u = REDUCED ? 1 : clamp((titleTime() - delay) / .42, 0, 1);
+      const land = u >= 1 ? 0 : Math.round(-(1 - easeOutBounce(u)) * (40 + row * 10));
+      const wave = REDUCED ? 0 : Math.round(Math.sin(t * 2.1 + i * .7 + row * 1.3) * .9);
+      const tap = REDUCED ? 0 : Math.round(-Math.sin(clamp((t - (fx.logoAt || -9) - i * .04) / .35, 0, 1) * Math.PI) * 5);
+      const ay = arch ? Math.round(Math.sin(Math.PI * (i + .5) / chars.length) * -arch) : 0;
+      const top = yy + (8 * c - gh) + land + wave + tap + ay;
+      placed.push({ ch, x, y: top, c, u, i, row, w, h: gh });
+      x += w + c;
+    });
+  };
+  line('POKÉ', M.small, y, 0, 0); line('TAKTIKS', M.cell, y + 10 * M.small + 3, 1, M.cell);
+  for (const p of placed) if (p.u > 0 && p.ch !== 'O') { const L = logoLetter(p.ch, p.c); ctx.globalAlpha = Math.min(1, p.u * 3); ctx.drawImage(L.back, p.x - L.P, p.y - L.P); }
+  for (const p of placed) {
+    if (p.u <= 0) continue; ctx.globalAlpha = Math.min(1, p.u * 3);
+    if (p.ch === 'O') { drawTitleBall(p.x + p.w / 2, p.y + p.h / 2, p.w / 2 + 1, t); }
+    else { const L = logoLetter(p.ch, p.c); ctx.drawImage(L.face, p.x - L.P, p.y - L.P);
+      // the shine: a 3-px band sweeping left to right across the whole wordmark
+      const k = ((t - 1.6) % 4.2) / .9; if (!REDUCED && k >= 0 && k < 1) { const sx = Math.round(cx - M.w / 2 - 10 + (M.w + 20) * k) + (p.row ? 6 : 0); ctx.save(); ctx.beginPath(); ctx.rect(sx, p.y - 4, 3, p.h + 8); ctx.rect(sx + 5, p.y - 4, 1, p.h + 8); ctx.clip(); ctx.globalAlpha *= .85; ctx.drawImage(L.shine, p.x - L.P, p.y - L.P); ctx.restore(); } }
+    SC.titleLetters.push({ x: p.x, y: p.y, w: p.w, h: p.h });
+    const lk = p.row + ':' + p.i; if (!REDUCED && p.u >= 1 && fx.landed && !fx.landed[lk]) { fx.landed[lk] = true; titleDust(p.x + p.w / 2, p.y + p.h + 2); if (p.row && p.i === 6) { shakeTitle(); Audio.sfx('shake'); } }
+  }
+  ctx.globalAlpha = 1;
+  // sparkles: four-point stars that grow and shrink on the letters
+  if (!REDUCED) for (let s = 0; s < 3; s++) { const ph = t * .9 + s * 1.37, k = ph % 1, n = Math.floor(ph) * 7 + s * 13; const p = placed[n % placed.length]; if (!p || p.u < 1) continue; const r = Math.round(Math.sin(k * Math.PI) * 3); if (r > 0) sparkle(p.x + (n * 5) % Math.max(1, p.w), p.y + (n * 3) % Math.max(1, Math.round(p.h * .6)), r, '#ffffff'); }
+  return M;
+}
+function easeOutBounce(t) { const n = 7.5625, d = 2.75; if (t < 1 / d) return n * t * t; if (t < 2 / d) return n * (t -= 1.5 / d) * t + .75; if (t < 2.5 / d) return n * (t -= 2.25 / d) * t + .9375; return n * (t -= 2.625 / d) * t + .984375; }
+function sparkle(x, y, r, col) { x = Math.round(x); y = Math.round(y); hline(x - r, y, 2 * r + 1, col); vline(x, y - r, 2 * r + 1, col); if (r > 1) { px(x - 1, y - 1, col); px(x + 1, y - 1, col); px(x - 1, y + 1, col); px(x + 1, y + 1, col); } }
+// The Poké Ball that replaces the O: it rocks, and its button glints.
+function drawTitleBall(cx, cy, r, t) {
+  const rock = REDUCED ? 0 : Math.round(Math.sin(t * 2.3) * 1.2); cx = Math.round(cx) + rock; cy = Math.round(cy) - Math.abs(rock);
+  ctx.save();
+  circle(cx, cy + 1, r + 3, 'rgba(8,6,30,.55)'); circle(cx, cy, r + 3, '#10133e'); circle(cx, cy, r + 1, '#2c58b6'); circle(cx, cy, r, '#f2eee6');
+  ctx.save(); ctx.beginPath(); ctx.rect(cx - r - 1, cy - r - 1, 2 * r + 2, r + 1); ctx.clip(); circle(cx, cy, r, '#e6343e'); circle(cx - Math.round(r * .35), cy - Math.round(r * .4), Math.max(1, Math.round(r * .28)), '#ff8a8a'); ctx.restore();
+  rect(cx - r, cy - 1, 2 * r + 1, 3, '#10133e'); circle(cx, cy, Math.max(2, Math.round(r * .38)), '#10133e'); circle(cx, cy, Math.max(1, Math.round(r * .26)), '#ffffff');
+  if (!REDUCED && (t % 2.4) < .25) px(cx - 1, cy - 1, '#fff7c0');
+  ctx.restore();
+}
+function shakeTitle() { if (SC.titleFx && !REDUCED) SC.titleFx.shake = SC.t + .25; }
+function titleDust(x, y) { const fx = SC.titleFx; if (!fx) return; for (let i = 0; i < 2; i++) fx.particles.push({ x: x + (i ? 4 : -4), y, vx: (i ? 1 : -1) * (12 + Math.random() * 10), vy: -6, age: 0, life: .35, kind: 'dust' }); fx.particles = fx.particles.slice(-90); }
+
+// ---------------------------------------------------------------- the landscape
+const DUSK = ['#15113a', '#1f1650', '#2f1c60', '#46226e', '#632877', '#843079', '#aa3c77', '#cd506e', '#ea6b62', '#fb8c5c', '#ffae63', '#ffc877'];
+const TITLE_BG = { key: null };
+// Seeded 1-D ridge: summed sines, tiling across `w` pixels, for mountain silhouettes.
+function ridge(w, seed, amp, base) { const r = mulberry32(seed), ph = [r() * 6.3, r() * 6.3, r() * 6.3, r() * 6.3], out = []; for (let x = 0; x < w; x++) { const u = x / w * Math.PI * 2; out.push(Math.round(base + amp * (.5 * Math.sin(u * 2 + ph[0]) + .28 * Math.sin(u * 5 + ph[1]) + .14 * Math.abs(Math.sin(u * 9 + ph[2])) * 2 - .14 + .08 * Math.sin(u * 23 + ph[3])))); } return out; }
+function titleLandscape(L) {
+  const W = VIEW.w, H = VIEW.h, key = [W, H, L.horizon, L.shoreY, L.sunX].join(':'); if (TITLE_BG.key === key) return TITLE_BG;
+  const cnv = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return [c, c.getContext('2d')]; };
+  const hz = L.horizon, sunX = L.sunX, sunR = L.sunR, sunY = hz - Math.round(sunR * .35);
+  // sky: bands down to the horizon with a checker seam between each pair
+  const [sky, g] = cnv(W, H); const bh = hz / DUSK.length;
+  for (let i = 0; i < DUSK.length; i++) { const y0 = Math.round(i * bh), y1 = Math.round((i + 1) * bh); g.fillStyle = DUSK[i]; g.fillRect(0, y0, W, y1 - y0); if (i) { g.fillStyle = DUSK[i - 1]; for (let x = 0; x < W; x += 2) g.fillRect(x + (y0 & 1), y0, 1, 1); for (let x = 0; x < W; x += 4) g.fillRect(x + 1, y0 + 1, 1, 1); } }
+  // the sun: a pale disc, warmer toward its base, sliced by widening bands of sky in its lower half, with a dotted halo
+  for (let y = -sunR; y <= sunR; y++) { const w = Math.floor(Math.sqrt(sunR * sunR - y * y) + .5), v = (y + sunR) / (2 * sunR); if (v > .55) { const k = Math.floor((v - .55) * 22); if ((y + sunR) % 4 < Math.min(3, 1 + (k >> 1)) && k > 0) continue; } g.fillStyle = v < .3 ? '#fff6cf' : v < .55 ? '#ffe39a' : v < .78 ? '#ffc36e' : '#ff9d5c'; g.fillRect(sunX - w, sunY + y, 2 * w + 1, 1); }
+  g.fillStyle = '#ffd98a'; for (let a = 0; a < 72; a++) { const an = a / 72 * Math.PI * 2, rr = sunR + 3 + (a % 3 === 0 ? 2 : 0); const x = Math.round(sunX + Math.cos(an) * rr), y = Math.round(sunY + Math.sin(an) * rr); if (y < hz - 2 && (a & 1)) g.fillRect(x, y, 1, 1); }
+  // mountain ranges: faces toward the sun lit, the others in shadow (slope measured over 5 px so faces are solid), ravine
+  // streaks on the lit faces and snow on the highest peaks; each layer is PAN px wider than the view for the slow pan
+  const PAN = 80, FW = W + PAN;
+  const range = (seed, amp, base, lit, dark, snow, streak) => { const [c, gg] = cnv(FW, H); const hs = ridge(FW, seed, amp, base), r = mulberry32(seed + 5);
+    for (let x = 0; x < FW; x++) { const top = hs[x], a = hs[Math.max(0, x - 3)], b = hs[Math.min(FW - 1, x + 3)]; const facesSun = x + PAN / 2 < sunX ? b <= a : b >= a; gg.fillStyle = facesSun ? lit : dark; gg.fillRect(x, top, 1, H - top);
+      if (snow && top < base - amp * .5) { const d = Math.max(1, Math.round((base - amp * .5 - top) * .7)); gg.fillStyle = facesSun ? snow[0] : snow[1]; gg.fillRect(x, top, 1, d); if (x % 3 === 0) { gg.fillRect(x, top + d, 1, 1 + (x % 2)); } }
+      if (facesSun && streak && r() < .12) { gg.fillStyle = dark; gg.fillRect(x, top + 3 + Math.floor(r() * 4), 1, 3 + Math.floor(r() * 7)); } }
+    return c; };
+  const far = range(7, hz * .2, hz - hz * .1, '#8a4f98', '#5f387f', ['#f1d6f0', '#b393cf'], true);
+  const mid = range(19, hz * .12, hz - hz * .015, '#50337a', '#382660', null, true);
+  // the far shore: a band of rounded trees and pines, darker than the ranges, rimmed on the sun side
+  const [near, ng] = cnv(FW, H); const tr = mulberry32(31); ng.fillStyle = '#211a48'; ng.fillRect(0, hz - 2, FW, 4);
+  for (let x = -4; x < FW + 4; x += 3 + Math.floor(tr() * 3)) { const pine = tr() < .45, th = pine ? 7 + Math.floor(tr() * 5) : 4 + Math.floor(tr() * 3), col = tr() < .5 ? '#1c1640' : '#241c4e';
+    for (let j = 0; j < th; j++) { const w = pine ? Math.max(0, Math.round(j / th * 2.6)) : Math.round(Math.sqrt(Math.max(0, th * th / 4 - (j - th / 2) * (j - th / 2))) * 1.1); ng.fillStyle = col; ng.fillRect(x - w, hz - 1 - th + j, 2 * w + 1, 1); if (x + PAN / 2 < sunX && w > 0) { ng.fillStyle = '#3d2d68'; ng.fillRect(x + w, hz - 1 - th + j, 1, 1); } else if (w > 0) { ng.fillStyle = '#3d2d68'; ng.fillRect(x - w, hz - 1 - th + j, 1, 1); } } }
+  // the lake below: the mountains mirrored and darkened, then the water colour dithered over them
+  const lakeH = L.shoreY - hz, [lake, lg] = cnv(W, Math.max(1, lakeH)); lg.fillStyle = '#2b2462'; lg.fillRect(0, 0, W, lakeH);
+  lg.save(); lg.globalAlpha = .45; lg.translate(0, 2 * hz - hz); lg.scale(1, -1); lg.drawImage(mid, -PAN / 2, -hz, FW, H); lg.restore();
+  lg.fillStyle = '#2b2462'; for (let y = 0; y < lakeH; y++) for (let x = (y & 1); x < W; x += 2) if (y > lakeH * .35 || (x + y) % 4 === 0) lg.fillRect(x, y, 1, 1);
+  lg.fillStyle = '#4b3a86'; lg.fillRect(0, 0, W, 1);
+  // the near shore: a backlit meadow across the whole width, a knoll where the team stands, and the ground under the menu
+  const [shore, sg] = cnv(W, H); const edge = x => { let e = L.shoreY + Math.round(Math.sin(x * .05) * 1.5); const d = Math.abs(x - L.knollX) / L.knollW; if (d < 1) e -= Math.round((L.shoreY - L.cliffY) * (1 - d * d)); return e; };
+  for (let x = 0; x < W; x++) { const e = edge(x); sg.fillStyle = '#1a1b36'; sg.fillRect(x, e, 1, H - e); sg.fillStyle = '#f0a45e'; sg.fillRect(x, e, 1, 1); sg.fillStyle = '#7a4e5a'; sg.fillRect(x, e + 1, 1, 1); sg.fillStyle = '#26284a'; if ((x * 13) % 7 === 0) sg.fillRect(x, e + 4 + (x % 6), 1, 2); }
+  const fr = mulberry32(77); for (let i = 0; i < W / 5; i++) { const x = Math.floor(fr() * W), y = edge(x) + 4 + Math.floor(fr() * Math.max(4, H - edge(x) - 8)); sg.fillStyle = ['#2c2c55', '#30305c', '#242648'][i % 3]; sg.fillRect(x, y, 2, 1); }
+  Object.assign(TITLE_BG, { key, sky, far, mid, near, lake, shore, edge, PAN, sunX, sunY, sunR, lakeH }); return TITLE_BG;
+}
+const TITLE_CLOUDS = [{ x: .1, y: .16, w: 46 }, { x: .45, y: .09, w: 34 }, { x: .7, y: .24, w: 56 }, { x: .88, y: .12, w: 28 }];
+function drawTitleCloud(x, y, w) { x = Math.round(x); y = Math.round(y); const h = Math.max(5, Math.round(w / 6)); rrect(x, y + 2, w, h, '#6a2f78', 2); rrect(x + Math.round(w * .18), y, Math.round(w * .45), h, '#6a2f78', 2); rrect(x + Math.round(w * .5), y - 2, Math.round(w * .3), h, '#6a2f78', 2); hline(x + 2, y + h + 1, w - 4, '#ff9d6a'); hline(x + Math.round(w * .2), y + h, Math.round(w * .5), '#e67a6c'); hline(x + Math.round(w * .2), y, Math.round(w * .4), '#8b3f86'); }
+function titleScene(L) {
+  const W = VIEW.w, H = VIEW.h, t = SC.t, BG = titleLandscape(L), hz = L.horizon, pan = REDUCED ? .5 : Math.sin(t * .09) * .5 + .5;
+  ctx.drawImage(BG.sky, 0, 0);
+  for (let i = 0; i < 28; i++) { const x = (i * 97 + 13) % W, y = (i * 53 + 7) % Math.max(1, Math.round(hz * .42)); const k = Math.sin(t * (1.3 + i % 5 * .4) + i * 2.1); if (k > .2 || REDUCED) px(x, y, k > .85 ? '#ffffff' : '#b9a7e6'); if (k > .97 && !REDUCED) { px(x - 1, y, '#8f7fc6'); px(x + 1, y, '#8f7fc6'); } }
+  for (const c of TITLE_CLOUDS) drawTitleCloud(((c.x * W + t * (3 + c.w / 20)) % (W + 80)) - 60, c.y * hz, c.w);
+  ctx.drawImage(BG.far, -Math.round(pan * BG.PAN * .35), 0); ctx.drawImage(BG.mid, -Math.round(pan * BG.PAN * .6), 0); ctx.drawImage(BG.near, -Math.round(pan * BG.PAN * .8), 0);
+  // the lake: its mirrored ranges, drifting glints and the sun's broken reflection
+  ctx.drawImage(BG.lake, 0, hz);
+  for (let i = 0; i < 18; i++) { const y = hz + 2 + (i * 7) % Math.max(1, BG.lakeH - 3), x = ((i * 71 + t * (5 + i % 3 * 3)) % (W + 40)) - 20; hline(x, y, 5 + i % 4 * 3, i % 3 ? '#4f3f8e' : '#6a54a8'); }
+  for (let y = hz + 1; y < hz + BG.lakeH; y += 2) { const k = (y - hz) / BG.lakeH, ww = Math.round(BG.sunR * (1.05 - k * .45) * (.7 + .3 * Math.sin(t * 3 + y))), off = Math.round(Math.sin(t * 2 + y * .7) * 2); hline(BG.sunX - ww + off, y, ww * 2, k < .45 ? '#ffd27a' : '#f59a62'); if (y % 4 === 1) hline(BG.sunX - Math.round(ww * .4) - off, y, Math.round(ww * .8), '#fff1c0'); }
+  // birds crossing now and then
+  if (!REDUCED) { const k = (t % 14) / 14, bx = -20 + k * (W + 40), by = hz * .35 + Math.sin(k * 9) * 6; for (let b = 0; b < 3; b++) { const x = Math.round(bx - b * 9), y = Math.round(by + b * 4), f = Math.floor(t * 6 + b) % 2; if (f) { px(x - 2, y, '#2a1d4a'); px(x - 1, y - 1, '#2a1d4a'); px(x, y, '#2a1d4a'); px(x + 1, y - 1, '#2a1d4a'); px(x + 2, y, '#2a1d4a'); } else { hline(x - 2, y, 5, '#2a1d4a'); px(x, y + 1, '#2a1d4a'); } } }
+  ctx.drawImage(BG.shore, 0, 0);
+  drawTitleMeadow(L, BG);
+}
+// The backlit meadow and the knoll: swaying grass on the rim, flowers catching the last light, the team on the knoll,
+// fireflies and drifting petals. The team hops when SC.titleFx.hop says so.
+function drawTitleMeadow(L, BG) {
+  const W = VIEW.w, H = VIEW.h, t = SC.t, edge = BG.edge;
+  for (let x = 2; x < W - 1; x += 5) { const e = edge(x), sw = REDUCED ? 0 : Math.round(Math.sin(t * 2.4 + x * .23) * 1.2), tall = 2 + (x * 7) % 3; for (let j = 1; j <= tall; j++) px(x + Math.round(sw * j / tall), e - j, j === tall ? '#f7b066' : '#8a5a5c'); px(x - 2 + sw, e - 1, '#b8704c'); }
+  for (let i = 0; i < 14; i++) { const x = (i * 61 + 17) % W, e = edge(x); if (Math.abs(x - L.knollX) < L.knollW * .5 && L.portrait) continue; const y = e + 3 + (i * 5) % Math.max(3, Math.min(14, H - e - 4)); const glow = .6 + .4 * Math.sin(t * 1.7 + i); ctx.globalAlpha = glow; px(x, y, i % 3 ? '#ff9ab8' : '#ffd35a'); px(x, y + 1, '#3f6a4a'); ctx.globalAlpha = 1; }
+  const fx = SC.titleFx || {};
+  L.team.forEach((num, i) => {
+    const x = Math.round(L.teamX + i * L.teamGap), e = edge(x), hop = fx.hop && fx.hop[i] ? Math.max(0, fx.hop[i] - t) : 0, dy = hop > 0 ? -Math.round(Math.sin((1 - hop / .45) * Math.PI) * 9) : 0;
+    ctx.globalAlpha = .5; ellipse(x, e + 1, 12, 2, '#07051a'); ctx.globalAlpha = 1;
+    requestAnim(num); requestBigSprite(num);
+    if (animReady(num)) drawAnim(num, x, e + 1 + dy, t + i * .37); else if (bigReady(num)) drawBig(num, x, e + 1 + dy, { sx: .5, sy: .5 }); else drawMon(num, x, e + 2 + dy, {});
+  });
+  if (!REDUCED) {
+    for (let i = 0; i < 10; i++) { const k = t * .3 + i * .71, x = Math.round(((i * 53) % W) + Math.sin(k * 2.1) * 8), y = Math.round(edge(clamp(Math.round((i * 53) % W), 0, W - 1)) - 8 - (i * 13) % 30 + Math.sin(k * 1.7) * 5); if (Math.sin(t * 2.5 + i * 1.9) > .1) { px(x, y, '#fff6a0'); ctx.globalAlpha = .35; px(x - 1, y, '#ffe060'); px(x + 1, y, '#ffe060'); px(x, y - 1, '#ffe060'); px(x, y + 1, '#ffe060'); ctx.globalAlpha = 1; } }
+    for (let i = 0; i < 5; i++) { const k = ((t * (.06 + i * .013)) + i * .23) % 1, x = Math.round(W * (1.1 - k * 1.3)), y = Math.round(L.horizon * .6 + i * 17 + Math.sin(t * 2 + i) * 6 + k * 40); const f = Math.floor(t * 5 + i) % 3; px(x, y, '#ffb3c9'); if (f) px(x + 1, y + (f === 1 ? -1 : 1), '#ff8fb1'); }
+  }
+}
+// 13×13 menu icons: a star (new game), a route map (continue), crossed blades (quick battle), two balls (versus), play.
+const TITLE_ICONS = {
+  star: ['......O......', '.....OYO.....', '.....OYO.....', '....OYWYO....', 'OOOOOYWYOOOOO', 'OYYYYYWYYYYyO', '.OYYYYYYYYyO.', '..OYYYYYYyO..', '...OYYYYyO...', '..OYYyOYYyO..', '..OYyO.OYyO..', '.OYyO...OyyO.', '.OOO.....OOO.'],
+  map: ['.OOOO.OOO.OO.', 'OKWWWOGGGOWWO', 'OKWRWOGgGOWWO', 'OKWWWOGGGOWBO', 'OKWWROGGWOWBO', 'OKWWWRGWROBBO', 'OKGGWOWRWOWWO', 'OKGgWOWWROWWO', 'OKGGWOWWWRWWO', 'OKWWWOBBWOWRO', 'OKWWWOBBWOWWO', '.OOO.OOOO.OO.', '.............'],
+  blades: ['OO.........OO', 'OSO.......OSO', '.OSO.....OSO.', '..OSO...OSO..', '...OSO.OSO...', '....OSOSO....', '.....OsO.....', '....OSOsO....', '.OO.OsO.OsO.O', 'OKKOsO...OsOK', '.OKKO.....OKO', 'OKOKKO...OKOK', 'OO..OO...OO.O'],
+  duo: ['..OOOO.......', '.ORRRRO......', 'ORRhRRRO.....', 'ORRRRRRO.OOOO', 'OOOWWOOOOBBBBO', 'OWWOOWWOBBhBBBO', 'OWWWWWWOBBBBBBO', '.OWWWWOOOOWWOOO', '..OOOOOOWWOOWWO', '.......OWWWWWWO', '........OWWWWO.', '.........OOOO..', '.............'],
+  play: ['...OOOOOOO...', '..OGGGGGGGO..', '.OGGWGGGGGGO.', 'OGGGWWGGGGGGO', 'OGGGWWWGGGGGO', 'OGGGWWWWGGGGO', 'OGGGWWWWWGGGO', 'OGGGWWWWGGGGO', 'OGGGWWWGGGGGO', 'OGGGWWGGGGGGO', '.OgGWGGGGGGgO.', '..OgggggggO..', '...OOOOOOO...'],
+};
+function titleIcon(id, x, y, dim) { const rows = TITLE_ICONS[id]; if (!rows) return; stampAt(Math.round(x), Math.round(y), rows, dim ? { O: '#07051c', Y: '#b9a36a', y: '#8a7640', W: '#c9c6e8', S: '#b8bcd8', s: '#7e84a8', K: '#6a4a3a', G: '#5c8f5c', g: '#3e6a44', R: '#b25860', h: '#e6a0a0', B: '#5a78b8', b: '#3a5288' } : { O: '#07051c', Y: '#ffd049', y: '#e09a1c', W: '#fbf6e8', S: '#e6ecff', s: '#9aa6d6', K: '#b8764a', G: '#62c86a', g: '#2f8a4a', R: '#f04848', h: '#ffb0b0', B: '#4a8cff', b: '#2a5ad0' }); }
+
+// ---------------------------------------------------------------- menu
+function titleSelect(i) {
+  if (SC.titleFx?.action || i === SC.i || SC.titleConfirm) return;
+  SC.i = i; SC.titleFx.focusAt = SC.t; Audio.sfx('titleFocus'); titleHop(i % 4);
+  const b = SC.hits[i]; if (b) titleBurst(b.x + 12, b.y + b.h / 2, 6);
+}
+function titleHop(i) { const fx = SC.titleFx; if (!fx || REDUCED) return; fx.hop = fx.hop || []; fx.hop[i] = SC.t + .45; }
+function titleActivate(i) {
+  const fx = SC.titleFx, item = SC.titleItems[i]; if (!fx || fx.action || !item || SC.titleConfirm) return;
+  SC.i = i; fx.down = null; Audio.sfx('titleConfirm');
+  if (REDUCED) { item.run(); return; }
+  const b = SC.hits[i]; if (b) titleBurst(b.x + 12, b.y + b.h / 2, 16); for (let k = 0; k < 4; k++) titleHop(k);
+  fx.action = { i, t: 0, run: item.run };
+}
+function titleBurst(x, y, count = 9) {
+  const fx = SC.titleFx; if (!fx || REDUCED) return;
+  for (let i = 0; i < count; i++) { const a = i * Math.PI * 2 / count, sp = 18 + i % 4 * 9; fx.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 10, age: 0, life: .35 + i % 3 * .12, kind: i % 2 ? 'spark' : 'star' }); }
+  fx.particles = fx.particles.slice(-90);
+}
+function titleUpdate(dt) {
+  const fx = SC.titleFx; if (!fx) return;
+  SC.titleItems.forEach((item, i) => { item.hover = REDUCED ? +(i === SC.i) : lerp(item.hover, +(i === SC.i), 1 - Math.exp(-dt * 18)); });
+  for (const p of fx.particles) { p.age += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.kind === 'dust' ? 10 : 30) * dt; }
+  fx.particles = fx.particles.filter(p => p.age < p.life);
+  if (fx.action) { fx.action.t += dt; if (fx.action.t >= .2) { const run = fx.action.run; fx.action = null; run(); } }
+}
+function initTitle() {
+  // Save state is a scene snapshot, not a localStorage read on every animation frame.
+  const save = loadSave(), suspended = loadSuspend(); const items = [];
+  if (suspended) items.push({ label: 'RESUME BATTLE', sub: 'Back to your last turn', icon: 'play', run: resumeSuspend });
+  if (save) { const chapter = CHAPTERS[clamp(save.chapter || 0, 0, CHAPTERS.length - 1)]; items.push({ label: 'CONTINUE', sub: save.beaten ? 'Journey complete · replay for stars' : 'Chapter ' + chapter.num + ' · ' + chapter.title, icon: 'map', run: continueCampaign }); }
+  items.push({ label: 'NEW GAME', sub: 'Pick a partner · 8 chapters', icon: 'star', run: () => { if (save) openTitleConfirm(); else startNewGame(); } });
+  items.push({ label: 'QUICK BATTLE', sub: 'Skirmish or Conquest vs CPU', icon: 'blades', run: () => goScene('quick') });
+  items.push({ label: 'VERSUS', sub: 'Two players, one screen', icon: 'duo', run: startVersusSetup });
+  items.forEach((item, i) => { item.hover = i === 0 ? 1 : 0; });
+  SC.titleItems = items; SC.menuLen = items.length; SC.titleConfirm = null;
+  SC.titleFx = { particles: [], focusAt: -10, logoAt: -10, down: null, action: null, hop: [], landed: {}, shake: 0 };
+}
+// In-game confirmation for replacing a campaign save (never a browser dialog).
+function openTitleConfirm() { SC.titleConfirm = { i: 0, t: SC.t }; Audio.sfx('menu'); } // KEEP SAVE has the focus: losing a journey takes a deliberate step
+function titleConfirmRect() { const w = Math.min(VIEW.w - 16, 230), h = 74; return { x: Math.round((VIEW.w - w) / 2), y: Math.round((VIEW.h - h) / 2), w, h }; }
+function titleConfirmChoose(yes) { SC.titleConfirm = null; if (yes) { Audio.sfx('titleConfirm'); startNewGame(); } else Audio.sfx('cancel'); }
+function titleLayout(count) {
+  const W = VIEW.w, H = VIEW.h, portrait = H > W || W < 320, compact = !portrait && H < 245;
+  const gap = compact ? 3 : 4, cols = compact && H < 190 && count > 4 ? 2 : 1;
+  const w = portrait ? Math.min(236, W - 24) : cols === 2 ? Math.floor((W - 44) / 2) : Math.min(206, Math.floor(W * .42));
+  const x = portrait ? Math.floor((W - w) / 2) : Math.max(14, Math.floor(W * .05));
+  const logoMax = portrait ? W - 16 : Math.max(w + 20, Math.floor(W * .46));
+  const cell = logoCell(W, H, logoMax), M = logoMetrics(cell);
+  const logoY = portrait ? Math.max(10, Math.floor(H * .04)) : compact ? 6 : Math.max(10, Math.min(24, Math.floor(H * .06)));
+  const logoCx = portrait ? W / 2 : x + w / 2, endY = H - (compact ? 28 : 30), rows = Math.ceil(count / cols);
+  let rowH, menuY;
+  if (portrait) { rowH = clamp(Math.floor((H * .42 - (rows - 1) * gap) / rows), 20, 30); menuY = endY - rows * rowH - (rows - 1) * gap; }
+  else { menuY = logoY + M.h + (compact ? 4 : 20); rowH = clamp(Math.floor((endY - menuY - (rows - 1) * gap) / rows), 18, 32); }
+  // the landscape: horizon, sun, lake, the shore and the knoll with the team, placed around the logo and the menu
+  const team = [1, 25, 4, 7];
+  let horizon, shoreY, cliffY, knollX, knollW, teamGap, teamX, sunX;
+  if (portrait) {
+    shoreY = menuY - 12; cliffY = shoreY - 12; horizon = Math.round(clamp(cliffY - 34, logoY + M.h + 40, H * .62));
+    knollX = Math.round(W / 2); knollW = Math.round(W * .62); teamGap = Math.min(42, (W - 44) / 3.3); teamX = Math.round(W / 2 - teamGap * 1.5); sunX = Math.round(W * .68);
+  } else {
+    horizon = Math.round(H * .58); shoreY = Math.round(H * .8); cliffY = Math.round(H * .72);
+    knollX = Math.round(W * .76); knollW = Math.round(W * .3); teamGap = Math.min(52, W * .1); teamX = Math.round(knollX - teamGap * 1.5); sunX = Math.round(W * .74);
+  }
+  return { portrait, compact, cols, x, w, cell, logoY, logoCx, logoH: M.h, menuY, rowH, gap, horizon, shoreY, cliffY, knollX, knollW, sunX, sunR: Math.round(clamp(Math.min(W, H) * .12, 14, 40)), team, teamGap, teamX };
+}
+// One menu entry: a dark slab that slides right when focused, with a Poké Ball cursor, an icon, the label in the display
+// face and a one-line description. Pressing sinks it; confirming flashes it.
+function titleCard(x, y, w, h, item, selected, run, index) {
+  const fx = SC.titleFx, confirming = fx.action?.i === index, held = INPUT.down && fx.down === index, pressed = held || confirming;
+  const u = REDUCED ? 1 : clamp((titleTime() - .75 - index * .07) / .3, 0, 1), slide = REDUCED ? 0 : Math.round(item.hover * 5 - Math.pow(1 - u, 3) * 40), down = pressed ? 1 : 0;
+  ctx.save(); ctx.globalAlpha = u; ctx.translate(slide, down);
+  ctx.globalAlpha = u * .55; rrect(x + 2, y + 3, w, h, '#05031a', 2); ctx.globalAlpha = u;
+  const face = selected ? '#2c2f78' : '#17143d'; rrect(x, y, w, h, selected ? UI.gold : '#060420', 2); rrect(x + 1, y + 1, w - 2, h - 2, face, 1);
+  hline(x + 2, y + 1, w - 4, shade(face, .35)); hline(x + 2, y + h - 2, w - 4, shade(face, -.45));
+  if (selected) { rect(x + 1, y + 2, 2, h - 4, UI.gold); if (!REDUCED) { const k = (SC.t - fx.focusAt) / .45; if (k >= 0 && k < 1) { ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2, w - 4, h - 4); ctx.clip(); ctx.globalAlpha = u * .25 * Math.sin(k * Math.PI); for (let q = 0; q < 6; q++) vline(x + Math.round(k * (w + 24)) - 12 + q, y + 2, h - 4, '#fff6c9'); ctx.restore(); } } }
+  if (confirming) { ctx.globalAlpha = u * clamp(1 - fx.action.t / .2, 0, 1) * .6; rrect(x + 1, y + 1, w - 2, h - 2, '#ffffff', 1); ctx.globalAlpha = u; }
+  titleIcon(item.icon, x + 7, y + Math.round((h - 13) / 2) - (selected && !REDUCED ? Math.round(Math.abs(Math.sin(SC.t * 4)) * 1) : 0), !selected);
+  const sub = h >= 26, ty = sub ? y + Math.round((h - 18) / 2) : y + Math.round((h - 9) / 2);
+  bigText(item.label, x + 25, ty, selected ? '#fff0b6' : '#dcdaf2', { shadow: '#07051c' });
+  if (sub) text(titleFitText(item.sub, w - 33), x + 25, ty + 11, selected ? '#c3c9f2' : '#8d8fbe');
+  ctx.restore();
+  if (selected && u >= 1) { const bob = REDUCED ? 0 : Math.round(Math.sin(SC.t * 5) * 1.5); drawBall(x - 7 + slide + bob, y + Math.round(h / 2), '#f04848', 4); }
+  hit(x, y, w, h, run, item.label); // hit targets stay put while the card slides
+}
+// Time for entrance animations: outside the main loop (tests, tools) every entrance has already finished.
+function titleTime() { return CLOCK.frame ? SC.t : 99; }
+function titleFitText(s, w) { if (textWidth(s) <= w) return s; while (s.length && textWidth(s + '…') > w) s = s.slice(0, -1); return s.trimEnd() + '…'; }
+function titleDraw() {
+  if (!SC.titleItems) initTitle();
+  const items = SC.titleItems, W = VIEW.w, H = VIEW.h, L = titleLayout(items.length);
+  SC.i = clamp(SC.i, 0, items.length - 1); SC.titleCols = L.cols;
+  const shk = SC.titleFx.shake > SC.t ? Math.round(Math.sin(SC.t * 90) * 2 * (SC.titleFx.shake - SC.t) / .25) : 0; ctx.save(); ctx.translate(0, shk);
+  titleScene(L);
+  // legibility: a soft dark wash behind the menu (left column on wide screens, the bottom on portrait)
+  if (!L.portrait) { for (let x = 0; x < Math.round(W * .5); x += 2) { ctx.globalAlpha = .5 * Math.pow(1 - x / (W * .5), 1.3); rect(x, 0, 2, H, '#07051c'); } ctx.globalAlpha = 1; }
+  else { for (let y = L.menuY - 22; y < H; y += 2) { ctx.globalAlpha = clamp((y - L.menuY + 22) / 30, 0, 1) * .6; rect(0, y, W, 2, '#07051c'); } ctx.globalAlpha = 1; }
+  const M = drawLogo(L.logoCx, L.logoY, L.cell); ctx.restore();
+  if (!L.compact && L.logoY + M.h + 10 < L.menuY - 4) { const s = 'A POKÉMON TACTICS ADVENTURE', sy = L.logoY + M.h + 1, sw = textWidth(s); textC(s, L.logoCx, sy, '#ffe2a8', { shadow: '#1a0f33' }); hline(L.logoCx - sw / 2 - 16, sy + 3, 10, '#c77a5a'); hline(L.logoCx + sw / 2 + 6, sy + 3, 10, '#c77a5a'); }
+  SC.hits = [];
+  items.forEach((item, i) => { const x = L.cols === 2 ? 18 + (i % 2) * (L.w + 8) : L.x, y = L.menuY + Math.floor(i / L.cols) * (L.rowH + L.gap); titleCard(x, y, L.w, L.rowH, item, SC.i === i, () => titleActivate(i), i); });
+  // the sound control is its own touch target, separate from keyboard navigation
+  const sound = Audio.muted ? 'SOUND OFF' : 'SOUND ON', sw = textWidth(sound) + 20; SC.titleSound = { x: 6, y: H - 24, w: sw, h: 20 };
+  const soundHot = !VIEW.touch && INPUT.x >= 6 && INPUT.x < 6 + sw && INPUT.y >= H - 24; if (soundHot) rrect(6, H - 23, sw, 18, '#2c2f78', 2);
+  iconAt('note', 9, H - 19, Audio.muted ? '#8d8fbe' : UI.gold); text(sound, 21, H - 17, soundHot ? UI.ink : '#b9bce0', { shadow: '#07051c' });
+  if (!L.portrait) { hintLine(VIEW.touch ? ['tap to begin'] : [['↑↓', 'select'], ['Z', 'confirm']], W / 2, H - 17, { pill: false, col: '#b9bce0' }); textR('GEN I · FAN GAME', W - 10, H - 17, '#8d8fbe', { shadow: '#07051c' }); }
+  else textR('GEN I · FAN GAME', W - 8, H - 17, '#8d8fbe', { shadow: '#07051c' });
+  for (const p of SC.titleFx.particles) { const k = 1 - p.age / p.life; if (p.kind === 'dust') { ctx.globalAlpha = k * .8; rect(Math.round(p.x) - 1, Math.round(p.y) - 1, 2, 2, '#e8d6c0'); } else if (p.kind === 'star') { ctx.globalAlpha = k; sparkle(p.x, p.y, k > .5 ? 2 : 1, '#fff2a8'); } else { ctx.globalAlpha = k; px(Math.round(p.x), Math.round(p.y), '#ffffff'); } }
+  ctx.globalAlpha = 1;
+  if (SC.titleConfirm) drawTitleConfirm();
+}
+function drawTitleConfirm() {
+  const r = titleConfirmRect(), c = SC.titleConfirm; dimScreen(.62); const tok = unfold('titleConfirm', r.x, r.y, r.w, r.h);
+  const p = panel(r.x, r.y, r.w, r.h, { header: 'START A NEW JOURNEY?', headerFill: '#5a1d2e' });
+  textC('Your campaign save will be replaced.', r.x + r.w / 2, p.cy + 1, UI.ink);
+  const bw = Math.floor((r.w - 24) / 2), by = r.y + r.h - 26; SC.titleConfirmHits = [];
+  [['KEEP SAVE', false, 'ghost'], ['NEW GAME', true, 'danger']].forEach(([label, yes, variant], i) => { const bx = r.x + 8 + i * (bw + 8); const hot = c.i === i; uiButton(bx, by, bw, 18, label, { hot, variant, big: true }); SC.titleConfirmHits.push({ x: bx, y: by, w: bw, h: 18, run: () => titleConfirmChoose(yes), label }); });
+  unfoldEnd(tok);
+}
+function titleInput(ev) {
+  const n = SC.menuLen || 0, fx = SC.titleFx;
+  if (!n || !fx || fx.action) return;
+  if (SC.titleConfirm) {
+    const c = SC.titleConfirm;
+    if (ev.type === 'key') { if (ev.key === 'left' || ev.key === 'right' || ev.key === 'up' || ev.key === 'down') { c.i = 1 - c.i; Audio.sfx('cursor'); } else if (ev.key === 'ok') titleConfirmChoose(c.i === 1); else if (ev.key === 'back') titleConfirmChoose(false); }
+    else if (ev.type === 'up') { const h = (SC.titleConfirmHits || []).find(b => ev.x >= b.x && ev.y >= b.y && ev.x < b.x + b.w && ev.y < b.y + b.h); if (h) h.run(); }
+    return;
+  }
+  if (ev.type === 'key') {
+    const cols = SC.titleCols || 1;
+    if (ev.key === 'up' || ev.key === 'down' || ev.key === 'left' || ev.key === 'right' || ev.key === 'next') { const delta = ev.key === 'up' ? -cols : ev.key === 'down' ? cols : ev.key === 'left' ? -1 : 1; titleSelect((SC.i + delta + n) % n); }
+    else if (ev.key === 'ok') titleActivate(SC.i);
+    else if (ev.key === 'mute') Audio.toggle();
+    return;
+  }
+  if (ev.type === 'down' && (ev.btn == null || ev.btn === 0)) { const b = hitAt(ev.x, ev.y); fx.down = b ? SC.hits.indexOf(b) : -1; if (fx.down >= 0) titleSelect(fx.down); return; }
+  if (ev.type === 'move' && !ev.touch && !INPUT.down) { const b = hitAt(ev.x, ev.y); if (b) titleSelect(SC.hits.indexOf(b)); return; }
+  if (ev.type === 'up' && (ev.btn == null || ev.btn === 0)) {
+    const from = fx.down; fx.down = null; const s = SC.titleSound;
+    if (s && ev.x >= s.x && ev.x < s.x + s.w && ev.y >= s.y && ev.y < s.y + s.h) { Audio.toggle(); return; }
+    const b = hitAt(ev.x, ev.y), i = b ? SC.hits.indexOf(b) : -1;
+    if (i >= 0 && (from == null || from === i)) { titleActivate(i); return; }
+    if (SC.titleLetters?.some(l => ev.x >= l.x && ev.x <= l.x + l.w && ev.y >= l.y && ev.y <= l.y + l.h)) { fx.logoAt = SC.t; titleBurst(ev.x, ev.y, 12); Audio.sfx('titleFocus'); for (let k = 0; k < 4; k++) titleHop(k); }
+  }
+}
 // Player-facing captain choice, campaign lessons and shared power controls.
 'use strict';
 ITEMS.practiceball = { name: 'Practice Ball', kind: 'ball', rate: 1, col: '#f0c957', desc: 'Oak\'s free practice ball. Guaranteed at half HP.' };
@@ -4869,7 +4983,7 @@ function territorySetupDraw() {
     const mw = Math.floor(bd.canvas.width * scale), mh = Math.floor(bd.canvas.height * scale), mx = Math.floor((W - mw) / 2), my = Math.floor(iy + 5 + (available - mh) / 2);
     outline(mx - 2, my - 2, mw + 4, mh + 4, UI.border2); ctx.drawImage(bd.canvas, mx, my, mw, mh);
   }
-  bigButton(x, by, Math.floor(w * .3), 20, 'BACK', () => goScene('title'), { variant: 'ghost', hot: SC.i === 3 });
+  bigButton(x, by, Math.floor(w * .3), 20, 'BACK', () => goScene('quick'), { variant: 'ghost', hot: SC.i === 3 });
   bigButton(x + Math.floor(w * .3) + 4, by, w - Math.floor(w * .3) - 4, 20, 'START', () => launchTerritory(S.seed, false, [S.captain, S.captain]), { variant: 'primary', hot: SC.i === 4 });
 }
 // ============================================================================
@@ -4990,14 +5104,14 @@ function launchVersus(S) {
 // ---------------------------------------------------------------- main loop
 let lastT = 0;
 function frame(t) {
-  requestAnimationFrame(frame); const dt = Math.min(.05, (t - lastT) / 1000 || 0); lastT = t; SC.t += dt;
+  requestAnimationFrame(frame); const dt = Math.min(.05, (t - lastT) / 1000 || 0); lastT = t; SC.t += dt; CLOCK.t += dt; CLOCK.dt = dt; CLOCK.frame++;
   // input
   const q = INPUT.queue; INPUT.queue = [];
   for (const ev of q) {
     if (ev.type === 'key' && ev.key === 'mute' && SC.name !== 'battle') { Audio.toggle(); continue; }
     switch (SC.name) {
       case 'journey': journeyInput(ev); break; case 'territory': case 'territoryResults': territorySceneInput(ev); break; case 'title': titleInput(ev); break; case 'starter': starterInput(ev); break; case 'card': cardInput(ev); break; case 'story': storyInput(ev); break;
-      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break;
+      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break;
     }
   }
   // update
@@ -5007,10 +5121,10 @@ function frame(t) {
   switch (SC.name) {
     case 'loading': rect(0, 0, VIEW.w, VIEW.h, '#0e0c10'); textC('loading sprites…', VIEW.w / 2, VIEW.h / 2, UI.muted); break;
     case 'journey': journeyDraw(); break; case 'territory': territorySetupDraw(); break; case 'territoryResults': territoryResultsDraw(); break; case 'title': titleDraw(); break; case 'starter': starterDraw(); break; case 'card': cardDraw(); break; case 'story': storyDraw(); break;
-    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break;
+    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break;
   }
-  // every scene change fades up from black (the story overlay excepted: it sits on the board it follows)
-  if (SC.t < .3 && SC.name !== 'story' && SC.name !== 'loading' && !REDUCED) { ctx.globalAlpha = 1 - easeOut(SC.t / .3); rect(0, 0, VIEW.w, VIEW.h, '#070a14'); ctx.globalAlpha = 1; }
+  // every scene change closes and reopens a Poké Ball over the screen (see captureTransition)
+  drawTransition(dt);
 }
 // Deep links for testing: ?ch=3 jumps into chapter 3 with a loaner party; ?skirmish=42 a skirmish; ?silent mutes.
 function boot() {

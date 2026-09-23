@@ -95,54 +95,103 @@ function alpha(a, fn) { const o = ctx.globalAlpha; ctx.globalAlpha = a; fn(); ct
 function circle(cx, cy, r, c) { ctx.fillStyle = c; for (let y = -r; y <= r; y++) { const w = Math.floor(Math.sqrt(r * r - y * y) + .5); ctx.fillRect(cx - w, cy + y, 2 * w + 1, 1); } }
 function ellipse(cx, cy, rx, ry, c) { ctx.fillStyle = c; for (let y = -ry; y <= ry; y++) { const w = Math.floor(rx * Math.sqrt(1 - (y * y) / (ry * ry)) + .5); ctx.fillRect(cx - w, cy + y, 2 * w + 1, 1); } }
 
+// ---------------------------------------------------------------- clock & motion
+// CLOCK.t: seconds since boot, advanced by the main loop; CLOCK.frame counts frames. The motion helpers read it so any
+// screen can animate without timers of its own. Outside the loop (tests, tools) CLOCK.frame stays 0 and every entrance
+// reports itself finished, so layouts are always measured at rest.
+const CLOCK = { t: 0, frame: 0, dt: 0 };
+const APPEAR = new Map();
+// Seconds since `id` started being drawn on consecutive frames; it re-arms when the element is gone for a few frames.
+function appear(id) { if (!CLOCK.frame || REDUCED) return 99; let a = APPEAR.get(id); if (!a || CLOCK.frame - a.f > 2) { a = { t0: CLOCK.t, f: CLOCK.frame }; APPEAR.set(id, a); } a.f = CLOCK.frame; return CLOCK.t - a.t0; }
+function easeOutBack(t, s = 1.7) { t = clamp(t, 0, 1) - 1; return 1 + (s + 1) * t * t * t + s * t * t; }
+function easeOutElastic(t) { t = clamp(t, 0, 1); if (t === 0 || t === 1) return t; return Math.pow(2, -10 * t) * Math.sin((t * 10 - .75) * (2 * Math.PI) / 3) + 1; }
+function wobble(t, amp, freq = 9, decay = 7) { return amp * Math.sin(t * freq * Math.PI * 2 / 3) * Math.exp(-t * decay); }
+// Entrance for a box, pixel-crisp: it unfolds from its middle row and settles with a small bounce. Draw between
+// unfold(...) and unfoldEnd(token). Returns null (nothing to undo) once the entrance is over.
+function unfold(id, x, y, w, h, dur = .2) {
+  const k = appear(id) / dur; if (k >= 1) return null;
+  const e = easeOutBack(k, 2.2), hh = Math.max(2, Math.round(h * clamp(e, 0, 1.08))), dy = Math.round((1 - clamp(e, 0, 1)) * 6);
+  ctx.save(); ctx.globalAlpha *= clamp(k * 3, 0, 1); ctx.beginPath(); ctx.rect(x - 4, Math.round(y + h / 2 - hh / 2) - 4 + dy, w + 10, hh + 10); ctx.clip(); ctx.translate(0, dy); return true;
+}
+function unfoldEnd(tok) { if (tok) ctx.restore(); }
+// Count-up for numbers that just changed (results, points): the shown value runs from 0 to v over `dur` after `delay`.
+function countUp(id, v, dur = .6, delay = 0) { const t = appear(id) - delay; if (t >= dur) return v; if (t <= 0) return 0; return Math.round(v * easeOut(t / dur)); }
+
+// ---------------------------------------------------------------- scene transition (Poké Ball wipe)
+// goScene snapshots the last frame; the two halves of a Poké Ball close over it, then open on the new scene.
+const TRANS = { snap: null, t: 0, on: false };
+function captureTransition() {
+  if (REDUCED || !CLOCK.frame) return;
+  try { if (!TRANS.snap) TRANS.snap = document.createElement('canvas'); TRANS.snap.width = cv.width; TRANS.snap.height = cv.height; TRANS.snap.getContext('2d').drawImage(cv, 0, 0); TRANS.t = 0; TRANS.on = true; } catch (_) { TRANS.on = false; }
+}
+function drawTransition(dt) {
+  if (!TRANS.on) return; TRANS.t += dt; const T = TRANS.t, CLOSE = .17, HOLD = .07, OPEN = .28;
+  if (T >= CLOSE + HOLD + OPEN) { TRANS.on = false; return; }
+  const W = VIEW.w, H = VIEW.h;
+  let k; if (T < CLOSE) { k = easeIn(T / CLOSE); ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(TRANS.snap, 0, 0); ctx.restore(); } else if (T < CLOSE + HOLD) k = 1; else k = 1 - easeInOut((T - CLOSE - HOLD) / OPEN);
+  const half = Math.ceil((H / 2 + 3) * k), cx = Math.round(W / 2), r = Math.max(9, Math.round(Math.min(W, H) * .07));
+  // top: red shell with a highlight band; bottom: white shell; both carry a black rim on the closing edge and half of the button
+  rect(0, 0, W, half, '#e2343e'); rect(0, 0, W, Math.max(0, half - Math.round(H * .35)), '#f04a52'); hline(0, half - 5, W, '#a81c27'); rect(0, half - 3, W, 3, '#141020');
+  rect(0, H - half, W, half, '#f2eee6'); hline(0, H - half + 3, W, '#ffffff'); rect(0, H - half, W, 3, '#141020'); hline(0, H - 1, W, '#c9c2b4');
+  for (const [top, y0] of [[true, half], [false, H - half]]) { ctx.save(); ctx.beginPath(); if (top) ctx.rect(0, 0, W, half); else ctx.rect(0, H - half, W, half); ctx.clip(); const cy = top ? y0 : y0; circle(cx, cy, r + 3, '#141020'); circle(cx, cy, r, '#f2eee6'); circle(cx, cy, r - 3, '#141020'); circle(cx, cy, r - 5, k > .98 ? '#ffffff' : '#e8e2d6'); if (k > .98) circle(cx - 2, cy - 2, 2, '#ffffff'); ctx.restore(); }
+}
+
 // ---------------------------------------------------------------- UI design system
-// One vocabulary for every screen: a bevelled cream frame on slate panels, gold for headings and the
-// selection, cyan-blue for informational values, green/red for outcomes. Everything is 1-px pixel art.
+// One vocabulary for every screen: raised cream-framed windows on deep indigo, gold for headings and the selection,
+// sky blue for information, green/red for outcomes. Everything is 1-px pixel art; motion comes from the helpers above.
 const UI = {
-  panel: '#1b2236', panel2: '#26304c', panelDark: '#111726', panelLight: '#2d3a5e',
-  border: '#e6dcc0', borderHi: '#fff8e2', borderLo: '#a4956e', border2: '#8c7e5a', inset: '#0a0e1a',
-  ink: '#f4f1e8', muted: '#9ea7bc', dim: '#6b7490', info: '#98d8f8',
-  gold: '#f7c94b', goldDark: '#3a2400', red: '#ff6262', green: '#5fe07a', blue: '#66a8ff', shadow: '#080b14', hi: '#ffffff',
-  menuSel: '#2f4a88', sel: '#2f4a88',
-  bg: '#0e0c10', hpGreen: '#48d05a', hpYellow: '#f4c430', hpRed: '#f04848', hpBack: '#22252f',
-  btn: { neutral: '#2b3656', primary: '#2c7a44', danger: '#8a2f2f', ghost: '#4a4034', gold: '#b8862a', dark: '#1a2238' },
+  panel: '#1f2452', panel2: '#2b3274', panelDark: '#141736', panelLight: '#272d66',
+  border: '#f4e9cb', borderHi: '#fffbef', borderLo: '#b9a67a', border2: '#5b619e', inset: '#0b0a1d',
+  ink: '#f7f3e7', muted: '#a8aed3', dim: '#6c72a2', info: '#9cdbff',
+  gold: '#ffd049', goldDark: '#4a2a00', red: '#ff5d67', green: '#62e58d', blue: '#6cb0ff', shadow: '#06051a', hi: '#ffffff',
+  menuSel: '#3646aa', sel: '#3646aa',
+  bg: '#0d0b1e', hpGreen: '#4cd96c', hpYellow: '#f8c63a', hpRed: '#f2484c', hpBack: '#1a1c34',
+  btn: { neutral: '#36428f', primary: '#2f9b56', danger: '#c63a46', ghost: '#5d4f78', gold: '#d8991f', dark: '#242b5e' },
 };
-// Panel: 1-px dark outline, 2-px cream frame with a light top-left / dark bottom-right bevel, 1-px inset, slate
-// fill with a soft top highlight. opt: fill, border (accent frame colour), flat (no fill bevel), title (a tab
-// riding the top edge, 9 px above y), header (a band inside the panel; content starts at the returned cy).
+// Two-tone body with a dithered seam a third of the way down: reads as a lit surface without gradients.
+function bodyFill(x, y, w, h, fill) { const top = shade(fill, .07), s = Math.round(h * .38); rect(x, y, w, h, fill); if (h > 8) { rect(x, y, w, s, top); dither(x, y + s, w, 1, top, 0); } }
+// Panel: soft drop shadow, ink outline with round corners, a cream frame lit top-left, an ink inner line and an indigo
+// body. opt: fill, border (accent frame colour, e.g. the selection), flat (plain body), title (a gold ribbon riding the
+// top edge, 9 px above y), header (a band inside; content starts at the returned cy), headerFill/headerCol/headerRight.
 function panel(x, y, w, h, opt = {}) {
   x |= 0; y |= 0; w |= 0; h |= 0;
   if (opt.light) return lightPanel(x, y, w, h, opt);
   const fill = opt.fill || UI.panel, border = opt.border || UI.border, accent = !!opt.border && opt.border !== UI.border;
-  const hi = accent ? shade(border, .35) : UI.borderHi, lo = accent ? shade(border, -.35) : UI.borderLo;
-  rrect(x + 1, y + 2, w, h, UI.shadow, 2);                 // drop shadow
-  rrect(x, y, w, h, UI.inset, 2);                          // dark outline
-  rrect(x + 1, y + 1, w - 2, h - 2, border, 1);            // cream frame
+  const hi = accent ? shade(border, .4) : UI.borderHi, lo = accent ? shade(border, -.35) : UI.borderLo;
+  ctx.globalAlpha = .6; rrect(x + 2, y + 3, w, h, UI.shadow, 2); ctx.globalAlpha = 1;   // drop shadow
+  rrect(x, y, w, h, UI.inset, 2);                                                          // ink outline
+  rrect(x + 1, y + 1, w - 2, h - 2, border, 1);                                            // cream frame
   hline(x + 2, y + 1, w - 4, hi); vline(x + 1, y + 2, h - 4, hi); hline(x + 2, y + h - 2, w - 4, lo); vline(x + w - 2, y + 2, h - 4, lo);
-  rect(x + 3, y + 3, w - 6, h - 6, UI.inset);              // inset line
-  rect(x + 4, y + 4, w - 8, h - 8, fill);
-  if (!opt.flat) { hline(x + 4, y + 4, w - 8, shade(fill, .16)); vline(x + 4, y + 5, h - 10, shade(fill, .07)); hline(x + 4, y + h - 5, w - 8, shade(fill, -.28)); }
+  rect(x + 3, y + 3, w - 6, h - 6, UI.inset);                                              // inner line
+  if (opt.flat) rect(x + 4, y + 4, w - 8, h - 8, fill); else { bodyFill(x + 4, y + 4, w - 8, h - 8, fill); hline(x + 4, y + 4, w - 8, shade(fill, .22)); hline(x + 4, y + h - 5, w - 8, shade(fill, -.3)); }
   let cy = y + 6;
-  if (opt.header) { const bh = 12; rect(x + 4, y + 4, w - 8, bh, opt.headerFill || UI.panelDark); hline(x + 4, y + 4 + bh, w - 8, UI.border2); hline(x + 4, y + 5 + bh, w - 8, shade(fill, -.3)); text(opt.header, x + 8, y + 7, opt.headerCol || UI.gold); if (opt.headerRight) textR(opt.headerRight, x + w - 8, y + 7, opt.headerRightCol || UI.muted); cy = y + 4 + bh + 5; }
-  if (opt.title) { const tw = textWidth(opt.title) + 10, tx = x + 5; rrect(tx, y - 9, tw, 12, UI.inset, 1); rect(tx + 1, y - 8, tw - 2, 10, border); hline(tx + 2, y - 8, tw - 4, hi); rect(tx + 2, y - 7, tw - 4, 8, UI.panelDark); hline(tx + 2, y - 7, tw - 4, shade(UI.panelDark, .3)); text(opt.title, tx + 5, y - 7, opt.titleCol || UI.gold); }
+  if (opt.header) { const bh = 12, hf = opt.headerFill || UI.panelDark; rect(x + 4, y + 4, w - 8, bh, hf); hline(x + 4, y + 4, w - 8, shade(hf, .25)); hline(x + 4, y + 4 + bh, w - 8, UI.border2); hline(x + 4, y + 5 + bh, w - 8, shade(fill, -.3)); text(opt.header, x + 8, y + 7, opt.headerCol || UI.gold, { shadow: shade(hf, -.55) }); if (opt.headerRight) textR(opt.headerRight, x + w - 8, y + 7, opt.headerRightCol || UI.muted, { shadow: shade(hf, -.55) }); cy = y + 4 + bh + 5; }
+  if (opt.title) ribbonTab(opt.title, x + 5, y - 9, opt.titleCol);
   return { x, y, w, h, cx: x + 6, cy, cw: w - 12 };
 }
-// Light panel (in-battle HUD): a 1-px frame on a slightly lighter slate, a soft shadow and, with opt.header, a 12-px band
-// in opt.headerFill (a team colour) carrying opt.header left and opt.headerRight right. Same return shape as panel().
+// A gold ribbon tab (12 px tall) with a notched tail, carrying dark text. Returns its width.
+function ribbonTab(label, x, y, col) {
+  const face = col && col !== UI.gold ? col : UI.gold, tw = textWidth(label) + 12;
+  rrect(x, y, tw, 12, UI.inset, 1); rect(x + 1, y + 1, tw - 2, 10, face); hline(x + 2, y + 1, tw - 4, shade(face, .45)); hline(x + 1, y + 10, tw - 2, shade(face, -.3));
+  px(x + tw - 2, y + 5, UI.inset); px(x + tw - 2, y + 6, UI.inset); px(x + tw - 3, y + 6, shade(face, -.3));
+  text(label, x + 5, y + 3, shade(face, -.82)); return tw;
+}
+// Light panel (in-battle HUD): a 1-px cream frame around a lighter indigo body, a soft shadow and, with opt.header, a 12-px
+// band in opt.headerFill (a team colour) carrying opt.header left and opt.headerRight right. Same return shape as panel().
 function lightPanel(x, y, w, h, opt) {
   const fill = opt.fill || UI.panelLight, border = opt.border || UI.border;
-  ctx.globalAlpha = .5; rrect(x + 1, y + 2, w, h, UI.shadow, 2); ctx.globalAlpha = 1;
-  rrect(x, y, w, h, UI.inset, 2); rrect(x + 1, y + 1, w - 2, h - 2, border, 1); rect(x + 2, y + 2, w - 4, h - 4, fill);
-  if (!opt.flat) { hline(x + 2, y + 2, w - 4, shade(fill, .14)); hline(x + 2, y + h - 3, w - 4, shade(fill, -.22)); }
+  ctx.globalAlpha = .5; rrect(x + 2, y + 3, w, h, UI.shadow, 2); ctx.globalAlpha = 1;
+  rrect(x, y, w, h, UI.inset, 2); rrect(x + 1, y + 1, w - 2, h - 2, border, 1); hline(x + 2, y + 1, w - 4, UI.borderHi);
+  if (opt.flat) rect(x + 2, y + 2, w - 4, h - 4, fill); else { bodyFill(x + 2, y + 2, w - 4, h - 4, fill); hline(x + 2, y + 2, w - 4, shade(fill, .18)); hline(x + 2, y + h - 3, w - 4, shade(fill, -.25)); }
   let cy = y + 5;
-  if (opt.header) { const bh = 12, hf = opt.headerFill || UI.panelDark; rect(x + 2, y + 2, w - 4, bh, hf); hline(x + 2, y + 2, w - 4, shade(hf, .18)); hline(x + 2, y + 2 + bh, w - 4, shade(hf, -.35)); text(opt.header, x + 6, y + 5, opt.headerCol || UI.ink, { shadow: shade(hf, -.5) }); if (opt.headerRight) textR(opt.headerRight, x + w - 6, y + 5, opt.headerRightCol || UI.ink, { shadow: shade(hf, -.5) }); cy = y + 2 + bh + 4; }
-  if (opt.title) { const tw = textWidth(opt.title) + 8, tx = x + 4; rrect(tx, y - 8, tw, 11, UI.inset, 1); rect(tx + 1, y - 7, tw - 2, 9, border); text(opt.title, tx + 4, y - 6, '#1a1f2e'); }
+  if (opt.header) { const bh = 12, hf = opt.headerFill || UI.panelDark; rect(x + 2, y + 2, w - 4, bh, hf); hline(x + 2, y + 2, w - 4, shade(hf, .3)); hline(x + 2, y + 3, w - 4, shade(hf, .12)); hline(x + 2, y + 2 + bh, w - 4, shade(hf, -.4)); text(opt.header, x + 6, y + 5, opt.headerCol || UI.ink, { shadow: shade(hf, -.55) }); if (opt.headerRight) textR(opt.headerRight, x + w - 6, y + 5, opt.headerRightCol || UI.ink, { shadow: shade(hf, -.55) }); cy = y + 2 + bh + 4; }
+  if (opt.title) ribbonTab(opt.title, x + 4, y - 9, opt.titleCol);
   return { x, y, w, h, cx: x + 4, cy, cw: w - 8 };
 }
 // Filled progress bar with an inset frame; opt.notch draws quarter marks on wide bars.
 function bar(x, y, w, h, ratio, col, back = UI.hpBack, opt = {}) {
   x |= 0; y |= 0; w |= 0; h |= 0; rect(x, y, w, h, back); const f = Math.round(clamp(ratio, 0, 1) * (w - 2));
-  if (f > 0) { rect(x + 1, y + 1, f, h - 2, col); hline(x + 1, y + 1, f, shade(col, .4)); if (h > 4) hline(x + 1, y + h - 2, f, shade(col, -.3)); }
+  if (f > 0) { rect(x + 1, y + 1, f, h - 2, col); hline(x + 1, y + 1, f, shade(col, .45)); if (h > 4) hline(x + 1, y + h - 2, f, shade(col, -.3)); if (f > 2 && h > 3) px(x + f, y + 1, shade(col, .7)); }
   if (opt.notch && w >= 40) for (let q = 1; q < 4; q++) { const nx = x + 1 + Math.round((w - 2) * q / 4); vline(nx, y + 1, h - 2, shade(back, .25)); if (nx < x + 1 + f) vline(nx, y + 1, h - 2, shade(col, -.35)); }
   outline(x, y, w, h, UI.inset); hline(x + 1, y + h - 1, w - 2, shade(back, .35));
 }
@@ -150,30 +199,36 @@ function bar(x, y, w, h, ratio, col, back = UI.hpBack, opt = {}) {
 function defStars(def) { const n = Math.min(4, Math.round(def / 10)); return n ? '★'.repeat(n) : '-'; }
 function hpColor(r) { return r > .5 ? UI.hpGreen : r > .2 ? UI.hpYellow : UI.hpRed; }
 function hpBar(x, y, w, cur, max) { bar(x, y, w, 5, cur / max, hpColor(cur / max), UI.hpBack, { notch: true }); }
-// Button face (no hit registration): dark outline, bevelled face, label. opt: hot, variant (neutral | primary |
-// danger | ghost | gold | dark), big (headline font), ink, disabled, icon, col (explicit face colour).
+// Button face (no hit registration): a raised key with a 2-px base that the face sinks into while pressed. opt: hot
+// (pointer over it / keyboard focus: gold rim, brighter face, a travelling shine), pressed, variant (neutral | primary |
+// danger | ghost | gold | dark), big (headline font), ink, disabled, icon, on (toggle lamp), col (explicit face colour).
 function uiButton(x, y, w, h, label, opt = {}) {
-  x |= 0; y |= 0; w |= 0; h |= 0; const dis = !!opt.disabled; let face = opt.col || UI.btn[opt.variant || 'neutral'] || UI.btn.neutral; if (dis) face = '#262a38'; else if (opt.hot) face = shade(face, .22);
-  rrect(x + 1, y + 2, w, h, UI.shadow, 1); rrect(x, y, w, h, opt.hot && !dis ? UI.gold : UI.inset, 1); rrect(x + 1, y + 1, w - 2, h - 2, face, 1);
-  hline(x + 2, y + 1, w - 4, shade(face, .42)); hline(x + 2, y + 2, w - 4, shade(face, .12)); hline(x + 2, y + h - 2, w - 4, shade(face, -.45)); vline(x + 1, y + 2, h - 4, shade(face, .15)); vline(x + w - 2, y + 2, h - 4, shade(face, -.25));
-  if (opt.hot && !dis) { hline(x + 2, y + h - 3, w - 4, shade(UI.gold, -.2)); }
+  x |= 0; y |= 0; w |= 0; h |= 0; const dis = !!opt.disabled; let face = opt.col || UI.btn[opt.variant || 'neutral'] || UI.btn.neutral; if (dis) face = '#2a2d48'; else if (opt.hot) face = shade(face, .2);
+  const depth = h >= 16 && !dis ? 2 : 1, down = opt.pressed && !dis ? depth : 0, fh = h - depth; // face height above the base
+  ctx.globalAlpha = .5; rrect(x + 1, y + 2, w, h, UI.shadow, 1); ctx.globalAlpha = 1;
+  rrect(x, y, w, h, opt.hot && !dis ? UI.gold : UI.inset, 1);
+  rrect(x + 1, y + 1 + fh - 2, w - 2, h - fh, shade(face, -.5), 1);                          // the base under the key
+  const fy = y + 1 + down; rrect(x + 1, fy, w - 2, fh - 2 + (down ? 0 : 0), face, 1);           // the key face
+  hline(x + 2, fy, w - 4, shade(face, .45)); hline(x + 2, fy + 1, w - 4, shade(face, .14)); vline(x + 1, fy + 1, fh - 4, shade(face, .15)); vline(x + w - 2, fy + 1, fh - 4, shade(face, -.2)); hline(x + 2, fy + fh - 3, w - 4, shade(face, -.28));
+  if (opt.hot && !dis && !REDUCED && CLOCK.frame) { const sx = Math.round(((CLOCK.t * 70) % (w + 40)) - 20); ctx.save(); ctx.beginPath(); ctx.rect(x + 2, fy + 1, w - 4, fh - 4); ctx.clip(); ctx.globalAlpha = .22; for (let i = 0; i < 3; i++) vline(x + sx + i, fy + 1, fh - 4, '#ffffff'); ctx.restore(); }
   const ink = dis ? UI.dim : opt.ink || (opt.hot ? UI.hi : UI.ink); const iw = opt.icon ? 12 : 0;
   const big = opt.big && h >= 15; const lw = textWidth(big ? String(label).toUpperCase() : label, big ? BIG : FONT) + iw; let lx = x + Math.round((w - lw) / 2);
-  if (opt.icon) { iconAt(opt.icon, lx, y + Math.round((h - 9) / 2), dis ? UI.dim : ink); lx += iw; }
-  if (opt.on != null) { const ly = y + Math.round((h - 5) / 2); lx -= 5; rect(lx + lw + 4, ly, 5, 5, UI.inset); rect(lx + lw + 5, ly + 1, 3, 3, opt.on ? UI.gold : '#3a4058'); if (opt.on) px(lx + lw + 5, ly + 1, '#fff3b0'); } // toggle lamp
-  if (big) bigText(label, lx, y + Math.round((h - 9) / 2), ink, { shadow: shade(face, -.6) }); else text(label, lx, y + Math.round((h - 7) / 2), ink, { shadow: dis ? null : shade(face, -.55) });
+  const cy = fy + Math.round((fh - 2) / 2);
+  if (opt.icon) { iconAt(opt.icon, lx, cy - 5, dis ? UI.dim : ink); lx += iw; }
+  if (opt.on != null) { const ly = cy - 3; lx -= 5; rect(lx + lw + 4, ly, 5, 5, UI.inset); rect(lx + lw + 5, ly + 1, 3, 3, opt.on ? UI.gold : '#3a4068'); if (opt.on) px(lx + lw + 5, ly + 1, '#fff3b0'); } // toggle lamp
+  if (big) bigText(label, lx, cy - 5, ink, { shadow: shade(face, -.6) }); else text(label, lx, cy - 4, ink, { shadow: dis ? null : shade(face, -.6) });
 }
-// Menu row highlight: filled band with a gold marker at the left edge.
-function selRow(x, y, w, h, col = UI.sel) { rrect(x, y, w, h, col, 1); hline(x + 1, y, w - 2, shade(col, .28)); hline(x + 1, y + h - 1, w - 2, shade(col, -.3)); rect(x, y + 1, 2, h - 2, UI.gold); }
-// Keycap: cream cap with a dark letter; touch screens get a plain word instead.
-function keycap(k, x, y) { const w = textWidth(k) + 6; rrect(x, y - 1, w, 10, UI.inset, 1); rect(x + 1, y, w - 2, 8, UI.border); hline(x + 1, y, w - 2, UI.borderHi); hline(x + 1, y + 7, w - 2, UI.borderLo); text(k, x + 3, y, '#1a1f2e'); return w; }
+// Menu row highlight: a lit band with a gold edge and a marker that nudges right while it is fresh.
+function selRow(x, y, w, h, col = UI.sel) { rrect(x, y, w, h, col, 1); hline(x + 1, y, w - 2, shade(col, .32)); hline(x + 1, y + h - 1, w - 2, shade(col, -.35)); rect(x, y + 1, 2, h - 2, UI.gold); px(x + 2, y + 1, '#fff2b8'); }
+// Keycap: cream cap with a dark letter and a 1-px base; touch screens get a plain word instead.
+function keycap(k, x, y) { const w = textWidth(k) + 6; rrect(x, y - 1, w, 10, UI.inset, 1); rect(x + 1, y - 1 + 1, w - 2, 7, UI.border); hline(x + 1, y, w - 2, UI.borderHi); hline(x + 1, y + 7, w - 2, UI.borderLo); text(k, x + 3, y, '#1b1834'); return w; }
 // Hint line: [['Z', 'attack'], ['X', 'back'], 'plain text'] centred at cx, on a dark pill so it reads over any board.
 // Returns the drawn width. opt: left (x is the left edge), pill=false (no background), col.
 function hintLine(items, cx, y, opt = {}) {
   const parts = items.filter(Boolean).map(it => Array.isArray(it) ? { k: it[0], t: it[1] } : { t: it });
   const kw = p => (p.k && !VIEW.touch ? textWidth(p.k) + 6 + 3 : 0) + textWidth(p.t);
   const gap = 9; const tot = parts.reduce((s, p) => s + kw(p), 0) + gap * (parts.length - 1);
-  let x = opt.left ? cx : opt.right ? Math.round(cx - tot) : Math.round(cx - tot / 2); if (opt.pill !== false) { ctx.globalAlpha = .72; rrect(x - 5, y - 3, tot + 10, 13, UI.inset, 2); ctx.globalAlpha = 1; }
+  let x = opt.left ? cx : opt.right ? Math.round(cx - tot) : Math.round(cx - tot / 2); if (opt.pill !== false) { ctx.globalAlpha = .78; rrect(x - 5, y - 3, tot + 10, 13, UI.inset, 2); ctx.globalAlpha = 1; }
   for (const p of parts) { if (p.k && !VIEW.touch) x += keycap(p.k, x, y) + 3; text(p.t, x, y, opt.col || UI.muted); x += textWidth(p.t) + gap; }
   return tot;
 }
@@ -181,10 +236,22 @@ function hintLine(items, cx, y, opt = {}) {
 function hintWidth(items) { const parts = items.filter(Boolean).map(it => Array.isArray(it) ? { k: it[0], t: it[1] } : { t: it }); const kw = p => (p.k && !VIEW.touch ? textWidth(p.k) + 6 + 3 : 0) + textWidth(p.t); return parts.reduce((s, p) => s + kw(p), 0) + 9 * (parts.length - 1) + 10; }
 // Small-caps section label with a rule running to the right edge.
 function sectionLabel(s, x, y, w, col = UI.muted) { const t = String(s).toUpperCase(); text(t, x, y, col); const rx = x + textWidth(t) + 5; if (w && rx < x + w) { hline(rx, y + 4, x + w - rx, UI.border2); hline(rx, y + 5, x + w - rx, UI.inset); } }
-function dimScreen(a = .55, col = '#050815') { ctx.globalAlpha = a; rect(0, 0, VIEW.w, VIEW.h, col); ctx.globalAlpha = 1; }
+function dimScreen(a = .55, col = '#07061a') { ctx.globalAlpha = a; rect(0, 0, VIEW.w, VIEW.h, col); ctx.globalAlpha = 1; }
+// Headline in the display face with a gold fill, a dark outline and a shine that sweeps across it every few seconds.
+function shinyTitle(s, cx, y, col = UI.gold, dark = UI.goldDark) {
+  const t = String(s).toUpperCase(), tw = textWidth(t, BIG), x = Math.round(cx - tw / 2);
+  bigText(t, x, y, col, { outline: dark }); hline(x, y + 9, tw, shade(col, -.25));
+  if (!REDUCED && CLOCK.frame) { const k = (CLOCK.t % 3.2) / .7; if (k < 1) { const sx = x - 6 + Math.round((tw + 12) * k); ctx.save(); ctx.beginPath(); ctx.rect(sx, y - 1, 3, 11); ctx.clip(); bigText(t, x, y, '#fffbe6'); ctx.restore(); } }
+  return tw;
+}
 // Screen chrome for setup / result scenes: a headline with a gold rule, and a footer band for buttons and hints.
-function screenTitle(title, sub, y = 6) { const W = VIEW.w; bigC(title, W / 2, y, UI.gold, { outline: UI.goldDark }); const tw = textWidth(String(title).toUpperCase(), BIG); rect(W / 2 - tw / 2 - 14, y + 11, tw + 28, 1, UI.gold); rect(W / 2 - tw / 2 - 14, y + 12, tw + 28, 1, UI.goldDark); if (sub) textC(sub, W / 2, y + 16, UI.muted, { outline: UI.shadow }); return y + (sub ? 27 : 15); }
-function footerBand(h) { const W = VIEW.w, H = VIEW.h; ctx.globalAlpha = .82; rect(0, H - h, W, h, '#070a14'); ctx.globalAlpha = 1; hline(0, H - h, W, UI.border2); hline(0, H - h + 1, W, UI.inset); return H - h; }
+function screenTitle(title, sub, y = 6) {
+  const W = VIEW.w, k = easeOutBack(clamp(appear('title:' + title) / .35, 0, 1)); const tw = textWidth(String(title).toUpperCase(), BIG);
+  const yy = y + Math.round((1 - k) * -14); shinyTitle(title, W / 2, yy, UI.gold, UI.goldDark);
+  const rw = Math.round((tw + 28) * clamp(k, 0, 1)); rect(W / 2 - rw / 2, y + 12, rw, 1, UI.gold); rect(W / 2 - rw / 2, y + 13, rw, 1, UI.goldDark); if (rw > 8) { px(W / 2 - rw / 2 - 2, y + 12, UI.gold); px(W / 2 + rw / 2 + 1, y + 12, UI.gold); }
+  if (sub) textC(sub, W / 2, y + 17, UI.muted, { outline: UI.shadow }); return y + (sub ? 28 : 16);
+}
+function footerBand(h) { const W = VIEW.w, H = VIEW.h; ctx.globalAlpha = .88; rect(0, H - h, W, h, '#08071a'); ctx.globalAlpha = 1; hline(0, H - h, W, UI.gold); hline(0, H - h + 1, W, UI.goldDark); hline(0, H - h + 2, W, UI.inset); return H - h; }
 
 // ---------------------------------------------------------------- sprite atlas (Showdown minis)
 // The Showdown icon sheet is 12 icons per row, 40×30 each, indexed by dex number.

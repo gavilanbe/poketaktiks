@@ -152,7 +152,7 @@ function territorySceneInput(ev) {
   if (ev.type === 'key') {
     if (['left', 'up', 'right', 'down'].includes(ev.key)) { const count = Math.max(1, SC.hits.length); SC.i = (SC.i + (ev.key === 'left' || ev.key === 'up' ? count - 1 : 1)) % count; if (SC.name === 'territory' && SC.i < 3) SC.data.captain = STARTERS[SC.i]; Audio.sfx('cursor'); }
     else if (ev.key === 'ok' && SC.hits[SC.i]) SC.hits[SC.i].run();
-    else if (ev.key === 'back') goScene('title');
+    else if (ev.key === 'back') goScene(SC.name === 'territory' ? 'quick' : 'title');
   } else if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
 function closeTerritoryGuide() { BT.territoryGuide = false; setPref('territoryGuide', 'hide'); BT.mode = 'idle'; }

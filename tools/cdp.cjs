@@ -205,6 +205,22 @@ async function main() {
       await nav('versus=5&silent&nosave'); await sleep(400); await ev('(function(){const S=__pk.SC.data; S.mode="hill"; S.arena="s"; S.teams=[[25,5],[4,7]]; S.size=2; S.go();})()'); await waitMode('handoff', 8000); await sleep(900); await key('z', 'KeyZ'); await waitMode('idle', 8000); await sleep(300); await shot('vs-hill');
       out.push('objective: ' + await ev('JSON.stringify(__pk.B.map.objective)') + ' hill=' + await ev('JSON.stringify(__pk.B.hill)'));
     }
+    if (script === 'title' || script === 'title-m') {
+      // the pixel title through its entrance, a focus change, the quick-battle screen and the new-game confirmation
+      await send('Page.navigate', { url: 'file://' + ROOT + '/index.html?silent&nosave' });
+      for (const [ms, name] of [[250, 'title-a'], [500, 'title-b'], [700, 'title-c'], [2200, 'title-d']]) { await sleep(ms); await shot(name); }
+      await key('ArrowDown', 'ArrowDown'); await sleep(250); await shot('title-focus');
+      await ev("__pk.goScene('quick')"); await sleep(900); await shot('quick');
+      await key('ArrowRight', 'ArrowRight'); await sleep(300); await shot('quick-2');
+      await ev("localStorage.setItem('pk_save', JSON.stringify({chapter:2,party:[],bag:{},stars:{}})); __pk.goScene('title')"); await sleep(2600); await ev("__pk.SC.titleItems.find(i=>i.label==='NEW GAME').run()"); await sleep(400); await shot('title-confirm');
+      await ev("localStorage.removeItem('pk_save')");
+    }
+    if (script === 'page' || script === 'page-m') {
+      // ad-hoc: PK_Q query string, optional PK_EXPR run after PK_WAIT ms, screenshot as artifacts/PK_NAME.png
+      await send('Page.navigate', { url: 'file://' + ROOT + '/index.html?' + (process.env.PK_Q || 'silent&nosave') }); await sleep(+(process.env.PK_WAIT || 1500));
+      if (process.env.PK_EXPR) { out.push('expr: ' + await ev(process.env.PK_EXPR)); await sleep(+(process.env.PK_WAIT2 || 600)); }
+      await shot(process.env.PK_NAME || 'page');
+    }
     out.push('--- console ---'); out.push(...logs.slice(0, 40));
   } finally { chrome.kill(); }
   console.log(out.join('\n'));
