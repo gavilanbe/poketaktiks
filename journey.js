@@ -2,7 +2,7 @@
 'use strict';
 ITEMS.practiceball = { name: 'Practice Ball', kind: 'ball', rate: 1, col: '#f0c957', desc: 'Oak\'s free practice ball. Guaranteed at half HP.' };
 function fitLabel(s, w) { if (textWidth(s) <= w) return s; while (s.length > 1 && textWidth(s + '...') > w) s = s.slice(0, -1); return s + '...'; }
-function showJourney(lines, next) { goScene('journey', { lines, next }); }
+function showJourney(lines, next) { trainerImg('oak'); goScene('journey', { lines, next }); }
 // A lesson card: the captain in a portrait on the left (when there is room), the lesson title on a ribbon, and each tip
 // sliding in after the one before with a numbered bullet; LET'S GO pulses once everything is on screen.
 function journeyDraw() {
@@ -12,7 +12,9 @@ function journeyDraw() {
   const h = Math.min(H - 12, 44 + rows.reduce((n, a) => n + a.length * 10 + 5, 0) + 30), y = Math.round((H - h) / 2), tok = unfold('journey', x, y, w, h, .22);
   const p = panel(x, y, w, h, { header: fitLabel(S.lines[0], w - 16), headerFill: '#2a2470' });
   const cap = SAVE && SAVE.party && SAVE.party.length ? SAVE.party[SAVE.captainPid || 0].num : 25;
-  if (pw) { const px0 = x + 10, py0 = p.cy + 2, ph = Math.min(70, h - (p.cy - y) - 36); portraitBg(px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); requestAnim(cap); ctx.save(); ctx.beginPath(); ctx.rect(px0, py0, pw, ph); ctx.clip(); if (animReady(cap)) drawAnim(cap, px0 + pw / 2, py0 + ph - 3, t); else drawMon(cap, px0 + pw / 2, py0 + ph - 3, { outline: teamColor(0) }); ctx.restore(); if (SAVE) drawCrown(px0 + 2, py0 + 2); }
+  const oak = trainerCanvas('oak', false, false); // Prof. Oak gives the lessons (his sprite once loaded, the captain until then)
+  if (pw && oak) { const px0 = x + 10, py0 = p.cy + 2, ph = Math.min(70, h - (p.cy - y) - 36); portraitBg(px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); ctx.save(); ctx.beginPath(); ctx.rect(px0, py0, pw, ph); ctx.clip(); ctx.drawImage(oak, px0 + Math.round((pw - 80) / 2), py0 + ph - 72 + (REDUCED ? 0 : Math.round(Math.abs(Math.sin(t * 3)))), 80, 80); ctx.restore(); }
+  else if (pw) { const px0 = x + 10, py0 = p.cy + 2, ph = Math.min(70, h - (p.cy - y) - 36); portraitBg(px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); requestAnim(cap); ctx.save(); ctx.beginPath(); ctx.rect(px0, py0, pw, ph); ctx.clip(); if (animReady(cap)) drawAnim(cap, px0 + pw / 2, py0 + ph - 3, t); else drawMon(cap, px0 + pw / 2, py0 + ph - 3, { outline: teamColor(0) }); ctx.restore(); if (SAVE) drawCrown(px0 + 2, py0 + 2); }
   let yy = p.cy + 4; const tx = x + 10 + (pw ? pw + 8 : 0);
   rows.forEach((ls, i) => { const k = REDUCED ? 1 : clamp((t - .25 - i * .18) / .25, 0, 1); if (k <= 0) { yy += ls.length * 10 + 5; return; } ctx.globalAlpha = k; const off = Math.round((1 - easeOut(k)) * 16);
     rrect(tx - 1 - off, yy - 2, 11, 11, UI.inset, 1); rrect(tx - off, yy - 1, 9, 9, UI.gold, 1); hline(tx + 1 - off, yy - 1, 7, '#fff2b0'); textC(String(i + 1), tx + 5 - off, yy, UI.goldDark);

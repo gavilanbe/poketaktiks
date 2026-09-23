@@ -157,7 +157,7 @@ function boot() {
     if (PARAMS.has('prep')) { prepChapter(idx); return; }
     migrateCaptain(SAVE);
     const deployed = SAVE.party.slice(0, ch.slots).map((p, i) => Object.assign({}, p, { pid: i })); BACKDROP = makeBackdrop(ch.map);
-    startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: parseInt(PARAMS.get('seed') || '7'), defer: true, captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx } }); alive(0).forEach((u, i) => u.pid = i); goScene('battle'); beginPhase(0, true); return;
+    startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: parseInt(PARAMS.get('seed') || '7'), defer: true, box: SAVE.party.slice(ch.slots).map((p, i) => Object.assign({}, p, { pid: ch.slots + i })), captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx } }); alive(0).forEach((u, i) => u.pid = i); goScene('battle'); beginPhase(0, true); return;
   }
   if (PARAMS.has('skirmish')) { startSkirmishSetup(); SC.data.seed = parseInt(PARAMS.get('skirmish')) || 1; return; }
   if (PARAMS.has('versus')) { startVersusSetup(parseInt(PARAMS.get('versus')) || 1); if (PARAMS.has('auto')) { const S = SC.data; S.teams = [VS_ROSTER.slice(0, 4), VS_ROSTER.slice(4, 8)]; S.go(); } return; }

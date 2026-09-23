@@ -450,6 +450,8 @@ const Audio = {
   // Music: a tiny 3-voice step sequencer. Songs are {bpm, bass:[...], lead:[...], arp:[...]} with note numbers (semitones from A3) or null.
   playMusic(name) { if (this.music === name) return; this.music = name; this.step = 0; this.nextAt = 0; },
   stopMusic() { this.music = null; },
+  // a speaker's voice: one short blip per couple of letters at their pitch (a Pokémon's is a rasp)
+  voice(f = 300, cry = false) { if (cry) this.tone('sawtooth', f, f * .8, .06, .05); else this.tone('square', f * (.96 + Math.random() * .08), f, .03, .045); },
   tick() {
     if (!this.ac || this.muted || !this.music) return; const song = SONGS[this.music]; if (!song) return;
     const ac = this.ac, spb = 60 / song.bpm / 2; // eighth notes

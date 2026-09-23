@@ -473,6 +473,8 @@ const Audio = {
   // Music: a tiny 3-voice step sequencer. Songs are {bpm, bass:[...], lead:[...], arp:[...]} with note numbers (semitones from A3) or null.
   playMusic(name) { if (this.music === name) return; this.music = name; this.step = 0; this.nextAt = 0; },
   stopMusic() { this.music = null; },
+  // a speaker's voice: one short blip per couple of letters at their pitch (a Pokémon's is a rasp)
+  voice(f = 300, cry = false) { if (cry) this.tone('sawtooth', f, f * .8, .06, .05); else this.tone('square', f * (.96 + Math.random() * .08), f, .03, .045); },
   tick() {
     if (!this.ac || this.muted || !this.music) return; const song = SONGS[this.music]; if (!song) return;
     const ac = this.ac, spb = 60 / song.bpm / 2; // eighth notes
@@ -5312,23 +5314,74 @@ function objectiveTextFor(o) { switch (o.type) { case 'rout': return 'Objective:
 function cardInput(ev) { if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) SC.skip = true; }
 
 // ---------------------------------------------------------------- story dialogue (drawn over the battle board)
-function startDialog(lines, done) { SC.dialog = { lines, i: 0, chars: 0, t: 0, done }; goScene('story'); }
-function storyUpdate(dt) { const d = SC.dialog; if (!d) return; d.t += dt; const line = d.lines[d.i]; const total = line.text.length; if (d.chars < total) { const before = d.chars; d.chars = Math.min(total, d.chars + dt * 45); if (Math.floor(d.chars) !== Math.floor(before) && Math.floor(d.chars) % 2 === 0) Audio.sfx('text'); } CAM.x += (CAM.tx - CAM.x) * Math.min(1, dt * 6); CAM.y += (CAM.ty - CAM.y) * Math.min(1, dt * 6); for (const u of B.units) { u.fx.sx += (1 - u.fx.sx) * dt * 10; u.fx.sy += (1 - u.fx.sy) * dt * 10; } updateFX(dt); Audio.tick(); BT.time += dt; }
+// Who speaks: a trainer sprite (assets/trainers/<tr>.png), the side they stand on (allies left, opponents right),
+// their colour and the pitch of their voice; a Pokémon speaks through its battle sprite with an aura.
+const SPEAKERS = {
+  'Prof. Oak': { tr: 'oak', side: 0, col: '#d8b878', voice: 170 }, 'You': { tr: 'red', side: 0, col: '#e04848', voice: 330 }, 'Bill': { tr: 'bill', side: 0, col: '#8ab4ff', voice: 300 }, 'Nurse Joy': { tr: 'nurse', side: 0, col: '#ff9ac0', voice: 520 },
+  'Youngster Joey': { tr: 'youngster', side: 1, col: '#ff9a3c', voice: 560 }, 'Bug Catcher Timmy': { tr: 'bugcatcher', side: 1, col: '#8cd058', voice: 500 }, 'Rocket Grunt': { tr: 'rocketgrunt', side: 1, col: '#e05050', voice: 240 },
+  'Engineer Watt': { tr: 'scientist', side: 1, col: '#ffd24a', voice: 280 }, 'Swimmer Ana': { tr: 'swimmer', side: 1, col: '#5aa8f0', voice: 460 }, 'Hiker': { tr: 'hiker', side: 1, col: '#c89858', voice: 150 },
+  'Blue': { tr: 'blue', side: 1, col: '#5a8af0', voice: 360 }, 'Giovanni': { tr: 'giovanni', side: 1, col: '#b8a078', voice: 120 }, 'Brock': { tr: 'brock', side: 1, col: '#c89858', voice: 200 }, 'Misty': { tr: 'misty', side: 1, col: '#5aa8f0', voice: 480 },
+  'Lt. Surge': { tr: 'ltsurge', side: 1, col: '#ffd24a', voice: 180 }, 'Erika': { tr: 'erika', side: 1, col: '#8cd058', voice: 440 }, 'Koga': { tr: 'koga', side: 1, col: '#b070d0', voice: 210 }, 'Sabrina': { tr: 'sabrina', side: 1, col: '#ff70b0', voice: 400 }, 'Blaine': { tr: 'blaine', side: 1, col: '#ff7040', voice: 190 },
+  'Mewtwo': { mon: 150, side: 1, col: '#c890f0', voice: 90, cry: true }, 'Moltres': { mon: 146, side: 1, col: '#ff8a2c', voice: 130, cry: true },
+};
+function speakerOf(line) { return SPEAKERS[line.who] || (line.mon ? { mon: line.mon, side: 1, col: UI.gold, voice: 300 } : { side: 0, col: UI.gold, voice: 300 }); }
+const TRAINERS = { img: {}, state: {}, cache: {} };
+function trainerImg(tr) {
+  if (!TRAINERS.state[tr] && typeof Image !== 'undefined') { TRAINERS.state[tr] = 'loading'; const img = new Image(); img.onload = () => { TRAINERS.img[tr] = img; TRAINERS.state[tr] = 'ok'; }; img.onerror = () => { TRAINERS.state[tr] = 'fail'; }; img.src = 'assets/trainers/' + tr + '.png'; }
+  return TRAINERS.img[tr] || null;
+}
+// A trainer's 80×80 sprite, mirrored for the right-hand side and darkened while they listen. Cached.
+function trainerCanvas(tr, flip, dim) {
+  const img = trainerImg(tr); if (!img) return null; const key = tr + (flip ? 'f' : '') + (dim ? 'd' : ''); let c = TRAINERS.cache[key]; if (c) return c;
+  c = document.createElement('canvas'); c.width = 80; c.height = 80; const g = c.getContext('2d'); if (flip) { g.translate(80, 0); g.scale(-1, 1); } g.drawImage(img, 0, 0);
+  if (dim) { g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-atop'; g.fillStyle = 'rgba(10,12,34,.55)'; g.fillRect(0, 0, 80, 80); }
+  TRAINERS.cache[key] = c; return c;
+}
+// A line's text with its *emphasis* resolved: the plain text and which letters to colour.
+function richLine(line) { if (line._rich) return line._rich; const em = []; let plain = '', on = false; for (const c of line.text) { if (c === '*') { on = !on; continue; } if (on) em[plain.length] = true; plain += c; } return (line._rich = { plain, em }); }
+function startDialog(lines, done) { for (const l of lines) { const Sp = SPEAKERS[l.who]; if (Sp && Sp.tr) trainerImg(Sp.tr); } SC.dialog = { lines, i: 0, chars: 0, t: 0, T: 0, pause: 0, done, cast: [null, null], since: [0, 0] }; goScene('story'); }
+function storyUpdate(dt) {
+  const d = SC.dialog; if (!d) return; d.t += dt; d.T += dt; const line = d.lines[d.i], R = richLine(line), S = speakerOf(line), total = R.plain.length;
+  if (d.cast[S.side] !== line.who) { d.cast[S.side] = line.who; d.since[S.side] = d.T; if (d.T > .1) Audio.sfx('whoosh'); }
+  // the text types out, pausing after a sentence and briefly after a comma, the speaker's voice on every other letter
+  if (d.pause > 0) d.pause -= dt;
+  else if (d.chars < total) { const before = Math.floor(d.chars); d.chars = Math.min(total, d.chars + dt * 48); const now = Math.floor(d.chars);
+    if (now !== before) { const c = R.plain[now - 1]; if ('.!?'.includes(c) && R.plain[now] === ' ') d.pause = .2; else if (c === ',' || c === ':') d.pause = .08; if (now % 2 === 0 && c !== ' ') Audio.voice(S.voice, S.cry); } }
+  CAM.x += (CAM.tx - CAM.x) * Math.min(1, dt * 6); CAM.y += (CAM.ty - CAM.y) * Math.min(1, dt * 6); for (const u of B.units) { u.fx.sx += (1 - u.fx.sx) * dt * 10; u.fx.sy += (1 - u.fx.sy) * dt * 10; } updateFX(dt); Audio.tick(); BT.time += dt;
+}
+// One speaker on their side, behind the box (the box hides their legs): they slide in when they first speak, bob while
+// talking, jump on a shout and darken while they listen. A Pokémon speaker glows in its colour.
+function drawSpeaker(who, side, active, since, d, line, sc, box) {
+  const Sp = SPEAKERS[who] || (active ? speakerOf(line) : null); if (!Sp) return; const size = 80 * sc, t = d.t;
+  const enter = REDUCED ? 1 : easeOutBack(clamp(since / .3, 0, 1), 1.5), talking = active && d.chars < richLine(line).plain.length;
+  const x0 = side === 0 ? box.x + 2 : box.x + box.w - 2 - size, slide = Math.round((1 - enter) * (side === 0 ? -size : size) * .7);
+  const bob = talking && !REDUCED ? Math.round(Math.abs(Math.sin(t * 12)) * sc) : 0, shout = active && line.text.trim().endsWith('!') && t < .3 && !REDUCED ? Math.round(Math.sin(t * 70) * 2 * sc) : 0;
+  const y0 = Math.round(box.y + box.h * .55 - size + (active ? 0 : 3 * sc) - bob - (shout ? Math.abs(shout) : 0));
+  if (Sp.tr) { const img = trainerCanvas(Sp.tr, side === 1, !active); if (img) { if (active && !REDUCED) { ctx.globalAlpha = .18; ellipse(Math.round(x0 + slide + size / 2), Math.round(box.y + 2), Math.round(size * .42), Math.round(10 * sc), Sp.col); ctx.globalAlpha = 1; } ctx.drawImage(img, x0 + slide + shout, y0, size, size); return; } }
+  const num = Sp.mon || line.mon; if (!num) return; requestAnim(num); requestBigSprite(num); const cx = x0 + slide + size / 2, by = box.y + Math.round(box.h * .5);
+  if (Sp.cry && !REDUCED) { const r = Math.round(size * .42 + Math.sin(t * 4) * 3 * sc), ay = by - Math.round(size * .45); ctx.globalAlpha = .22; circle(cx, ay, r, Sp.col); ctx.globalAlpha = .12; circle(cx, ay, r + 6 * sc, Sp.col); ctx.globalAlpha = 1; }
+  if (!active) ctx.globalAlpha = .55; if (animReady(num)) drawAnim(num, cx + shout, by - bob, BT.time, { flip: side === 0, sx: sc, sy: sc }); else if (bigReady(num)) drawBig(num, cx + shout, by + 8 - bob, { flip: side === 0, sx: sc, sy: sc }); else drawMon(num, cx, by - bob, { flip: side === 0, sx: sc, sy: sc }); ctx.globalAlpha = 1;
+}
 function storyDraw() {
-  battleDraw(); const d = SC.dialog; if (!d) return; const W = VIEW.w, H = VIEW.h, line = d.lines[d.i], t = d.t;
-  ctx.globalAlpha = .35; rect(0, 0, W, H, '#05041a'); ctx.globalAlpha = 1;
-  const bh = 60, by = H - bh - 6, bx = 6, bw = W - 12, rise = REDUCED ? 0 : Math.round((1 - easeOutBack(clamp(appear('story') / .3, 0, 1), 2)) * 30);
-  panel(bx, by + rise, bw, bh, { fill: '#1c2254' });
-  if (line.mon) { requestAnim(line.mon); requestBigSprite(line.mon); const pw = 46, ph = bh - 14, px0 = bx + 7, py0 = by + 7 + rise; ctx.save(); ctx.beginPath(); ctx.rect(px0, py0, pw, ph); ctx.clip(); portraitBg(px0, py0, pw, ph, 0);
-    const talk = d.chars < line.text.length && !REDUCED ? Math.round(Math.abs(Math.sin(t * 10))) : 0; if (animReady(line.mon)) drawAnim(line.mon, px0 + pw / 2, py0 + ph + 6 - talk, BT.time); else if (bigReady(line.mon)) drawBig(line.mon, px0 + pw / 2, py0 + ph + 14 - talk, { flip: true }); else drawMon(line.mon, px0 + pw / 2, py0 + ph - 2 - talk, {}); ctx.restore(); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.inset); }
-  const tx = bx + (line.mon ? 60 : 10); ribbonTab(line.who, tx - 4, by - 9 + rise);
-  const lines = wrap(line.text, bw - (line.mon ? 72 : 22)); let shown = Math.floor(d.chars); lines.forEach((l, i) => { if (shown <= 0) return; const s2 = l.slice(0, shown); shown -= l.length + 1; text(s2, tx, by + 10 + i * 11 + rise, UI.ink); });
-  if (d.chars >= line.text.length) { const ax = bx + bw - 12, ay = by + bh - 11 + rise + (REDUCED ? 0 : Math.round(Math.abs(Math.sin(t * 6)) * 2)); rect(ax - 3, ay, 7, 1, UI.gold); rect(ax - 2, ay + 1, 5, 1, UI.gold); rect(ax - 1, ay + 2, 3, 1, UI.gold); px(ax, ay + 3, UI.gold); }
-  hintLine([(d.i + 1) + ' / ' + d.lines.length, ['X', 'skip']], bx + bw - 4, by - 12 + rise, { right: true });
+  battleDraw(); const d = SC.dialog; if (!d) return; const W = VIEW.w, H = VIEW.h, line = d.lines[d.i], t = d.t, R = richLine(line), S = speakerOf(line), wide = W >= 480 && H >= 280, sc = wide ? 2 : 1;
+  // cinematic: the board dims and black bars close in from the top and the bottom
+  const intro = REDUCED ? 1 : easeOut(clamp(d.T / .3, 0, 1)); ctx.globalAlpha = .3 * intro; rect(0, 0, W, H, '#05041a'); ctx.globalAlpha = 1; const bar = Math.round((wide ? 14 : 8) * intro); rect(0, 0, W, bar, '#000000'); rect(0, H - bar, W, bar, '#000000');
+  const bh = wide ? 64 : 62, rise = REDUCED ? 0 : Math.round((1 - easeOutBack(clamp(appear('story') / .3, 0, 1), 2)) * 30), box = { x: 6, y: H - bar - bh - 4 + rise, w: W - 12, h: bh };
+  for (const side of [0, 1]) if (d.cast[side]) drawSpeaker(d.cast[side], side, d.cast[side] === line.who, d.T - d.since[side], d, line, sc, box);
+  panel(box.x, box.y, box.w, box.h, { fill: '#1a1f4e' }); rect(box.x + 3, box.y + box.h - 14, box.w - 6, 11, '#171b44');
+  const bandX = S.side === 0 ? box.x + 3 : box.x + box.w - 6; rect(bandX, box.y + 3, 3, box.h - 6, S.col); rect(S.side === 0 ? bandX + 3 : bandX - 1, box.y + 3, 1, box.h - 6, shade(S.col, -.45)); // the speaker's colour down their side
+  // the name on a ribbon in the speaker's colour, beside their portrait
+  const size = 80 * sc, nameW = textWidth(line.who || '') + 12, nx = S.side === 0 ? box.x + Math.min(size + 2, box.w * .4) : box.x + box.w - Math.min(size + 2, box.w * .4) - nameW; if (line.who) ribbonTab(line.who, nx, box.y - 9, S.col);
+  // the text, typed out, with *emphasis* in gold riding a little wave
+  const tx = box.x + 12, tw = box.w - 26, lines = wrap(R.plain, tw); let shown = Math.floor(d.chars), gi = 0;
+  lines.forEach((l, li) => { let cx = tx; const y = box.y + 12 + li * 12; for (let i = 0; i < l.length; i++, gi++) { if (gi >= shown) return; const c = l[i], em = R.em[gi], fresh = !REDUCED && shown - gi <= 2 && shown < R.plain.length ? -1 : 0; if (c !== ' ') text(c, cx, y + fresh + (em && !REDUCED ? Math.round(Math.sin(t * 7 + gi * .6)) : 0), em ? UI.gold : UI.ink, em ? { outline: '#3a2000' } : { shadow: '#0a0c26' }); cx += c === ' ' ? 3 : glyph(c, FONT).w + 1; } gi++; });
+  if (d.chars >= R.plain.length) { const ax = box.x + box.w - 12, ay = box.y + box.h - 11 + (REDUCED ? 0 : Math.round(Math.abs(Math.sin(t * 6)) * 2)); if (d.i < d.lines.length - 1) { rect(ax - 3, ay, 7, 1, UI.gold); rect(ax - 2, ay + 1, 5, 1, UI.gold); rect(ax - 1, ay + 2, 3, 1, UI.gold); px(ax, ay + 3, UI.gold); } else { rect(ax - 2, ay, 5, 5, UI.gold); rect(ax - 1, ay + 1, 3, 3, '#fff2b0'); } }
+  const hint = [(d.i + 1) + ' / ' + d.lines.length, ['X', 'skip']], hw = hintWidth(hint), nameR = line.who ? nx + nameW : -1, nameL = line.who ? nx : 1e9;
+  if (S.side === 0 && box.x + box.w - 4 - hw > nameR + 4) hintLine(hint, box.x + box.w - 4, box.y - 12, { right: true }); else if (S.side === 1 && box.x + 8 + hw < nameL - 4) hintLine(hint, box.x + 8, box.y - 12, { left: true }); else textR((d.i + 1) + '/' + d.lines.length, box.x + box.w - 20, box.y + box.h - 11, UI.muted);
   // focus the camera on the speaker's Pokémon if it is on the board
   const spk = B.units.find(u => u.num === line.mon && u.hp > 0); if (spk && !d.focused) { d.focused = true; centerCam(spk.x, spk.y); spk.fx.sy = .8; spk.fx.sx = 1.2; }
 }
-function storyInput(ev) { const d = SC.dialog; if (!d) return; if (ev.type === 'key' && ev.key === 'back') { finishDialog(); return; } if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) { const line = d.lines[d.i]; if (d.chars < line.text.length) { d.chars = line.text.length; return; } d.i++; d.chars = 0; d.t = 0; d.focused = false; Audio.sfx('ok'); if (d.i >= d.lines.length) finishDialog(); } }
+function storyInput(ev) { const d = SC.dialog; if (!d) return; if (ev.type === 'key' && ev.key === 'back') { finishDialog(); return; } if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) { const line = d.lines[d.i]; if (d.chars < richLine(line).plain.length) { d.chars = richLine(line).plain.length; d.pause = 0; return; } d.i++; d.chars = 0; d.t = 0; d.pause = 0; d.focused = false; Audio.sfx('ok'); if (d.i >= d.lines.length) finishDialog(); } }
 function finishDialog() { const d = SC.dialog; SC.dialog = null; if (d && d.done) d.done(); }
 
 // ---------------------------------------------------------------- prep: choose who deploys
@@ -6039,7 +6092,7 @@ function routeInput(ev) {
 'use strict';
 ITEMS.practiceball = { name: 'Practice Ball', kind: 'ball', rate: 1, col: '#f0c957', desc: 'Oak\'s free practice ball. Guaranteed at half HP.' };
 function fitLabel(s, w) { if (textWidth(s) <= w) return s; while (s.length > 1 && textWidth(s + '...') > w) s = s.slice(0, -1); return s + '...'; }
-function showJourney(lines, next) { goScene('journey', { lines, next }); }
+function showJourney(lines, next) { trainerImg('oak'); goScene('journey', { lines, next }); }
 // A lesson card: the captain in a portrait on the left (when there is room), the lesson title on a ribbon, and each tip
 // sliding in after the one before with a numbered bullet; LET'S GO pulses once everything is on screen.
 function journeyDraw() {
@@ -6049,7 +6102,9 @@ function journeyDraw() {
   const h = Math.min(H - 12, 44 + rows.reduce((n, a) => n + a.length * 10 + 5, 0) + 30), y = Math.round((H - h) / 2), tok = unfold('journey', x, y, w, h, .22);
   const p = panel(x, y, w, h, { header: fitLabel(S.lines[0], w - 16), headerFill: '#2a2470' });
   const cap = SAVE && SAVE.party && SAVE.party.length ? SAVE.party[SAVE.captainPid || 0].num : 25;
-  if (pw) { const px0 = x + 10, py0 = p.cy + 2, ph = Math.min(70, h - (p.cy - y) - 36); portraitBg(px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); requestAnim(cap); ctx.save(); ctx.beginPath(); ctx.rect(px0, py0, pw, ph); ctx.clip(); if (animReady(cap)) drawAnim(cap, px0 + pw / 2, py0 + ph - 3, t); else drawMon(cap, px0 + pw / 2, py0 + ph - 3, { outline: teamColor(0) }); ctx.restore(); if (SAVE) drawCrown(px0 + 2, py0 + 2); }
+  const oak = trainerCanvas('oak', false, false); // Prof. Oak gives the lessons (his sprite once loaded, the captain until then)
+  if (pw && oak) { const px0 = x + 10, py0 = p.cy + 2, ph = Math.min(70, h - (p.cy - y) - 36); portraitBg(px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); ctx.save(); ctx.beginPath(); ctx.rect(px0, py0, pw, ph); ctx.clip(); ctx.drawImage(oak, px0 + Math.round((pw - 80) / 2), py0 + ph - 72 + (REDUCED ? 0 : Math.round(Math.abs(Math.sin(t * 3)))), 80, 80); ctx.restore(); }
+  else if (pw) { const px0 = x + 10, py0 = p.cy + 2, ph = Math.min(70, h - (p.cy - y) - 36); portraitBg(px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); requestAnim(cap); ctx.save(); ctx.beginPath(); ctx.rect(px0, py0, pw, ph); ctx.clip(); if (animReady(cap)) drawAnim(cap, px0 + pw / 2, py0 + ph - 3, t); else drawMon(cap, px0 + pw / 2, py0 + ph - 3, { outline: teamColor(0) }); ctx.restore(); if (SAVE) drawCrown(px0 + 2, py0 + 2); }
   let yy = p.cy + 4; const tx = x + 10 + (pw ? pw + 8 : 0);
   rows.forEach((ls, i) => { const k = REDUCED ? 1 : clamp((t - .25 - i * .18) / .25, 0, 1); if (k <= 0) { yy += ls.length * 10 + 5; return; } ctx.globalAlpha = k; const off = Math.round((1 - easeOut(k)) * 16);
     rrect(tx - 1 - off, yy - 2, 11, 11, UI.inset, 1); rrect(tx - off, yy - 1, 9, 9, UI.gold, 1); hline(tx + 1 - off, yy - 1, 7, '#fff2b0'); textC(String(i + 1), tx + 5 - off, yy, UI.goldDark);
@@ -6424,7 +6479,7 @@ function boot() {
     if (PARAMS.has('prep')) { prepChapter(idx); return; }
     migrateCaptain(SAVE);
     const deployed = SAVE.party.slice(0, ch.slots).map((p, i) => Object.assign({}, p, { pid: i })); BACKDROP = makeBackdrop(ch.map);
-    startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: parseInt(PARAMS.get('seed') || '7'), defer: true, captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx } }); alive(0).forEach((u, i) => u.pid = i); goScene('battle'); beginPhase(0, true); return;
+    startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), { chapter: idx, seed: parseInt(PARAMS.get('seed') || '7'), defer: true, box: SAVE.party.slice(ch.slots).map((p, i) => Object.assign({}, p, { pid: ch.slots + i })), captain: { pid: SAVE.captainPid, root: SAVE.starter, chapter: idx } }); alive(0).forEach((u, i) => u.pid = i); goScene('battle'); beginPhase(0, true); return;
   }
   if (PARAMS.has('skirmish')) { startSkirmishSetup(); SC.data.seed = parseInt(PARAMS.get('skirmish')) || 1; return; }
   if (PARAMS.has('versus')) { startVersusSetup(parseInt(PARAMS.get('versus')) || 1); if (PARAMS.has('auto')) { const S = SC.data; S.teams = [VS_ROSTER.slice(0, 4), VS_ROSTER.slice(4, 8)]; S.go(); } return; }
