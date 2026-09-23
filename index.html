@@ -4233,17 +4233,22 @@ function territoryMenuAction(it) {
   else { const u = territoryDeploy(HT(), +it.id.slice(7), BT.deploySite); if (!u) { Audio.sfx('error'); return true; } BT.queue = [{ kind: 'event', ev: { type: 'spawn', unit: u } }]; playQueue(() => { BT.mode = 'idle'; }); }
   return true;
 }
+// Conquest results: the outcome stamped letter by letter, why it ended, three stat plates (turn, middle centers, deployments)
+// and both captains; REMATCH keeps the captain, TITLE leaves.
 function territoryResultsDraw() {
-  const W = VIEW.w, H = VIEW.h, S = SC.data; rect(0, 0, W, H, '#101829'); SC.hits = [];
-  const w = Math.min(W - 16, 270), x = (W - w) / 2, y = Math.max(12, (H - 160) / 2);
-  panel(x, y, w, 126, { title: 'THREE BRIDGES' });
-  bigC(S.result === 'win' ? 'VICTORY!' : S.result === 'draw' ? 'DRAW' : 'DEFEAT', W / 2, y + 12, S.result === 'win' ? UI.gold : UI.ink);
-  wrap(S.reason || 'Battle ended', w - 16).forEach((l, i) => textC(l, W / 2, y + 34 + i * 10, UI.ink));
-  textC('Turn ' + S.turn + ' · Centers ' + S.centers.join('-'), W / 2, y + 64, UI.muted);
-  textC('Deployed ' + S.deployments.join(' / '), W / 2, y + 78, UI.muted);
-  textC('Fixed level · campaign kept separate', W / 2, y + 100, UI.muted);
-  bigButton(W / 2 - 82, y + 136, 108, 22, 'REMATCH', () => launchTerritory(S.seed + 1, false, S.captains || [7, 7]), { hot: SC.i === 0, variant: 'danger' });
-  bigButton(W / 2 + 32, y + 136, 50, 22, 'TITLE', () => goScene('title'), { hot: SC.i === 1, variant: 'ghost' });
+  const W = VIEW.w, H = VIEW.h, S = SC.data, t = CLOCK.frame ? SC.t : 99, win = S.result === 'win', draw = S.result === 'draw'; SC.hits = [];
+  rect(0, 0, W, H, win ? '#101a38' : draw ? '#161a2a' : '#1e0f1a'); if (win && !REDUCED) { const r = Math.round(Math.min(W, H) * .42); ctx.globalAlpha = .06; ctx.drawImage(sunburst(r, 12, Math.floor(SC.t * 6) % 4, '#ffffff'), Math.round(W / 2 - r), Math.round(H * .34 - r)); ctx.globalAlpha = 1; }
+  const w = Math.min(W - 16, 280), x = Math.round((W - w) / 2), bh = 20, h = 118, y = Math.max(8, Math.round((H - h - bh - 12) / 2));
+  const p = panel(x, y, w, h, { title: 'CONQUEST · THREE BRIDGES', fill: win ? '#1f2a5e' : UI.panel });
+  const word = win ? 'VICTORY!' : draw ? 'DRAW' : 'DEFEAT', sc = w >= textWidth(word, BIG) * 2 + 20 ? 2 : 1;
+  drawStampWord(word, W / 2, y + 10, t, win ? UI.gold : draw ? UI.ink : '#ff8080', win ? UI.goldDark : '#2a0a14', sc);
+  wrap(S.reason || 'Battle ended', w - 16).slice(0, 2).forEach((l, i) => textC(l, W / 2, y + 16 + 9 * sc + i * 10, UI.ink));
+  const plates = [['TURN', String(S.turn)], ['CENTERS', S.centers.join('-')], ['DEPLOYED', S.deployments.join('/')]], pw = Math.floor((w - 16 - 8) / 3);
+  plates.forEach(([lb, v], i) => { const px0 = x + 8 + i * (pw + 4), py0 = y + h - 40; rrect(px0, py0, pw, 30, UI.inset, 1); rrect(px0 + 1, py0 + 1, pw - 2, 28, UI.panelDark, 1); textC(lb, px0 + pw / 2, py0 + 4, UI.muted); bigC(v, px0 + pw / 2, py0 + 15, UI.gold, { shadow: UI.goldDark }); });
+  const caps = S.captains || [7, 7]; if (W >= 300) { drawMon(caps[0], x - 4, y + h - 2, { outline: teamColor(0) }); drawMon(caps[1], x + w + 4, y + h - 2, { flip: true, outline: teamColor(1) }); }
+  const by = y + h + 10, rw = Math.min(140, Math.floor((w - 8) * .6));
+  bigButton(Math.round(W / 2 - (rw + 4 + (w - 8 - rw) * .6) / 2), by, rw, bh, 'REMATCH', () => launchTerritory(S.seed + 1, false, S.captains || [7, 7]), { hot: SC.i === 0, variant: 'primary' });
+  bigButton(Math.round(W / 2 - (rw + 4 + (w - 8 - rw) * .6) / 2) + rw + 4, by, Math.round((w - 8 - rw) * .6), bh, 'TITLE', () => goScene('title'), { hot: SC.i === 1, variant: 'ghost' });
 }
 // Deterministic model smoke. Real beginPhase/nextPhase is separately exercised by the UI-flow tests.
 function simTerritory(seed = 7, maxTurns = TERRITORY.turns + 1, captains = [7, 7]) {
@@ -4602,19 +4607,33 @@ function quickInput(ev) {
 }
 
 // ---------------------------------------------------------------- skirmish setup
+// Skirmish setup: the random map framed on the left with a dice to roll another, the Rival (the boss) on the right with
+// the foe and wild counts and the foe level, then your team. The map regenerates when the seed or the level changes.
 function skirmishDraw() {
-  const W = VIEW.w, H = VIEW.h; const S = SC.data; rect(0, 0, W, H, '#0e0c10'); if (!S.bd || S.bdSeed !== S.seed) { S.map = skirmishMap(S.seed, 16, 11, S.level); S.bd = makeBackdrop(S.map); S.bdSeed = S.seed; }
-  drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 + 40, (H - S.bd.canvas.height) / 2 + 30, .82); drawCloudShadows(SC.t);
-  const narrow = narrowView(), bh = btnH(), sbh = narrow ? 16 : 13;
-  SC.hits = []; screenTitle('SKIRMISH', narrow ? S.map.name : S.map.name + '  ·  random map, wild Pokémon to catch, a Rival to beat', 4);
-  const sc = Math.max(.25, Math.min(1, Math.floor(Math.min((W - 20) / S.bd.canvas.width, (H - (narrow ? 156 : 116)) / S.bd.canvas.height) * 4) / 4)); const pw = S.bd.canvas.width * sc, ph = S.bd.canvas.height * sc; const px0 = W / 2 - pw / 2, py0 = 36; rrect(px0 - 4, py0 - 4, pw + 8, ph + 8, '#0b1020', 2); ctx.drawImage(S.bd.canvas, px0, py0, pw, ph); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border); outline(px0 - 3, py0 - 3, pw + 6, ph + 6, UI.border2);
-  for (const u of S.map.units) { const d = DEX[u.mon]; const ux = px0 + (u.x + .5) * TILE * sc, uy = py0 + (u.y + 1) * TILE * sc; ellipse(ux, uy, 6, 2, teamColor(u.team == null ? 1 : u.team)); ctx.drawImage(monIcon(d.num, true), Math.round(ux - 10), Math.round(uy - 15), 20, 15); }
-  for (const d of S.map.deploy) { const ux = px0 + d.x * TILE * sc, uy = py0 + d.y * TILE * sc; outline(ux, uy, TILE * sc, TILE * sc, teamColor(0)); }
-  const by = py0 + ph + 10; const setting = (x, y, label, val, dec, inc) => { text(label, x, y + (sbh - 7) / 2, UI.muted, { outline: UI.shadow }); bigButton(x + 58, y, 18, sbh, '-', dec, { small: true }); textC(String(val), x + 88, y + (sbh - 7) / 2, UI.gold, { outline: UI.shadow }); bigButton(x + 100, y, 18, sbh, '+', inc, { small: true }); };
-  setting(10, by, 'Map seed', S.seed, () => { S.seed = (S.seed + 999) % 1000; Audio.sfx('menu'); }, () => { S.seed = (S.seed + 1) % 1000; Audio.sfx('menu'); });
-  setting(10, by + sbh + 5, 'Enemy level', S.level, () => { S.level = Math.max(3, S.level - 2); Audio.sfx('menu'); }, () => { S.level = Math.min(48, S.level + 2); Audio.sfx('menu'); });
-  const px1 = narrow ? 10 : 150, py1 = narrow ? by + 2 * (sbh + 5) + 2 : by; text('Party: ' + S.party.length + ' Pokémon' + (S.preset ? ' (loaner team)' : ' (campaign save)'), px1, py1 + 4, UI.ink, { outline: UI.shadow }); if (S.party.length) S.party.slice(0, 8).forEach((p, i) => { ctx.drawImage(monIcon(p.num), Math.round(px1 + i * 22), py1 + 12, 24, 18); });
-  { const fy = footerBand(bh + 12) + 6; bigButton(W - 96, fy, 90, bh, 'PREPARE', () => { Audio.sfx('select'); S.go(); }, { variant: 'primary' }); bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('quick'); }, { variant: 'ghost' }); if (!narrow) hintLine([['◂▸', 'seed'], ['▲▼', 'level'], ['Z', 'prepare']], W / 2, fy + (bh - 7) / 2, { pill: false }); }
+  const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t; rect(0, 0, W, H, UI.bg);
+  if (!S.bd || S.bdSeed !== S.seed || S.bdLevel !== S.level) { S.map = skirmishMap(S.seed, 16, 11, S.level); S.bd = makeBackdrop(S.map); S.bdSeed = S.seed; S.bdLevel = S.level; S.rolledAt = SC.t; }
+  drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 + 40 - t * 4, (H - S.bd.canvas.height) / 2 + 30, .84); drawCloudShadows(t);
+  const narrow = narrowView() || portraitView(), bh = btnH(), sbh = narrow ? 18 : 15; SC.hits = [];
+  const top = screenTitle('SKIRMISH', narrow ? null : 'A random map · beat the Rival · catch wild Pokémon', 4), fy = footerBand(bh + 12) + 6;
+  const sideW = narrow ? W - 12 : Math.min(170, Math.floor(W * .34)), mapW = narrow ? W - 12 : W - 18 - sideW, mapH = narrow ? Math.round((fy - 12 - top) * .46) : fy - 12 - top;
+  // the map, framed, with the deploy tiles and every Pokémon on it; a dice to reroll
+  const sc = Math.min((mapW - 8) / S.bd.canvas.width, (mapH - 8) / S.bd.canvas.height), pw = Math.floor(S.bd.canvas.width * sc), ph = Math.floor(S.bd.canvas.height * sc), px0 = 6 + Math.floor((mapW - pw) / 2), py0 = top + 2 + Math.floor((mapH - ph) / 2);
+  const shake = REDUCED ? 0 : Math.round(Math.sin(clamp((t - (S.rolledAt || 0)) / .3, 0, 1) * Math.PI * 3) * 2 * (1 - clamp((t - (S.rolledAt || 0)) / .3, 0, 1)));
+  rrect(px0 - 5, py0 - 5 + shake, pw + 10, ph + 10, UI.inset, 2); rect(px0 - 3, py0 - 3 + shake, pw + 6, ph + 6, UI.border2); ctx.drawImage(S.bd.canvas, px0, py0 + shake, pw, ph); outline(px0 - 1, py0 - 1 + shake, pw + 2, ph + 2, UI.border);
+  const cell = TILE * sc; for (const d of S.map.deploy) { const ux = px0 + d.x * cell, uy = py0 + d.y * cell + shake; rect(ux, uy, Math.ceil(cell), Math.ceil(cell), '#3d7dff50'); outline(ux, uy, Math.ceil(cell), Math.ceil(cell), teamColor(0)); }
+  for (const u of S.map.units) { const d = DEX[u.mon], ux = px0 + (u.x + .5) * cell, uy = py0 + (u.y + 1) * cell + shake, iw = Math.max(14, Math.round(cell * 1.1)); ellipse(Math.round(ux), Math.round(uy), Math.round(iw / 3), 2, teamColor(u.team == null ? 1 : u.team)); ctx.drawImage(monIcon(d.num, true), Math.round(ux - iw / 2), Math.round(uy - iw * .75), iw, Math.round(iw * .75)); if (u.boss) drawSkull(Math.round(ux - 2), Math.round(uy - iw * .75 - 6)); }
+  const dz = 18; bigButton(px0 + pw - dz - 2, py0 + 3 + shake, dz, dz, '', () => { S.seed = (S.seed + 1 + Math.floor(Math.random() * 97)) % 1000; Audio.sfx('shake'); }, { small: true, variant: 'dark', icon: 'dice' }); SC.hits[SC.hits.length - 1].label = 'REROLL';
+  { const nw = textWidth(S.map.name) + 8; ctx.globalAlpha = .8; rrect(px0 + 3, py0 + ph - 14 + shake, nw, 11, UI.inset, 2); ctx.globalAlpha = 1; text(S.map.name, px0 + 7, py0 + ph - 12 + shake, UI.ink); }
+  // the Rival and the settings
+  const sx = narrow ? 6 : 12 + mapW, sy = narrow ? top + mapH + 6 : top + 2, sh = fy - 8 - sy, boss = S.map.units.find(u => u.boss), foes = S.map.units.filter(u => u.team == null || u.team === 1), wild = S.map.units.filter(u => u.team === 2);
+  const pnl = panel(sx, sy, sideW, sh, { header: 'RIVAL', headerRight: foes.length + ' foes · ' + wild.length + ' wild', headerRightCol: UI.muted, headerFill: '#5a1d2e' }); let y = pnl.cy;
+  if (boss) { const bnum = boss.mon, room = narrow ? 30 : 46; requestAnim(bnum); ctx.save(); ctx.beginPath(); ctx.rect(sx + 6, y, 44, room); ctx.clip(); portraitBg(sx + 6, y, 44, room, 1); if (animReady(bnum) && room >= 40) drawAnim(bnum, sx + 28, y + room - 3, t); else drawMon(bnum, sx + 28, y + room - 2, { flip: true }); ctx.restore(); outline(sx + 5, y - 1, 46, room + 2, UI.border2);
+    text(fitLabel(DEX[bnum].name, sideW - 64), sx + 56, y + 2, UI.ink); text('Lv ' + boss.level, sx + 56, y + 12, UI.gold); let bx = sx + 56; for (const tp of DEX[bnum].types) { if (bx + 24 > sx + sideW - 6) break; bx += typeBadge(tp, bx, y + 22, 24) + 2; } y += room + 6; }
+  const setting = (label, val, dec, inc) => { text(label, sx + 8, y + Math.round((sbh - 7) / 2), UI.muted); bigButton(sx + sideW - 62, y, 18, sbh, '-', dec, { small: true }); textC(String(val), sx + sideW - 32, y + Math.round((sbh - 7) / 2), UI.gold); bigButton(sx + sideW - 24, y, 18, sbh, '+', inc, { small: true }); y += sbh + 4; };
+  if (y + sbh < sy + sh - 4) setting('Foe level', S.level, () => { S.level = Math.max(3, S.level - 2); Audio.sfx('menu'); }, () => { S.level = Math.min(48, S.level + 2); Audio.sfx('menu'); });
+  if (y + 20 < sy + sh - 4) { sectionLabel(S.preset ? 'Loaner team' : 'Your team', sx + 8, y, sideW - 16, UI.gold); y += 10; const per = Math.max(1, Math.floor((sideW - 12) / 22)); S.party.slice(0, per * 2).forEach((p, i) => { const ix = sx + 8 + (i % per) * 22, iy = y + Math.floor(i / per) * 18; if (iy + 16 > sy + sh - 3) return; ctx.drawImage(monIcon(p.num), ix - 2, iy, 24, 18); }); }
+  bigButton(W - 96, fy, 90, bh, 'PREPARE', () => { Audio.sfx('select'); S.go(); }, { variant: 'primary' }); bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('quick'); }, { variant: 'ghost' });
+  if (!narrow) hintLine([['◂▸', 'map'], ['▲▼', 'level'], ['Z', 'prepare']], W / 2, fy + (bh - 7) / 2, { pill: false });
 }
 function skirmishInput(ev) { const S = SC.data; if (ev.type === 'key') { if (ev.key === 'left') S.seed = (S.seed + 999) % 1000; else if (ev.key === 'right') S.seed = (S.seed + 1) % 1000; else if (ev.key === 'up') S.level = Math.min(48, S.level + 2); else if (ev.key === 'down') S.level = Math.max(3, S.level - 2); else if (ev.key === 'ok') S.go(); else if (ev.key === 'back') goScene('quick'); return; } if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); } }
 // ============================================================================
