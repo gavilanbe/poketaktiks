@@ -1066,18 +1066,21 @@ function menuTitle() { const m = BT.menu; return m.title || (BT.mode === 'endmen
 function menuRect() {
   const m = BT.menu, rh = rowH(); const w = Math.min(VIEW.w - 8, m.items.some(it => it.icon) ? 134 : 120), top = 21;
   const subLines = m.items.reduce((n, it) => Math.max(n, it.sub ? Math.min(2, wrap(it.sub, w - 14).length) : 0), 0); const foot = subLines ? subLines * 9 + 6 : 0;
-  const h = top + m.items.length * rh + foot + 4; const tx = toScreenX(tileX(BT.cx) - FX.shakeX), ty = toScreenY(tileY(BT.cy) - FX.shakeY), ts = TILE * BT.zoom; let x = tx + ts + 6, y = ty - 4;
-  const L = hudLayout(); if (L.stack && BT.mode !== 'endmenu') { const ww = VIEW.w - 8; return { x: 4, y: Math.max(4, L.bar.y - h - 10), w: ww, h, top, foot, subLines }; } // phones: thumb reach, over the context card
-  if (BT.mode === 'endmenu') { x = VIEW.w / 2 - w / 2; y = VIEW.h / 2 - h / 2; } if (x + w > VIEW.w - 4) x = tx - w - 6; if (x < 4) x = 4; y = clamp(y, 30, VIEW.h - h - 4); return { x, y, w, h, top, foot, subLines };
+  // a long list (a big PC Box) shows a window of rows around the highlighted one
+  const L = hudLayout(), room = (L.stack && BT.mode !== 'endmenu' ? L.bar.y - 14 : VIEW.h - 38) - top - foot - 4, rows = Math.max(3, Math.min(m.items.length, Math.floor(room / rh))), start = clamp(m.i - Math.floor(rows / 2), 0, m.items.length - rows);
+  const h = top + rows * rh + foot + 4; const tx = toScreenX(tileX(BT.cx) - FX.shakeX), ty = toScreenY(tileY(BT.cy) - FX.shakeY), ts = TILE * BT.zoom; let x = tx + ts + 6, y = ty - 4;
+  if (L.stack && BT.mode !== 'endmenu') { const ww = VIEW.w - 8; return { x: 4, y: Math.max(4, L.bar.y - h - 10), w: ww, h, top, foot, subLines, rows, start }; } // phones: thumb reach, over the context card
+  if (BT.mode === 'endmenu') { x = VIEW.w / 2 - w / 2; y = VIEW.h / 2 - h / 2; } if (x + w > VIEW.w - 4) x = tx - w - 6; if (x < 4) x = 4; y = clamp(y, 30, VIEW.h - h - 4); return { x, y, w, h, top, foot, subLines, rows, start };
 }
-function menuHit(px2, py) { const r = menuRect(); if (px2 < r.x || px2 >= r.x + r.w || py < r.y || py >= r.y + r.h) return -1; return clamp(Math.floor((py - r.y - r.top) / rowH()), 0, BT.menu.items.length - 1); }
+function menuHit(px2, py) { const r = menuRect(); if (px2 < r.x || px2 >= r.x + r.w || py < r.y || py >= r.y + r.h) return -1; return clamp(r.start + Math.floor((py - r.y - r.top) / rowH()), r.start, Math.min(BT.menu.items.length, r.start + r.rows) - 1); }
 function drawMenu() {
   const m = BT.menu, rh = rowH(), ty = (rh - 7) >> 1; if (BT.mode === 'endmenu') dimScreen(.4);
   // a freshly opened menu rises and fades in over 120 ms
   const key = BT.mode + ':' + menuTitle() + ':' + m.items.length; if (BT.menuKey !== key) { BT.menuKey = key; BT.menuT0 = BT.time; } const ko = REDUCED ? 1 : Math.min(1, (BT.time - BT.menuT0) / .12); const r = menuRect(); r.y += Math.round((1 - easeOut(ko)) * 6); ctx.globalAlpha = ko;
   hudPanel(r.x, r.y, r.w, r.h, { header: menuTitle(), headerRight: m.items.length > 4 ? (m.i + 1) + '/' + m.items.length : null, headerFill: BT.mode === 'menu' && BT.sel ? teamColorD(BT.sel.team) : UI.panelDark });
-  m.items.forEach((it, i) => { const y = r.y + r.top + i * rh; const hot = i === m.i; const ink = it.off ? UI.dim : hot ? UI.hi : UI.ink; if (hot) selRow(r.x + 4, y, r.w - 8, rh - 1);
-    const lx = r.x + (it.icon ? 22 : 11); if (it.icon) iconAt(it.icon, r.x + 9, y + ty - 1, it.off ? UI.dim : hot ? '#ffffff' : '#c8cddc'); text(it.label, lx, y + ty, ink, hot ? { shadow: shade(UI.sel, -.6) } : {}); if (it.right) textR(it.right, r.x + r.w - 8, y + ty, it.off ? UI.dim : it.right === 'FREE' ? UI.green : UI.gold); });
+  if (r.start > 0) textC('▲', r.x + r.w / 2, r.y + r.top - 7, UI.gold); if (r.start + r.rows < m.items.length) textC('▼', r.x + r.w / 2, r.y + r.top + r.rows * rh - 3, UI.gold);
+  m.items.forEach((it, i) => { if (i < r.start || i >= r.start + r.rows) return; const y = r.y + r.top + (i - r.start) * rh; const hot = i === m.i; const ink = it.off ? UI.dim : hot ? UI.hi : UI.ink; if (hot) selRow(r.x + 4, y, r.w - 8, rh - 1);
+    const lx = r.x + (it.icon ? 22 : 11); if (it.icon) iconAt(it.icon, r.x + 9, y + ty - 1, it.off ? UI.dim : hot ? '#ffffff' : '#c8cddc'); text(fitLabel(it.label, r.x + r.w - lx - (it.right ? textWidth(it.right) + 12 : 8)), lx, y + ty, ink, hot ? { shadow: shade(UI.sel, -.6) } : {}); if (it.right) textR(it.right, r.x + r.w - 8, y + ty, it.off ? UI.dim : it.right === 'FREE' ? UI.green : UI.gold); });
   if (r.foot) { const fy = r.y + r.h - 4 - r.foot; rect(r.x + 4, fy, r.w - 8, r.foot, UI.panelDark); hline(r.x + 4, fy, r.w - 8, UI.inset); const it = m.items[m.i]; const lines = it && it.sub ? wrap(it.sub, r.w - 14).slice(0, 2) : []; lines.forEach((l, i) => text(l, r.x + 7, fy + 4 + i * 9, it.off ? '#d8a0a0' : UI.muted)); }
   ctx.globalAlpha = 1;
   if (m.pc) drawPcPreview(m, r);
