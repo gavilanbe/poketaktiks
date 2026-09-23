@@ -59,3 +59,7 @@ Done (2026-09-23):
   phase banner, power cut-in, capture celebration, big-number pops, stamped victory with stars.
 - Screens: Oak's lab partner choice, team preparation, chapter card, lesson cards, results,
   Conquest setup.
+- Later passes: Field Centers ('K') on the five indoor chapters, first-battle and first-power
+  coach marks, a boss-battle cut-in, indoor moods (embers, dust, sparks) and outdoor cloud shadows,
+  an animated power menu, Conquest HUD and results, Skirmish setup, story portraits, an ending
+  over the title landscape, a route theme.

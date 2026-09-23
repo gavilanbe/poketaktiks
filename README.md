@@ -40,8 +40,8 @@ Open `http://127.0.0.1:8765/`. The build concatenates the source modules into
 5. One **objective** per map, always shown top-left with its progress: foes
    left, the boss's HP, turns survived or capture points.
 
-There is no bag: healing comes from centers, Support Pokémon and the Grass
-captain; levels come from battles and the training between chapters. The only
+There is no bag: healing comes from centers (every campaign map has one; caves
+and bases get a Field Center), Support Pokémon and the Grass captain; levels come from battles and the training between chapters. The only
 item is the Poké Ball, counted, found on maps and given as first-clear rewards.
 Saves from older versions convert their balls and drop the rest.
 
@@ -132,7 +132,10 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
   segmented power meter sit top-left; phase banners tilt in with speed lines;
   powers play an Advance Wars style cut-in; captures, crits and KOs celebrate.
 - **Victory**: the word is stamped letter by letter over a sunburst, then the
-  stars pop in. Every one of these respects reduced motion.
+  stars pop in. A boss that wakes up gets its own cut-in; indoor maps have embers,
+  dust or sparks, outdoor maps cloud shadows and butterflies. The first battles
+  point at what to do next. Every one of these respects reduced motion.
+- **Ending**: the credits play over the title landscape with your own team.
 - The lateral **duel scene** splits the screen on a diagonal with the Black/White
   animated sprites; any key speeds it up, X skips. The menu offers full, quick
   or map-only battles.
