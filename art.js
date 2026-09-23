@@ -391,22 +391,23 @@ function drawWallFace(p, sides, v, id) {
 }
 
 // ---------------------------------------------------------------- range / cursor / arrow overlays
-function rangeOverlay(cells, inSet, sx, sy, col, edgeCol, phase) {
-  ctx.globalAlpha = .34;
+function rangeOverlay(cells, inSet, sx, sy, col, edgeCol, phase, a = 1) {
+  const A = ctx.globalAlpha * a; ctx.globalAlpha = .34 * A;
   for (const c of cells) rect(sx + c.x * TILE, sy + c.y * TILE, TILE, TILE, col);
   // slow diagonal shimmer (very quiet)
-  ctx.globalAlpha = .06; ctx.fillStyle = '#ffffff';
+  ctx.globalAlpha = .06 * A; ctx.fillStyle = '#ffffff';
   for (const c of cells) { const X = sx + c.x * TILE, Y = sy + c.y * TILE; for (let j = 0; j < TILE; j++) { const i0 = (j + phase * 2) % 16; for (let i = i0; i < TILE; i += 16) ctx.fillRect(X + i, Y + j, 3, 1); } }
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = A;
   // crisp outer edge (light) with a darker inner line
   const dark = shade(col, -.35);
   for (const c of cells) {
     const X = sx + c.x * TILE, Y = sy + c.y * TILE;
-    if (!inSet(c.x, c.y - 1)) { rect(X, Y, TILE, 1, edgeCol); ctx.globalAlpha = .5; rect(X, Y + 1, TILE, 1, dark); ctx.globalAlpha = 1; }
-    if (!inSet(c.x, c.y + 1)) { rect(X, Y + TILE - 1, TILE, 1, edgeCol); ctx.globalAlpha = .5; rect(X, Y + TILE - 2, TILE, 1, dark); ctx.globalAlpha = 1; }
-    if (!inSet(c.x - 1, c.y)) { rect(X, Y, 1, TILE, edgeCol); ctx.globalAlpha = .5; rect(X + 1, Y, 1, TILE, dark); ctx.globalAlpha = 1; }
-    if (!inSet(c.x + 1, c.y)) { rect(X + TILE - 1, Y, 1, TILE, edgeCol); ctx.globalAlpha = .5; rect(X + TILE - 2, Y, 1, TILE, dark); ctx.globalAlpha = 1; }
+    if (!inSet(c.x, c.y - 1)) { rect(X, Y, TILE, 1, edgeCol); ctx.globalAlpha = .5 * A; rect(X, Y + 1, TILE, 1, dark); ctx.globalAlpha = A; }
+    if (!inSet(c.x, c.y + 1)) { rect(X, Y + TILE - 1, TILE, 1, edgeCol); ctx.globalAlpha = .5 * A; rect(X, Y + TILE - 2, TILE, 1, dark); ctx.globalAlpha = A; }
+    if (!inSet(c.x - 1, c.y)) { rect(X, Y, 1, TILE, edgeCol); ctx.globalAlpha = .5 * A; rect(X + 1, Y, 1, TILE, dark); ctx.globalAlpha = A; }
+    if (!inSet(c.x + 1, c.y)) { rect(X + TILE - 1, Y, 1, TILE, edgeCol); ctx.globalAlpha = .5 * A; rect(X + TILE - 2, Y, 1, TILE, dark); ctx.globalAlpha = A; }
   }
+  ctx.globalAlpha = A / a;
 }
 // Pixel ellipse ring (outer radius rx/ry, `th` pixels thick) — used for unit bases and selection pulses.
 function ellipseRing(cx, cy, rx, ry, th, c) {

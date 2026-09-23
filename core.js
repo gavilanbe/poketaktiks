@@ -279,12 +279,22 @@ function monIcon(num, flip = false, tint = null) {
   } else { g.fillStyle = tint || '#c0c0c0'; g.fillRect(12, 6, 16, 18); }
   SPR.cache[key] = c; return c;
 }
-// Draw a mon icon centred at (cx, baseline y). Options: flip, tint, alpha, sx/sy scale (squash&stretch), dy hop.
+// The same icon with a 1-px outline in `col` hugging its silhouette (team colour on the board, as Advance Wars tints its
+// units): the silhouette is stamped at the four neighbours, then the icon on top. 42×32, cached.
+function monIconOutlined(num, flip, tint, col) {
+  const key = 'o' + num + (flip ? 'f' : '') + (tint || '') + col; let c = SPR.cache[key]; if (c) return c;
+  const icon = monIcon(num, flip, tint), sil = document.createElement('canvas'); sil.width = 40; sil.height = 30; const sg = sil.getContext('2d');
+  sg.drawImage(icon, 0, 0); sg.globalCompositeOperation = 'source-in'; sg.fillStyle = col; sg.fillRect(0, 0, 40, 30);
+  c = document.createElement('canvas'); c.width = 42; c.height = 32; const g = c.getContext('2d');
+  for (const [dx, dy] of [[0, 1], [2, 1], [1, 0], [1, 2]]) g.drawImage(sil, dx, dy); g.drawImage(icon, 1, 1);
+  SPR.cache[key] = c; return c;
+}
+// Draw a mon icon centred at (cx, baseline y). Options: flip, tint, alpha, sx/sy scale (squash&stretch), outline (colour).
 function drawMon(num, cx, by, o = {}) {
-  const img = monIcon(num, !!o.flip, o.tint || null);
-  const sx = o.sx || 1, sy = o.sy || 1; const w = 40 * sx, h = 30 * sy;
+  const img = o.outline ? monIconOutlined(num, !!o.flip, o.tint || null, o.outline) : monIcon(num, !!o.flip, o.tint || null);
+  const sx = o.sx || 1, sy = o.sy || 1, pad = o.outline ? 1 : 0; const w = img.width * sx, h = img.height * sy;
   if (o.alpha != null) ctx.globalAlpha = o.alpha;
-  ctx.drawImage(img, Math.round(cx - w / 2), Math.round(by - h), Math.round(w), Math.round(h));
+  ctx.drawImage(img, Math.round(cx - w / 2), Math.round(by - h + pad * sy), Math.round(w), Math.round(h));
   if (o.alpha != null) ctx.globalAlpha = 1;
 }
 

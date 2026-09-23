@@ -49,15 +49,25 @@ function captainChoiceDraw() {
 }
 
 function powerRibbonHeight() { return powerState(HT()) ? (powerState(1 - HT()) ? 38 : 27) : 0; }
+// The power meter under the objective card: ten cells in the captain's colour with the 50 mark, READY / SUPER READY
+// when a power can be bought (the cells glow and sparkle), the foe's charge as a thin second bar. Tapping it opens POWER.
 function drawPowerStrip(r) {
   const s = powerState(HT()); if (!s || ['power', 'help', 'unitinfo', 'endmenu', 'territoryGuide', 'handoff'].includes(BT.mode)) return;
-  const c = CAPTAINS[s.root], x = r.x, y = r.y + r.h + 2, h = powerRibbonHeight() - 2;
+  const c = CAPTAINS[s.root], x = r.x, y = r.y + r.h + 2, h = powerRibbonHeight() - 2, cap = powerCaptain(HT());
   hudPanel(x, y, r.w, h, { fill: UI.panelDark, light: false, flat: true });
-  const state = !s.unlocked ? 'CH.2' : !powerCaptain(HT()) ? 'CAPTAIN DOWN' : s.active ? 'ACTIVE' : s.charge + '/100';
-  text(fitLabel('P POWER · ' + state, r.w - 12), x + 6, y + 4, s.charge >= 50 || s.active ? c.col : UI.ink);
-  bar(x + 6, y + 15, r.w - 12, 4, s.charge / 100, c.col); vline(x + 6 + Math.floor((r.w - 12) / 2), y + 14, 6, UI.ink);
+  const can = s.unlocked && cap && !s.active, sup = can && s.charge >= 100 && s.superUnlocked, rdy = can && s.charge >= 50;
+  const state = !s.unlocked ? 'unlocks in ch.2' : !cap ? 'captain down' : s.active ? (s.active === 'super' ? c.superName : c.name) + ' ON' : sup ? 'SUPER READY!' : rdy ? 'READY!' : s.charge + '/100';
+  drawCrown(x + 5, y + 4); text('POWER', x + 15, y + 4, rdy || s.active ? c.col : UI.ink); textR(fitLabel(state, r.w - 60), x + r.w - 6, y + 4, s.active ? UI.green : sup ? UI.gold : rdy ? c.col : UI.muted);
+  // ten cells; the 50 mark is a gap
+  const bx = x + 6, bw = r.w - 12, cw = (bw - 1) / 10, glow = !REDUCED && rdy ? .5 + .5 * Math.sin(BT.time * 6) : 0;
+  for (let i = 0; i < 10; i++) { const cx0 = Math.round(bx + i * cw + (i >= 5 ? 1 : 0)), cx1 = Math.round(bx + (i + 1) * cw - 1 + (i >= 5 ? 1 : 0)), on = s.charge >= (i + 1) * 10, part = !on && s.charge > i * 10;
+    rect(cx0, y + 14, cx1 - cx0, 5, UI.inset); const fillC = sup ? UI.gold : c.col;
+    if (on) { rect(cx0 + 1, y + 15, cx1 - cx0 - 2, 3, fillC); hline(cx0 + 1, y + 15, cx1 - cx0 - 2, shade(fillC, .5)); if (glow && (sup || i < 5)) { ctx.globalAlpha = glow * .6; rect(cx0 + 1, y + 15, cx1 - cx0 - 2, 3, '#ffffff'); ctx.globalAlpha = 1; } }
+    else if (part) { const f = Math.round((cx1 - cx0 - 2) * (s.charge - i * 10) / 10); rect(cx0 + 1, y + 15, f, 3, shade(fillC, -.2)); }
+    else rect(cx0 + 1, y + 15, cx1 - cx0 - 2, 3, '#232646'); }
+  if (rdy && !REDUCED) { const k = (BT.time * 1.3) % 1, sxp = bx + Math.round((sup ? bw : bw / 2) * k); sparkle(sxp, y + 16, Math.round(Math.sin(k * Math.PI) * 2), '#ffffff'); }
   const enemy = powerState(1 - HT());
-  if (enemy) text('FOE ' + enemy.charge + '/100' + (enemy.active ? ' ACTIVE' : ''), x + 6, y + 23, enemy.active || enemy.charge >= 50 ? UI.red : UI.muted);
+  if (enemy) { const ec = CAPTAINS[enemy.root], eh = enemy.charge / 100; text(B.versus ? 'P' + (2 - HT()) : 'FOE', x + 6, y + 23, enemy.active ? UI.red : UI.muted); const ex = x + 26, ew = r.w - 32 - textWidth(enemy.active ? 'ON' : String(enemy.charge)) - 4; bar(ex, y + 24, ew, 4, eh, enemy.charge >= 50 ? UI.red : shade(ec.col, -.2)); textR(enemy.active ? 'ON' : String(enemy.charge), x + r.w - 6, y + 23, enemy.active || enemy.charge >= 50 ? UI.red : UI.muted); }
   HUD.hits.push({ x, y, w: r.w, h, label: 'POWER', run: () => { if (BT.mode === 'idle') openPowerMenu(); } });
 }
 function openPowerMenu() {
@@ -101,15 +111,24 @@ function powerInput(ev) {
     else if (ev.key === 'mute') Audio.toggle();
   } else if (ev.type === 'up') hudHit(ev.x, ev.y);
 }
+// The power cut-in, Advance Wars style: the screen darkens, a band in the captain's colour tears across on a slant with
+// speed lines, the captain slides in large on the left, and the power's name slams down beside it with what it does.
 function drawPowerBurst(q) {
-  const e = q.ev, c = CAPTAINS[e.root], W = VIEW.w, H = VIEW.h, w = Math.min(W - 12, 310), x = (W - w) / 2;
-  const desc = wrap(e.superPower ? c.super : c.normal, w - 20), h = 105 + desc.length * 10, y = (H - h) / 2;
-  dimScreen(.7);
-  const slide = REDUCED ? 0 : Math.round((1 - easeOut(Math.min(1, q.t / .2))) * -20);
-  panel(x + slide, y, w, h, { border: c.col, header: e.superPower ? 'SUPERPOWER!' : 'TEAM POWER!', headerRight: teamName(e.team) });
-  requestBigSprite(e.unit.num); drawBig(e.unit.num, x + w / 2 + slide, y + 68, { sx: .6, sy: .6 });
-  textC(e.name.toUpperCase(), W / 2 + slide, y + 75, c.col);
-  desc.forEach((l, i) => textC(l, W / 2 + slide, y + 90 + i * 10, UI.ink));
+  const e = q.ev, c = CAPTAINS[e.root], W = VIEW.w, H = VIEW.h, t = q.t, dur = q.dur, out = t > dur - .25 ? easeIn((t - (dur - .25)) / .25) : 0;
+  const col = c.col, dark = shade(col, -.5), grow = REDUCED ? 1 : easeOutBack(clamp(t / .25, 0, 1), 1.6), bh = Math.round(Math.min(H * .46, 110) * clamp(grow, 0, 1.1) * (1 - out)), cy = Math.round(H / 2);
+  ctx.globalAlpha = .6 * (1 - out); rect(0, 0, W, H, '#05041a'); ctx.globalAlpha = 1;
+  if (bh > 2) { const top = cy - Math.round(bh / 2), slant = -.35;
+    for (let y = 0; y < bh; y++) { const off = Math.round((y - bh / 2) * slant), v = y / bh; rect(off - 30, top + y, W + 60, 1, v < .15 ? shade(col, .25) : v > .85 ? dark : (y >> 1) % 5 === 0 ? shade(col, .08) : col); }
+    rect(Math.round((-bh / 2) * slant) - 30, top - 2, W + 60, 2, '#ffffff'); rect(Math.round((bh / 2) * slant) - 30, top + bh, W + 60, 2, UI.inset);
+    if (!REDUCED) for (let i = 0; i < 14; i++) { const ly = top + 3 + (i * 11) % Math.max(4, bh - 6), len = 24 + (i * 23) % 60, lx = W - ((t * (520 + i * 80) + i * 131) % (W + len * 2)); ctx.globalAlpha = .4; rect(Math.round(lx + (ly - cy) * slant), ly, len, 1, '#ffffff'); ctx.globalAlpha = 1; } }
+  // the captain slides in from the left, big
+  const u = e.unit, num = u ? (u.fx.showNum || u.num) : e.root, slide = REDUCED ? 0 : Math.round((1 - easeOut(clamp((t - .05) / .3, 0, 1))) * -W * .5) - Math.round(out * W * .6);
+  const px0 = Math.round(W * (W > 300 ? .26 : .3)) + slide, base = cy + Math.round(bh / 2) - 4, spr = W > 300 && H > 220 ? 1 : .7; requestAnim(num); requestBigSprite(num);
+  if (bh > 20) { ctx.save(); ctx.beginPath(); ctx.rect(0, cy - Math.round(bh / 2), W, bh); ctx.clip(); const k2 = bh >= 100 ? 2 : 1; if (animReady(num)) drawAnim(num, px0, base, BT.time, { sx: k2, sy: k2 }); else drawBig(num, px0, base, { sx: k2 / 2, sy: k2 / 2 }); ctx.restore(); }
+  // the name slams down on the right, the effect under it
+  const name = (e.superPower ? c.superName : c.name).toUpperCase() + '!', nw = textWidth(name, BIG), big = W >= nw * 2 + W * .5 ? 2 : 1, slam = REDUCED ? 0 : clamp(1 - (t - .3) / .14, 0, 1), sc = big + slam * 1.5, nx = Math.round(W * (W > 300 ? .66 : .62)) + Math.round(out * W);
+  if (t > .3 || REDUCED) { if (e.superPower) textC('SUPER POWER', nx, cy - 26 - 4 * big, UI.gold, { outline: UI.inset }); ctx.save(); ctx.translate(nx, cy - Math.round(9 * sc / 2) - 6); ctx.scale(sc, sc); bigC(name, 0, 0, '#ffffff', { outline: UI.inset }); ctx.restore();
+    ctx.globalAlpha = clamp((t - .45) / .15, 0, 1) * (1 - out); const desc = wrap(e.superPower ? c.super : c.normal, Math.min(W * .5, 190)); desc.slice(0, 2).forEach((l, i) => textC(l, nx, cy + 10 + i * 9, UI.ink, { outline: UI.inset })); textC(teamName(e.team), nx, cy - Math.round(bh / 2) + 5, shade(col, .6), { outline: UI.inset }); ctx.globalAlpha = 1; }
 }
 function drawCatchLesson(L) {
   const t = B.units.find(u => u.id === B.lesson.targetId); if (!t) return;

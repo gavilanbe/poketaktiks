@@ -230,18 +230,26 @@ function resultsDraw() {
     return;
   }
   const rc = Math.max(1, Math.floor((w - 16) / 96)), cc = Math.max(1, Math.floor((w - 16) / 70)); // rewards / catches per row
-  const nRew = R.rewards ? Object.keys(R.rewards).length : 0, nC = R.caught ? R.caught.length : 0, nT = R.trained ? Math.min(6, R.trained.length) : 0, nE = R.evolved ? R.evolved.length : 0;
+  const nRew = R.rewards ? Object.keys(R.rewards).length : 0, nC = R.caught ? R.caught.length : 0, nT = R.trained ? Math.min(6, R.trained.length) : 0, nE = R.evolved ? R.evolved.length : 0, stars = win && R.stars != null;
   const lose = wrap('The team limps back to the Poké Center. Everyone is fine. Mostly.', w - 16);
-  const ph = 36 + (win ? 0 : (lose.length - 1) * 9) + (nRew ? 14 + Math.ceil(nRew / rc) * 10 : 0) + (nC ? 14 + Math.ceil(nC / cc) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + 8;
+  const ph = 36 + (stars ? 30 : 0) + (win ? 10 : (lose.length - 1) * 9) + (nRew ? 14 + Math.ceil(nRew / rc) * 10 : (win && !R.skirmish ? 12 : 0)) + (nC ? 14 + Math.ceil(nC / cc) * 26 : 0) + (nT ? 12 + nT * 9 : 0) + nE * 9 + 8;
   const phh = Math.min(H - 44, Math.max(60, ph)); y = Math.max(8, Math.round((H - 30 - phh) / 2));
-  const p = panel(x, y, w, phh, { header: win ? (R.skirmish ? 'SKIRMISH WON' : 'CHAPTER CLEAR') : 'RETREAT', headerRight: win && R.par && R.turns <= R.par ? '★ UNDER PAR' : null, headerRightCol: UI.gold });
-  y = p.cy; if (win) { text('Turns ' + R.turns + (R.par ? ' (par ' + R.par + ')' : '') + '   ·   KOs ' + R.kills, x + 8, y, UI.ink); y += 12; }
+  const tok = unfold('results', x, y, w, phh, .25);
+  const p = panel(x, y, w, phh, { header: win ? (R.skirmish ? 'SKIRMISH WON!' : 'CHAPTER CLEAR!') : 'RETREAT', headerRight: stars && R.stars > (R.best || 0) && !R.skirmish ? 'NEW BEST' : null, headerRightCol: UI.gold, headerFill: win ? '#2a2470' : '#4a1626' });
+  y = p.cy;
+  if (stars) { // three stars pop in one after another, then the goals they stand for
+    for (let s2 = 0; s2 < 3; s2++) { const t0 = appear('res:star' + s2) - .25 - s2 * .3, u = clamp(t0 / .25, 0, 1), on = s2 < R.stars && u > 0, sc = on ? 1 + Math.round((1 - easeOutBack(u, 3)) * 1.5) : 1; drawBigStar(x + w / 2 + (s2 - 1) * 20, y + 7, sc, on); }
+    y += 18; textC('win  ·  ' + (R.turns <= (R.par || 10) ? 'under par' : 'over par') + '  ·  ' + (R.faints ? R.faints + ' fainted' : 'nobody fainted'), x + w / 2, y, UI.muted); y += 12;
+  }
+  if (win) { const tv = countUp('res:turns', R.turns, .5, .2), kv = countUp('res:kos', R.kills, .5, .35); text('Turns ' + tv + (R.par ? ' / par ' + R.par : ''), x + 8, y, R.par && R.turns <= R.par ? UI.green : UI.ink); textR('KOs ' + kv, x + w - 8, y, UI.ink); y += 12; }
   else { lose.forEach(l => { text(l, x + 8, y, UI.ink); y += 9; }); y += 3; }
-  if (R.rewards && Object.keys(R.rewards).length) { sectionLabel('Rewards', x + 8, y, w - 16, UI.gold); y += 10; let i = 0; for (const k in R.rewards) { const cx = x + 10 + (i % rc) * 96; const cy = y + Math.floor(i / rc) * 10; drawBall(cx + 4, cy + 4, ITEMS[k].col, 3); text(ITEMS[k].name + ' ×' + R.rewards[k], cx + 12, cy + 1, UI.ink); i++; } y += Math.ceil(i / rc) * 10 + 4; }
-  if (R.caught && R.caught.length) { sectionLabel('New team members', x + 8, y, w - 16, UI.gold); y += 10; R.caught.forEach((c, i) => { const cx = x + 10 + (i % cc) * 70; const cy = y + Math.floor(i / cc) * 26; drawMon(c.num, cx + 16, cy + 22 + Math.round(Math.sin(SC.t * 6 + i) * 2), {}); text(DEX[c.num].name, cx + 32, cy + 6, UI.ink); text('Lv' + c.level, cx + 32, cy + 14, UI.gold); }); y += Math.ceil(R.caught.length / cc) * 26 + 4; }
-  if (R.trained && R.trained.length) { sectionLabel('Training at the Center', x + 8, y, w - 16, UI.gold); y += 10; R.trained.forEach((t, i) => { if (i > 5) return; let s = t; while (textWidth(s) > w - 20 && s.length > 8) s = s.slice(0, -1); text(s, x + 10, y, '#98d8f8'); y += 9; }); y += 2; }
-  if (R.evolved && R.evolved.length) { R.evolved.forEach(e => { let s = e; while (textWidth(s) > w - 20 && s.length > 8) s = s.slice(0, -1); text(s, x + 10, y, UI.gold); y += 9; }); }
-  { const fy = footerBand(30) + 6; bigButton(W / 2 - 50, fy, 100, 18, R.nextLabel || 'CONTINUE', () => { Audio.sfx('ok'); R.next(); }, { variant: 'primary' }); }
+  if (nRew) { sectionLabel('Rewards', x + 8, y, w - 16, UI.gold); y += 10; let i = 0; for (const k in R.rewards) { const cx = x + 10 + (i % rc) * 96; const cy = y + Math.floor(i / rc) * 10; drawBall(cx + 4, cy + 4, (ITEMS[k] || ITEMS.pokeball).col, 3); text((ITEMS[k] || ITEMS.pokeball).name + ' ×' + countUp('res:rew' + k, R.rewards[k], .4, .6), cx + 12, cy + 1, UI.ink); i++; } y += Math.ceil(i / rc) * 10 + 4; }
+  else if (win && !R.skirmish) { text('Replay: rewards come with the first clear', x + 8, y, UI.dim); y += 12; }
+  if (nC) { sectionLabel('New team members', x + 8, y, w - 16, UI.gold); y += 10; R.caught.forEach((c, i) => { const cx = x + 10 + (i % cc) * 70; const cy = y + Math.floor(i / cc) * 26; drawMon(c.num, cx + 16, cy + 22 + Math.round(Math.abs(Math.sin(SC.t * 6 + i)) * -3), { outline: teamColor(0) }); text(DEX[c.num].name, cx + 32, cy + 6, UI.ink); text('Lv' + c.level, cx + 32, cy + 14, UI.gold); }); y += Math.ceil(R.caught.length / cc) * 26 + 4; }
+  if (R.trained && R.trained.length) { sectionLabel('Training at the Center', x + 8, y, w - 16, UI.gold); y += 10; R.trained.forEach((t, i) => { if (i > 5) return; let s2 = t; while (textWidth(s2) > w - 20 && s2.length > 8) s2 = s2.slice(0, -1); text(s2, x + 10, y, '#98d8f8'); y += 9; }); y += 2; }
+  if (R.evolved && R.evolved.length) { R.evolved.forEach(e => { let s2 = e; while (textWidth(s2) > w - 20 && s2.length > 8) s2 = s2.slice(0, -1); text(s2, x + 10, y, UI.gold); y += 9; }); }
+  unfoldEnd(tok);
+  { const fy = footerBand(30) + 6; if (R.route) { const bw = Math.min(100, Math.floor((W - 18) / 2)); bigButton(W / 2 - bw - 4, fy, bw, 18, 'ROUTE', () => { Audio.sfx('cancel'); R.route(); }, { variant: 'ghost' }); bigButton(W / 2 + 4, fy, bw, 18, R.nextLabel || 'CONTINUE', () => { Audio.sfx('ok'); R.next(); }, { variant: 'primary' }); } else bigButton(W / 2 - 50, fy, 100, 18, R.nextLabel || 'CONTINUE', () => { Audio.sfx('ok'); R.next(); }, { variant: 'primary' }); }
 }
 function resultsInput(ev) { if (ev.type === 'key' && (ev.key === 'ok' || ev.key === 'back')) { Audio.sfx('ok'); SC.data.next(); return; } if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); } }
 
