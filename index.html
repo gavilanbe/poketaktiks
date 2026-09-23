@@ -3103,7 +3103,7 @@ function beginPhase(team, first, resumed = false) {
   if (!teamsPresent.includes(team) && team !== 0 && !warCanPlay(team)) { nextPhase(); return; }
   // reinforcements at the start of the enemy phase
   if (team === 1) for (const u of spawnReinforcements()) ev.push({ type: 'spawn', unit: u });
-  if (team === 0 && !first && !resumed) for (const u of wildSpawn()) ev.push({ type: 'wildSpawn', unit: u });
+  if (team === 0 && !first && !resumed) { for (const u of safariFlee()) ev.push({ type: 'flee', unit: u }); for (const u of wildSpawn()) ev.push({ type: 'wildSpawn', unit: u }); }
   const label = phaseLabel(team);
   BT.banner = { text: label, t: 0, team, sub: isHuman(team) ? 'Turn ' + B.turn + (B.map.turnLimit && B.map.objective.type !== 'survive' ? ' / ' + B.map.turnLimit : '') + (B.map.objective.type === 'survive' ? ' / ' + B.map.objective.turns : '') : null };
   BT.mode = 'banner'; Audio.sfx(isHuman(team) ? 'phase' : 'enemyphase');
@@ -3160,6 +3160,7 @@ function setupEvent(q) {
         spawnParts(ux(e.unit), uy(e.unit) + 6, 18, [c, '#ffffff', '#ff5a5a'], { speed: 70, life: .6, grav: 60 }); floatText(ux(e.unit), uy(e.unit) - 12, 'Go, ' + e.unit.name + '!', c, { big: true, outline: '#000', life: 1.2 }); break; }
       Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 8, 12, ['#ffffff', '#ff4b4b'], { speed: 50, life: .5, grav: 0 }); floatText(ux(e.unit), uy(e.unit) - 10, 'Reinforcements!', UI.red); break;
     // a wild Pokémon steps out of the tall grass: the blades burst, a "!" pops over it, its name is announced
+    case 'flee': q.dur = BT.fast ? .45 : .9; centerCam(e.unit.x, e.unit.y); Audio.sfx('whoosh'); floatText(ux(e.unit), uy(e.unit) - 6, 'FLED!', '#c8c8d8', { big: true, outline: UI.inset, life: 1 }); spawnParts(ux(e.unit), uy(e.unit) + 10, 14, ['#e8e0d0', '#b8b0a0', '#ffffff'], { speed: 40, grav: -20, life: .7 }); break;
     case 'wildSpawn': q.dur = BT.fast ? .5 : 1.1; centerCam(e.unit.x, e.unit.y); Audio.sfx('grass'); e.unit.fx.sy = .4; e.unit.fx.sx = 1.5;
       for (let i = 0; i < 8; i++) spawnSprite('leaf', ux(e.unit) + (i - 3.5) * 3, uy(e.unit) + 18, { size: 3, life: .7, col: '#3d8a3c', col2: '#a6dc7c', vx: (i - 3.5) * 16, vy: -60 - (i % 3) * 14, grav: 120, rot: i, spin: 10 });
       e.unit.fx.alert = BT.time; floatText(ux(e.unit), uy(e.unit) - 16, 'A wild ' + e.unit.name + ' appeared!', UI.gold, { outline: '#000', life: 1.3, delay: .15 }); break;
@@ -5408,7 +5409,7 @@ function simWar(maxTurns = 40) {
       if (!alive(team).length && !(team <= 1 && warCanPlay(team))) continue;
       B.phase = team; upkeep(team);
       if (team <= 1) { warUpkeep(team); if (checkObjective()) break; for (const u of warAiDeploy(team)) { u.ai = 'war'; log.push('T' + B.turn + ' ' + team + ' deploys ' + u.name); } const power = aiPower(team); if (power) log.push('T' + B.turn + ' ' + team + ' uses ' + power[0].name); }
-      if (team === 0 && B.turn > 1) for (const u of wildSpawn()) log.push('T' + B.turn + ' wild ' + u.name);
+      if (team === 0 && B.turn > 1) { for (const u of safariFlee()) log.push('T' + B.turn + ' ' + u.name + ' fled'); for (const u of wildSpawn()) log.push('T' + B.turn + ' wild ' + u.name); }
       for (const u of alive(team).slice().sort((a, b) => b.level - a.level)) { if (u.acted || !canTakeAction(u)) continue; const d = aiDecide(u); if (d) aiAct(u, d, log); u.acted = true; if (checkObjective()) break; }
       if (B.result) break;
     }
@@ -7045,10 +7046,13 @@ function startSafari() {
     BACKDROP = makeBackdrop(map);
     startBattle(map, deployed, { pokeball: SAFARI.balls }, { skirmish: true, safari: { days: SAFARI.days, score: [0, 0], catches: [[], []], balls: [SAFARI.balls, SAFARI.balls], preset }, seed: seed * 17 + 1, defer: true, cos: ['you', 'blue'], captain: preset ? { pid: null, root: 4, chapter: 8 } : { pid: SAVE.captainPid, root: SAVE.starter, chapter: 8 } });
     B.map.def = map; SC.data = { preset }; const go = () => { goScene('battle'); SC.data = { preset }; beginPhase(0, true); };
-    if (PARAMS.has('nostory')) go(); else { goScene('battle'); startDialog([{ who: 'Blue', text: 'The Safari Zone! Eight days, twelve Safari Balls each. Whoever brings back the *rarest* haul wins.' }, { who: 'Blue', text: 'Knock one out and it counts for *nothing*. Try to keep up. Smell ya later!' }], go); }
+    if (PARAMS.has('nostory')) go(); else { goScene('battle'); startDialog([{ who: 'Blue', text: 'The Safari Zone! Eight days, twelve Safari Balls each. Whoever brings back the *rarest* haul wins.' }, { who: 'Blue', text: 'Knock one out and it counts for *nothing*, and a wounded one may *run off* at dawn. Try to keep up. Smell ya later!' }], go); }
   } }); };
   goScene('prep', P);
 }
+// Safari Pokémon are skittish: at dawn each wounded one may run off into the grass (a fifth of the time).
+const SAFARI_FLEE = .2;
+function safariFlee() { if (!B || !B.safari) return []; const out = []; for (const u of alive(2)) if (u.hp < u.maxHp && rnd() < SAFARI_FLEE) { u.hp = 0; u.fled = true; out.push(u); } return out; }
 // A catch scores for its catcher, with a floating tally on the board.
 function safariCatch(team, t) { const S = B.safari, T = safariTier(t.num); S.score[team] += T.pts; S.catches[team].push({ num: t.num, level: t.level, pts: T.pts }); if (typeof floatText === 'function') floatText(t.x * TILE + TILE / 2, t.y * TILE - 4, '+' + T.pts, T.col, { big: true, life: 1.4, outline: '#000', delay: .2 }); }
 // An AI throw: the odds are settled now; the catch leaves the board after its animation (done), as the player's does.

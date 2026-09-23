@@ -181,7 +181,7 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
   Pokémon lost, up to 100) + TECHNIQUE (100, −15 per Pokémon lost): S from 280,
   A from 240, B from 180. The commander has the last word.
 - **Safari Zone**: twelve Safari Balls each, eight days, a meadow thick with tall
-  grass that keeps breeding Pokémon: Common 1 point, Uncommon 3, Rare 5
+  grass that keeps breeding Pokémon (a wounded one may run off at dawn): Common 1 point, Uncommon 3, Rare 5
   (Kangaskhan, Tauros, Scyther, Pinsir, Chansey), Very rare 8 (Dratini).
 - **Conquest**: Three Bridges, the same captain on both sides, six teammates
   each (three start, three wait in the Box). Win by taking the enemy HQ, or by

@@ -118,7 +118,7 @@ function beginPhase(team, first, resumed = false) {
   if (!teamsPresent.includes(team) && team !== 0 && !warCanPlay(team)) { nextPhase(); return; }
   // reinforcements at the start of the enemy phase
   if (team === 1) for (const u of spawnReinforcements()) ev.push({ type: 'spawn', unit: u });
-  if (team === 0 && !first && !resumed) for (const u of wildSpawn()) ev.push({ type: 'wildSpawn', unit: u });
+  if (team === 0 && !first && !resumed) { for (const u of safariFlee()) ev.push({ type: 'flee', unit: u }); for (const u of wildSpawn()) ev.push({ type: 'wildSpawn', unit: u }); }
   const label = phaseLabel(team);
   BT.banner = { text: label, t: 0, team, sub: isHuman(team) ? 'Turn ' + B.turn + (B.map.turnLimit && B.map.objective.type !== 'survive' ? ' / ' + B.map.turnLimit : '') + (B.map.objective.type === 'survive' ? ' / ' + B.map.objective.turns : '') : null };
   BT.mode = 'banner'; Audio.sfx(isHuman(team) ? 'phase' : 'enemyphase');
@@ -175,6 +175,7 @@ function setupEvent(q) {
         spawnParts(ux(e.unit), uy(e.unit) + 6, 18, [c, '#ffffff', '#ff5a5a'], { speed: 70, life: .6, grav: 60 }); floatText(ux(e.unit), uy(e.unit) - 12, 'Go, ' + e.unit.name + '!', c, { big: true, outline: '#000', life: 1.2 }); break; }
       Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 8, 12, ['#ffffff', '#ff4b4b'], { speed: 50, life: .5, grav: 0 }); floatText(ux(e.unit), uy(e.unit) - 10, 'Reinforcements!', UI.red); break;
     // a wild Pokémon steps out of the tall grass: the blades burst, a "!" pops over it, its name is announced
+    case 'flee': q.dur = BT.fast ? .45 : .9; centerCam(e.unit.x, e.unit.y); Audio.sfx('whoosh'); floatText(ux(e.unit), uy(e.unit) - 6, 'FLED!', '#c8c8d8', { big: true, outline: UI.inset, life: 1 }); spawnParts(ux(e.unit), uy(e.unit) + 10, 14, ['#e8e0d0', '#b8b0a0', '#ffffff'], { speed: 40, grav: -20, life: .7 }); break;
     case 'wildSpawn': q.dur = BT.fast ? .5 : 1.1; centerCam(e.unit.x, e.unit.y); Audio.sfx('grass'); e.unit.fx.sy = .4; e.unit.fx.sx = 1.5;
       for (let i = 0; i < 8; i++) spawnSprite('leaf', ux(e.unit) + (i - 3.5) * 3, uy(e.unit) + 18, { size: 3, life: .7, col: '#3d8a3c', col2: '#a6dc7c', vx: (i - 3.5) * 16, vy: -60 - (i % 3) * 14, grav: 120, rot: i, spin: 10 });
       e.unit.fx.alert = BT.time; floatText(ux(e.unit), uy(e.unit) - 16, 'A wild ' + e.unit.name + ' appeared!', UI.gold, { outline: '#000', life: 1.3, delay: .15 }); break;

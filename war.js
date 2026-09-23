@@ -200,7 +200,7 @@ function simWar(maxTurns = 40) {
       if (!alive(team).length && !(team <= 1 && warCanPlay(team))) continue;
       B.phase = team; upkeep(team);
       if (team <= 1) { warUpkeep(team); if (checkObjective()) break; for (const u of warAiDeploy(team)) { u.ai = 'war'; log.push('T' + B.turn + ' ' + team + ' deploys ' + u.name); } const power = aiPower(team); if (power) log.push('T' + B.turn + ' ' + team + ' uses ' + power[0].name); }
-      if (team === 0 && B.turn > 1) for (const u of wildSpawn()) log.push('T' + B.turn + ' wild ' + u.name);
+      if (team === 0 && B.turn > 1) { for (const u of safariFlee()) log.push('T' + B.turn + ' ' + u.name + ' fled'); for (const u of wildSpawn()) log.push('T' + B.turn + ' wild ' + u.name); }
       for (const u of alive(team).slice().sort((a, b) => b.level - a.level)) { if (u.acted || !canTakeAction(u)) continue; const d = aiDecide(u); if (d) aiAct(u, d, log); u.acted = true; if (checkObjective()) break; }
       if (B.result) break;
     }

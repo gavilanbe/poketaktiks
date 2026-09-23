@@ -218,10 +218,13 @@ function startSafari() {
     BACKDROP = makeBackdrop(map);
     startBattle(map, deployed, { pokeball: SAFARI.balls }, { skirmish: true, safari: { days: SAFARI.days, score: [0, 0], catches: [[], []], balls: [SAFARI.balls, SAFARI.balls], preset }, seed: seed * 17 + 1, defer: true, cos: ['you', 'blue'], captain: preset ? { pid: null, root: 4, chapter: 8 } : { pid: SAVE.captainPid, root: SAVE.starter, chapter: 8 } });
     B.map.def = map; SC.data = { preset }; const go = () => { goScene('battle'); SC.data = { preset }; beginPhase(0, true); };
-    if (PARAMS.has('nostory')) go(); else { goScene('battle'); startDialog([{ who: 'Blue', text: 'The Safari Zone! Eight days, twelve Safari Balls each. Whoever brings back the *rarest* haul wins.' }, { who: 'Blue', text: 'Knock one out and it counts for *nothing*. Try to keep up. Smell ya later!' }], go); }
+    if (PARAMS.has('nostory')) go(); else { goScene('battle'); startDialog([{ who: 'Blue', text: 'The Safari Zone! Eight days, twelve Safari Balls each. Whoever brings back the *rarest* haul wins.' }, { who: 'Blue', text: 'Knock one out and it counts for *nothing*, and a wounded one may *run off* at dawn. Try to keep up. Smell ya later!' }], go); }
   } }); };
   goScene('prep', P);
 }
+// Safari Pokémon are skittish: at dawn each wounded one may run off into the grass (a fifth of the time).
+const SAFARI_FLEE = .2;
+function safariFlee() { if (!B || !B.safari) return []; const out = []; for (const u of alive(2)) if (u.hp < u.maxHp && rnd() < SAFARI_FLEE) { u.hp = 0; u.fled = true; out.push(u); } return out; }
 // A catch scores for its catcher, with a floating tally on the board.
 function safariCatch(team, t) { const S = B.safari, T = safariTier(t.num); S.score[team] += T.pts; S.catches[team].push({ num: t.num, level: t.level, pts: T.pts }); if (typeof floatText === 'function') floatText(t.x * TILE + TILE / 2, t.y * TILE - 4, '+' + T.pts, T.col, { big: true, life: 1.4, outline: '#000', delay: .2 }); }
 // An AI throw: the odds are settled now; the catch leaves the board after its animation (done), as the player's does.
