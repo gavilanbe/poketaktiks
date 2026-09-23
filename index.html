@@ -6501,6 +6501,10 @@ function routeDraw() {
     const inView = bx >= L.view.x && bx + 11 <= L.view.x + L.view.w && by >= L.view.y && by + 11 <= L.view.y + L.view.h; // numbers only on badges fully in view (the clip hides the rest)
     if (unlocked) { if (inView) textC(String(i + 1), bx + 6, by + 2, sel ? UI.goldDark : '#1b1834'); } else { rect(bx + 3, by + 5, 5, 4, '#1b1834'); outline(bx + 4, by + 2, 3, 4, '#1b1834'); }
     if (unlocked) for (let k = 0; k < 3; k++) drawRouteStar(x - 11 + k * 8, y + ry + 3, k < stars, true);
+    // who holds it: a Rocket pennant over a front still held, the freed Gym Leader's face over a cleared one
+    { const ch = CHAPTERS[i], cleared = SAVE && SAVE.chapter > i, freed = cleared && ch.co && CO_UNLOCK[ch.co] && COS[ch.co], fx = x + rx + 1, fy = y - 17;
+      if (freed) { const face = trainerFace(freed.tr); if (face) { rect(fx - 1, fy - 1, 12, 12, freed.col); ctx.save(); ctx.beginPath(); ctx.rect(fx, fy, 10, 10); ctx.clip(); ctx.drawImage(face, fx - 4, fy - 3); ctx.restore(); } }
+      else if (!cleared && (ch.co || ch.foe)) { const wave = REDUCED ? 0 : Math.round(Math.sin(t * 4 + i)); vline(fx + 1, fy - 1, 12, '#3a2a20'); rect(fx + 2, fy + wave * .5, 7, 5, '#d23030'); px(fx + 4, fy + 1 + wave * .5, '#ffffff'); px(fx + 5, fy + 2 + wave * .5, '#ffffff'); px(fx + 4, fy + 3 + wave * .5, '#ffffff'); } }
     if (unlocked && x >= L.view.x && x < L.view.x + L.view.w && y >= L.view.y && y < L.view.y + L.view.h) hit(x - 14, y - 16, 28, 30, () => { if (S.sel === i) routePlay(); else routeSelect(i); }, 'STOP ' + (i + 1));
   }
   // the captain: walks the road, hops on arrival, idles with a bob; a bouncing marker over the selected stop
