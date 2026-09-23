@@ -151,6 +151,8 @@ function initBattleCaptains(opts) {
     }
   }
 }
+// A commander's Ace fainted: their meter halves, and powers wait until the Ace is deployed again.
+function coAceDown(u) { const s = u && u.team <= 1 && powerState(u.team); if (!s || s.captainId !== u.id) return null; const before = s.charge; s.charge = Math.floor(s.charge / 2); return { type: 'aceDown', unit: u, team: u.team, co: s.co, root: s.root, lost: before - s.charge }; }
 function powerPhaseStart(team, ev = []) {
   const s = powerState(team); if (!s) return;
   s.active = null; s.spent = false; s.used = [];

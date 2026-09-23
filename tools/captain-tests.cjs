@@ -213,6 +213,13 @@ test('campaign fronts: enemy commanders from Mt. Moon with their Aces, Rocket ce
   // the prep screen does not lock the partner in while a Gym Leader leads
   g.prepChapter(3); assert.equal(g.prepCaptain(G('SC.data')), null);
 });
+test('an Ace that faints halves its commander\'s meter and blocks powers until it is back', () => {
+  const T = field(4), { g, captain, foe } = T, s = g.powerState(0); s.charge = 90; captain.hp = 1; captain.x = 3; captain.y = 2; T.G('rnd = () => .5');
+  const B = T.B(); B.phase = 1; const ev = g.resolveCombat(foe, captain, foe.moves[0], foe); const down = ev.find(e => e.type === 'aceDown');
+  assert(ev.some(e => e.type === 'ko' && e.unit === captain), 'the Ace fainted'); assert(down && down.lost === 45 && down.team === 0); assert(s.charge >= 45 && s.charge < 50, 'halved (the hit it took still charges a little): ' + s.charge);
+  B.phase = 0; assert(g.powerBlock(0, false), 'no power while the Ace is down');
+  const other = g.alive(0).find(u => u !== captain); other.hp = 0; assert.equal(g.coAceDown(other), null, 'any other Pokémon fainting costs nothing');
+});
 let failed = 0;
 for (const [name, fn] of tests) { try { fn(); console.log('  ok   ' + name); } catch (e) { failed++; console.error('  FAIL ' + name + '\n' + e.stack); } }
 console.log(`${tests.length-failed}/${tests.length} captain tests passed`); process.exitCode = failed ? 1 : 0;

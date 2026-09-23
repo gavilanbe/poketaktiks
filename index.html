@@ -2476,7 +2476,7 @@ function resolveCombat(att, def, move, from) {
     if (ef && ef.status && !powerBlocksStatus(Dn) && !isPracticeTarget(Dn) && dmg > 0 && !Dn.status && Dn.hp > 0 && rnd() * 100 < ef.chance + coStatusBonus(A)) { const st = ef.status; if (!(st === 'brn' && Dn.types.includes('Fire')) && !(st === 'psn' && (Dn.types.includes('Poison') || Dn.types.includes('Steel'))) && !(st === 'par' && Dn.types.includes('Electric')) && !(st === 'frz' && Dn.types.includes('Ice'))) { Dn.status = st; Dn.statusTurns = 0; status = st; } }
     const drain = Math.min(drainFor(s.move, lost), A.maxHp - A.hp); A.hp += drain; // the event carries the HP actually restored
     ev.push({ type: 'hit', att: A, def: Dn, move: s.move, dmg, lost, crit, eff: s.eff, hpAfter: Dn.hp, status, drain, attHpAfter: A.hp, counter: isCounter });
-    if (Dn.hp <= 0) { ev.push({ type: 'ko', unit: Dn, by: A }); if (Dn.team === 0 && !B.versus) B.faints = (B.faints || 0) + 1; }
+    if (Dn.hp <= 0) { ev.push({ type: 'ko', unit: Dn, by: A }); if (Dn.team === 0 && !B.versus) B.faints = (B.faints || 0) + 1; const lost = coAceDown(Dn); if (lost) ev.push(lost); }
     if (Dn.status === 'frz' && dmg > 0 && s.move.type === 'Fire') { Dn.status = null; ev.push({ type: 'thaw', unit: Dn }); }
   }
   // firing a recharge move costs the next turn whether it hit or missed
@@ -2869,6 +2869,8 @@ function initBattleCaptains(opts) {
     }
   }
 }
+// A commander's Ace fainted: their meter halves, and powers wait until the Ace is deployed again.
+function coAceDown(u) { const s = u && u.team <= 1 && powerState(u.team); if (!s || s.captainId !== u.id) return null; const before = s.charge; s.charge = Math.floor(s.charge / 2); return { type: 'aceDown', unit: u, team: u.team, co: s.co, root: s.root, lost: before - s.charge }; }
 function powerPhaseStart(team, ev = []) {
   const s = powerState(team); if (!s) return;
   s.active = null; s.spent = false; s.used = [];
@@ -3160,6 +3162,7 @@ function setupEvent(q) {
         spawnParts(ux(e.unit), uy(e.unit) + 6, 18, [c, '#ffffff', '#ff5a5a'], { speed: 70, life: .6, grav: 60 }); floatText(ux(e.unit), uy(e.unit) - 12, 'Go, ' + e.unit.name + '!', c, { big: true, outline: '#000', life: 1.2 }); break; }
       Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 8, 12, ['#ffffff', '#ff4b4b'], { speed: 50, life: .5, grav: 0 }); floatText(ux(e.unit), uy(e.unit) - 10, 'Reinforcements!', UI.red); break;
     // a wild Pokémon steps out of the tall grass: the blades burst, a "!" pops over it, its name is announced
+    case 'aceDown': q.dur = REDUCED || BT.fast ? .7 : 1.5; Audio.sfx('faint'); if (!REDUCED) shake(3); break;
     case 'flee': q.dur = BT.fast ? .45 : .9; centerCam(e.unit.x, e.unit.y); Audio.sfx('whoosh'); floatText(ux(e.unit), uy(e.unit) - 6, 'FLED!', '#c8c8d8', { big: true, outline: UI.inset, life: 1 }); spawnParts(ux(e.unit), uy(e.unit) + 10, 14, ['#e8e0d0', '#b8b0a0', '#ffffff'], { speed: 40, grav: -20, life: .7 }); break;
     case 'wildSpawn': q.dur = BT.fast ? .5 : 1.1; centerCam(e.unit.x, e.unit.y); Audio.sfx('grass'); e.unit.fx.sy = .4; e.unit.fx.sx = 1.5;
       for (let i = 0; i < 8; i++) spawnSprite('leaf', ux(e.unit) + (i - 3.5) * 3, uy(e.unit) + 18, { size: 3, life: .7, col: '#3d8a3c', col2: '#a6dc7c', vx: (i - 3.5) * 16, vy: -60 - (i % 3) * 14, grav: 120, rot: i, spin: 10 });
@@ -4263,6 +4266,7 @@ function drawEventCard(q) {
   const e = q.ev, W = VIEW.w, H = VIEW.h;
   if (e.type === 'power') { drawPowerBurst(q); return; }
   if (e.type === 'bossAlert') { drawBossAlert(q); return; }
+  if (e.type === 'aceDown') { drawAceDown(q); return; }
   if (e.type === 'xp') { const u = e.unit; const w = 120, x = W / 2 - w / 2, y = H - 40; panel(x, y, w, 24); const k = Math.min(1, q.t / q.dur); const shown = Math.min(100, q.from + e.amount * k); text(u.name, x + 6, y + 4, UI.ink); textR('+' + e.amount + ' EXP', x + w - 6, y + 4, UI.gold); bar(x + 6, y + 14, w - 12, 6, (shown % 100) / 100, '#6ad0ff'); }
   if (e.type === 'levelup') {
     const u = e.unit; const w = Math.min(190, W - 12), h = 74, x = W / 2 - w / 2; const uy = toScreenY(tileY(u.y)), ts = TILE * BT.zoom; const y = uy < H / 2 ? Math.min(H - h - 8, uy + ts + 10) : Math.max(28, uy - h - 12); const k = Math.min(1, q.t / .25); const yy = Math.round(y + (1 - easeOut(k)) * -20);
@@ -4284,6 +4288,15 @@ function drawEventCard(q) {
 // fits), the turn counter follows, the team runs across under it, and everything leaves to the right.
 // Phase banner: a tilted band in the team colour sweeps in with speed lines, the phase name slams down (doubled when it
 // fits), the turn counter follows, the team runs across under it, and everything leaves to the right.
+// A commander's Ace falls: a band in the commander's colour, their portrait flinching, ACE DOWN! and what it costs.
+function drawAceDown(q) {
+  const e = q.ev, c = coOf({ co: e.co, root: e.root }), W = VIEW.w, H = VIEW.h, t = q.t, dur = q.dur, out = t > dur - .25 ? easeIn((t - (dur - .25)) / .25) : 0, cy = Math.round(H * .38);
+  const bh = Math.round(34 * clamp(REDUCED ? 1 : easeOutBack(clamp(t / .2, 0, 1), 2), 0, 1.1) * (1 - out)); if (bh < 3) return;
+  rect(0, cy - Math.round(bh / 2), W, bh, shade(c.col, -.55)); hline(0, cy - Math.round(bh / 2), W, c.col); hline(0, cy + Math.round(bh / 2), W, UI.inset);
+  const face = trainerFace(coTrainer({ co: e.co }) ? c.tr : 'red'), shake2 = !REDUCED && t < .4 ? Math.round(Math.sin(t * 60) * 2) : 0, fx = Math.round(W / 2 - 90) + shake2, fy = cy - 11;
+  if (face && bh >= 24) { rect(fx - 2, fy - 2, 26, 26, UI.inset); rect(fx - 1, fy - 1, 24, 24, c.col); ctx.save(); ctx.translate(fx + 2, fy + 2); ctx.drawImage(face, 0, 0); ctx.restore(); ctx.globalAlpha = .45; rect(fx + 2, fy + 2, 18, 18, '#1a0610'); ctx.globalAlpha = 1; }
+  if (bh >= 24) { bigText('ACE DOWN!', fx + 32, cy - 10, '#ffffff', { outline: UI.inset }); text(fitLabel(e.unit.name + ' fainted · meter halved' + (e.lost ? ' (−' + e.lost + ')' : '') + ' · powers wait', W - (fx + 32) - 8), fx + 32, cy + 2, shade(c.col, .5), { outline: UI.inset }); }
+}
 // The boss wakes up: a red band tears across, BOSS BATTLE! slams down and the boss slides in from the right with its name.
 function drawBossAlert(q) {
   const u = q.ev.unit, W = VIEW.w, H = VIEW.h, t = q.t, dur = q.dur, out = t > dur - .25 ? easeIn((t - (dur - .25)) / .25) : 0, cy = Math.round(H / 2);
