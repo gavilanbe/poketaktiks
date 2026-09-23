@@ -1,5 +1,7 @@
 # ImageGen tall-grass tiles
 
+**Status (2026-09-23):** the game now draws its tall grass procedurally in `art.js` (`drawTallGrass`, one sheet per map variant with the same four states and foreground layer described below). These ImageGen sheets are kept for comparison and load with `?terrain=imagegen`; `?terrain=classic` still shows the static tile.
+
 ImageGen drew the complete terrain sheet in `source/imagegen-tall-grass-v2-original.png`, using the actual Pokétaktiks tiles and map as references. The game loads `imagegen-tall-grass-v2.png` directly for terrain `t` / `tall`.
 
 `tools/build-terrain-sprites.py` only crops the 16 complete ImageGen cells, scales each to 32×32 with nearest-neighbor and maps colors to the existing five-green game palette. It does not arrange individual plants or redraw the design. The original sheet, generation prompt and source SHA-256 in `imagegen-tall-grass-v2.json` document where the imported pixels came from.

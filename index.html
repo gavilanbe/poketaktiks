@@ -1025,9 +1025,46 @@ const LIQUID = new Set(['water', 'lava']);
 
 // Complete terrain tiles drawn by ImageGen, cropped from its four-state sheet.
 // Rendering state only: never changes terrain rules, unit positions, saves or RNG.
-const TALL_ART = { ready: false, started: false, base: null, front: null, cache: new Map(), map: null, time: 0, occupied: new Set(), states: new Map(), enabled: new URLSearchParams(location.search).get('terrain') !== 'classic' };
+const TALL_ART = { ready: false, started: false, base: null, front: null, sheets: null, cache: new Map(), map: null, time: 0, occupied: new Set(), states: new Map(), enabled: new URLSearchParams(location.search).get('terrain') !== 'classic', imagegen: new URLSearchParams(location.search).get('terrain') === 'imagegen' };
+// Tall grass is drawn here as a sheet per variant with the same layout as the ImageGen sheet (columns: four frames;
+// rows: idle, rustle, occupied, recover) plus a foreground layer holding the front row of blades that a Pokémon stands
+// behind. `?terrain=imagegen` loads the earlier ImageGen sheet instead; `?terrain=classic` keeps the static tile.
+const TALL_T = { dd: '#1a4424', d: '#2a6630', g: '#347a36', m: '#3d8a3c', l: '#58a84a', ll: '#7cc45e', hi: '#a6dc7c' };
+function tallClump(p, cx, by, sc, sway, push) {
+  const T = TALL_T, buf = new Map(), put = (x, y, c) => buf.set(x + ',' + y, c);
+  const blades = [[-4, 6, -2.4], [-2, 9, -1.1], [0, 11, .3], [2, 9, 1.4], [4, 6, 2.6]];
+  for (const [dx, h0, lean0] of blades) {
+    const h = Math.max(2, Math.round(h0 * sc)), lean = lean0 * (sc < .7 ? 1.7 : 1) + sway + (dx ? Math.sign(dx) : 0) * push;
+    for (let j = 0; j < h; j++) { const t = j / Math.max(1, h - 1), x = cx + dx + Math.round(lean * t * t), y = by - j; put(x, y, j >= h - 1 ? T.hi : j >= h - 3 ? T.ll : j < 2 ? T.m : T.l); if (j < h - 2) put(x + 1, y, j < 2 ? T.d : T.m); }
+  }
+  for (const k of buf.keys()) { const [x, y] = k.split(',').map(Number); for (const [ax, ay] of [[1, 0], [-1, 0], [0, -1]]) if (!buf.has((x + ax) + ',' + (y + ay)) && y + ay <= by) p.P(x + ax, y + ay, T.dd); }
+  for (const [k, c] of buf) { const [x, y] = k.split(',').map(Number); p.P(x, y, c); }
+  p.H(cx - 4, by + 1, 10, T.d);
+}
+function drawTallGrass(p, v, state, frame, front) {
+  const T = TALL_T, R = mulberry32(v * 7919 + 17), jit = () => Math.round((R() - .5) * 2.4);
+  if (!front) { p.R(0, 0, 32, 32, T.g); for (let i = 0; i < 7; i++) { const x = Math.floor(R() * 30), y = Math.floor(R() * 30); p.H(x, y, 2, T.d); } }
+  const clumps = [[5 + jit(), 12 + jit(), .78, 0], [16 + jit(), 11, .9, 0], [27 + jit(), 12 + jit(), .78, 0], [10 + jit(), 28, 1, 1], [22 + jit(), 28, 1, 1]];
+  const sway = state === 1 ? [2.2, -2, 1.4, -1][frame] : state === 3 ? [-1.2, .9, -.5, .2][frame] : [0, .8, 0, -.8][(frame + v) % 4];
+  for (const [cx, by, sc, row] of clumps) {
+    if (front && !row) continue; const center = Math.abs(cx - 16) <= 7; let hk = 1, push = 0;
+    if (center && state === 2) { hk = .5; push = 1.6; } else if (center && state === 3) hk = [.6, .72, .85, .95][frame]; else if (center && state === 1) hk = [.82, .9, .86, .94][frame];
+    tallClump(p, cx, by, sc * hk, center && state === 2 ? sway * .4 : sway, push);
+  }
+  if (front) p.CLEAR(0, 0, 32, 25);
+}
+function buildTallGrassSheets() {
+  TALL_ART.sheets = [];
+  for (let v = 0; v < VARIANTS; v++) {
+    const base = tileCanvas(128, 128), front = tileCanvas(128, 128);
+    for (const [cv, fg] of [[base, false], [front, true]]) { const g = cv.getContext('2d'); for (let st = 0; st < 4; st++) for (let f = 0; f < 4; f++) { g.save(); g.translate(f * 32, st * 32); drawTallGrass(painter(g), v, st, f, fg); g.restore(); } }
+    TALL_ART.sheets.push({ base, front });
+  }
+  TALL_ART.ready = true;
+}
 function loadTallTerrainSprites() {
   if (TALL_ART.started || !TALL_ART.enabled) return; TALL_ART.started = true;
+  if (!TALL_ART.imagegen) { buildTallGrassSheets(); return; }
   let loaded = 0;
   for (const [part, name] of [['base', 'imagegen-tall-grass-v2.png'], ['front', 'imagegen-tall-grass-front-v2.png']]) {
     const img = new Image();
@@ -1038,10 +1075,10 @@ function loadTallTerrainSprites() {
 }
 function tallTerrainImg(variant, state, frame, foreground = false) {
   if (!TALL_ART.ready || !TALL_ART.enabled) return null;
-  const f = frame % 4, key = [state, f, foreground ? 1 : 0].join(':');
+  const f = frame % 4, sh = TALL_ART.sheets ? TALL_ART.sheets[(variant || 0) % TALL_ART.sheets.length] : TALL_ART, key = [TALL_ART.sheets ? variant % TALL_ART.sheets.length : 0, state, f, foreground ? 1 : 0].join(':');
   let c = TALL_ART.cache.get(key); if (c) return c;
   c = tileCanvas(); const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
-  g.drawImage(foreground ? TALL_ART.front : TALL_ART.base, f * 32, state * 32, 32, 32, 0, 0, 32, 32);
+  g.drawImage(foreground ? sh.front : sh.base, f * 32, state * 32, 32, 32, 0, 0, 32, 32);
   TALL_ART.cache.set(key, c); return c;
 }
 function tallUnitCell(u, m) {
@@ -1093,143 +1130,310 @@ const ST = {
   pokeEmblem: ['.OOO.', 'ORRRO', 'OOWOO', 'OWWWO', '.OOO.'],
 };
 
+// ---------------------------------------------------------------- tile painting helpers
+// Ordered dithering (4×4 Bayer) for soft transitions between two tones of a ramp.
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+function dith(x, y) { return (BAYER4[(y & 3) * 4 + (x & 3)] + .5) / 16; }
+// Pick a ramp colour for a light value in 0..1: flat bands with a narrow dithered seam between neighbours.
+function rampAt(ramp, v, x, y, seam = .26) { const n = ramp.length, f = clamp(v, 0, .999) * n, i = Math.floor(f), fr = f - i; let k = i; if (fr > 1 - seam / 2 && dith(x, y) < (fr - (1 - seam / 2)) / seam) k++; else if (fr < seam / 2 && dith(x, y) < (seam / 2 - fr) / seam) k--; return ramp[clamp(k, 0, n - 1)]; }
+// A union of ellipses shaded as soft volumes lit from the upper left (ramp: darkest → lightest), outlined with `out`.
+// Later blobs sit in front of earlier ones; the seam where a front blob turns away from the light separates them.
+function shadeBlobs(p, blobs, ramp, out, opt = {}) {
+  const lx = -.52, ly = -.68, lz = .52, bias = opt.bias || 0, gain = opt.gain || 1;
+  let x0 = 1e3, y0 = 1e3, x1 = -1e3, y1 = -1e3; for (const b of blobs) { x0 = Math.min(x0, Math.floor(b.x - b.rx) - 1); y0 = Math.min(y0, Math.floor(b.y - b.ry) - 1); x1 = Math.max(x1, Math.ceil(b.x + b.rx) + 1); y1 = Math.max(y1, Math.ceil(b.y + b.ry) + 1); }
+  const W = x1 - x0 + 1, H = y1 - y0 + 1, mask = new Int16Array(W * H).fill(-1);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) for (let i = blobs.length - 1; i >= 0; i--) { const b = blobs[i], dx = (x + .5 - b.x) / b.rx, dy = (y + .5 - b.y) / b.ry; if (dx * dx + dy * dy <= 1) { mask[(y - y0) * W + x - x0] = i; break; } }
+  const at = (x, y) => x >= x0 && y >= y0 && x <= x1 && y <= y1 ? mask[(y - y0) * W + x - x0] : -1;
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const i = at(x, y);
+    if (i < 0) { if (out && (at(x - 1, y) >= 0 || at(x + 1, y) >= 0 || at(x, y - 1) >= 0 || at(x, y + 1) >= 0)) p.P(x, y, out); continue; }
+    const b = blobs[i], nx = (x + .5 - b.x) / b.rx, ny = (y + .5 - b.y) / b.ry, nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+    const l = (nx * lx + ny * ly + nz * lz) * gain + bias; p.P(x, y, rampAt(ramp, (l + 1) / 2, x, y));
+  }
+  return at;
+}
+// A soft dithered ground shadow (drawn on the tile under an object), darker in the middle.
+function groundShadow(p, cx, cy, rx, ry, col, dens = .55) { for (let y = -ry; y <= ry; y++) for (let x = -rx; x <= rx; x++) { const d = (x * x) / (rx * rx) + (y * y) / (ry * ry); if (d > 1) continue; if (d < .45 || dith(cx + x, cy + y) < dens * (1 - d) * 1.6) p.P(cx + x, cy + y, col); } }
+// Hand-tuned ramps (dark → light), hue shifted: shadows lean blue, lights lean yellow.
+const RAMP = {
+  leaf: ['#123822', '#1c4e2e', '#276638', '#367f41', '#4d9a48', '#6db656', '#94d06a'],
+  leafOut: '#0c2a1a',
+  pine: ['#0f3326', '#17463a', '#215a40', '#2e7148', '#428a52', '#62a660'],
+  rock: ['#3a3040', '#524654', '#6d6068', '#8a7c7c', '#a89a8e', '#c8bca8', '#e4dac4'],
+  rockOut: '#241c28',
+  snow: ['#8e9cc0', '#aab8d6', '#c8d4ea', '#e4ecf8', '#ffffff'],
+  crock: ['#221c28', '#342c3c', '#483e52', '#5e5268', '#76687e', '#908298', '#b0a4b6'], crockOut: '#15111a',
+  wallTop: ['#16121a', '#1c1722', '#231d2a', '#2b2433', '#342c3d'],
+  steel: ['#262632', '#3c3c4a', '#565666', '#747486', '#9496a8', '#babccc', '#e2e4ee'],
+  crust: ['#140404', '#240806', '#3a0e08', '#58180c', '#7a2a12'],
+};
 // ---------------------------------------------------------------- terrain bases
 // Roof colours of a capturable building by owner (Territory): neutral grey, the player's blue, the enemy's red; a plain
 // Poké Center keeps its classic red roof. [roof, roofD, roofL, flag]
 const ROOFS = { none: ['#e04848', '#a82c2c', '#ff6a60', null], n: ['#a8a8b4', '#70707c', '#cfcfd8', '#d8d8e0'], 0: ['#3f6fd6', '#2a4a9a', '#5f8ff0', '#3d7dff'], 1: ['#e04848', '#a82c2c', '#ff6a60', '#ff4b4b'] };
+// Roof ramps for the buildings (outline, darkest … highlight), by owner and by house style.
+const ROOF_RAMP = {
+  red: ['#3a0e12', '#7a1c20', '#a82c2c', '#d23e3a', '#ee5e4e', '#ff9a80'], grey: ['#22222a', '#4a4a56', '#62626e', '#7c7c8a', '#9c9caa', '#c8c8d4'],
+  blue: ['#121a34', '#24325e', '#324680', '#445ea2', '#5c7ec4', '#8aaae4'], brown: ['#2a160c', '#5a3420', '#7a4a2c', '#9a6038', '#b87a48', '#dca474'],
+  green: ['#10261a', '#22462c', '#2e5e38', '#3c7844', '#56965a', '#84bc7c'], plum: ['#34121e', '#642840', '#843854', '#a44a68', '#c46a86', '#e89cb0'],
+  slate: ['#0e1828', '#203250', '#2c446c', '#3a5888', '#5074a6', '#7c9cca'],
+};
+function ownerRoof(owner) { return owner == null ? ROOF_RAMP.red : owner < 0 ? ROOF_RAMP.grey : owner === 0 ? ROOF_RAMP.blue : ROOF_RAMP.red; }
 function drawTile(ch, variant, frame, g, owner = null) {
-  const RF = ROOFS[owner == null ? 'none' : owner < 0 ? 'n' : owner];
+  const RF = ROOFS[owner == null ? 'none' : owner < 0 ? 'n' : owner], RR = ownerRoof(owner);
   const p = painter(g), r = mulberry32(ch.charCodeAt(0) * 977 + variant * 131 + 7); const rr = (a, b) => a + Math.floor(r() * (b - a + 1));
   const G = PAL.grass;
   // Grass: flat base, one soft darker patch, a few light tufts on a jittered grid, a rare darker tuft.
   // Kept sparse and low-contrast so a field of it reads as one calm surface under the Pokémon.
+  // A soft patch with a dithered rim, kept inside the tile so a neighbour never cuts it.
+  const patch = (cx, cy, rx, ry, c, soft = 1.8) => { for (let y = -ry; y <= ry; y++) for (let x = -rx; x <= rx; x++) { const d = (x * x) / (rx * rx) + (y * y) / (ry * ry); if (d > 1) continue; if (d < .5 || dith(cx + x, cy + y) < (1 - d) * soft) p.P(cx + x, cy + y, c); } };
+  const pebble = (x, y) => { const R = PAL.rock; p.P(x, y + 2, G.d); p.H(x + 1, y + 2, 3, G.dm); p.R(x, y, 3, 2, R.l); p.P(x, y, R.ll); p.P(x + 1, y, R.ll); p.P(x + 2, y + 1, R.d); p.P(x + 3, y + 1, G.d); };
+  const clover = (x, y) => { p.P(x, y, '#ffffff'); p.P(x + 1, y, '#e4ecf4'); p.P(x, y + 1, '#dce4ee'); p.P(x + 1, y + 1, G.d); };
+  // Grass: flat base, a darker and a lighter patch, blade tufts on a jittered grid (dark roots, light tips), a rare pebble or
+  // clover. Kept low-contrast so a field of it reads as one calm surface under the Pokémon.
   const grassBase = (tone = 0) => {
     p.R(0, 0, 32, 32, G.m);
-    { const x = rr(-3, 26), y = rr(-2, 27), w = rr(6, 10), h = rr(3, 4); p.E(x + w / 2, y + h / 2, w / 2, h / 2, G.dm); }
-    for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) { if (r() < .74) continue; const x = i * 8 + rr(0, 3), y = j * 8 + rr(0, 3); p.S(x, y, ST.tuftL, { L: G.l }); }
-    if (r() < .5) p.S(rr(0, 28), rr(0, 29), ST.tuftD, { D: G.dd });
-    if (tone === 0 && variant === 3 && r() < .4) p.S(rr(2, 26), rr(4, 26), ST.stone, { L: PAL.rock.ll, M: PAL.rock.l, D: PAL.rock.d });
+    patch(rr(9, 22), rr(8, 23), rr(6, 8), rr(3, 4), G.dm);
+    if (r() < .7) patch(rr(8, 24), rr(7, 24), rr(3, 5), 2, mix(G.m, G.l, .4), 1.4);
+    for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) { const k = r(); if (k < .4) continue; const x = i * 8 + rr(0, 4), y = j * 8 + rr(1, 5);
+      if (k < .72) { p.P(x, y, G.l); p.P(x + 2, y, G.l); p.P(x + 1, y + 1, G.d); p.P(x, y + 1, G.dm); p.P(x + 2, y + 1, G.dm); }
+      else if (k < .9) { p.P(x + 1, y - 1, G.ll); p.P(x + 1, y, G.l); p.P(x, y + 1, G.dm); p.P(x + 1, y + 1, G.d); }
+      else { p.P(x, y, G.dm); p.P(x + 1, y + 1, G.d); p.P(x + 2, y, G.dm); } }
+    if (tone === 0 && variant === 3 && r() < .6) pebble(rr(3, 25), rr(4, 25));
+    if (tone === 0 && variant === 1 && r() < .5) clover(rr(3, 27), rr(3, 27));
   };
+  // Cave floor: packed rock with a darker and a lighter patch, hairline cracks lit on their lower lip, shaded pebbles,
+  // grit, and in one variant a small cluster of glowing crystals.
   const caveBase = () => {
     const C = PAL.cave; p.R(0, 0, 32, 32, C.m);
-    { const x = rr(-3, 26), y = rr(-2, 27), w = rr(6, 10), h = rr(3, 4); p.E(x + w / 2, y + h / 2, w / 2, h / 2, C.dm); }
-    for (let i = 0; i < 2; i++) { const x = rr(1, 28), y = rr(1, 28); p.R(x, y, 2, 1, C.l); p.P(x + 2, y + 1, C.dd); }
-    if (r() < .6) { const x = rr(0, 26), y = rr(0, 30); p.H(x, y, rr(3, 5), C.dd); }
+    patch(rr(9, 22), rr(8, 23), rr(5, 8), rr(3, 4), C.dm); if (r() < .6) patch(rr(8, 24), rr(8, 24), rr(3, 5), 2, mix(C.m, C.l, .5), 1.3);
+    for (let i = 0; i < 1 + (variant & 1); i++) { let x = rr(2, 22), y = rr(3, 27); const len = rr(5, 9); for (let k = 0; k < len && x < 31; k++) { p.P(x, y, C.dd); p.P(x, y + 1, C.l); x++; if (r() < .35) y += r() < .5 ? -1 : 1; } }
+    for (let i = 0; i < 3; i++) { const x = rr(1, 28), y = rr(1, 28); p.P(x, y, C.ll); p.P(x + 1, y, C.l); p.P(x, y + 1, C.l); p.P(x + 1, y + 1, C.dd); p.P(x + 2, y + 1, C.d); }
+    for (let i = 0; i < 6; i++) p.P(rr(0, 31), rr(0, 31), r() < .5 ? C.l : C.d);
+    if (variant === 3 && r() < .4) { const x = rr(4, 22), y = rr(4, 20); p.E(x + 3, y + 6, 4, 1, C.dd); p.S(x, y, ['...h..', '..hl..', '.hlld.', 'hllddh', '.lldd.', '..dd..'], { h: '#e8fbff', l: '#8ad4f4', d: '#3a78b4' }); }
   };
   // Tiled floor: a 2×2 checker of near-identical tones with a thin grout that sits close to the tile
   // colour, so the grid is a texture rather than a lattice competing with the range overlays and units.
+  // Tiled floor: four bevelled tiles in two near-identical tones (lit top-left edge, shaded bottom-right), a soft sheen
+  // across the lighter tiles, a scuff now and then; one variant has a vent grille, one a drain.
   const floorBase = () => {
-    const F = PAL.floor; const grout = mix(F.m, F.grout, .45); p.R(0, 0, 32, 32, grout);
+    const F = PAL.floor; const grout = mix(F.m, F.grout, .55); p.R(0, 0, 32, 32, grout);
     for (let y = 0; y < 32; y += 16) for (let x = 0; x < 32; x += 16) {
-      const alt = ((x + y) / 16) % 2; const base = alt ? F.m : mix(F.m, F.l, .4);
-      p.R(x + 1, y + 1, 15, 15, base); p.H(x + 1, y + 1, 15, mix(base, F.ll, .35)); p.V(x + 1, y + 1, 15, mix(base, F.ll, .2));
-      if (r() < .12) { p.P(x + rr(3, 12), y + rr(3, 12), F.d); }
+      const alt = ((x + y) / 16) % 2; const base = alt ? F.m : mix(F.m, F.l, .45);
+      p.R(x + 1, y + 1, 14, 14, base); p.H(x + 1, y + 1, 14, mix(base, F.ll, .5)); p.V(x + 1, y + 1, 14, mix(base, F.ll, .3)); p.H(x + 1, y + 14, 14, mix(base, F.d, .45)); p.V(x + 14, y + 1, 14, mix(base, F.d, .35));
+      if (!alt) for (let k = 0; k < 4; k++) { p.P(x + 9 + k, y + 3 + k, mix(base, F.ll, .45)); p.P(x + 10 + k, y + 3 + k, mix(base, F.ll, .25)); }
+      if (r() < .25) { const sx = x + rr(3, 10), sy = y + rr(4, 11); p.H(sx, sy, rr(2, 3), mix(base, F.d, .3)); }
     }
-    if (variant === 2) { p.R(4, 4, 8, 8, mix(F.plate, F.m, .4)); p.H(4, 4, 8, F.l); p.V(4, 4, 8, F.l); for (let j = 0; j < 3; j++) p.H(6, 6 + j * 2, 4, grout); }
+    if (variant === 2 && r() < .45) { const P = F.plate; p.R(3, 3, 10, 10, grout); p.R(4, 4, 8, 8, mix(P, F.m, .3)); p.H(4, 4, 8, F.ll); p.V(4, 4, 8, F.l); for (let j = 0; j < 3; j++) { p.H(6, 6 + j * 2, 4, '#3a3444'); p.H(6, 7 + j * 2, 4, F.l); } }
+    if (variant === 3 && r() < .3) { p.R(20, 20, 6, 6, '#3a3444'); for (let k = 0; k < 3; k++) p.H(21, 21 + k * 2, 4, F.d); p.H(20, 20, 6, grout); p.H(20, 26, 6, F.ll); }
   };
+  // Water: a faint lattice of deeper swells (periodic in 32 px so neighbours join), ripples that bob in place
+  // (a light crest over a darker trough) and a sparkle that moves from frame to frame.
   const waterBase = (f, W) => {
-    p.R(0, 0, 32, 32, W.m); const w = mulberry32(variant * 5 + 1);
-    for (let i = 0; i < 3; i++) { const x = Math.floor(w() * 30), y = Math.floor(w() * 30); p.E(x, y, 6 + Math.floor(w() * 4), 2, W.d); }
-    // wave crests: thin bright dashes drifting right, a soft lighter tail and a dark pixel tucked under the left end
-    for (let i = 0; i < 3; i++) { const bx = Math.floor(w() * 28), by = 2 + Math.floor(w() * 27); const len = 3 + Math.floor(w() * 3); const x = (bx + f * 2 + i * 7) % 30, y = by; p.H(x, y, len, W.ll); p.P(x + len, y + 1, W.l); p.P(x + len + 1, y + 1, W.l); p.P(x - 1, y + 1, W.dd); }
-    for (let i = 0; i < 3; i++) { const x = Math.floor(w() * 30), y = Math.floor(w() * 30); p.H((x + f) % 30, y, 2, W.l); }
+    p.R(0, 0, 32, 32, W.m); const w = mulberry32(variant * 5 + 1), ph = f * Math.PI / 2;
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) { const v = Math.sin(y * Math.PI / 8 + Math.sin(x * Math.PI / 16) * 1.3 + ph * .5); if (v > .82 && dith(x, y) < (v - .82) * 2.2) p.P(x, y, W.d); }
+    const bob = [0, 1, 2, 1][f];
+    for (let i = 0; i < 4; i++) { const len = 3 + Math.floor(w() * 3), x = 2 + Math.floor(w() * (26 - len)) + (i & 1 ? -bob : bob), y = 2 + i * 8 + Math.floor(w() * 3); p.H(x, y + 1, len, W.d); p.H(x + 1, y, len - 1, W.ll); p.P(x, y, W.l); p.P(x + len, y + 1, W.l); if ((f + i) % 4 === 0) p.P(x + 1, y, W.foam); }
+    const sx = Math.floor(w() * 28) + 2, sy = Math.floor(w() * 28) + 2; if (f === 1 || f === 2) { p.P(sx + f, sy, W.foam); if (f === 2) { p.P(sx + f - 1, sy, W.ll); p.P(sx + f + 1, sy, W.ll); p.P(sx + f, sy - 1, W.ll); p.P(sx + f, sy + 1, W.ll); } }
   };
-  // Round tree: overlapping lobes, five tones, leaf-clump highlights, dark outline, trunk with ground shadow.
-  const tree = (cx, cy, rad) => {
-    const T = PAL.tree, K = PAL.trunk; const base = cy + rad + 3;
-    p.E(cx, base, rad + 1, 3, G.dd);
-    p.R(cx - 2, base - 4, 4, 5, K.d); p.R(cx - 1, base - 5, 2, 5, K.m); p.P(cx - 1, base - 4, K.l);
-    const lobes = [[cx, cy - 1, rad], [cx - 3, cy + 2, rad - 2], [cx + 3, cy + 2, rad - 2], [cx, cy + 3, rad - 3]];
-    for (const [x, y, rd] of lobes) p.C(x, y, rd + 1, T.out);
-    for (const [x, y, rd] of lobes) p.C(x, y, rd, T.d);
-    for (const [x, y, rd] of lobes) p.C(x - 1, y - 1, Math.max(1, rd - 2), T.m);
-    p.C(cx - 2, cy - 3, Math.max(1, rad - 4), T.l);
-    p.R(cx - 3, cy - rad + 2, 3, 2, T.ll); p.R(cx - 5, cy - rad + 4, 2, 1, T.ll); p.R(cx + 1, cy - rad + 3, 2, 1, T.ll); p.P(cx - 6, cy - 1, T.ll);
-    // clump texture: little dark "leaf lines" on the shadow side
-    p.R(cx + 2, cy + 2, 3, 1, T.dd); p.R(cx + 4, cy - 1, 2, 1, T.dd); p.R(cx - 1, cy + rad - 2, 3, 1, T.dd); p.R(cx - 4, cy + 3, 2, 1, T.dd);
-    p.R(cx - rad + 1, cy + 1, 1, 2, T.m);
+  // Foliage texture over a shaded canopy: bright leaf arcs on the lit side, dark notches on the shadow side.
+  const leaves = (at, lobes) => { const L = RAMP.leaf; for (const b of lobes) { const n = Math.max(2, Math.round(b.rx * .7));
+    for (let i = 0; i < n; i++) { const a = -2.5 + r() * 1.6, d = .35 + r() * .45, x = Math.round(b.x + Math.cos(a) * b.rx * d), y = Math.round(b.y + Math.sin(a) * b.ry * d); if (at(x, y) >= 0 && at(x + 3, y + 1) >= 0) { p.P(x, y + 1, L[5]); p.H(x + 1, y, 2, L[6]); p.P(x + 3, y + 1, L[5]); } }
+    for (let i = 0; i < n; i++) { const a = .2 + r() * 1.5, d = .3 + r() * .5, x = Math.round(b.x + Math.cos(a) * b.rx * d), y = Math.round(b.y + Math.sin(a) * b.ry * d); if (at(x, y) >= 0 && at(x + 2, y + 1) >= 0) { p.P(x, y, L[1]); p.H(x + 1, y + 1, 2, L[1]); } } } };
+  // Round tree: shaded canopy lobes with a dark outline and foliage texture, a trunk with a lit side, a soft shadow cast south-east.
+  const tree = (cx, cy, rad, fruit = false) => {
+    const K = PAL.trunk; const base = cy + Math.round(rad * .8);
+    groundShadow(p, cx + 2, base + 3, rad, 3, G.d);
+    p.R(cx - 3, base - 2, 6, 6, '#2e1c10'); p.R(cx - 2, base - 2, 4, 5, K.m); p.V(cx - 2, base - 2, 5, K.l); p.V(cx + 1, base - 2, 5, K.d); p.P(cx - 3, base + 3, '#2e1c10'); p.P(cx + 3, base + 3, '#2e1c10');
+    const lobes = [{ x: cx, y: cy - rad * .22, rx: rad * .8, ry: rad * .72 }, { x: cx - rad * .46, y: cy + rad * .16, rx: rad * .6, ry: rad * .54 }, { x: cx + rad * .47, y: cy + rad * .14, rx: rad * .58, ry: rad * .52 }, { x: cx + rad * .02, y: cy + rad * .4, rx: rad * .7, ry: rad * .46 }];
+    const at = shadeBlobs(p, lobes, RAMP.leaf, RAMP.leafOut, { bias: -.22, gain: 1.15 }); leaves(at, lobes);
+    if (fruit) for (const [fx, fy] of [[-.55, .05], [.15, -.45], [.5, .35], [-.1, .5]]) { const x = Math.round(cx + fx * rad), y = Math.round(cy + fy * rad); if (at(x, y) >= 0 && at(x + 1, y + 2) >= 0) { p.P(x, y, '#ff8a70'); p.P(x + 1, y, '#e04848'); p.P(x, y + 1, '#e04848'); p.P(x + 1, y + 1, '#a82c3c'); p.P(x + 1, y - 1, '#5a3a1a'); } }
   };
-  const bush = (cx, cy, rad) => { const T = PAL.tree; p.E(cx, cy + rad, rad + 1, 2, G.dd); p.C(cx, cy, rad + 1, T.out); p.C(cx, cy, rad, T.d); p.C(cx - 1, cy - 1, rad - 1, T.m); p.C(cx - 1, cy - 2, Math.max(1, rad - 3), T.l); p.P(cx - 2, cy - rad + 1, T.ll); p.R(cx + 1, cy + 1, 2, 1, T.dd); };
-  // Buildings share a body: outlined walls with a baseline shadow, and a two-tone tiled roof.
-  const building = (o) => {
-    const { roof, roofD, roofL, wall, wallD, x0 = 3, w = 26, wallTop = 13, wallH = 14, ridge = 4 } = o; const y1 = wallTop + wallH;
-    p.E(16, y1 + 1, w / 2 + 2, 2, G.dd);
-    p.R(x0 - 1, wallTop - 1, w + 2, wallH + 2, PAL.out); p.R(x0, wallTop, w, wallH, wall); p.H(x0, y1 - 1, w, wallD); p.V(x0 + w - 1, wallTop, wallH, wallD);
-    // roof: overhang 2px, lit left slope, darker right slope, tile rows
-    const rw = w + 4, rx = x0 - 2; const rh = wallTop - ridge;
-    for (let j = 0; j < rh; j++) { const ww = Math.round(rw * (j + 1) / rh); const xs = rx + Math.round((rw - ww) / 2); p.H(xs, ridge + j, ww, roof); p.H(xs, ridge + j, Math.max(1, Math.round(ww * .55)), roofL); if (j % 3 === 2) { p.H(xs, ridge + j, ww, roofD); } p.P(xs, ridge + j, PAL.out); p.P(xs + ww - 1, ridge + j, PAL.out); }
-    p.H(rx, wallTop - 1, rw, PAL.out); p.H(rx, wallTop, rw, roofD); p.H(rx + Math.round(rw / 2) - 1, ridge - 1, 3, PAL.out); p.P(rx + Math.round(rw / 2), ridge - 1, roofL);
+  const bush = (cx, cy, rad) => { groundShadow(p, cx + 1, cy + rad, rad + 1, 2, G.d); const lobes = [{ x: cx - rad * .3, y: cy, rx: rad * .8, ry: rad * .75 }, { x: cx + rad * .35, y: cy + rad * .1, rx: rad * .72, ry: rad * .68 }]; const at = shadeBlobs(p, lobes, RAMP.leaf.slice(1), RAMP.leafOut, { bias: -.15, gain: 1.1 }); if (rad > 3) leaves(at, lobes); };
+  // Pine: stacked needle tiers, lit on the left, with a jagged hem, a dark outline and a short trunk.
+  const pine = (cx, by, h) => {
+    const K = PAL.trunk, P = RAMP.pine; groundShadow(p, cx + 2, by + 1, Math.round(h * .32), 2, G.d);
+    p.R(cx - 2, by - 4, 4, 5, '#2e1c10'); p.R(cx - 1, by - 4, 2, 4, K.m);
+    const tiers = [[by - 3, Math.round(h * .5), Math.round(h * .62)], [by - 3 - Math.round(h * .3), Math.round(h * .42), Math.round(h * .5)], [by - 3 - Math.round(h * .56), Math.round(h * .36), Math.round(h * .36)]];
+    const cells = new Map(); const put = (x, y, c) => cells.set(x + ',' + y, c);
+    for (const [bot, th, w] of tiers) for (let j = 0; j < th; j++) { const y = bot - th + 1 + j, hw = Math.max(0, Math.round((w / 2) * (j + 1) / th)); for (let x = cx - hw; x <= cx + hw; x++) { const rel = (x - cx) / Math.max(1, hw); let v = .78 - rel * .32 - (j / th) * .28; if (j === th - 1 && (x & 1)) v -= .18; put(x, y, rampAt(P, v, x, y)); } if (j === th - 1) for (let x = cx - hw; x <= cx + hw; x += 2) put(x, y + 1, P[1]); }
+    for (const [k, c] of cells) { const [x, y] = k.split(',').map(Number); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!cells.has((x + dx) + ',' + (y + dy))) p.P(x + dx, y + dy, RAMP.leafOut); }
+    for (const [k, c] of cells) { const [x, y] = k.split(',').map(Number); p.P(x, y, c); }
+    p.P(cx, tiers[2][0] - tiers[2][1], P[5]);
   };
-  const win = (x, y, lit) => { p.R(x - 1, y - 1, 6, 6, PAL.out); p.R(x, y, 4, 4, lit ? '#ffe28a' : '#8fd0ff'); p.P(x, y, '#ffffff'); p.H(x, y + 2, 4, PAL.out); p.V(x + 2, y, 4, PAL.out); };
-  const door = (x, y, w, h, col) => { p.R(x - 1, y - 1, w + 2, h + 1, PAL.out); p.R(x, y, w, h, col); p.H(x, y, w, shade(col, .25)); p.P(x + w - 2, y + Math.floor(h / 2), '#ffd24a'); };
+  // ---- buildings, in the board's three-quarter view: a hip roof of shingle rows over walls shaded under the eaves,
+  // an outline in a warm dark, a shadow cast east and south onto the grass.
+  const BOUT = '#23150f';
+  const castShadow = (x0, y0, w, h, dens = .7) => { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) if (x >= 0 && y >= 0 && x < 32 && y < 32 && dith(x, y) < dens) p.P(x, y, G.d); };
+  const roof = (x0, w, top, eave, R, hip = 4) => {
+    for (let y = top; y <= eave; y++) { const t = (y - top) / Math.max(1, eave - top), inset = Math.round((1 - t) * hip), xs = x0 - 2 + inset, xe = x0 + w + 1 - inset, band = (y - top) % 3, row = Math.floor((y - top) / 3);
+      for (let x = xs; x <= xe; x++) { let c = band === 0 ? R[4] : band === 1 ? R[3] : R[2]; if (band === 1 && (x + row * 2) % 4 === 0) c = R[2]; if (x <= xs + 1 && band !== 2) c = R[5]; if (x >= xe - 1) c = band === 0 ? R[3] : R[1]; p.P(x, y, c); }
+      p.P(xs - 1, y, R[0]); p.P(xe + 1, y, R[0]); }
+    p.H(x0 - 2 + hip, top - 1, w + 4 - 2 * hip, R[0]); p.H(x0 - 1 + hip, top, w + 2 - 2 * hip, R[5]);
+    p.H(x0 - 3, eave + 1, w + 6, R[0]); p.H(x0 - 2, eave, w + 4, R[1]); p.P(x0 - 2, eave, R[0]); p.P(x0 + w + 1, eave, R[0]);
+  };
+  // W: [line, dark, mid, light]; planks = horizontal siding lines every 3 px
+  const walls = (x0, w, y0, y1, W, planks = true) => {
+    p.R(x0 - 1, y0, w + 2, y1 - y0 + 1, BOUT); p.R(x0, y0, w, y1 - y0, W[2]);
+    if (planks) for (let y = y0 + 3; y < y1 - 1; y += 3) p.H(x0, y, w, W[0]);
+    p.V(x0, y0, y1 - y0, W[3]); p.V(x0 + w - 1, y0, y1 - y0, W[1]); p.H(x0, y0, w, W[1]); p.H(x0, y0 + 1, w, mix(W[2], W[1], .5));
+    p.H(x0, y1 - 2, w, '#8a8290'); p.H(x0, y1 - 1, w, '#5e5866'); p.H(x0, y1 - 2, 1, '#aaa2ae');
+  };
+  const win = (x, y, lit, box) => { // 6×6 framed window with a cross, a sky reflection and an optional flower box
+    p.R(x - 1, y - 1, 8, 8, BOUT); p.R(x, y, 6, 6, '#f4ecd8'); p.R(x + 1, y + 1, 4, 4, lit ? '#ffe28a' : '#7cc0f0'); p.P(x + 1, y + 1, '#ffffff'); p.P(x + 2, y + 1, lit ? '#fff4c0' : '#c8ecff'); p.R(x + 3, y + 3, 2, 2, lit ? '#f0b040' : '#4a8ed0'); p.V(x + 3, y + 1, 4, '#d8ccb0'); p.H(x + 1, y + 3, 4, '#d8ccb0');
+    if (box) { p.R(x - 1, y + 6, 8, 3, BOUT); p.R(x, y + 7, 6, 1, '#8a5a30'); p.P(x, y + 6, '#e04848'); p.P(x + 2, y + 6, '#ffd24a'); p.P(x + 4, y + 6, '#ff8ac0'); p.P(x + 1, y + 6, G.l); p.P(x + 3, y + 6, G.l); p.P(x + 5, y + 6, G.l); }
+  };
+  const door = (x, y, w, h, col, step = true) => { // panelled door in a frame, a brass knob, a stone step
+    p.R(x - 1, y - 1, w + 2, h + 1, BOUT); p.R(x, y, w, h, col); p.V(x, y, h, shade(col, .22)); p.H(x, y, w, shade(col, .3)); p.V(x + w - 1, y, h, shade(col, -.3));
+    p.R(x + 1, y + 2, w - 3, 2, shade(col, -.18)); if (h > 6) p.R(x + 1, y + 5, w - 3, 2, shade(col, -.18)); p.P(x + w - 2, y + Math.floor(h / 2) + 1, '#ffd24a');
+    if (step) { p.R(x - 2, y + h, w + 4, 2, '#b8b0a4'); p.H(x - 2, y + h, w + 4, '#dcd4c8'); p.H(x - 2, y + h + 2, w + 4, '#5e5866'); }
+  };
+  const glassDoor = (x, y, w, h) => { p.R(x - 1, y - 1, w + 2, h + 1, BOUT); p.R(x, y, w, h, '#5a8ec8'); p.R(x + 1, y + 1, w - 2, h - 1, '#8ccaf4'); p.V(x + (w >> 1), y, h, '#3a5a80'); for (let i = 0; i < 3; i++) p.P(x + 2 + i, y + 2 + i, '#e8f8ff'); p.P(x + (w >> 1) + 2, y + 2, '#e8f8ff'); p.R(x - 2, y + h, w + 4, 2, '#d84040'); p.H(x - 2, y + h, w + 4, '#ff7a6a'); p.H(x - 2, y + h + 2, w + 4, '#5e5866'); };
+  const flag = (x, y, col) => { p.V(x, y, 9, '#e8e0d0'); p.V(x + 1, y + 1, 8, '#8a8290'); p.P(x, y - 1, '#ffd24a'); p.R(x + 1, y, 6, 4, col); p.H(x + 1, y, 6, shade(col, .35)); p.H(x + 1, y + 3, 6, shade(col, -.35)); p.P(x + 7, y + 1, col); p.P(x + 7, y + 2, shade(col, -.2)); };
+  const chimney = (x, y) => { p.R(x - 1, y - 1, 6, 8, BOUT); p.R(x, y, 4, 7, '#a0584a'); p.V(x, y, 7, '#c07262'); p.V(x + 3, y, 7, '#6a3a30'); p.H(x, y + 3, 4, '#6a3a30'); p.R(x - 1, y - 2, 6, 2, '#5e5866'); p.H(x - 1, y - 2, 6, '#8a8290'); };
   const boulder = (x, y, w, h) => { const R = PAL.rock; p.E(x + w / 2, y + h / 2 + 1, w / 2 + 1, h / 2 + 1, R.out); p.E(x + w / 2, y + h / 2, w / 2, h / 2, R.m); p.E(x + w / 2 - 1, y + h / 2 - 1, Math.max(1, w / 2 - 1), Math.max(1, h / 2 - 1), R.l); p.P(x + 1, y + 1, R.ll); p.H(x + 2, y + h - 1, w - 3, R.d); p.P(x + w - 2, y + h - 2, R.dd); };
-  const crate = (x, y, s) => { const K = PAL.plank; p.R(x + 1, y + 1, s, s, PAL.outW); p.R(x, y, s, s, K.m); p.H(x, y, s, K.ll); p.V(x, y, s, K.l); p.H(x, y + s - 1, s, K.d); p.V(x + s - 1, y, s, K.d); p.H(x + 1, y + Math.floor(s / 2), s - 2, K.d); p.V(x + Math.floor(s / 2), y + 1, s - 2, K.d); p.H(x + 1, y + Math.floor(s / 2) + 1, s - 2, K.l); for (const [nx, ny] of [[1, 1], [s - 3, 1], [1, s - 3], [s - 3, s - 3]]) { p.R(x + nx, y + ny, 2, 2, PAL.metal.m); p.P(x + nx, y + ny, PAL.metal.ll); } };
+  // Crate in three-quarter view: a lit top face, a front of planks with a cross brace, iron corners, a shadow to the east.
+  const crate = (x, y, s) => { const K = PAL.plank, top = Math.max(3, Math.round(s * .3)); for (let j = 2; j < s + 2; j++) for (let i = s; i < s + 3; i++) if (dith(x + i, y + j) < .6) p.P(x + i, y + j, mix(PAL.floor.m, PAL.floor.grout, .8));
+    p.R(x - 1, y - 1, s + 2, s + 2, PAL.outW); p.R(x, y, s, top, K.l); p.H(x, y, s, K.ll); p.H(x, y + top - 1, s, K.m);
+    p.R(x, y + top, s, s - top, K.m); for (let k = y + top + 2; k < y + s - 1; k += 3) p.H(x, k, s, mix(K.m, K.d, .5)); p.V(x, y + top, s - top, K.l); p.V(x + s - 1, y + top, s - top, K.d); p.H(x, y + s - 1, s, K.d);
+    const fh = s - top - 2; for (let k = 0; k < fh; k++) { const t = k / Math.max(1, fh - 1); p.P(x + 1 + Math.round(t * (s - 3)), y + top + 1 + k, K.d); p.P(x + s - 2 - Math.round(t * (s - 3)), y + top + 1 + k, K.d); }
+    for (const [nx, ny] of [[0, top], [s - 2, top], [0, s - 2], [s - 2, s - 2]]) { p.R(x + nx, y + ny, 2, 2, PAL.metal.m); p.P(x + nx, y + ny, PAL.metal.ll); } };
   const grassEdgeNoise = () => { for (let i = 0; i < 3; i++) p.S(rr(0, 28), rr(0, 29), ST.tuftD, { D: PAL.tall.dd }); };
 
   switch (ch) {
     case '.': grassBase(); break;
-    case ',': grassBase(); for (let i = 0; i < 2 + (variant & 1); i++) { const x = rr(1, 27), y = rr(1, 25); const c = vpick(['#ffffff', '#ffb8d8', '#fff08a', '#ff9a9a', '#c8b0ff']); p.S(x, y, ST.flower, { P: c, Y: '#ffd24a', S: G.dd }); p.P(x - 1, y + 3, G.dd); } break;
+    case ',': { grassBase(1); const fam = [['#f05a5a', '#ffb0a0', '#a82c3c'], ['#ffffff', '#ffffff', '#b8c4dc'], ['#ffd83a', '#fff0a0', '#c88a1a'], ['#ff8ac0', '#ffd0e4', '#b04a80']][variant];
+      // a small cluster: four-petal flowers with a warm centre, a shaded lower petal and a leaf, never cut by the tile edge
+      const spots = [[6, 6], [19, 5], [25, 15], [11, 17], [22, 25], [6, 25]]; for (let i = 0; i < spots.length; i++) { if (r() < .4) continue; const x = spots[i][0] + rr(-2, 2), y = spots[i][1] + rr(-2, 2);
+        const bloom = (x, y) => { p.P(x - 1, y + 3, G.l); p.P(x + 2, y + 3, G.l); p.H(x, y + 3, 2, G.d); p.P(x + 1, y + 4, G.dd); p.S(x - 2, y - 2, ['..H..', '.HHP.', 'HHYPP', '.PPD.', '..D..'], { H: fam[1], P: fam[0], D: fam[2], Y: '#ffd24a' }); };
+        bloom(x, y); if (r() < .45) bloom(x + 4 + rr(0, 1), y + 3 + rr(0, 1)); }
+      break; }
     case 't': { const T = PAL.tall; p.R(0, 0, 32, 32, T.m); for (let i = 0; i < 2; i++) { const x = rr(-4, 26), y = rr(-2, 26); p.E(x + 6, y + 3, 6, 3, T.d); }
       for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) { const x = i * 8 + (j & 1) * 4 + rr(-1, 1), y = j * 8 + rr(0, 1);
         // a tuft: three blades, dark roots, a slightly lighter tip. Dense enough to read as tall grass
         // (an evasion tile), light on contrast so a big field stays calm behind the units.
         p.S(x, y, ['..H..', 'L.L.L', '.LDL.', '.D.D.'], { H: T.l, L: mix(T.m, T.l, .55), D: mix(T.m, T.dd, .7) }); } break; }
-    case 'T': grassBase(1); if (variant === 0) { tree(15, 12, 10); bush(27, 26, 4); } else if (variant === 1) { tree(10, 11, 9); tree(23, 18, 8); } else if (variant === 2) { tree(17, 13, 11); } else { tree(20, 11, 9); bush(7, 24, 5); bush(28, 27, 3); } break;
-    case 'M': grassBase(1); { const R = PAL.rock, S = PAL.snow; const w = 30 - (variant & 1) * 2, h = 26 - (variant >> 1) * 2, x0 = 1 + (variant & 1), y0 = 4 + (variant >> 1) * 2; p.E(16, 30, 15, 3, G.dd);
-      for (let j = 0; j < h; j++) { const ww = Math.round(w * (j + 1) / h); const xs = x0 + Math.round((w - ww) / 2); p.H(xs - 1, y0 + j, ww + 2, R.out); const lit = Math.max(1, Math.round(ww * .42)), dk = Math.max(1, Math.round(ww * .3)); p.H(xs, y0 + j, ww, R.m); p.H(xs, y0 + j, lit, R.l); p.H(xs + ww - dk, y0 + j, dk, R.d); if (j > h - 4) p.H(xs, y0 + j, ww, R.d); }
-      // ridge line and crevices
-      for (let j = 3; j < h - 2; j++) p.P(x0 + 15 + Math.floor(j / 6), y0 + j, R.dd); p.R(8, 16, 3, 1, R.dd); p.R(7, 17, 2, 1, R.dd); p.R(21, 19, 3, 1, R.dd); p.R(23, 20, 2, 1, R.dd); p.R(12, 22, 2, 1, R.dd); p.P(6, 21, R.ll); p.P(10, 13, R.ll); p.P(19, 24, R.ll);
-      // snow cap with a jagged hem
-      p.TRI(x0 + Math.round((w - 9) / 2), y0, 9, 6, S.m); p.TRI(x0 + Math.round((w - 5) / 2), y0, 5, 4, S.l); p.R(13, y0 + 6, 3, 1, S.m); p.P(19, y0 + 6, S.m); p.P(12, y0 + 7, S.d); p.R(17, y0 + 7, 2, 1, S.d); p.P(15, y0 + 8, S.d);
-      boulder(2, 25, 6, 4); boulder(25, 24, 5, 4); } break;
-    case '^': { const C = PAL.cliff; p.R(0, 0, 32, 32, C.m); for (let i = 0; i < 5; i++) { const x = rr(-2, 22), y = rr(-2, 22), w = rr(8, 13), h = rr(6, 10); p.R(x, y, w, h, C.l); p.H(x, y, w, C.ll); p.V(x, y, h, C.ll); p.H(x, y + h - 1, w, C.d); p.V(x + w - 1, y, h, C.d); p.P(x + w - 1, y + h - 1, C.dd); } for (let i = 0; i < 5; i++) { const x = rr(0, 26), y = rr(0, 31); p.H(x, y, rr(2, 5), C.dd); } break; }
+    case 'T': grassBase(1); if (variant === 0) { tree(15, 12, 12); bush(27, 27, 4); } else if (variant === 1) { tree(10, 10, 10); tree(23, 17, 10); } else if (variant === 2) { tree(16, 13, 13, r() < .45); } else { pine(20, 29, 28); bush(7, 25, 5); } break;
+    // Mountain: a shaded peak (lit west face, shadowed east face split by the ridge), crevices, a snow cap with a
+    // jagged hem, an outline, boulders and tufts at the foot; odd variants have a smaller peak behind.
+    case 'M': grassBase(1); { const R = RAMP.rock, SN = RAMP.snow;
+      const peak = (px, py, bw, by) => {
+        const cells = new Map(), snowAt = x => 5 + ((x * 7 + px) % 3) + (x % 4 === 0 ? 1 : 0);
+        for (let y = py; y <= by; y++) { const t = (y - py) / Math.max(1, by - py), hw = Math.max(0, Math.round(bw / 2 * Math.pow(t, .8) + (t > .3 ? Math.sin(t * 8 + px) * .9 : 0))), ridge = px + Math.round((y - py) * .2);
+          for (let x = px - hw; x <= px + hw; x++) { const lit = x <= ridge, d = lit ? (ridge - x) / Math.max(1, hw) : (x - ridge) / Math.max(1, hw); let v = lit ? .8 - t * .32 - d * .12 : .4 - t * .2 - d * .1;
+            if (y < py + snowAt(x)) { cells.set(x + ',' + y, lit ? (d > .6 && y > py + 3 ? SN[3] : SN[4]) : (d > .5 ? SN[1] : SN[2])); continue; }
+            if (y === py + snowAt(x)) v -= .12; cells.set(x + ',' + y, rampAt(R, v, x, y)); } }
+        for (const k of cells.keys()) { const [x, y] = k.split(',').map(Number); for (const [dx, dy] of [[1, 0], [-1, 0], [0, -1]]) if (!cells.has((x + dx) + ',' + (y + dy))) p.P(x + dx, y + dy, RAMP.rockOut); }
+        for (const [k, c] of cells) { const [x, y] = k.split(',').map(Number); p.P(x, y, c); }
+        // crevices running down each face
+        for (let i = 0; i < 3; i++) { const sy = py + 9 + i * 5, sx = px + Math.round((sy - py) * .2); for (let j = 0; j < 4; j++) { const x = sx - 2 - j - i, y = sy + j; if (cells.has(x + ',' + y)) { p.P(x, y, R[2]); if (cells.has(x + ',' + (y - 1))) p.P(x, y - 1, R[5]); } const x2 = sx + 3 + j, y2 = sy + 1 + j; if (cells.has(x2 + ',' + y2)) p.P(x2, y2, R[0]); } }
+      };
+      groundShadow(p, 18, 29, 14, 2, G.d);
+      if (variant & 1) peak(variant === 1 ? 8 : 24, 9, 16, 28);
+      peak(variant === 3 ? 13 : 17, 2 + (variant >> 1), 28, 29);
+      const rock = (x, y, w, h) => shadeBlobs(p, [{ x: x + w / 2, y: y + h / 2, rx: w / 2, ry: h / 2 }], R, RAMP.rockOut, { bias: -.05 });
+      rock(1, 25, 6, 4); rock(25, 24, 6, 5); p.S(8, 27, ['L.L', '.D.'], { L: G.l, D: G.d }); p.S(21, 28, ['L.L', '.D.'], { L: G.l, D: G.d }); } break;
+    // Cliff top: stone slabs with a lit bevel and a shaded lip, dark cracks between them, moss and pebbles in the joints.
+    case '^': { const C = PAL.cliff; p.R(0, 0, 32, 32, C.d); for (let i = 0; i < 6; i++) { const x = rr(-3, 22), y = rr(-3, 22), w = rr(8, 13), h = rr(6, 10); p.R(x, y, w, h, C.dd); p.R(x, y, w - 1, h - 1, i % 2 ? C.m : C.l); p.H(x, y, w - 1, C.ll); p.V(x, y, h - 1, mix(C.l, C.ll, .5)); p.H(x + 1, y + h - 2, w - 2, C.d); p.V(x + w - 2, y + 1, h - 2, C.d); if (r() < .5) { p.P(x + 2 + rr(0, w - 5), y + 2 + rr(0, h - 5), C.d); } }
+      for (let i = 0; i < 3; i++) { const x = rr(0, 26), y = rr(0, 30); p.H(x, y, rr(2, 5), '#2c262e'); }
+      for (let i = 0; i < 1 + (variant & 1); i++) { const x = rr(2, 26), y = rr(2, 28); p.H(x, y, 4, PAL.grass.d); p.H(x + 1, y - 1, 2, PAL.grass.l); p.P(x + 4, y, PAL.grass.dd); } break; }
     case '~': waterBase(frame, PAL.water); break;
     case 'w': waterBase(frame, PAL.cwater); break;
-    case '=': { waterBase(frame, PAL.water); const K = PAL.plank; p.R(0, 4, 32, 24, K.m); for (let x = 0; x < 32; x += 5) { p.V(x, 4, 24, K.d); p.V(x + 1, 4, 24, K.l); } p.H(0, 4, 32, K.ll); p.H(0, 27, 32, K.d); p.H(0, 28, 32, PAL.outW); p.H(0, 3, 32, PAL.outW);
-      // railings: rail bar + posts
-      p.H(0, 1, 32, K.l); p.H(0, 2, 32, K.d); p.H(0, 29, 32, K.l); p.H(0, 30, 32, K.d); for (let x = 3; x < 32; x += 8) { p.R(x, 0, 2, 5, K.ll); p.V(x + 1, 0, 5, K.d); p.R(x, 27, 2, 5, K.ll); p.V(x + 1, 27, 5, K.d); } break; }
-    case '#': { const R = PAL.road; p.R(0, 0, 32, 32, R.m); for (let i = 0; i < 2; i++) { const x = rr(-4, 26), y = rr(-2, 26); p.E(x + 6, y + 3, rr(4, 7), rr(2, 3), R.l); } for (let i = 0; i < 3; i++) { const x = rr(0, 29), y = rr(0, 30); p.H(x, y, rr(2, 3), mix(R.m, R.d, .7)); p.P(x + 1, y + 1, R.ll); } if (variant & 1) { const x = rr(1, 28), y = rr(1, 28); p.R(x, y, 2, 1, R.ll); p.P(x, y + 1, R.d); } break; }
-    case 's': { const S = PAL.sand; p.R(0, 0, 32, 32, S.m); for (let i = 0; i < 2; i++) { const x = rr(-4, 26), y = rr(-2, 26); p.E(x + 6, y + 3, rr(5, 8), 2, S.l); } for (let i = 0; i < 2; i++) { const x = rr(0, 22), y = rr(2, 30); for (let k = 0; k < rr(4, 8); k++) p.P(x + k, y + (k > 2 ? 1 : 0), mix(S.m, S.d, .7)); } if (variant & 1) p.P(rr(0, 31), rr(0, 31), S.ll); break; }
-    case 'C': grassBase(1); building({ roof: RF[0], roofD: RF[1], roofL: RF[2], wall: '#f6f1e6', wallD: '#c8bfae', wallTop: 13, wallH: 14, ridge: 5 });
-      if (RF[3]) { p.V(25, 0, 8, '#e8e0d0'); p.P(25, 0, '#ffffff'); p.R(26, 1, 5, 4, RF[3]); p.H(26, 4, 4, shade(RF[3], -.35)); } else p.S(14, 0, ST.pokeEmblem, { O: PAL.out, R: '#ff5a5a', W: '#ffffff' });
-      p.R(11, 15, 10, 5, '#ffffff'); p.R(10, 14, 12, 7, PAL.out); p.R(11, 15, 10, 5, '#fff4d0'); p.R(13, 16, 2, 3, '#e04848'); p.P(15, 16, '#e04848'); p.P(15, 17, '#e04848'); p.R(17, 16, 3, 1, '#e04848'); p.P(17, 17, '#e04848'); p.P(17, 18, '#e04848');
-      door(13, 22, 6, 5, '#8fd0ff'); p.V(16, 22, 5, PAL.out); win(6, 17, false); win(23, 17, false); break;
-    case 'Q': grassBase(1); building({ roof: RF[0], roofD: RF[1], roofL: RF[2], wall: '#ece6d6', wallD: '#bdb3a0', x0: 2, w: 28, wallTop: 12, wallH: 15, ridge: 4 });
-      p.R(5, 14, 4, 5, PAL.out); p.R(6, 15, 2, 3, '#8fd0ff'); p.R(23, 14, 4, 5, PAL.out); p.R(24, 15, 2, 3, '#8fd0ff'); p.R(11, 14, 10, 4, PAL.out); p.R(12, 15, 8, 2, RF[0]); p.R(12, 15, 8, 1, RF[2]);
-      door(13, 21, 6, 6, '#6a4a30'); p.V(16, 21, 6, PAL.out); p.R(4, 26, 24, 1, '#bdb3a0');
-      p.V(16, 0, 5, '#e8e0d0'); p.P(16, 0, '#ffffff'); if (RF[3]) { p.R(17, 1, 7, 4, RF[3]); p.H(17, 4, 6, shade(RF[3], -.35)); p.P(23, 2, shade(RF[3], -.35)); } else { p.R(17, 1, 7, 4, '#d8d8e0'); p.H(17, 4, 6, '#a0a0ac'); }
-      break;
+    // Bridge: planks with a lit edge, grain and nails over the water, a shadow on the water below, railings on posts.
+    case '=': { waterBase(frame, PAL.water); const K = PAL.plank; p.H(0, 29, 32, PAL.water.dd); p.H(0, 30, 32, PAL.water.d);
+      p.R(0, 4, 32, 24, '#3a2414');
+      for (let x = 0; x < 32; x += 4) { const g = mulberry32(x * 13 + variant); p.R(x, 5, 3, 22, K.m); p.V(x, 5, 22, K.l); p.V(x + 2, 5, 22, K.d); p.P(x + 1, 6, K.ll); if (g() < .5) { const y = 9 + Math.floor(g() * 14); p.P(x + 1, y, K.d); p.P(x + 1, y + 1, mix(K.m, K.d, .5)); } p.P(x + 1, 7, K.nail); p.P(x + 1, 24, K.nail); }
+      p.H(0, 4, 32, K.ll); p.H(0, 27, 32, K.d); p.H(0, 28, 32, PAL.outW); p.H(0, 3, 32, PAL.outW);
+      for (const ry of [0, 26]) { p.H(0, ry + 1, 32, K.ll); p.H(0, ry + 2, 32, K.m); p.H(0, ry + 3, 32, K.d); for (let x = 3; x < 32; x += 8) { p.R(x - 1, ry, 4, 6, PAL.outW); p.R(x, ry, 2, 5, K.l); p.P(x, ry, K.ll); p.V(x + 1, ry + 1, 4, K.d); } } break; }
+    // Dirt road: packed earth with lighter worn patches, darker grit and a few shaded stones.
+    case '#': { const R = PAL.road; p.R(0, 0, 32, 32, R.m); patch(rr(8, 23), rr(7, 24), rr(5, 8), rr(2, 3), R.l, 1.5); if (r() < .6) patch(rr(7, 24), rr(7, 24), rr(3, 5), 2, mix(R.m, R.d, .35), 1.3);
+      for (let i = 0; i < 7; i++) { const x = rr(1, 30), y = rr(1, 30); p.P(x, y, r() < .5 ? mix(R.m, R.d, .6) : R.ll); }
+      const stone = (x, y) => { p.H(x, y + 2, 3, mix(R.m, R.d, .55)); p.P(x, y, R.ll); p.P(x + 1, y, '#fff4d0'); p.P(x, y + 1, R.l); p.P(x + 1, y + 1, R.d); p.P(x + 2, y + 1, mix(R.d, '#5c4224', .5)); };
+      for (let i = 0; i < 1 + (variant & 1) + (variant >> 1); i++) stone(rr(2, 27), rr(2, 26)); break; }
+    // Sand: wind ripples (a lit crest over a shaded trough), grains, now and then a shell or a pebble.
+    case 's': { const S = PAL.sand; p.R(0, 0, 32, 32, S.m); patch(rr(9, 22), rr(8, 23), rr(5, 7), 2, S.l, 1.4);
+      for (let i = 0; i < 4; i++) { const y0 = 3 + i * 8 + rr(0, 2), x0 = rr(0, 8), len = rr(10, 18), ph = r() * 6; for (let k = 0; k < len; k++) { const x = x0 + k, y = y0 + Math.round(Math.sin(k * .45 + ph) * 1.2); if (x > 31) break; p.P(x, y, mix(S.m, S.d, .55)); p.P(x, y - 1, S.l); } }
+      for (let i = 0; i < 6; i++) p.P(rr(0, 31), rr(0, 31), r() < .5 ? S.ll : mix(S.m, S.d, .7));
+      if (variant === 2) { const x = rr(4, 24), y = rr(4, 24); p.S(x, y, ['.hh.', 'hphp', '.pp.'], { h: '#fff0f0', p: '#f0a8b0' }); p.H(x + 1, y + 3, 2, S.d); }
+      if (variant === 3) { const x = rr(4, 24), y = rr(4, 24); p.R(x, y, 3, 2, PAL.rock.l); p.P(x, y, PAL.rock.ll); p.P(x + 2, y + 1, PAL.rock.d); p.H(x, y + 2, 4, S.d); } break; }
+    // Poké Center: the owner's roof with the Poké Ball crest, white walls with a red band, the PC sign over glass doors.
+    case 'C': grassBase(1); castShadow(29, 12, 3, 17); castShadow(4, 29, 27, 2, .55);
+      walls(3, 26, 13, 29, ['#e2dccc', '#c8c0b0', '#f6f2e8', '#ffffff'], false); p.R(3, 24, 26, 2, '#d84040'); p.H(3, 24, 26, '#f06a5a'); p.H(3, 26, 26, '#8a2424');
+      roof(3, 26, 3, 12, RR, 5);
+      p.S(12, 2, ['..OOOO..', '.ORRRRO.', 'ORHRRRRO', 'OOOWWOOO', 'OWWOOWWO', '.OWWWWO.', '..OOOO..'], { O: BOUT, R: '#e83c3c', H: '#ff9a88', W: '#ffffff' });
+      if (RF[3]) flag(26, 0, RF[3]);
+      p.R(11, 13, 10, 8, BOUT); p.R(12, 14, 8, 6, '#fff8e8'); p.H(12, 19, 8, '#e0d4c0'); p.S(13, 14, ['RRR.RRR', 'R.R.R..', 'RRR.R..', 'R...R..', 'R...RRR'], { R: '#d83838' });
+      win(4, 15, false, false); win(22, 15, false, false); glassDoor(12, 22, 8, 5); break;
+    // HQ: a stone keep under the owner's roof, arrow-slit windows, an iron-bound gate, the owner's banner on the ridge.
+    case 'Q': grassBase(1); castShadow(30, 12, 2, 17); castShadow(3, 29, 28, 2, .55);
+      walls(2, 28, 12, 29, ['#6a6a78', '#5a5a68', '#9a9aa8', '#bcbcc8'], false);
+      for (let y = 15; y < 26; y += 3) for (let x = 2 + ((y / 3) & 1) * 3; x < 29; x += 6) { p.H(x, y, 5, '#aaaab6'); p.P(x + 5, y, '#6a6a78'); p.H(x, y + 2, 6, '#7a7a88'); }
+      roof(2, 28, 4, 11, RR, 3); p.H(1, 13, 30, BOUT); for (let x = 2; x < 30; x += 4) { p.R(x, 11, 2, 2, '#9a9aa8'); p.P(x, 11, '#c8c8d4'); }
+      p.R(5, 15, 3, 6, BOUT); p.V(6, 16, 4, '#1a1a24'); p.R(24, 15, 3, 6, BOUT); p.V(25, 16, 4, '#1a1a24');
+      p.R(11, 17, 10, 11, BOUT); p.R(12, 18, 8, 10, '#5a3a24'); for (let x = 12; x < 20; x += 2) p.V(x, 18, 10, '#6a4a30'); p.H(12, 18, 8, '#8a6a48'); p.H(12, 21, 8, '#3a3a44'); p.H(12, 25, 8, '#3a3a44'); p.P(13, 21, '#c8c8d4'); p.P(18, 21, '#c8c8d4'); p.P(13, 25, '#c8c8d4'); p.P(18, 25, '#c8c8d4'); p.V(16, 18, 10, '#2a1a10');
+      p.R(10, 28, 12, 2, '#9a9aa8'); p.H(10, 28, 12, '#c8c8d4');
+      flag(16, 0, RF[3] || '#d8d8e0'); break;
     // Field Center: a healing machine bolted to a floor plate, so it sits in caves, bases and volcanoes alike
     case 'K': { const M = PAL.metal; p.R(0, 0, 32, 32, M.d); p.R(1, 1, 30, 30, mix(M.m, M.d, .35)); p.H(1, 1, 30, M.m); p.V(1, 1, 30, M.m); p.H(1, 30, 30, shade(M.d, -.3)); p.V(30, 1, 30, shade(M.d, -.3));
-      for (const [rx, ry] of [[3, 3], [28, 3], [3, 28], [28, 28]]) { p.P(rx, ry, M.ll); p.P(rx + 1, ry + 1, M.d); }
-      p.E(16, 27, 11, 2, shade(M.d, -.4));
-      p.R(6, 8, 20, 19, PAL.out); p.R(7, 9, 18, 17, '#f6f1e6'); p.H(7, 9, 18, '#ffffff'); p.V(24, 9, 17, '#c8bfae'); p.H(7, 25, 18, '#c8bfae');
-      for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { const bx = 9 + i * 5, by = 11 + j * 4; p.R(bx, by, 4, 3, PAL.out); p.R(bx + 1, by, 2, 1, '#ff5a5a'); p.R(bx + 1, by + 2, 2, 1, '#ffffff'); p.P(bx + 1, by + 1, '#2a2a2a'); p.P(bx + 2, by + 1, '#2a2a2a'); }
-      p.R(12, 19, 8, 6, PAL.out); p.R(13, 20, 6, 4, '#bff0c8'); p.R(15, 20, 2, 4, '#3ab85a'); p.R(13, 21, 6, 2, '#3ab85a');
-      p.R(8, 6, 2, 2, '#ff5a5a'); p.P(8, 6, '#ffb0b0'); break; }
-    case 'G': grassBase(1); building({ roof: '#3f6fd6', roofD: '#2a4a9a', roofL: '#5f8ff0', wall: '#d8dce8', wallD: '#a8adbf', wallTop: 12, wallH: 15, ridge: 4 });
-      // columns, a GYM sign and a banner pole
-      p.R(5, 13, 3, 13, '#eef0f6'); p.V(7, 13, 13, '#a8adbf'); p.R(24, 13, 3, 13, '#eef0f6'); p.V(26, 13, 13, '#a8adbf'); p.H(4, 12, 5, PAL.out); p.H(23, 12, 5, PAL.out);
-      p.R(10, 14, 12, 6, PAL.out); p.R(11, 15, 10, 4, '#ffd24a'); p.H(12, 16, 2, '#3a2000'); p.V(12, 16, 3, '#3a2000'); p.P(13, 18, '#3a2000'); p.V(15, 16, 3, '#3a2000'); p.P(16, 16, '#3a2000'); p.V(17, 16, 3, '#3a2000'); p.V(19, 16, 3, '#3a2000'); p.P(18, 17, '#3a2000');
-      door(13, 22, 6, 5, '#6a4a30'); p.V(30, 1, 14, '#eef0f6'); p.V(31, 1, 14, '#7a7f90'); p.R(24, 2, 6, 4, '#ffd24a'); p.R(25, 3, 4, 2, '#e0a020'); p.P(30, 0, '#ffd24a'); break;
-    case 'H': grassBase(1); { const roofs = [['#8a5a3a', '#5c3a22', '#a8744a'], ['#5a6a8a', '#38455e', '#7a8aa8'], ['#6a8a4a', '#45602e', '#8aa866'], ['#9a5a6a', '#6a3a48', '#b87a8a']][variant]; building({ roof: roofs[0], roofD: roofs[1], roofL: roofs[2], wall: '#efe6d0', wallD: '#c0b49a', x0: 5, w: 22, wallTop: 14, wallH: 13, ridge: 5 });
-      door(variant % 2 ? 9 : 17, 21, 5, 6, '#7a4a28'); win(variant % 2 ? 18 : 8, 17, variant > 1); p.R(22, 6, 3, 6, '#8a7a70'); p.R(22, 6, 1, 6, '#a89a90'); p.H(21, 5, 5, PAL.out); p.H(22, 6, 3, '#6a5a50'); if (variant === 2) { p.R(3, 25, 3, 4, '#c8c8d0'); p.R(4, 24, 1, 5, '#9a9aa8'); } } break;
+      for (let i = 0; i < 30; i++) { const c = ((i >> 1) & 1) ? '#2a2a30' : '#e8c040'; if (i < 7 || i > 23) { p.P(1 + i, 2, c); p.P(1 + i, 29, c); } }
+      for (const [rx, ry] of [[3, 4], [28, 4], [3, 27], [28, 27]]) { p.P(rx, ry, M.ll); p.P(rx + 1, ry + 1, M.d); }
+      for (let y = 26; y < 29; y++) for (let x = 7; x < 28; x++) if (dith(x, y) < .6) p.P(x, y, shade(M.d, -.35));
+      // the machine: a rounded console with six Poké Ball slots, a green screen with a cross and a status light
+      p.R(6, 7, 20, 20, BOUT); p.R(7, 8, 18, 18, '#e8e2d4'); p.R(7, 8, 18, 2, '#ffffff'); p.V(7, 8, 18, '#ffffff'); p.V(24, 8, 18, '#b8b0a0'); p.H(7, 25, 18, '#a8a090'); p.P(6, 7, M.d); p.P(25, 7, M.d); p.P(6, 26, M.d); p.P(25, 26, M.d);
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { const bx = 9 + i * 5, by = 10 + j * 5; p.R(bx, by, 4, 4, '#4a4450'); p.S(bx, by, ['.RR.', 'RHRR', 'OWOO', '.WW.'], { R: '#e83c3c', H: '#ff9a88', O: '#2a2430', W: '#ffffff' }); }
+      p.R(11, 20, 10, 5, BOUT); p.R(12, 21, 8, 3, '#1c3a24'); p.R(15, 21, 2, 3, '#7cf0a0'); p.R(14, 22, 4, 1, '#7cf0a0'); p.P(12, 21, '#3a6a44');
+      p.R(22, 20, 2, 2, '#ff4a4a'); p.P(22, 20, '#ffb0a0'); break; }
+    // Gym: a slate roof with a gold trim, marble columns, the gold GYM plaque, double doors on two steps, a pennant.
+    case 'G': grassBase(1); castShadow(30, 12, 2, 17); castShadow(3, 30, 28, 2, .55);
+      walls(1, 30, 12, 28, ['#b8bccc', '#a0a4b8', '#dde0ea', '#f4f6fa'], false);
+      roof(1, 30, 3, 11, ROOF_RAMP.slate, 5); p.H(-1, 11, 34, '#e0a020'); p.H(0, 12, 32, '#8a5a10');
+      for (const cx of [3, 26]) { p.R(cx - 1, 13, 5, 14, BOUT); p.R(cx, 13, 3, 14, '#f4f6fa'); p.V(cx, 13, 14, '#ffffff'); p.V(cx + 2, 13, 14, '#a8adbf'); p.R(cx - 1, 13, 5, 2, '#dde0ea'); p.R(cx - 1, 25, 5, 2, '#dde0ea'); }
+      p.R(9, 13, 14, 7, BOUT); p.R(10, 14, 12, 5, '#ffd24a'); p.H(10, 14, 12, '#fff0a0'); p.H(10, 18, 12, '#c88a1a');
+      p.S(11, 14, ['.OO.O.O.O.O', 'O...O.O.OOO', 'O.O..O..O.O', '.OO..O..O.O'], { O: '#3a2000' });
+      p.R(11, 20, 10, 8, BOUT); p.R(12, 21, 8, 7, '#6a4a30'); p.V(16, 21, 7, '#2a1a10'); p.H(12, 21, 8, '#8a6a48'); p.P(15, 24, '#ffd24a'); p.P(17, 24, '#ffd24a');
+      p.R(9, 28, 14, 2, '#c8c8d4'); p.H(9, 28, 14, '#f0f0f8'); p.R(7, 30, 18, 1, '#9a9aa8');
+      flag(28, 0, '#ffd24a'); break;
+    // House: a cottage with a shingled hip roof in one of four colours, a chimney, plank walls, a framed window with a
+    // flower box and a panelled door on a stone step; the door and window swap sides between variants.
+    case 'H': grassBase(1); { const R = [ROOF_RAMP.brown, ROOF_RAMP.blue, ROOF_RAMP.green, ROOF_RAMP.plum][variant], left = variant % 2 === 1;
+      castShadow(28, 14, 3, 15); castShadow(5, 29, 25, 2, .55);
+      walls(4, 24, 14, 29, ['#d8caa8', '#b8a88a', '#ece2c8', '#fbf4e2']);
+      roof(4, 24, 4, 13, R, 4); chimney(left ? 8 : 20, 3);
+      door(left ? 7 : 19, 19, 6, 8, ['#8a5430', '#5a6a8a', '#6a4a30', '#7a3a48'][variant]); win(left ? 18 : 8, 17, variant >= 2, true);
+      if (variant === 2) { p.R(28, 24, 3, 5, BOUT); p.R(29, 25, 1, 4, '#9a9aa8'); p.R(28, 23, 3, 2, '#5a6a8a'); } } break;
     case 'c': caveBase(); break;
-    case 'r': caveBase(); boulder(3, 4, 12, 9); boulder(17, 9, 9, 7); boulder(8, 17, 10, 8); boulder(20, 20, 8, 6); p.P(6, 27, PAL.rock.l); p.P(27, 5, PAL.rock.l); p.R(24, 28, 3, 1, PAL.rock.d); break;
-    case 'W': { const C = PAL.cwall; p.R(0, 0, 32, 32, C.top);
-      // dense rock mass seen from above: small bumps lit from the top-left, hairline cracks
-      for (let i = 0; i < 5; i++) { const x = rr(0, 27), y = rr(0, 27), w = rr(3, 5), h = rr(2, 4); p.E(x + w / 2, y + h / 2, w / 2, h / 2, C.topL); p.P(x + 1, y, C.face); p.P(x + w - 1, y + h, C.out); }
-      for (let i = 0; i < 2; i++) { const x = rr(0, 26), y = rr(0, 30); p.H(x, y, rr(2, 5), C.out); p.P(x + rr(2, 5), y + 1, C.out); } break; }
+    // Rubble: a heap of shaded boulders, each with its shadow, a crack and a lit rim; pebbles around the foot.
+    case 'r': caveBase(); { const rocks = [[10, 9, 7, 5], [23, 12, 5, 4], [14, 21, 6, 5], [25, 24, 4, 3], [5, 20, 3, 3]]; for (const [x, y, w, h] of rocks) groundShadow(p, x + 2, y + h, w, 2, PAL.cave.dd);
+      for (const [x, y, w, h] of rocks) { shadeBlobs(p, [{ x, y, rx: w, ry: h }, { x: x + w * .3, y: y + h * .25, rx: w * .7, ry: h * .7 }], RAMP.crock, RAMP.crockOut, { bias: -.08 }); if (w > 4) { p.P(x - 1, y, RAMP.crock[1]); p.P(x, y + 1, RAMP.crock[1]); p.P(x + 1, y + 1, RAMP.crock[2]); } }
+      for (let i = 0; i < 4; i++) { const x = rr(1, 29), y = rr(24, 30); p.P(x, y, RAMP.crock[5]); p.P(x + 1, y, RAMP.crock[1]); } } break;
+    // Cave wall seen from above: a dark mass of packed rocks, each faintly lit on its upper left, with deep joints.
+    case 'W': { const C = PAL.cwall; p.R(0, 0, 32, 32, C.out);
+      for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) { const x = i * 8 + 4 + rr(-1, 1) + (j & 1) * 3, y = j * 8 + 4 + rr(-1, 1); shadeBlobs(p, [{ x, y, rx: rr(4, 5), ry: rr(3, 4) }], RAMP.wallTop, null, { bias: -.1 }); }
+      for (let i = 0; i < 2; i++) { const x = rr(2, 26), y = rr(2, 28); p.P(x, y, C.faceL); } break; }
     case 'f': floorBase(); break;
     case 'b': { const B = PAL.bwall; p.R(0, 0, 32, 32, B.top); for (let y = 0; y < 32; y += 8) for (let x = ((y / 8) & 1) * 8 - 8; x < 32; x += 16) { p.R(x + 1, y + 1, 14, 6, mix(B.top, B.topL, .7)); p.H(x + 1, y + 1, 14, B.topL); } break; }
-    case 'L': { const L = PAL.lava; p.R(0, 0, 32, 32, L.m); const w = mulberry32(variant * 9 + 3);
-      for (let i = 0; i < 4; i++) { const x = Math.floor(w() * 28), y = Math.floor(w() * 28); p.E(x + 4, y + 3, 5 + Math.floor(w() * 3), 3, L.d); p.E(x + 4, y + 3, 3, 2, L.dd); }
-      for (let i = 0; i < 5; i++) { const bx = Math.floor(w() * 30), by = Math.floor(w() * 30); const x = (bx + frame * 2 + i * 3) % 30; p.H(x, by, 3 + Math.floor(w() * 4), 2, L.l); p.H(x + 1, by, 3, 1, L.ll); }
-      for (let i = 0; i < 3; i++) { const x = Math.floor(w() * 30), y = Math.floor(w() * 30); if ((i + frame) % 2) { p.P(x, y, L.w); p.P(x + 1, y, L.ll); } } break; }
-    case 'p': floorBase(); { const M = PAL.metal; p.R(9, 1, 14, 30, PAL.out); p.R(10, 2, 12, 28, M.m); p.R(10, 2, 3, 28, M.l); p.V(10, 2, 28, M.ll); p.R(19, 2, 3, 28, M.d); p.V(21, 2, 28, shade(M.d, -.3)); p.R(7, 0, 18, 4, PAL.out); p.R(8, 0, 16, 3, M.l); p.H(8, 0, 16, M.ll); p.R(7, 27, 18, 5, PAL.out); p.R(8, 28, 16, 3, M.m); p.H(8, 28, 16, M.l); p.E(16, 31, 11, 2, '#00000060'); } break;
+    // Lava: molten rock in slow swirls (bright yellow crests, deep red troughs, both periodic in 32 px so tiles join),
+    // a cooled dark vein or two, and a bubble that swells and pops.
+    case 'L': { const L = PAL.lava; p.R(0, 0, 32, 32, L.m); const w = mulberry32(variant * 9 + 3), ph = frame * Math.PI / 2, sp = w() * 6;
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) { const a = Math.sin(x * Math.PI / 16 + Math.sin(y * Math.PI / 8 + sp) * 1.6 + ph * .5), b = Math.sin(y * Math.PI / 16 * 2 + Math.sin(x * Math.PI / 16) * 2 - ph * .5); const v = a + b * .6;
+        if (v > 1.25) p.P(x, y, v > 1.5 ? L.w : L.ll); else if (v > .8) p.P(x, y, L.l); else if (v < -1.2) p.P(x, y, L.dd); else if (v < -.75) p.P(x, y, L.d); }
+      const bx = 4 + Math.floor(w() * 24), by = 4 + Math.floor(w() * 24); if (frame === 0) p.P(bx, by, L.w); else if (frame === 1) { p.R(bx - 1, by - 1, 3, 3, L.ll); p.P(bx, by, L.w); } else if (frame === 2) { p.H(bx - 1, by - 2, 3, L.w); p.H(bx - 1, by + 2, 3, L.w); p.V(bx - 2, by - 1, 3, L.w); p.V(bx + 2, by - 1, 3, L.w); } break; }
+    // Pillar: a fluted steel column shaded as a cylinder (highlight a third of the way in), a capital and a plinth,
+    // its shadow falling to the east across the tiles.
+    case 'p': floorBase(); { const M = RAMP.steel, F = PAL.floor; for (let y = 6; y < 31; y++) for (let x = 22; x < 29; x++) if (dith(x, y) < .55) p.P(x, y, mix(F.m, F.grout, .8));
+      p.R(9, 3, 14, 26, '#16161e'); for (let x = 10; x < 22; x++) { const rel = (x - 10) / 11, v = rel < .32 ? .72 + rel * .7 : .95 - (rel - .32) * 1.25; for (let y = 4; y < 28; y++) p.P(x, y, rampAt(M, v, x, y)); if (x === 12 || x === 15 || x === 18) for (let y = 7; y < 25; y++) p.P(x, y, rampAt(M, v - .16, x, y)); }
+      for (const [y0, h] of [[0, 4], [26, 5]]) { p.R(7, y0, 18, h, '#16161e'); for (let x = 8; x < 24; x++) { const rel = (x - 8) / 15, v = rel < .3 ? .78 + rel * .5 : .93 - (rel - .3) * 1.1; for (let y = y0 + 1; y < y0 + h - 1; y++) p.P(x, y, rampAt(M, v, x, y)); } p.H(8, y0 + 1, 16, M[6]); } } break;
     case 'x': floorBase(); crate(3, 14, 13); crate(17, 16, 12); crate(9, 3, 12); break;
-    case 'i': { const I = PAL.ice; p.R(0, 0, 32, 32, I.m); for (let i = 0; i < 2; i++) { const x = rr(-2, 24), y = rr(-2, 24); p.E(x + 6, y + 3, rr(5, 8), rr(2, 3), I.l); } for (let i = 0; i < 2; i++) { const x = rr(2, 22), y = rr(2, 22), len = rr(4, 9); for (let k = 0; k < len; k++) p.P(x + k, y + Math.floor(k / 2), I.d); p.P(x + len, y + Math.floor(len / 2) + 1, I.d); } for (let i = 0; i < 2; i++) { const x = rr(0, 26), y = rr(0, 30); p.H(x, y, rr(3, 6), I.ll); } break; }
-    case 'S': { const S = PAL.snow; p.R(0, 0, 32, 32, S.m); for (let i = 0; i < 2; i++) { const x = rr(-2, 24), y = rr(-2, 24); p.E(x + 6, y + 3, rr(5, 8), rr(2, 3), S.l); } for (let i = 0; i < 2; i++) { const x = rr(0, 28), y = rr(0, 30); p.H(x, y, rr(2, 4), S.d); } if (variant & 1) p.P(rr(0, 31), rr(0, 31), '#ffffff'); break; }
+    // Ice: pale sheet with two diagonal reflections, a crack with a bright edge and a sparkle.
+    case 'i': { const I = PAL.ice; p.R(0, 0, 32, 32, I.m); patch(rr(10, 22), rr(10, 22), rr(5, 7), rr(3, 4), mix(I.m, I.d, .35), 1.4);
+      for (let k = 0; k < 2; k++) { const off = rr(0, 31), wd = 2 + k; for (let i = 0; i < 32; i++) for (let q = 0; q < wd; q++) { const x = (i + off + q + k * 11) % 32; p.P(x, 31 - i, q === 0 ? I.ll : I.l); } }
+      { let x = rr(3, 16), y = rr(6, 26); for (let k = 0; k < rr(6, 10); k++) { p.P(x, y, I.d); p.P(x, y - 1, '#ffffff'); x++; if (r() < .45) y += r() < .5 ? 1 : -1; if (x > 30) break; } }
+      { const x = rr(4, 27), y = rr(4, 27); p.P(x, y, '#ffffff'); p.P(x - 1, y, I.ll); p.P(x + 1, y, I.ll); p.P(x, y - 1, I.ll); p.P(x, y + 1, I.ll); } break; }
+    // Snow: soft drifts (a lit mound with a blue shadow under it), glints, and a twig or a stone poking through.
+    case 'S': { const S = PAL.snow; p.R(0, 0, 32, 32, S.m); for (let i = 0; i < 2; i++) { const cx = rr(8, 23), cy = rr(7, 22), rx = rr(5, 7); patch(cx, cy + 2, rx, 2, S.d, 1.2); patch(cx, cy, rx, 2, S.l, 1.6); p.H(cx - 2, cy - 1, 4, '#ffffff'); }
+      for (let i = 0; i < 4; i++) p.P(rr(1, 30), rr(1, 30), r() < .5 ? '#ffffff' : S.d);
+      if (variant === 2) { const x = rr(5, 24), y = rr(5, 24); p.P(x, y, '#6a4a30'); p.P(x + 1, y + 1, '#6a4a30'); p.P(x + 2, y + 1, '#8a6a48'); p.P(x + 3, y, '#6a4a30'); }
+      if (variant === 3) { const x = rr(5, 24), y = rr(5, 24); p.R(x, y, 3, 2, PAL.rock.m); p.P(x, y, PAL.rock.l); p.H(x, y - 1, 3, '#ffffff'); p.H(x, y + 2, 4, S.d); } break; }
     default: p.R(0, 0, 32, 32, '#ff00ff');
   }
 }
@@ -1297,44 +1501,51 @@ function drawTerrain(g, m, x, y, X, Y, frame, time = 0) {
     g.globalAlpha = .22; g.fillStyle = '#000000'; g.fillRect(X, Y + TILE, TILE, 3); g.globalAlpha = .1; g.fillRect(X, Y + TILE + 3, TILE, 2); g.globalAlpha = 1;
   }
 }
-// Shoreline drawn on the liquid tile: a lip of the land colour, an earth bank, a foam line and a dithered wet band.
+// Shoreline drawn on the liquid tile, in the board's three-quarter view: the land to the north shows its earth face
+// dropping into the water, the sides a thinner bank, the south only its lip. Then a deeper line where the bank
+// meets the water, foam that swells and thins from frame to frame, and a wet dither.
 function drawShoreOverlay(p, sides, diag, banks, frame, lava, cave) {
-  const foam = lava ? PAL.lava.ll : cave ? PAL.cwater.foam : PAL.water.foam, wet = lava ? PAL.lava.l : cave ? PAL.cwater.ll : PAL.water.ll;
-  const ph = frame % 2;
+  const W = lava ? PAL.lava : cave ? PAL.cwater : PAL.water;
+  const foam = lava ? PAL.lava.ll : W.foam, wet = lava ? PAL.lava.l : W.ll, deep = lava ? PAL.lava.dd : W.dd;
   const bank = (i, fn) => { const b = banks[i] || banks.find(Boolean) || bankOf({ id: 'plain' }); fn(lava ? { lip: '#2a1a14', earth: '#1a100c', earthD: '#0a0604' } : b); };
-  // N
-  if (sides[0]) bank(0, b => { p.H(0, 0, 32, b.lip); p.H(0, 1, 32, b.earth); p.H(0, 2, 32, b.earthD); p.H(0, 3, 32, foam); for (let x = ph; x < 32; x += 2) p.P(x, 4, wet); for (let x = 1 - ph; x < 32; x += 4) p.P(x, 5, wet); });
-  if (sides[2]) bank(2, b => { p.H(0, 31, 32, b.lip); p.H(0, 30, 32, b.earth); p.H(0, 29, 32, foam); for (let x = ph; x < 32; x += 2) p.P(x, 28, wet); for (let x = 1 - ph; x < 32; x += 4) p.P(x, 27, wet); });
-  if (sides[3]) bank(3, b => { p.V(0, 0, 32, b.lip); p.V(1, 0, 32, b.earth); p.V(2, 0, 32, foam); for (let y = ph; y < 32; y += 2) p.P(3, y, wet); for (let y = 1 - ph; y < 32; y += 4) p.P(4, y, wet); });
-  if (sides[1]) bank(1, b => { p.V(31, 0, 32, b.lip); p.V(30, 0, 32, b.earth); p.V(29, 0, 32, foam); for (let y = ph; y < 32; y += 2) p.P(28, y, wet); for (let y = 1 - ph; y < 32; y += 4) p.P(27, y, wet); });
+  const face = [3, 1, 0, 1];
+  const edge = (i, at) => bank(i, b => { const fd = face[i]; for (let k = 0; k < 32; k++) {
+    at(k, 0, b.lip); for (let q = 1; q <= fd; q++) at(k, q, q === fd && fd > 1 ? b.earthD : b.earth);
+    const sw = Math.sin((k + frame * 2) * .55 + i * 1.7) + Math.sin(k * 1.3 + i * 2.1), th = sw > .5 ? 2 : 1, f0 = fd + 1;
+    at(k, f0, fd ? deep : foam); for (let q = 0; q < th; q++) at(k, f0 + 1 + q, foam);
+    if ((k + frame) % 2 === 0) at(k, f0 + 1 + th, wet); if ((k * 3 + frame) % 7 === 0) at(k, f0 + 2 + th, wet); } });
+  if (sides[0]) edge(0, (k, q, c) => p.P(k, q, c));
+  if (sides[2]) edge(2, (k, q, c) => p.P(k, 31 - q, c));
+  if (sides[3]) edge(3, (k, q, c) => p.P(q, k, c));
+  if (sides[1]) edge(1, (k, q, c) => p.P(31 - q, k, c));
   // outer corners rounded where two banks meet, inner corner nubs where only the diagonal is land
-  const corner = (cx, cy, dx, dy, i) => bank(i, b => { p.P(cx, cy, b.lip); p.P(cx + dx, cy, b.earth); p.P(cx, cy + dy, b.earth); p.P(cx + dx, cy + dy, b.earth); p.P(cx + 2 * dx, cy + dy, foam); p.P(cx + dx, cy + 2 * dy, foam); p.P(cx + 2 * dx, cy + 2 * dy, foam); });
+  const corner = (cx, cy, dx, dy, i) => bank(i, b => { p.P(cx, cy, b.lip); p.P(cx + dx, cy, b.lip); p.P(cx, cy + dy, b.lip); p.P(cx + dx, cy + dy, b.earth); p.P(cx + 2 * dx, cy, b.earth); p.P(cx, cy + 2 * dy, b.earth); p.P(cx + 2 * dx, cy + dy, foam); p.P(cx + dx, cy + 2 * dy, foam); p.P(cx + 2 * dx, cy + 2 * dy, foam); p.P(cx + 3 * dx, cy + dy, foam); p.P(cx + dx, cy + 3 * dy, foam); });
   if (!sides[0] && !sides[1] && diag[0]) corner(31, 0, -1, 1, 1);
   if (!sides[1] && !sides[2] && diag[1]) corner(31, 31, -1, -1, 1);
   if (!sides[2] && !sides[3] && diag[2]) corner(0, 31, 1, -1, 3);
   if (!sides[3] && !sides[0] && diag[3]) corner(0, 0, 1, 1, 3);
-  if (sides[0] && sides[3]) { p.P(3, 3, foam); p.P(4, 4, wet); } if (sides[0] && sides[1]) { p.P(28, 3, foam); p.P(27, 4, wet); }
-  if (sides[2] && sides[3]) { p.P(3, 29, foam); p.P(4, 28, wet); } if (sides[2] && sides[1]) { p.P(28, 29, foam); p.P(27, 28, wet); }
-  if (lava) { // glow on the bank
-    const gl = PAL.lava.ll; if (sides[0]) for (let x = 0; x < 32; x += 3) p.P(x + (frame % 3), 3, gl); if (sides[2]) for (let x = 0; x < 32; x += 3) p.P(x + (frame % 3), 29, gl); }
+  const round = (x, y, c) => p.P(x, y, c);
+  if (sides[0] && sides[3]) bank(0, b => { round(1, 4, b.earth); round(2, 5, foam); round(1, 5, b.lip); }); if (sides[0] && sides[1]) bank(0, b => { round(30, 4, b.earth); round(29, 5, foam); round(30, 5, b.lip); });
+  if (sides[2] && sides[3]) bank(2, b => { round(1, 30, b.lip); round(2, 29, foam); }); if (sides[2] && sides[1]) bank(2, b => { round(30, 30, b.lip); round(29, 29, foam); });
+  if (lava) { const gl = PAL.lava.w; for (let k = 0; k < 32; k += 3) { if (sides[0]) p.P(k + (frame % 3), 5, gl); if (sides[2]) p.P(k + (frame % 3), 29, gl); } }
 }
-// Scalloped grass overhang on the edge of a road/sand tile.
+// Scalloped grass overhang on the edge of a road/sand tile: the turf laps over the edge with a dark rim; on the north
+// and west sides it casts a thin shadow onto the path, on the south and east its lit edge faces the viewer.
 function drawGrassLip(p, sides, v, ch) {
-  const G = PAL.grass; const r = mulberry32(v * 61 + ch.charCodeAt(0)); const rr = (a, b) => a + Math.floor(r() * (b - a + 1));
-  const lip = (len, at) => { // at(k, depth) paints pixel k along the edge at the given depth
-    let x = 0; while (x < len) { const w = rr(2, 5), d = rr(1, 3); for (let k = 0; k < w && x + k < len; k++) { for (let q = 0; q < d; q++) at(x + k, q, q === d - 1 ? G.dd : q === 0 ? G.l : G.m); } x += w; if (r() < .35) { at(x, 0, G.m); at(x, 1, G.dd); x++; } } };
-  if (sides[0]) lip(32, (k, q, c) => p.P(k, q, c));
-  if (sides[2]) lip(32, (k, q, c) => p.P(k, 31 - q, c));
-  if (sides[3]) lip(32, (k, q, c) => p.P(q, k, c));
-  if (sides[1]) lip(32, (k, q, c) => p.P(31 - q, k, c));
+  const G = PAL.grass, sh = ch === 's' ? mix(PAL.sand.m, PAL.sand.d, .7) : mix(PAL.road.m, PAL.road.d, .75); const r = mulberry32(v * 61 + ch.charCodeAt(0)); const rr = (a, b) => a + Math.floor(r() * (b - a + 1));
+  const lip = (at, shadow) => { let k = 0; while (k < 32) { const w = rr(3, 6), d = rr(1, 3); for (let i = 0; i < w && k + i < 32; i++) { const dd = i === 0 || i === w - 1 ? Math.max(1, d - 1) : d; for (let q = 0; q < dd; q++) at(k + i, q, q === dd - 1 && !shadow ? G.l : G.m); at(k + i, dd, G.dd); if (shadow) at(k + i, dd + 1, sh); } k += w; if (r() < .3) { at(k, 0, G.dd); if (shadow) at(k, 1, sh); k++; } } };
+  if (sides[0]) lip((k, q, c) => p.P(k, q, c), true);
+  if (sides[2]) lip((k, q, c) => p.P(k, 31 - q, c), false);
+  if (sides[3]) lip((k, q, c) => p.P(q, k, c), true);
+  if (sides[1]) lip((k, q, c) => p.P(31 - q, k, c), false);
   const cornerFill = (cx, cy, dx, dy) => { for (let j = 0; j < 4; j++) for (let i = 0; i < 4 - j; i++) p.P(cx + i * dx, cy + j * dy, i + j === 3 ? G.dd : G.m); };
   if (sides[0] && sides[3]) cornerFill(0, 0, 1, 1); if (sides[0] && sides[1]) cornerFill(31, 0, -1, 1); if (sides[2] && sides[3]) cornerFill(0, 31, 1, -1); if (sides[2] && sides[1]) cornerFill(31, 31, -1, -1);
 }
 // Tall grass fades into plain grass with a ragged blade edge.
 function drawTallEdge(p, sides, v) {
-  const T = PAL.tall, r = mulberry32(v * 17 + 3); const rr = (a, b) => a + Math.floor(r() * (b - a + 1));
-  const frill = at => { for (let k = 0; k < 32; k += 2) { const h = rr(0, 2); for (let q = 0; q <= h; q++) at(k + (q & 1), q, q === h ? T.ll : T.l); } };
-  if (sides[0]) frill((k, q, c) => p.P(k, q, c)); if (sides[2]) frill((k, q, c) => p.P(k, 31 - q, c)); if (sides[3]) frill((k, q, c) => p.P(q, k, c)); if (sides[1]) frill((k, q, c) => p.P(31 - q, k, c));
+  const G = PAL.grass, r = mulberry32(v * 17 + 3); const rr = (a, b) => a + Math.floor(r() * (b - a + 1));
+  const lip = at => { let k = 0; while (k < 32) { const w = rr(3, 6), d = rr(1, 2); for (let i = 0; i < w && k + i < 32; i++) { const dd = i === 0 || i === w - 1 ? d - 1 : d; for (let q = 0; q <= dd; q++) at(k + i, q, q === dd ? TALL_T.dd : q === 0 ? G.m : G.m); } k += w; } };
+  if (sides[0]) lip((k, q, c) => p.P(k, q, c)); if (sides[2]) lip((k, q, c) => p.P(k, 31 - q, c)); if (sides[3]) lip((k, q, c) => p.P(q, k, c)); if (sides[1]) lip((k, q, c) => p.P(31 - q, k, c));
 }
 // Walls: a lit rim on open sides, and a full front face when the tile south is open.
 function drawWallFace(p, sides, v, id) {
@@ -1594,6 +1805,14 @@ const TYPE_FX = {
 };
 function fxFor(type) { return TYPE_FX[type] || TYPE_FX.Normal; }
 // Hit effect at (x,y) in world pixels.
+// A Poké Ball lying on the map (board space): it rests on a soft shadow, hops every few seconds (the shadow shrinks
+// while it is up) and a four-point star twinkles on its cap. Reduced motion keeps it still.
+function drawPickup(x, y, t, seed = 0) {
+  const ph = REDUCED ? .5 : (t * .45 + seed * .137) % 1, hop = ph < .16 ? Math.round(Math.sin(ph / .16 * Math.PI) * 6) : ph < .22 ? Math.round(Math.sin((ph - .16) / .06 * Math.PI) * 1.5) : 0;
+  ctx.globalAlpha = .3; ellipse(x, y + 7, Math.max(3, 6 - (hop >> 1)), 2, '#000000'); ctx.globalAlpha = 1;
+  drawBall(x, y - hop, ITEMS.pokeball.col, 5);
+  const tw = (t * .45 + seed * .137 + .5) % 1; if (!REDUCED && tw < .14) { const k = Math.sin(tw / .14 * Math.PI), L = Math.round(k * 3), sx = x - 4, sy = y - 5 - hop; ctx.fillStyle = '#ffffff'; ctx.fillRect(sx - L, sy, 2 * L + 1, 1); ctx.fillRect(sx, sy - L, 1, 2 * L + 1); if (L > 1) { ctx.fillStyle = '#fff4b0'; ctx.fillRect(sx - 1, sy - 1, 3, 3); ctx.fillStyle = '#ffffff'; ctx.fillRect(sx, sy, 1, 1); } }
+}
 function hitEffect(type, x, y, crit, eff) {
   const F = fxFor(type), col = TYPE_COL[type] || '#ffffff', c1 = F.parts[0], c2 = F.parts[1]; const big = crit ? 1.5 : 1;
   spawnSprite('flash', x, y, { size: Math.round(7 * big), life: crit ? .18 : .12, col: crit ? '#ffd24a' : '#ffffff' });
@@ -1626,10 +1845,13 @@ function projectileFX(type, ax, ay, bx, by, dur) {
 }
 
 // ---------------------------------------------------------------- icons
+// The Poké Ball sprite (13×13): a lit cap with a specular glint, a shaded rim, the band and a ringed button, a grey
+// underside. Other ball colours reuse the rows with their own cap.
+const BALL_ROWS = ['....OOOOO....', '..OORRRRROO..', '.ORRHHRRRRRO.', '.ORHHRRRRRDO.', 'ORRHRRRRRRRDO', 'ORRRRROOORRDO', 'OOOOOOWWWOOOO', 'OWWWWWOOOWWSO', 'OWWWWWWWWWWSO', '.OWWWWWWWWSO.', '.OSWWWWWWSSO.', '..OOSSSSSOO..', '....OOOOO....'];
 function drawBall(x, y, col = '#f04848', r = 5) {
-  if (r >= 5) { const rows = ['...OOOOO...', '..ORRRRRO..', '.ORHRRRRRO.', 'ORHHRRRRRRO', 'ORRRRRRRRRO', 'OOOOOWOOOOO', 'OWWWOWOWWWO', 'OWWWWOWWWWO', '.OWWWWWWWO.', '..OSSSSSO..', '...OOOOO...'];
-    const pal = { O: UI.shadow, R: col, H: shade(col, .5), W: '#f8f4ea', S: '#c8c0b4' }; for (let j = 0; j < rows.length; j++) for (let i = 0; i < rows[j].length; i++) { const ch = rows[j][i]; if (ch === '.') continue; ctx.fillStyle = pal[ch]; ctx.fillRect(x - 5 + i, y - 5 + j, 1, 1); }
-    ctx.fillStyle = UI.shadow; ctx.fillRect(x - 1, y - 1, 3, 3); ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, 1, 1); return; }
+  if (r >= 5) { const pal = { O: '#1e1a24', R: col, H: mix(col, '#ffffff', .55), D: shade(col, -.32), W: '#f8f6f0', S: '#c4c0cc' };
+    for (let j = 0; j < 13; j++) for (let i = 0; i < 13; i++) { const ch = BALL_ROWS[j][i]; if (ch === '.') continue; ctx.fillStyle = pal[ch]; ctx.fillRect(x - 6 + i, y - 6 + j, 1, 1); }
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(x - 3, y - 4, 1, 1); ctx.fillRect(x + 1, y, 1, 1); return; }
   circle(x, y, r, UI.shadow); circle(x, y, r - 1, '#f6f2e6'); ctx.fillStyle = col; for (let j = -r + 1; j < 0; j++) { const w = Math.floor(Math.sqrt((r - 1) * (r - 1) - j * j) + .5); ctx.fillRect(x - w, y + j, 2 * w + 1, 1); } hline(x - r + 1, y, 2 * r - 1, UI.shadow); px(x, y, '#ffffff'); px(x - 1, y - 2, shade(col, .5));
 }
 const TYPE_ABBR = { Normal: 'NRM', Fire: 'FIR', Water: 'WTR', Electric: 'ELC', Grass: 'GRS', Ice: 'ICE', Fighting: 'FGT', Poison: 'PSN', Ground: 'GRD', Flying: 'FLY', Psychic: 'PSY', Bug: 'BUG', Rock: 'RCK', Ghost: 'GHO', Dragon: 'DRG', Dark: 'DRK', Steel: 'STL', Fairy: 'FRY' };
@@ -2871,7 +3093,7 @@ function drawBoardLayer() {
   }
   if (!REDUCED) drawBoardAmbience(m);
   // items on the floor
-  for (const it of m.items) if (!it.taken) { const X = tileX(it.x) + TILE / 2, Y = tileY(it.y) + TILE / 2 + Math.round(Math.sin(BT.time * 4 + it.x) * 2); drawBall(X, Y, ITEMS.pokeball.col, 5); if (Math.floor(BT.time * 6 + it.x) % 5 === 0) px(X + 6, Y - 6, '#ffffff'); }
+  for (const it of m.items) if (!it.taken) drawPickup(tileX(it.x) + TILE / 2, tileY(it.y) + TILE / 2 + 2, BT.time, it.x * 7 + it.y * 3);
   // king of the hill zone and capture-the-flag bases
   if (B.hill) { const h = B.hill, X = tileX(h.x - h.r), Y = tileY(h.y - h.r), S = (2 * h.r + 1) * TILE; const k = Math.floor(BT.time * 3) % 2; ctx.globalAlpha = .18; rect(X, Y, S, S, UI.gold); ctx.globalAlpha = 1; outline(X + k, Y + k, S - 2 * k, S - 2 * k, UI.gold); for (const [cx, cy] of [[X, Y], [X + S - 6, Y], [X, Y + S - 6], [X + S - 6, Y + S - 6]]) rect(cx, cy, 6, 6, UI.goldDark); text('HILL', X + S / 2 - textWidth('HILL') / 2, Y - 9, UI.gold, { outline: '#000' }); }
   if (B.flags) for (const f of B.flags) { const X = tileX(f.home.x), Y = tileY(f.home.y); ctx.globalAlpha = .25; rect(X + 2, Y + 2, TILE - 4, TILE - 4, teamColor(f.team)); ctx.globalAlpha = 1; outline(X + 2, Y + 2, TILE - 4, TILE - 4, teamColorD(f.team)); rect(X + 10, Y + TILE - 8, 12, 3, teamColorD(f.team)); rect(X + 12, Y + TILE - 6, 8, 1, teamColorL(f.team)); if (f.carrier == null) drawFlag(tileX(f.x) + 13, tileY(f.y) + 6 + Math.round(Math.sin(BT.time * 5) * 1), f.team, Math.floor(BT.time * 6) % 2); }

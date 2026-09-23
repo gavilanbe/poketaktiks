@@ -67,3 +67,7 @@ Done (2026-09-23):
   transitions, a VS slam, charge-ups, impact frames with focus lines, huge damage numbers, ghost HP,
   status effects on the hit, a K.O. stamp in screen space, the faint into the ground and a victory
   hop; map strikes share the numbers, impact stars and KO stamp; float texts stay on screen.
+- Map art pass: shaded blobs (`shadeBlobs`) and hue-shifted ramps (`RAMP`) for foliage and rock; new grass,
+  flowers, procedural tall grass sheets (`drawTallGrass`), trees and pines, mountains, cliffs, water and
+  shorelines, bridge, road and sand edges, cottages, Poké Center, HQ, Gym, Field Center, cave floor and
+  walls, rubble, indoor floor, pillars, crates, lava, ice and snow; a 13 px Poké Ball that hops on the map.

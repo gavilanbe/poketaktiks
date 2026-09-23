@@ -599,7 +599,7 @@ function drawBoardLayer() {
   }
   if (!REDUCED) drawBoardAmbience(m);
   // items on the floor
-  for (const it of m.items) if (!it.taken) { const X = tileX(it.x) + TILE / 2, Y = tileY(it.y) + TILE / 2 + Math.round(Math.sin(BT.time * 4 + it.x) * 2); drawBall(X, Y, ITEMS.pokeball.col, 5); if (Math.floor(BT.time * 6 + it.x) % 5 === 0) px(X + 6, Y - 6, '#ffffff'); }
+  for (const it of m.items) if (!it.taken) drawPickup(tileX(it.x) + TILE / 2, tileY(it.y) + TILE / 2 + 2, BT.time, it.x * 7 + it.y * 3);
   // king of the hill zone and capture-the-flag bases
   if (B.hill) { const h = B.hill, X = tileX(h.x - h.r), Y = tileY(h.y - h.r), S = (2 * h.r + 1) * TILE; const k = Math.floor(BT.time * 3) % 2; ctx.globalAlpha = .18; rect(X, Y, S, S, UI.gold); ctx.globalAlpha = 1; outline(X + k, Y + k, S - 2 * k, S - 2 * k, UI.gold); for (const [cx, cy] of [[X, Y], [X + S - 6, Y], [X, Y + S - 6], [X + S - 6, Y + S - 6]]) rect(cx, cy, 6, 6, UI.goldDark); text('HILL', X + S / 2 - textWidth('HILL') / 2, Y - 9, UI.gold, { outline: '#000' }); }
   if (B.flags) for (const f of B.flags) { const X = tileX(f.home.x), Y = tileY(f.home.y); ctx.globalAlpha = .25; rect(X + 2, Y + 2, TILE - 4, TILE - 4, teamColor(f.team)); ctx.globalAlpha = 1; outline(X + 2, Y + 2, TILE - 4, TILE - 4, teamColorD(f.team)); rect(X + 10, Y + TILE - 8, 12, 3, teamColorD(f.team)); rect(X + 12, Y + TILE - 6, 8, 1, teamColorL(f.team)); if (f.carrier == null) drawFlag(tileX(f.x) + 13, tileY(f.y) + 6 + Math.round(Math.sin(BT.time * 5) * 1), f.team, Math.floor(BT.time * 6) % 2); }

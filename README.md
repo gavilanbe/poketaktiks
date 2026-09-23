@@ -127,6 +127,14 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
 - **Scene changes** close and reopen a Poké Ball over the screen.
 - **UI**: raised buttons that sink when pressed, panels that unfold, ribbon
   tabs, shiny headlines, count-ups.
+- **Map art**: every tile is pixel art drawn in code and cached: grass with
+  tufts and patches, flower clusters, animated tall grass that parts around a
+  Pokémon, shaded round trees, apple trees and pines, snow-capped peaks, water
+  with bobbing ripples and a three-quarter shoreline, dirt roads and sand with
+  grass edges that cast a shadow, cottages with shingled roofs, chimneys and
+  flower boxes, a Poké Center with its crest and PC sign, a keep-like HQ, a
+  columned Gym, Field Center machines, caves with crystals, rubble heaps,
+  molten lava, steel pillars and crates. Poké Balls on the map hop and twinkle.
 - **Board**: units wear a team-coloured outline, move ranges flood out from the
   unit, ready units hop at the start of the turn, the objective tracker and a
   segmented power meter sit top-left; phase banners tilt in with speed lines;
