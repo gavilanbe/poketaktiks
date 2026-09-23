@@ -172,9 +172,10 @@ const CHAPTERS = [
     intro: [
       { who: 'Lt. Surge', mon: 26, text: 'Hey, kid! Rocket has *Zapdos* caged in this plant and my Vermilion crew held hostage. Orders are orders!' },
       { who: 'Engineer Watt', mon: 81, text: 'The turbines are spinning backwards! Careful with the Voltorbs: they are *not* Poké Balls.' },
+      { who: 'Blue', mon: 17, text: 'Heh, the Tactician! I came for Zapdos too. My team fights *with* you today. Try not to slow me down.' },
       { who: 'Prof. Oak', text: 'Defeat *Zapdos* and the plant is free. Ground types are immune to Electric; Rock and Ice hurt it. It waits for you, so choose the moment.' },
     ],
-    outro: [{ who: 'Engineer Watt', mon: 81, text: 'The lights are back! You fought Zapdos and lived!' }, { who: 'Lt. Surge', mon: 26, text: 'Ha! My crew is free and you have my respect, soldier. *Thunder Wave* on your call!' }, { who: 'Bill', text: 'Blaine\'s lab on *Cinnabar* went dark. Rocket is after the fire bird nesting in the volcano.' }],
+    outro: [{ who: 'Engineer Watt', mon: 81, text: 'The lights are back! You fought Zapdos and lived!' }, { who: 'Lt. Surge', mon: 26, text: 'Ha! My crew is free and you have my respect, soldier. *Thunder Wave* on your call!' }, { who: 'Blue', mon: 17, text: 'Not bad. But I am still one step ahead. Smell ya later!' }, { who: 'Bill', text: 'Blaine\'s lab on *Cinnabar* went dark. Rocket is after the fire bird nesting in the volcano.' }],
     rewards: { pokeball: 5 },
     map: {
       name: 'Power Plant', seed: 66, objective: { type: 'boss', bossName: 'Zapdos' },
@@ -192,7 +193,7 @@ const CHAPTERS = [
         'bbbbbbbbbbbbbbbbbbbb',
       ],
       deploy: [{ x: 1, y: 2 }, { x: 2, y: 3 }, { x: 1, y: 4 }, { x: 2, y: 5 }, { x: 1, y: 6 }, { x: 2, y: 7 }],
-      units: [{ mon: 100, level: 17, x: 7, y: 2, ai: 'aggro' }, { mon: 100, level: 17, x: 8, y: 6, ai: 'guard' }, { mon: 100, level: 16, x: 6, y: 8, ai: 'aggro' }, { mon: 81, level: 17, x: 10, y: 1, ai: 'guard' }, { mon: 82, level: 19, x: 13, y: 4, ai: 'guard' }, { mon: 125, level: 19, x: 12, y: 2, ai: 'guard' }, { mon: 26, level: 19, x: 15, y: 6, ai: 'guard' }, { mon: 101, level: 19, x: 16, y: 2, ai: 'guard' }, { mon: 145, level: 23, x: 17, y: 4, ai: 'boss', boss: true, nick: 'Zapdos' },
+      units: [{ mon: 17, level: 19, team: 3, x: 2, y: 8, ai: 'aggro', nick: 'Blue\'s Pidgeotto' }, { mon: 8, level: 19, team: 3, x: 3, y: 8, ai: 'aggro', nick: 'Blue\'s Wartortle' }, { mon: 100, level: 17, x: 7, y: 2, ai: 'aggro' }, { mon: 100, level: 17, x: 8, y: 6, ai: 'guard' }, { mon: 100, level: 16, x: 6, y: 8, ai: 'aggro' }, { mon: 81, level: 17, x: 10, y: 1, ai: 'guard' }, { mon: 82, level: 19, x: 13, y: 4, ai: 'guard' }, { mon: 125, level: 19, x: 12, y: 2, ai: 'guard' }, { mon: 26, level: 19, x: 15, y: 6, ai: 'guard' }, { mon: 101, level: 19, x: 16, y: 2, ai: 'guard' }, { mon: 145, level: 23, x: 17, y: 4, ai: 'boss', boss: true, nick: 'Zapdos' },
         { mon: 100, level: 17, team: 2, x: 5, y: 5, ai: 'aggro' }, { mon: 81, level: 17, team: 2, x: 9, y: 4, ai: 'aggro' }],
       items: [{ x: 18, y: 8, item: 'pokeball' }, { x: 4, y: 1, item: 'pokeball' }],
     },

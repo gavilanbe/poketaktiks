@@ -144,7 +144,7 @@ feeding them, the wild Pokémon, the battlefield, and who leads your side.
 | 3 Mt. Moon | Brock (blackmailed) | Defeat Rocket's Raticate |
 | 4 Nugget Bridge | Misty (blackmailed) | Seize the Cerulean Gym |
 | 5 Rocket Hideout | Giovanni | Defeat Persian |
-| 6 Power Plant | Lt. Surge (blackmailed) | Defeat Zapdos |
+| 6 Power Plant | Lt. Surge (blackmailed); Blue fights beside you | Defeat Zapdos |
 | 7 Cinnabar Volcano | Blaine | Survive seven days |
 | 8 Cerulean Cave | Giovanni | Defeat Mewtwo |
 
