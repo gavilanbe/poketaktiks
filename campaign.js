@@ -245,46 +245,61 @@ const CHAPTERS = [
     },
   },
 ];
-// Random Skirmish battlefield: value noise → water / mountains / forests / tall grass, a road from HQ to HQ, each side's
-// own Poké Center and two neutral ones in the middle, placed point-symmetrically so neither side starts on better
-// ground. The foe commander's opening squad waits by their HQ; wild Pokémon roam in between (and breed in the grass).
-// opt.foe: the enemy commander (CO_TEAMS picks the squad). Objective: rout the foe or take their HQ.
+// Biomes for generated battlefields: terrain from a noise value (low → water, high → rock), the ground at the map's
+// edges, the road and what replaces impassable tiles on it, the center tile, the wild Pokémon that live there and the
+// weather the Battle Tower gives it. The duel scene reads the biome back from the tiles.
+const BIOMES = {
+  field: { name: 'Fields', tile: null, wild: null },
+  forest: { name: 'Forest', tile: (v, r) => v < .24 ? '~' : v > .82 ? 'M' : v > .52 ? 'T' : v > .4 ? 't' : r() < .1 ? ',' : '.', wild: [10, 13, 43, 46, 48, 69, 102, 123] },
+  sea: { name: 'Coast', tile: (v, r) => v < .42 ? '~' : v < .5 ? 's' : v > .8 ? 'M' : v > .7 ? 'T' : v > .6 ? 't' : r() < .06 ? ',' : '.', wild: [72, 90, 98, 116, 118, 120, 129, 54], weather: 'rain' },
+  mountain: { name: 'Mountains', tile: (v, r) => v < .24 ? '~' : v > .8 ? '^' : v > .62 ? 'M' : v > .55 ? 'T' : v > .48 ? 't' : r() < .06 ? 's' : '.', wild: [74, 27, 50, 56, 66, 95, 104, 111], weather: 'sand' },
+  snow: { name: 'Snowfield', tile: (v, r) => v < .3 ? 'i' : v > .76 ? 'M' : v > .6 ? 'S' : 'n', edge: v => v > .62 ? 'S' : 'n', ground: 'n', wild: [86, 90, 124, 131, 72, 41, 19, 29], weather: 'snow' },
+  volcano: { name: 'Volcano', tile: (v, r) => v < .37 ? 'L' : v > .74 ? 'W' : v > .6 ? 'r' : r() < .06 ? 'r' : 'c', edge: v => v > .64 ? 'r' : 'c', ground: 'c', path: 'c', road: { L: 'r' }, center: 'K', wild: [4, 37, 58, 77, 126, 74, 109, 66], weather: 'sun' },
+  cave: { name: 'Cave', tile: (v, r) => v < .34 ? 'w' : v > .72 ? 'W' : v > .6 ? 'r' : 'c', edge: v => v > .64 ? 'r' : 'c', ground: 'c', path: 'c', road: { w: '=' }, center: 'K', wild: [41, 74, 95, 50, 104, 66, 27, 92] },
+};
+// Random Skirmish battlefield: value noise → water / mountains / forests / tall grass (or the biome's own terrain), a road
+// from HQ to HQ, each side's own center and two neutral ones in the middle, placed point-symmetrically so neither side
+// starts on better ground. The foe commander's opening squad waits by their HQ; wild Pokémon roam in between (and breed
+// in the grass). opt.foe: the enemy commander (CO_TEAMS picks the squad); opt.biome. Objective: rout the foe or take
+// their HQ.
 function skirmishMap(seed, w = 16, h = 11, avgLevel = 12, opt = {}) {
   const r = mulberry32(seed); const noise = (x, y, s) => { const n = Math.sin((x * 12.9898 + y * 78.233 + s) * 43758.5453) * 1e4; return n - Math.floor(n); };
   const grid = []; const base = r() * 1000;
   for (let y = 0; y < h; y++) { const row = []; for (let x = 0; x < w; x++) { let v = 0; for (let o = 1; o <= 3; o++) { const s = o * 2; const fx = x / s, fy = y / s; const x0 = Math.floor(fx), y0 = Math.floor(fy); const tx = fx - x0, ty = fy - y0; const a = noise(x0, y0, base + o), b = noise(x0 + 1, y0, base + o), c = noise(x0, y0 + 1, base + o), d = noise(x0 + 1, y0 + 1, base + o); v += lerp(lerp(a, b, tx), lerp(c, d, tx), ty) / o; } row.push(v / 1.83); } grid.push(row); }
-  const rows = []; const theme = Math.floor(r() * 3);
-  for (let y = 0; y < h; y++) { let s = ''; for (let x = 0; x < w; x++) { const v = grid[y][x]; let ch = '.'; if (x <= 1 || x >= w - 2) ch = v > .62 ? 'T' : v > .5 ? 't' : '.'; else if (v < .3) ch = '~'; else if (v < .36) ch = 's'; else if (v > .74) ch = theme === 2 ? '^' : 'M'; else if (v > .62) ch = 'T'; else if (v > .52) ch = 't'; else if (r() < .08) ch = ','; s += ch; } rows.push(s); }
+  const biome = BIOMES[opt.biome] ? opt.biome : 'field', Bm = BIOMES[biome], rows = []; const theme = Math.floor(r() * 3);
+  for (let y = 0; y < h; y++) { let s = ''; for (let x = 0; x < w; x++) { const v = grid[y][x]; let ch = '.'; if (x <= 1 || x >= w - 2) ch = Bm.edge ? Bm.edge(v) : v > .62 ? 'T' : v > .5 ? 't' : '.'; else if (Bm.tile) ch = Bm.tile(v, r); else if (v < .3) ch = '~'; else if (v < .36) ch = 's'; else if (v > .74) ch = theme === 2 ? '^' : 'M'; else if (v > .62) ch = 'T'; else if (v > .52) ch = 't'; else if (r() < .08) ch = ','; s += ch; } rows.push(s); }
   const put = (x, y, ch) => { rows[y] = rows[y].slice(0, x) + ch + rows[y].slice(x + 1); };
+  const ground = Bm.ground || '.', path = Bm.path || '#', blocked = '~wLM^W', road = Object.assign({ '~': '=', w: '=', L: '=', M: ground, '^': ground, W: ground }, Bm.road || {});
   // the road across the middle, bridged over water, with an HQ at each end
-  const ry = Math.floor(h / 2) + Math.floor(r() * 3) - 1; rows[ry] = rows[ry].split('').map(c => c === '~' ? '=' : (c === 'M' || c === '^') ? '.' : '#').join('');
+  const ry = Math.floor(h / 2) + Math.floor(r() * 3) - 1; rows[ry] = rows[ry].split('').map(c => road[c] || path).join('');
   put(1, ry, 'Q'); put(w - 2, ry, 'Q');
   // a center: a path to the road (a causeway over water, a pass through rock) and walkable ground beside it
-  const center = (x, y) => { const step = y < ry ? 1 : -1; for (let yy = y + step; yy !== ry; yy += step) if ('~M^'.includes(rows[yy][x])) put(x, yy, '#'); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < w && Y < h && '~^'.includes(rows[Y][X])) put(X, Y, '.'); } put(x, y, 'C'); };
+  const center = (x, y) => { const step = y < ry ? 1 : -1; for (let yy = y + step; yy !== ry; yy += step) if (blocked.includes(rows[yy][x])) put(x, yy, path); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < w && Y < h && '~^wLW'.includes(rows[Y][X])) put(X, Y, ground); } put(x, y, Bm.center || 'C'); };
   const dy = r() < .5 ? -3 : 3, cy = (y) => clamp(y, 1, h - 2), mx = Math.floor(w / 2);
   const own = [{ x: 3, y: cy(ry + dy) }, { x: w - 4, y: cy(ry - dy) }], neutral = [{ x: mx - 2, y: cy(ry - dy) }, { x: w - 1 - (mx - 2), y: cy(ry + dy) }];
   for (const c of own.concat(neutral)) center(c.x, c.y);
   // deploy tiles: open ground in the first three columns, nearest the HQ first
   const order = []; for (let y = 0; y < h; y++) for (let x = 0; x < 3; x++) order.push({ x, y }); order.sort((a, b) => (Math.abs(a.x - 1) + Math.abs(a.y - ry)) - (Math.abs(b.x - 1) + Math.abs(b.y - ry)));
-  const deploy = order.filter(c => '.,t#'.includes(rows[c.y][c.x])).slice(0, 8);
+  const open = '.,t#csSinr', deploy = order.filter(c => open.includes(rows[c.y][c.x])).slice(0, 8);
   const taken = new Set(deploy.map(d => key(d.x, d.y)));
-  const spot = (x0, x1, near) => { const opts = []; for (let y = 0; y < h; y++) for (let x = x0; x <= x1; x++) if ('.,t#TsM'.includes(rows[y][x]) && !taken.has(key(x, y))) opts.push({ x, y }); if (near) opts.sort((a, b) => dist(a, near) - dist(b, near) || r() - .5); const s = near ? opts[Math.floor(r() * Math.min(4, opts.length))] : opts[Math.floor(r() * opts.length)]; if (s) taken.add(key(s.x, s.y)); return s || null; };
+  const spot = (x0, x1, near) => { const opts = []; for (let y = 0; y < h; y++) for (let x = x0; x <= x1; x++) if ((open + 'TM').includes(rows[y][x]) && !taken.has(key(x, y))) opts.push({ x, y }); if (near) opts.sort((a, b) => dist(a, near) - dist(b, near) || r() - .5); const s = near ? opts[Math.floor(r() * Math.min(4, opts.length))] : opts[Math.floor(r() * opts.length)]; if (s) taken.add(key(s.x, s.y)); return s || null; };
   // the foe's opening squad: three of their commander's Pokémon by their HQ (the Ace joins them at the start)
   const units = [], foe = opt.foe && CO_TEAMS[opt.foe] ? opt.foe : 'rocket', hq = { x: w - 2, y: ry };
   const squad = CO_TEAMS[foe].filter(n => n !== (COS[foe] && COS[foe].ace)).slice(0, 5).sort(() => r() - .5).slice(0, 3);
   squad.forEach((num, i) => { const s = spot(w - 5, w - 1, hq), level = Math.max(2, avgLevel + (i === 0 ? 1 : Math.floor(r() * 3) - 1)); if (s) units.push({ mon: formAt(num, level), level, x: s.x, y: s.y, ai: 'aggro', box: true }); });
   // wild Pokémon in the middle band (their species breed in the tall grass later)
-  const pool = DEX_LIST.filter(d => d.num < 144 && d.num !== 132 && d.num !== 143 && LINE_ROOT[d.num] === d.num);
+  const pool = Bm.wild ? Bm.wild.map(n => DEX[n]) : DEX_LIST.filter(d => d.num < 144 && d.num !== 132 && d.num !== 143 && LINE_ROOT[d.num] === d.num);
   for (let i = 0; i < 3; i++) { const s = spot(4, w - 5); if (!s) break; const d = pool[Math.floor(r() * pool.length)], level = Math.max(2, avgLevel - 2 + Math.floor(r() * 3)); units.push({ mon: formAt(d.num, level), level, x: s.x, y: s.y, team: 2, ai: 'aggro' }); }
   const items = []; for (let i = 0; i < 2; i++) { const s = spot(4, w - 5); if (s) items.push({ x: s.x, y: s.y, item: 'pokeball' }); }
   const war = { owners: { [key(own[0].x, own[0].y)]: 0, [key(own[1].x, own[1].y)]: 1 }, names: { [key(1, ry)]: 'YOUR HQ', [key(w - 2, ry)]: (COS[foe] ? COS[foe].name.toUpperCase() : 'FOE') + "'S HQ" } };
-  return { name: 'Skirmish #' + (seed % 1000), seed, objective: { type: 'war' }, rows, deploy, units, items, par: 12, music: pick(['player', 'calm']), war, foe };
+  return { name: (biome === 'field' ? 'Skirmish' : Bm.name) + ' #' + (seed % 1000), seed, objective: { type: 'war' }, rows, deploy, units, items, par: 12, music: pick(['player', 'calm']), war, foe, biome };
 }
 
 // Skirmish options (the setup screen's rules). Both armies count twelve: four on the map and eight in the Box (the rest of
 // your collection, topped up with loaners from Oak's lab when it is small; the foe's squad, Ace and army).
-const SKIRMISH = { slots: 4, box: 8, funds: [0, 1000, 2000, 5000, 10000], weather: ['none', 'rain', 'sun', 'sand', 'snow', 'random'], levels: [5, 8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 30, 33, 36, 40, 45, 50] };
+const SKIRMISH = { biomes: ['field', 'forest', 'sea', 'mountain', 'snow', 'volcano', 'cave', 'random'], slots: 4, box: 8, funds: [0, 1000, 2000, 5000, 10000], weather: ['none', 'rain', 'sun', 'sand', 'snow', 'random'], levels: [5, 8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 30, 33, 36, 40, 45, 50] };
 const LOANERS = [16, 19, 25, 1, 4, 7, 74, 63, 43, 60, 66, 92, 41, 23, 56, 100, 109, 111];
+function skirmishBiome(S) { return S.biome === 'random' || !BIOMES[S.biome] ? SKIRMISH.biomes[S.seed % 7] : S.biome; }
 function skirmishLoaners(party, level, n) { const have = new Set(party.map(p => LINE_ROOT[p.num])); return LOANERS.filter(num => !have.has(LINE_ROOT[num])).slice(0, Math.max(0, n)).map(num => ({ num: formAt(num, level), level })); }
 
 // Versus: both trainers deploy from the same catalog (at the match level, grown into their evolutions), plus catches.

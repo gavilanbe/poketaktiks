@@ -108,6 +108,7 @@ const TERRAIN = {
   'x': { id: 'crate', name: 'Crates', cost: { walk: 2, fly: 1 }, def: 15, eva: 10 },
   'i': { id: 'ice', name: 'Ice', cost: { walk: 1 }, def: 0, eva: -10 },
   'S': { id: 'snow', name: 'Snow', cost: { walk: 2, fly: 1 }, def: 5, eva: 5 },
+  'n': { id: 'snow', name: 'Snowfield', cost: { walk: 1 }, def: 0, eva: 0 }, // packed snow: looks like snow, walks like a plain
 };
 for (const k in TERRAIN) TERRAIN[k].ch = k;
 function moveCost(terr, unit) {

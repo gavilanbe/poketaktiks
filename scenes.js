@@ -437,7 +437,8 @@ const SK_RULES = [
   { k: 'level', label: 'LEVEL', vals: SKIRMISH.levels, show: v => 'Lv ' + v },
   { k: 'funds', label: 'FUNDS', vals: SKIRMISH.funds, show: v => money(v) + ' each' },
   { k: 'weather', label: 'WEATHER', vals: SKIRMISH.weather, show: v => v === 'none' ? 'Clear' : v === 'random' ? 'Random' : WEATHER[v].name },
-  { k: 'seed', label: 'MAP', vals: null, show: v => 'Skirmish #' + v },
+  { k: 'biome', label: 'LAND', vals: SKIRMISH.biomes, show: (v, S) => v === 'random' ? 'Random · ' + BIOMES[skirmishBiome(S)].name : BIOMES[v].name },
+  { k: 'seed', label: 'MAP', vals: null, show: v => '#' + v },
 ];
 function skirmishRoot() { return typeof SAVE !== 'undefined' && SAVE && SAVE.starter && !(SC.data && SC.data.preset) ? SAVE.starter : 4; }
 // The battlefield in miniature: deploy tiles, each property under its owner's colour (HQs flagged), every Pokémon.
@@ -451,7 +452,7 @@ function drawWarPreview(map, bd, px0, py0, pw, ph) {
 }
 function skirmishDraw() {
   const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t; rect(0, 0, W, H, UI.bg);
-  const mapKey = [S.seed, S.level, S.foe].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = skirmishMap(S.seed, 16, 11, S.level, { foe: S.foe }); S.bd = makeBackdrop(S.map); if (S.bdKey && S.bdKey.split('|')[0] !== String(S.seed)) S.rolledAt = SC.t; S.bdKey = mapKey; }
+  const mapKey = [S.seed, S.level, S.foe, S.biome].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = skirmishMap(S.seed, 16, 11, S.level, { foe: S.foe, biome: skirmishBiome(S) }); S.bd = makeBackdrop(S.map); if (S.bdKey && S.bdKey.split('|')[0] !== String(S.seed)) S.rolledAt = SC.t; S.bdKey = mapKey; }
   drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 + 40 - t * 4, (H - S.bd.canvas.height) / 2 + 30, .84); drawCloudShadows(t);
   const narrow = narrowView() || portraitView(), bh = btnH(); SC.hits = []; S.focus = clamp(S.focus || 0, 0, SK_RULES.length - 1);
   const top = screenTitle('SKIRMISH', narrow ? null : 'Random battlefield · rout the foe or take their HQ', 4), foot = footerBand(bh + 12), fy = foot + 6;

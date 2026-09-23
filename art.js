@@ -466,6 +466,10 @@ function drawTile(ch, variant, frame, g, owner = null) {
       for (let i = 0; i < 4; i++) p.P(rr(1, 30), rr(1, 30), r() < .5 ? '#ffffff' : S.d);
       if (variant === 2) { const x = rr(5, 24), y = rr(5, 24); p.P(x, y, '#6a4a30'); p.P(x + 1, y + 1, '#6a4a30'); p.P(x + 2, y + 1, '#8a6a48'); p.P(x + 3, y, '#6a4a30'); }
       if (variant === 3) { const x = rr(5, 24), y = rr(5, 24); p.R(x, y, 3, 2, PAL.rock.m); p.P(x, y, PAL.rock.l); p.H(x, y - 1, 3, '#ffffff'); p.H(x, y + 2, 4, S.d); } break; }
+    // Snowfield: packed snow, flat and wind-rippled, a trail of prints now and then (deep drifts are 'S').
+    case 'n': { const S = PAL.snow; p.R(0, 0, 32, 32, S.m); for (let i = 0; i < 3; i++) { const y = rr(4, 27), x = rr(0, 20), l = rr(6, 12); p.H(x, y, l, mix(S.m, S.d, .45)); p.H(x + 2, y - 1, l - 4, S.l); }
+      for (let i = 0; i < 5; i++) p.P(rr(1, 30), rr(1, 30), r() < .6 ? '#ffffff' : mix(S.m, S.d, .5));
+      if (variant === 1) { let x = rr(3, 8), y = rr(6, 24); for (let k = 0; k < 4; k++) { p.P(x, y, S.d); p.P(x + 1, y + 1, mix(S.m, S.d, .6)); x += 6; y += r() < .5 ? 2 : -2; if (x > 29 || y < 1 || y > 30) break; } } break; }
     default: p.R(0, 0, 32, 32, '#ff00ff');
   }
 }

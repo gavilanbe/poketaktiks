@@ -169,12 +169,13 @@ function warDecide(u) {
 // out, one of the pool may step out of an empty patch of tall grass away from everyone (gameplay RNG, 30%).
 function wildSetup(mapDef) {
   const pool = (mapDef.wildPool || (mapDef.units || []).filter(d => d.team === 2)).map(d => ({ mon: d.mon, level: d.level, ai: d.ai || 'aggro' }));
-  const grass = B.map.tiles.some(row => row.some(t => t.id === 'tall'));
-  B.wild = pool.length && grass ? { pool, cap: mapDef.wildCap != null ? mapDef.wildCap : Math.max(2, pool.length), chance: mapDef.wildChance != null ? mapDef.wildChance : .3 } : null;
+  // tall grass breeds them; a map without grass (a cave, a snowfield) breeds them on its open floor
+  const has = id => B.map.tiles.some(row => row.some(t => t.id === id)), tiles = has('tall') ? ['tall'] : ['cave', 'snow', 'sand'].filter(has);
+  B.wild = pool.length && tiles.length ? { pool, tiles, cap: mapDef.wildCap != null ? mapDef.wildCap : Math.max(2, pool.length), chance: mapDef.wildChance != null ? mapDef.wildChance : .3 } : null;
 }
 function wildSpawn() {
   const W = B.wild; if (!W || B.result || alive(2).length >= W.cap || rnd() >= W.chance) return [];
-  const spots = []; for (let y = 0; y < B.map.h; y++) for (let x = 0; x < B.map.w; x++) if (B.map.tiles[y][x].id === 'tall' && !unitAt(x, y) && !B.units.some(u => u.hp > 0 && dist(u, { x, y }) <= 2)) spots.push({ x, y });
+  const spots = []; for (let y = 0; y < B.map.h; y++) for (let x = 0; x < B.map.w; x++) if ((W.tiles || ['tall']).includes(B.map.tiles[y][x].id) && !unitAt(x, y) && !B.units.some(u => u.hp > 0 && dist(u, { x, y }) <= 2)) spots.push({ x, y });
   if (!spots.length) return []; const p = spots[Math.floor(rnd() * spots.length)], d = W.pool[Math.floor(rnd() * W.pool.length)];
   const u = makeUnit(d.mon, d.level, 2, { x: p.x, y: p.y, ai: d.ai }); u.provoked = false; B.units.push(u); requestBigSprite(u.num); return [u];
 }
