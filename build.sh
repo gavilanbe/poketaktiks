@@ -1,7 +1,7 @@
 #!/bin/sh
 # Concatenates the source files into a single index.html (no build tools needed).
 cd "$(dirname "$0")"
-FILES="core.js i18n.js lang/es.js lang/es-data.js lang/es-story.js font.js dex.js data.js animmeta.js art.js scenery.js model.js captain.js battle.js menus.js duel.js campaign.js war.js territory.js scenes.js title.js route.js journey.js modes.js main.js"
+FILES="core.js i18n.js lang/es.js lang/es-data.js lang/es-story.js font.js dex.js data.js animmeta.js art.js scenery.js model.js captain.js battle.js menus.js duel.js campaign.js war.js territory.js scenes.js menukit.js title.js route.js journey.js modes.js main.js"
 # a syntax error in any module stops the build with its file and line (when node is around)
 if command -v node >/dev/null 2>&1; then for f in $FILES; do node --check "$f" || exit 1; done; fi
 {

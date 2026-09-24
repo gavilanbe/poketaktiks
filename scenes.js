@@ -32,14 +32,14 @@ function vsUndo(S) { const picks = S.teams[0].length + S.teams[1].length; if (!p
 function vsRandom(S) { const free = VS_ROSTER.filter(n => !S.teams[0].includes(n) && !S.teams[1].includes(n)); while (S.teams[0].length + S.teams[1].length < S.size * 2 && free.length) { const i = Math.floor(Math.random() * free.length); vsPick(S, free.splice(i, 1)[0]); } Audio.sfx('select'); }
 // Match rules shown beside the roster: each row cycles with its arrows (or a tap on the value).
 const VS_RULES = [
-  { k: 'mode', label: 'MODE', vals: ['elim', 'ctf', 'hill'], show: v => VS_MODES[v].name },
-  { k: 'arena', label: 'ARENA', vals: ['s', 'm', 'l'], show: v => VS_ARENAS[v].name + ' ' + VS_ARENAS[v].w + '×' + VS_ARENAS[v].h },
-  { k: 'seed', label: 'MAP', vals: null, show: v => TR('Arena #{0}', v) },
-  { k: 'fog', label: 'FOG', vals: [false, true], show: v => v ? 'On' : 'Off' },
-  { k: 'co0', label: 'P1 COMMANDER', vals: CO_ORDER.slice(1), show: v => COS[v].name },
-  { k: 'co1', label: 'P2 COMMANDER', vals: CO_ORDER.slice(1), show: v => COS[v].name },
-  { k: 'funds', label: 'FUNDS', vals: VS_FUNDS, show: v => money(v) },
-  { k: 'weather', label: 'WEATHER', vals: SKIRMISH.weather, show: v => v === 'none' ? 'Clear' : v === 'random' ? 'Random' : WEATHER[v].name },
+  { k: 'mode', label: 'MODE', icon: 'flag', vals: ['elim', 'ctf', 'hill'], show: v => VS_MODES[v].name },
+  { k: 'arena', label: 'ARENA', icon: 'map', vals: ['s', 'm', 'l'], show: v => VS_ARENAS[v].name + ' ' + VS_ARENAS[v].w + '×' + VS_ARENAS[v].h, short: v => VS_ARENAS[v].w + '×' + VS_ARENAS[v].h },
+  { k: 'seed', label: 'MAP', icon: 'dice', vals: null, show: v => TR('Arena #{0}', v), short: v => '#' + v },
+  { k: 'fog', label: 'FOG', icon: 'eye', vals: [false, true], show: v => v ? 'On' : 'Off' },
+  { k: 'co0', label: 'P1 COMMANDER', icon: 'crown', vals: CO_ORDER.slice(1), show: v => COS[v].name },
+  { k: 'co1', label: 'P2 COMMANDER', icon: 'crown', vals: CO_ORDER.slice(1), show: v => COS[v].name },
+  { k: 'funds', label: 'FUNDS', icon: 'coin', vals: VS_FUNDS, show: v => money(v) },
+  { k: 'weather', label: 'WEATHER', icon: 'sun', vals: SKIRMISH.weather, show: v => v === 'none' ? 'Clear' : v === 'random' ? 'Random' : WEATHER[v].name },
 ];
 function vsCycle(S, rule, dir) { const vals = typeof rule.vals === 'function' ? rule.vals(S) : rule.vals; if (vals) { const i = vals.indexOf(S[rule.k]); S[rule.k] = vals[(Math.max(0, i) + dir + vals.length) % vals.length]; } else S.seed = (S.seed + dir + 1000) % 1000; Audio.sfx('menu'); }
 function vsRuleRows(S, x, y, w, rh, rules, focus = -1) {
@@ -58,64 +58,59 @@ function vsRuleGrid(S, x, y, w, rh, rules) {
     rrect(cx, cy, cw, rh, '#141c30', 1); outline(cx, cy, cw, rh, UI.border2); text(fitLabel(rule.label, cw - 6), cx + 3, cy + 2, UI.muted); textR(fitLabel(val, cw - 6), cx + cw - 3, cy + rh - 9, rule.k === 'mode' ? UI.gold : UI.ink);
     hit(cx, cy, cw, rh, () => vsCycle(S, rule, 1), rule.label + '+'); }); // a tap is the row's [+]
 }
+// Versus: both trainers' bands across the top (their commander, the slots filling as they pick, the one picking lit),
+// the arena between them, the roster as tiles tinted by type (the cursor bounces, picked ones wear P1 / P2), what the
+// focused Pokémon is, and the match rules as tiles. Phones stack the bands, the roster and the rules.
 function versusDraw() {
-  const W = VIEW.w, H = VIEW.h, S = SC.data; rect(0, 0, W, H, '#0e0c10');
+  const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t;
   const mapKey = [S.seed, S.mode, S.arena, S.fog, S.weather].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = vsMapFor(S); S.bd = makeBackdrop(S.map); S.bdKey = mapKey; }
-  drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2, (H - S.bd.canvas.height) / 2, .8); SC.hits = [];
+  mkBackdrop('versus'); SC.hits = [];
   const picks = S.teams[0].length + S.teams[1].length, full = picks >= S.size * 2; const cur = full ? -1 : S.order[picks]; S.cur = cur;
   screenTitle('VERSUS', null, 3);
-  textC(full ? 'Both teams are ready!' : TR('PLAYER {0} picks  ·  {1} / {2}', cur + 1, picks + 1, S.size * 2), W / 2, 18, full ? UI.green : cur === 0 ? '#8ab4ff' : '#ff9a9a', { outline: UI.shadow });
-  const narrow = narrowView(); const bh = btnH(); let gy;
-  // arena preview with the mode furniture (flag bases, the hill, deploy zones)
-  const preview = (mx, my, pwid, phei) => { const sc = pwid / S.bd.canvas.width; ctx.drawImage(S.bd.canvas, mx, my, pwid, phei); outline(mx - 1, my - 1, pwid + 2, phei + 2, UI.border);
-    const cell = Math.ceil(TILE * sc); for (const d of S.map.deploy) rect(mx + d.x * TILE * sc, my + d.y * TILE * sc, cell, cell, '#3d7dff90'); for (const d of S.map.deploy2) rect(mx + d.x * TILE * sc, my + d.y * TILE * sc, cell, cell, '#ff4b4b90');
-    if (S.map.hill) { const h = S.map.hill; outline(mx + (h.x - 1) * TILE * sc, my + (h.y - 1) * TILE * sc, cell * 3, cell * 3, UI.gold); }
-    if (S.map.flags) for (const f of S.map.flags) rect(mx + f.x * TILE * sc, my + f.y * TILE * sc, cell, cell, teamColorL(f.team));
-    if (S.fog) { ctx.globalAlpha = .35; rect(mx, my, pwid, phei, '#060a16'); ctx.globalAlpha = 1; textC('FOG', mx + pwid / 2, my + phei / 2 - 3, UI.ink, { outline: '#000' }); } };
-  if (narrow) { // phones: two compact team strips, no arena preview, a four-column roster
-    const pw = Math.floor((W - 16) / 2), ph = 40, py = 38;
-    const strip = (t, x) => { panel(x, py, pw, ph, { title: 'P' + (t + 1), fill: t === 0 ? '#17264a' : '#3a1a22', border: cur === t ? UI.gold : UI.border });
-      const sw = Math.floor((pw - 10) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 5 + i * sw; portraitBg(sx, py + 7, sw - 2, 22, t); const n = S.teams[t][i]; if (n != null) { ctx.drawImage(monIcon(n, t === 1), sx + Math.round((sw - 2 - 24) / 2), py + 10, 24, 18); if (i === 0) drawCrown(sx + 1, py + 8); hit(sx, py + 7, sw - 2, 22, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 7, sw - 2, 22, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 14, '#ffffff40'); }
-      textC(S.teams[t].length >= S.size ? 'READY' : cur === t ? 'PICKING…' : S.teams[t].length + '/' + S.size, x + pw / 2, py + ph - 9, S.teams[t].length >= S.size ? UI.green : cur === t ? UI.gold : UI.muted); };
-    strip(0, 6); strip(1, W - 6 - pw); gy = py + ph + 8;
-  } else {
-    // team panels left / right, arena preview in the middle
-    const pw = Math.min(140, Math.floor((W - 110) / 2) - 8), ph = 56, py = 28; const p1x = 6, p2x = W - pw - 6;
-    const teamPanel = (t, x) => { const coId = t === 0 ? S.co0 : S.co1, co = COS[coId]; panel(x, py, pw, ph, { title: TR('PLAYER {0}', t + 1) + (co ? ' · ' + co.name.toUpperCase() : ''), fill: t === 0 ? '#17264a' : '#3a1a22', border: cur === t ? UI.gold : UI.border });
-      { const face = co && trainerFace(co.tr); if (face) { const fx = x + pw - 22, fy = py - 9; rect(fx - 1, fy - 1, 20, 20, co.col); ctx.drawImage(face, fx, fy); outline(fx - 2, fy - 2, 22, 22, UI.inset); hit(fx - 2, fy - 2, 22, 22, () => vsCycle(S, VS_RULES.find(r => r.k === (t === 0 ? 'co0' : 'co1')), 1), 'P' + (t + 1) + ' CO'); } }
-      const sw = Math.floor((pw - 12) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 6 + i * sw; portraitBg(sx, py + 8, sw - 2, 34, t); const n = S.teams[t][i]; if (n != null) { drawMon(n, sx + (sw - 2) / 2, py + 40, { flip: t === 1, outline: i === 0 ? UI.gold : null }); if (i === 0) drawCrown(sx + 2, py + 10); hit(sx, py + 8, sw - 2, 34, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 8, sw - 2, 34, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 22, '#ffffff40'); }
-      text(TR('{0}/{1} picked', S.teams[t].length, S.size), x + 6, py + ph - 10, UI.muted); textR(S.teams[t].length >= S.size ? 'READY' : cur === t ? 'PICKING…' : 'waiting', x + pw - 6, py + ph - 10, S.teams[t].length >= S.size ? UI.green : cur === t ? UI.gold : UI.muted); };
-    teamPanel(0, p1x); teamPanel(1, p2x);
-    const mw = p2x - (p1x + pw) - 12; const sc = Math.min(mw / S.bd.canvas.width, (ph - 4) / S.bd.canvas.height); const pwid = Math.round(S.bd.canvas.width * sc), phei = Math.round(S.bd.canvas.height * sc); preview(Math.round(W / 2 - pwid / 2), py + Math.round((ph - phei) / 2), pwid, phei);
-    gy = py + ph + 8;
-  }
-  // roster grid (left on wide screens, centred on phones) and the match rules beside / under it
-  const cols = vsCols(), cw = 40, chh = narrow ? 22 : 30; const rows = Math.ceil(VS_ROSTER.length / cols); const gx = narrow ? Math.round(W / 2 - cols * cw / 2) : 6;
-  rrect(gx - 3, gy - 3, cols * cw + 6, rows * chh + 6, '#0b1020c0', 2); outline(gx - 3, gy - 3, cols * cw + 6, rows * chh + 6, UI.border2);
-  VS_ROSTER.forEach((n, i) => { const x = gx + (i % cols) * cw, y = gy + Math.floor(i / cols) * chh; const hot = SC.i === i; const t = S.teams[0].includes(n) ? 0 : S.teams[1].includes(n) ? 1 : -1;
-    rrect(x + 1, y + 1, cw - 2, chh - 2, hot ? '#2c4784' : t >= 0 ? teamColorD(t) : '#141c30', 1); if (hot) outline(x + 1, y + 1, cw - 2, chh - 2, UI.gold);
-    if (t >= 0) ctx.globalAlpha = .45; drawMon(n, x + cw / 2, y + chh - 2 + (hot ? Math.round(Math.sin(SC.t * 8)) : 0), {}); ctx.globalAlpha = 1;
-    if (t >= 0) { rrect(x + cw - 13, y + 2, 11, 8, teamColor(t), 1); textC('P' + (t + 1), x + cw - 8, y + 2, '#ffffff'); }
+  { const msg = full ? 'Both teams are ready!' : TR('PLAYER {0} picks  ·  {1} / {2}', cur + 1, picks + 1, S.size * 2), col = full ? UI.green : cur === 0 ? '#8ab4ff' : '#ff9a9a', mw = textWidth(msg) + 16, pulse = full || REDUCED ? 0 : .5 + .5 * Math.sin(t * 5); ctx.globalAlpha = .75; rrect(Math.round(W / 2 - mw / 2), 17, mw, 11, full ? '#10301c' : cur === 0 ? '#101c48' : '#3a1020', 2); ctx.globalAlpha = 1; if (pulse) { ctx.globalAlpha = .3 * pulse; outline(Math.round(W / 2 - mw / 2), 17, mw, 11, col); ctx.globalAlpha = 1; } textC(msg, W / 2, 19, col); }
+  const narrow = narrowView(); let gy;
+  // one trainer's band: gradient in the team colour, the commander's bust at the outer edge, the slots as sockets
+  const band = (tm, x, y, w, h) => { const coId = tm === 0 ? S.co0 : S.co1, co = COS[coId], picking = cur === tm, col = teamColor(tm), ready = S.teams[tm].length >= S.size;
+    if (picking && !REDUCED) { ctx.globalAlpha = .25 + .25 * Math.sin(t * 5); rrect(x - 2, y - 2, w + 4, h + 4, UI.gold, 3); ctx.globalAlpha = 1; }
+    rrect(x + 1, y + 2, w, h, UI.shadow, 2); rrect(x, y, w, h, picking ? UI.gold : UI.inset, 2); for (let j = 1; j < h - 1; j++) rect(x + 1, y + j, w - 2, 1, mix(shade(col, -.35), shade(col, -.78), j / h));
+    const bw = narrow ? 0 : Math.min(44, h - 4), bust = co && bw ? trainerBust(co.tr, tm === 1) : null, bx = tm === 0 ? x + 2 : x + w - 2 - bw;
+    if (bust) { ctx.save(); ctx.beginPath(); ctx.rect(bx, y + 2, bw, h - 4); ctx.clip(); ctx.drawImage(bust, bx + Math.round((bw - 48) / 2), y + h - 48); ctx.restore(); }
+    const face = co && narrow ? trainerFace(co.tr) : null; if (face) { const fx = tm === 0 ? x + 3 : x + w - 21; rect(fx - 1, y + 2, 20, 20, co.col); ctx.drawImage(face, fx, y + 3); }
+    if (co) hit(tm === 0 ? x : x + w - (bw || 22), y, bw || 22, Math.min(h, 24), () => vsCycle(S, VS_RULES.find(r => r.k === (tm === 0 ? 'co0' : 'co1')), 1), 'P' + (tm + 1) + ' CO');
+    const lx = tm === 0 ? x + (bw || 22) + 4 : x + 4, lw = w - (bw || 22) - 8, head = TR('PLAYER {0}', tm + 1) + (co ? ' · ' + TRX(co.name).toUpperCase() : '');
+    text(fitLabel(narrow ? 'P' + (tm + 1) : head, lw), lx, y + 3, '#ffffff', { outline: UI.inset, raw: narrow });
+    const sw = Math.floor(lw / S.size), sh = h - 24; for (let i = 0; i < S.size; i++) { const sx = lx + i * sw, sy = y + 13, n = S.teams[tm][i];
+      rrect(sx, sy, sw - 2, sh, '#07061ac0', 2); outline(sx, sy, sw - 2, sh, shade(col, -.2));
+      if (n != null) { const pop = easeOutBack(clamp(appear('vsslot' + tm + ':' + i + ':' + n) / .25, 0, 1), 2.4); ctx.save(); ctx.beginPath(); ctx.rect(sx + 1, sy + 1, sw - 4, sh - 2); ctx.clip(); drawMon(n, sx + (sw - 2) / 2, sy + sh - 1 + Math.round((1 - Math.min(1, pop)) * 8), { flip: tm === 1, outline: i === 0 ? UI.gold : null }); ctx.restore(); if (i === 0) drawCrown(sx + 1, sy + 1); hit(sx, sy, sw - 2, sh, () => { S.teams[tm].splice(i, 1); Audio.sfx('cancel'); }); }
+      else if (picking && i === S.teams[tm].length) { if (REDUCED || Math.floor(t * 3) % 2) outline(sx, sy, sw - 2, sh, UI.gold); textC('?', sx + (sw - 2) / 2, sy + Math.round(sh / 2) - 4, UI.gold); } else drawBall(sx + Math.round((sw - 2) / 2), sy + Math.round(sh / 2), '#3a3e6a', 3); }
+    textR(ready ? 'READY' : picking ? 'PICKING…' : TR('{0}/{1} picked', S.teams[tm].length, S.size), tm === 0 ? x + w - 4 - (narrow ? 0 : 0) : x + w - 4 - (bw || 22), y + h - 9, ready ? UI.green : picking ? UI.gold : UI.muted, { outline: UI.inset }); };
+  if (narrow) { const pw = Math.floor((W - 16) / 2), ph = 44, py = 32; band(0, 6, py, pw, ph); band(1, W - 6 - pw, py, pw, ph); gy = py + ph + 7; }
+  else { const pw = Math.min(210, Math.floor((W - 130) / 2)), ph = 58, py = 32; band(0, 6, py, pw, ph); band(1, W - 6 - pw, py, pw, ph);
+    const mw = W - 2 * pw - 24; mkMapFrame(S.bd, S.map, 6 + pw + 6, py - 4, mw, ph + 8, { war: false, dim: S.fog ? .35 : 0 }); if (S.fog) textC('FOG', W / 2, py + ph / 2 - 3, UI.ink, { outline: '#000' });
+    { const vk = REDUCED ? 1 : clamp(appear('vsemb') / .3, 0, 1); if (vk > 0 && mw < 90) displayC('VS', W / 2, py + ph + 6, { style: 'red', slant: 1 }); }
+    gy = py + ph + 10; }
+  // the roster: tiles tinted by the Pokémon's first type; the cursor bounces; picked ones fade and wear their player's badge
+  const cols = vsCols(), cw = narrow ? 40 : 40, chh = narrow ? 22 : 30, rows = Math.ceil(VS_ROSTER.length / cols), gx = narrow ? Math.round(W / 2 - cols * cw / 2) : 6;
+  VS_ROSTER.forEach((n, i) => { const x = gx + (i % cols) * cw, y = gy + Math.floor(i / cols) * chh, hot = SC.i === i, tm = S.teams[0].includes(n) ? 0 : S.teams[1].includes(n) ? 1 : -1, tc = TYPE_COL[DEX[n].types[0]] || '#6a6a8a';
+    rrect(x + 1, y + 1, cw - 2, chh - 2, hot ? UI.gold : UI.inset, 1); for (let j = 2; j < chh - 2; j++) rect(x + 2, y + j, cw - 4, 1, mix(shade(tc, tm >= 0 ? -.8 : hot ? -.35 : -.6), shade(tc, -.85), j / chh));
+    if (tm >= 0) ctx.globalAlpha = .4; drawMon(n, x + cw / 2, y + chh - 2 + (hot && !REDUCED ? -Math.round(Math.abs(Math.sin(t * 7))) : 0), { outline: hot ? UI.gold : null }); ctx.globalAlpha = 1;
+    if (tm >= 0) { rrect(x + cw - 14, y + 2, 12, 8, teamColor(tm), 1); textC('P' + (tm + 1), x + cw - 8, y + 2, '#ffffff'); }
     hit(x, y, cw, chh, () => { SC.i = i; vsPick(S, n); }); });
   const d = DEX[VS_ROSTER[SC.i]]; const iy = gy + rows * chh + 5;
   if (d) { const u = makeUnit(d.num, S.level, 0); text(d.name, gx, iy, UI.ink, { outline: UI.shadow }); d.types.forEach((tp, j) => typeBadge(tp, gx + textWidth(d.name) + 6 + j * 26, iy - 1, 24)); const mv = u.moves.slice(0, 3).map(mvName).join(' / '); const R = ROLES[u.role]; if (narrow) { const avail = gx + cols * cw - (gx + textWidth(d.name) + 6 + d.types.length * 26 + 4); textR(fitLabel(mv, avail), gx + cols * cw, iy, UI.info, { outline: UI.shadow }); } else { textR(mv, gx + cols * cw, iy, UI.info, { outline: UI.shadow }); text(TR('HP {0}  ATK {1}  DEF {2}  SPA {3}  SPE {4}  MOV {5}', u.maxHp, u.atk, u.def, u.spa, u.spe, u.mov), gx, iy + 10, UI.muted, { outline: UI.shadow }); const rx0 = gx + textWidth(d.name) + 6 + d.types.length * 26 + 4; const rs = R.name + ': ' + (u.skill ? u.skill.blurb.replace(/^[^:]+: /, '') : TR('plain attacker')); text(fitLabel(rs, gx + cols * cw - textWidth(mv) - 8 - rx0), rx0, iy, R.col, { outline: UI.shadow }); } }
   const go = () => { if (!full) { Audio.sfx('error'); return; } Audio.sfx('select'); S.go(); }, fy = setupFootTop();
-  if (narrow) {
-    const rulesY = iy + 12, rows = Math.ceil(VS_RULES.length / 2), rh = clamp(Math.floor((fy - 6 - rulesY) / rows) - 2, 14, 20);
-    vsRuleGrid(S, 6, rulesY, W - 12, rh, VS_RULES);
-  } else {
-    const rx = gx + cols * cw + 10, rw = W - 6 - rx, ry = gy; const rh = 14, lines = wrap(VS_MODES[S.mode].blurb + (S.fog ? ' ' + TR('Fog of war hides foes beyond your Pokémon\'s sight.') : '') + ' ' + TR('Each commander\'s Ace joins the team.'), rw - 16); const nl = Math.min(lines.length, Math.max(0, Math.floor((fy - 6 - ry - 21 - VS_RULES.length * rh - 10) / 9)));
-    const p = panel(rx, ry, rw, Math.min(fy - 6 - ry, 21 + VS_RULES.length * rh + 8 + nl * 9 + 6), { header: 'MATCH RULES', headerRight: VS_MODES[S.mode].short + (S.fog ? ' · FOG' : '') });
-    vsRuleRows(S, rx + 4, p.cy - 2, rw - 8, rh, VS_RULES);
-    const by0 = p.cy - 2 + VS_RULES.length * rh + 3; if (nl) { hline(rx + 5, by0, rw - 10, UI.inset); lines.slice(0, nl).forEach((l, i) => text(l, rx + 8, by0 + 4 + i * 9, UI.muted)); }
-  }
-  setupFooter({ back: { label: '◂ TITLE', run: () => { Audio.sfx('cancel'); goScene('title'); } }, extra: [{ label: 'RANDOM', run: () => vsRandom(S) }, { label: 'CLEAR', run: () => { S.teams = [[], []]; Audio.sfx('cancel'); }, variant: 'dark' }], next: { label: 'BATTLE! ▸', run: go, disabled: !full, variant: 'danger' }, hints: VIEW.touch ? ['tap a picked slot to drop it'] : ['Snake draft', 'click a picked slot to drop it'] });
+  // the match rules as tiles (the one under the pointer grows arrows), and on wide screens what the mode means
+  if (narrow) { const rulesY = iy + 12, rr = Math.ceil(VS_RULES.length / 2), th = clamp(Math.floor((fy - 6 - rulesY) / rr) - 3, 16, 24); mkTiles(S, VS_RULES, 6, rulesY, W - 12, { cols: 2, th }); }
+  else { const rx = gx + cols * cw + 10, rw = W - 6 - rx; let ry = gy; ry += mkTiles(S, VS_RULES, rx, ry, rw, { cols: 2, th: 22, focus: S.rfocus == null ? -1 : S.rfocus }) + 6;
+    const lines = wrap(VS_MODES[S.mode].blurb + (S.fog ? ' ' + TR('Fog of war hides foes beyond your Pokémon\'s sight.') : '') + ' ' + TR('Each commander\'s Ace joins the team.'), rw - 14), nl = Math.max(0, Math.min(lines.length, Math.floor((fy - 6 - ry) / 9)));
+    if (nl) { iconAt('info', rx, ry - 1, MK_THEME.versus.glow); lines.slice(0, nl).forEach((l, i) => text(l, rx + 13, ry + i * 9, UI.muted)); } }
+  setupFooter({ back: { label: '◂ TITLE', run: () => { Audio.sfx('cancel'); goScene('title'); } }, extra: [{ label: 'RANDOM', run: () => vsRandom(S) }, { label: 'CLEAR', run: () => { S.teams = [[], []]; Audio.sfx('cancel'); }, variant: 'dark' }], next: { label: 'BATTLE! ▸', run: go, disabled: !full, variant: 'danger', glow: '#ff8a9a' }, hints: VIEW.touch ? ['tap a picked slot to drop it'] : ['Snake draft', 'click a picked slot to drop it'] });
 }
 function vsCols() { return VIEW.w < 300 ? 4 : VIEW.w < 330 ? 6 : 7; }
 function versusInput(ev) {
   const S = SC.data; const cols = vsCols();
   if (ev.type === 'key') { const n = VS_ROSTER.length; if (ev.key === 'left') SC.i = (SC.i + n - 1) % n; else if (ev.key === 'right') SC.i = (SC.i + 1) % n; else if (ev.key === 'up') SC.i = (SC.i + n - cols) % n; else if (ev.key === 'down') SC.i = (SC.i + cols) % n; else if (ev.key === 'ok') vsPick(S, VS_ROSTER[SC.i]); else if (ev.key === 'back') { if (!vsUndo(S)) goScene('title'); } else if (ev.key === 'next') { if (S.teams[0].length + S.teams[1].length >= S.size * 2) S.go(); else vsRandom(S); } else if (ev.key === 'mute') Audio.toggle(); if (['left', 'right', 'up', 'down'].includes(ev.key)) Audio.sfx('cursor'); return; }
-  if (ev.type === 'move' && !ev.touch) { const h = hitAt(ev.x, ev.y); if (h) { const i = VS_ROSTER.findIndex((n, j) => SC.hits.indexOf(h) >= 0 && h.run && h.label == null && false); } return; }
+  if (ev.type === 'move' && !ev.touch) { const h = hitAt(ev.x, ev.y), k = h && h.label ? VS_RULES.findIndex(r => h.label === r.label || h.label === r.label + '+' || h.label === r.label + '-') : -1; if (k >= 0) S.rfocus = k; return; }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
 
@@ -286,7 +281,8 @@ function enemyAdvice(units) {
 // How many of the foes a Pokémon's moves hit hard.
 function hardHits(u, adv) { const types = u.moves.filter(m => m.pow > 0).map(m => m.type); return adv ? adv.foes.filter(d => types.some(t => effRaw(t, d.types) > 1)).length : 0; }
 function prepDraw() {
-  const P = SC.data, ch = P.chapter, L = prepLayout(P), W = L.W, H = L.H, t = SC.t; rect(0, 0, W, H, UI.bg); if (!P.bd) P.bd = makeBackdrop(ch.map); drawBackdrop(P.bd, (W - P.bd.canvas.width) / 2 - t * 3, (H - P.bd.canvas.height) / 2, .8);
+  const P = SC.data, ch = P.chapter, L = prepLayout(P), W = L.W, H = L.H, t = SC.t; if (!P.bd) P.bd = makeBackdrop(ch.map);
+  const lab = String(ch.label || ''), theme = /TOWER/.test(lab) ? 'tower' : /SAFARI/.test(lab) ? 'safari' : /SKIRMISH/.test(lab) ? 'skirmish' : 'campaign'; mkBackdrop(theme, { map: P.bd, mapAlpha: .2 });
   SC.hits = []; const cap = prepCaptain(P), adv = P.adv !== undefined ? P.adv : (P.adv = enemyAdvice(ch.map.units)), steps = P.steps || PREP_STEPS, back = () => { Audio.sfx('cancel'); if (P.back) P.back(); else goScene('title'); };
   setupHeader((ch.num ? TR('FRONT {0}', ch.num) + ' · ' : '') + ch.title.toUpperCase(), L.steps ? steps : null, 1, () => back());
   // TEAM bar: one box per slot, filled in deploy order
@@ -295,7 +291,7 @@ function prepDraw() {
   for (let k = 0; k < ch.slots; k++) {
     const bx = S.x + 44 + k * (bw + 3), by = S.y + 4, bhh = S.h - 8, pid = P.deploy[k]; if (bx + bw > S.x + S.w - 4) break;
     if (pid == null) { for (let q = 0; q < bw; q += 3) { px(bx + q, by, UI.border2); px(bx + q, by + bhh - 1, UI.border2); } for (let q = 0; q < bhh; q += 3) { px(bx, by + q, UI.border2); px(bx + bw - 1, by + q, UI.border2); } textC('+', bx + bw / 2, by + Math.round(bhh / 2) - 4, UI.dim); continue; }
-    const u = P.party[pid], pop = easeOutBack(clamp(appear('slot' + k + ':' + pid) / .25, 0, 1), 2.5); rrect(bx, by, bw, bhh, pid === cap ? '#4a3a10' : '#1c3a8a', 1); outline(bx, by, bw, bhh, pid === cap ? UI.gold : '#6a9aff');
+    const u = P.party[pid], pop = easeOutBack(clamp(appear('slot' + k + ':' + pid) / .25, 0, 1), 2.5), tc = TYPE_COL[(DEX[u.num] || DEX[25]).types[0]] || '#6a9aff'; rrect(bx, by, bw, bhh, UI.inset, 1); for (let j = 1; j < bhh - 1; j++) rect(bx + 1, by + j, bw - 2, 1, mix(shade(pid === cap ? UI.gold : tc, -.45), shade(tc, -.8), j / bhh)); outline(bx, by, bw, bhh, pid === cap ? UI.gold : shade(tc, .1));
     ctx.save(); ctx.beginPath(); ctx.rect(bx + 1, by + 1, bw - 2, bhh - 2); ctx.clip(); const sc = Math.max(.3, pop); drawMon(u.num, bx + bw / 2, by + bhh + 2 - Math.round((1 - Math.min(1, pop)) * 6), { sx: .8 * sc, sy: .8 * sc }); ctx.restore();
     if (pid === cap) drawCrown(bx + 1, by + 1);
   }
@@ -306,9 +302,9 @@ function prepDraw() {
   ctx.save(); ctx.beginPath(); ctx.rect(0, L.gy - 2, L.lw + 12, L.rowsVisible * (L.ch + 3) + 2); ctx.clip();
   party.forEach((p, i) => {
     const r = Math.floor(i / L.cols) - SC.scroll, c = i % L.cols; if (r < 0 || r >= L.rowsVisible) return; const x = L.gx + c * (L.cw + L.gap), y = L.gy + r * (L.ch + 3), slot = P.deploy.indexOf(i), on = slot >= 0, hot = SC.i === i;
-    const u = restoreUnit(p), lift = hot && !REDUCED ? -1 : 0; rrect(x + 1, y + 2, L.cw, L.ch, UI.shadow, 1);
+    const u = restoreUnit(p), lift = hot && !REDUCED ? -1 : 0, tc = TYPE_COL[u.types[0]] || '#6a6a8a'; if (hot && !REDUCED) { ctx.globalAlpha = .22 + .18 * Math.sin(t * 4); rrect(x - 2, y - 2 + lift, L.cw + 4, L.ch + 4, UI.gold, 3); ctx.globalAlpha = 1; } rrect(x + 1, y + 2, L.cw, L.ch, UI.shadow, 1);
     rrect(x, y + lift, L.cw, L.ch, hot ? UI.gold : on ? '#6a9aff' : UI.inset, 1); rrect(x + 1, y + 1 + lift, L.cw - 2, L.ch - 2, on ? '#223f86' : UI.panel, 1); hline(x + 2, y + 1 + lift, L.cw - 4, on ? '#3a5eb0' : shade(UI.panel, .25));
-    ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2 + lift, 30, L.ch - 4); ctx.clip(); rect(x + 2, y + 2 + lift, 30, L.ch - 4, on ? '#17306e' : '#141736'); drawMon(u.num, x + 17, y + L.ch - 2 + lift - (on && !REDUCED ? Math.round(Math.abs(Math.sin(t * 5 + i)) * 1) : 0), { outline: on ? teamColor(0) : null }); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2 + lift, 30, L.ch - 4); ctx.clip(); for (let j = 0; j < L.ch - 4; j++) rect(x + 2, y + 2 + lift + j, 30, 1, mix(shade(tc, on ? -.45 : -.62), shade(tc, -.85), j / (L.ch - 4))); drawMon(u.num, x + 17, y + L.ch - 2 + lift - (on && !REDUCED ? Math.round(Math.abs(Math.sin(t * 5 + i)) * 1) : 0), { outline: on ? teamColor(0) : null }); ctx.restore();
     const nx = x + 35, lv = 'Lv' + u.level, avail = L.cw - 39 - textWidth(lv) - (on || i === cap ? 14 : 0); text(fitLabel(u.name, avail), nx, y + 4 + lift, UI.ink); textR(lv, x + L.cw - 5 - (on || i === cap ? 14 : 0), y + 4 + lift, UI.gold);
     let bx = nx; for (const tp of u.types) { if (bx + 24 > x + L.cw - 4) break; bx += typeBadge(tp, bx, y + 13 + lift, 24) + 2; } hpBar(nx, y + L.ch - 7 + lift, L.cw - 40, u.hp, u.maxHp);
     // a green arrow when its moves hit at least half the foes hard
@@ -330,14 +326,19 @@ function prepDraw() {
       const tr = (label, list, col) => { if (!list.length) return; let bx2 = x + 6; text(label, bx2, yy, col); bx2 += textWidth(label) + 4; for (const tp of list) { if (bx2 + 24 > x + w - 4) break; bx2 += typeBadge(tp, bx2, yy - 1, 24) + 2; } yy += 12; };
       tr('Hit them with', adv.strong, '#8ae89a'); tr('They resist', adv.weak, '#ff9a9a'); }
     y += eh + 6;
-    const sel = party[SC.i]; if (sel && y + 60 <= H - L.foot - 4) { const u = restoreUnit(sel), R = ROLES[u.role], hh = Math.min(H - L.foot - 4 - y, 100); const up = panel(x, y, w, hh, { header: fitLabel(u.name, w - 50), headerRight: 'Lv' + u.level, headerRightCol: UI.gold, headerFill: '#1c3a8a' });
-      let yy2 = up.cy; iconAt(R.icon, x + 6, yy2 - 1, R.col); text(R.name, x + 17, yy2, R.col); textR(TR('MOVE {0}', u.mov), x + w - 6, yy2, UI.ink); yy2 += 10;
+    const sel = party[SC.i]; if (sel && y + 60 <= H - L.foot - 4) { const u = restoreUnit(sel), R = ROLES[u.role], hh = Math.min(H - L.foot - 4 - y, 150); const up = panel(x, y, w, hh, { header: fitLabel(u.name, w - 50), headerRight: 'Lv' + u.level, headerRightCol: UI.gold, headerFill: '#1c3a8a' });
+      let yy2 = up.cy;
+      if (hh >= 134) { // the focused Pokémon itself, animated on its type's colour
+        const tc = TYPE_COL[u.types[0]] || '#6a6a8a', ph = 40, px2 = x + 6, pw2 = w - 12; for (let j = 0; j < ph; j++) rect(px2, yy2 + j, pw2, 1, mix(shade(tc, -.4), shade(tc, -.82), j / ph)); outline(px2 - 1, yy2 - 1, pw2 + 2, ph + 2, UI.inset);
+        requestAnim(u.num); ctx.save(); ctx.beginPath(); ctx.rect(px2, yy2, pw2, ph); ctx.clip(); ctx.globalAlpha = .4; ellipse(px2 + pw2 / 2, yy2 + ph - 4, 14, 2, '#000'); ctx.globalAlpha = 1; if (animReady(u.num)) drawAnim(u.num, px2 + pw2 / 2, yy2 + ph - 3, t); else drawMon(u.num, px2 + pw2 / 2, yy2 + ph - 3, {}); ctx.restore();
+        let bx = px2 + 3; for (const tp of u.types) bx += typeBadge(tp, bx, yy2 + 3, 24) + 2; if (SC.i === prepCaptain(P)) drawCrown(px2 + pw2 - 12, yy2 + 3); yy2 += ph + 5; }
+      iconAt(R.icon, x + 6, yy2 - 1, R.col); text(R.name, x + 17, yy2, R.col); textR(TR('MOVE {0}', u.mov), x + w - 6, yy2, UI.ink); yy2 += 10;
       for (const m of u.moves.slice(0, 3)) { if (yy2 + 9 > y + hh - 14) break; typeBadge(m.type, x + 6, yy2 - 1, 24); const good = adv && m.pow > 0 && adv.strong.includes(m.type); text(fitLabel(mvName(m) + ' ' + m.pow, w - 44), x + 33, yy2, good ? '#8ae89a' : UI.ink); yy2 += 10; }
       if (adv && yy2 + 7 <= y + hh - 4) { const k = hardHits(u, adv); text(fitLabel(k ? TR('Hits {0} of {1} foes hard', k, adv.n) : TR('No super-effective hits here'), w - 12), x + 6, yy2, k * 2 >= adv.n ? '#8ae89a' : k ? UI.gold : UI.dim); yy2 += 10; }
       if (yy2 + 7 <= y + hh - 4) { const ev = u.dex.evos.length ? TR('Evolves Lv{0}', Math.min(...u.dex.evos.map(e => e[1]))) : TR('Final form'); text(fitLabel(ev, w - 12), x + 6, yy2, UI.info); } }
   }
   const start = () => { if (!P.deploy.length) { Audio.sfx('error'); return; } Audio.sfx('select'); P.start(); }, auto = () => { Audio.sfx('ok'); autoDeploy(P); };
-  setupFooter({ back: { label: P.backLabel || '◂ BACK', run: back }, extra: [{ label: 'AUTO PICK', run: auto }], next: { label: 'BATTLE! ▸', run: start, disabled: !P.deploy.length, variant: 'danger' },
+  setupFooter({ back: { label: P.backLabel || '◂ BACK', run: back }, extra: [{ label: 'AUTO PICK', run: auto }], next: { label: 'BATTLE! ▸', run: start, disabled: !P.deploy.length, variant: 'danger', glow: '#ff8a9a' },
     hints: VIEW.touch ? ['tap to add or remove'] : [['Z', 'add / remove'], ['Tab', 'battle']] });
 }
 function toggleDeploy(P, i) { if (i === prepCaptain(P)) { Audio.sfx('error'); return; } const k = P.deploy.indexOf(i); if (k >= 0) { P.deploy.splice(k, 1); Audio.sfx('cancel'); } else if (P.deploy.length < P.chapter.slots) { P.deploy.push(i); Audio.sfx('ok'); } else Audio.sfx('error'); }
@@ -422,40 +423,41 @@ function creditsDraw() {
 function creditsInput(ev) { if (ev.type === 'up' || ev.type === 'key') SC.skip = true; }
 
 // ---------------------------------------------------------------- quick battle: pick a mode against the CPU
+// Each mode's card: what it is at a glance (three lines with icons), its record, and the longer line under the cards.
 const QUICK_MODES = [
-  { id: 'skirmish', label: 'SKIRMISH', tag: 'HQ vs HQ', lines: ['A random battlefield.', 'Earn funds, deploy your Box,', 'catch wild Pokémon mid-war.'], goal: 'Rout them or take their HQ', next: 'RULES', run: () => startSkirmishSetup() },
-  { id: 'conquest', label: 'CONQUEST', tag: 'CENTERS', lines: ['Three bridges, six teammates.', 'Capture centers to earn points', 'and call reserves.'], goal: 'Take the HQ or hold 2 centers', next: 'SETUP', run: () => startTerritorySetup() },
-  { id: 'tower', label: 'BATTLE TOWER', tag: 'RANKED', lines: ['Ten floors, a commander on each.', 'Rental armies, equal terms:', 'climb for an S rank.'], goal: 'Rank S on every floor', next: 'FLOORS', run: () => startTower() },
-  { id: 'safari', label: 'SAFARI ZONE', tag: 'CATCH RACE', lines: ['Eight days, twelve Safari Balls.', 'Weaken, never knock out:', 'rare ones score more.'], goal: 'Out-catch Blue', next: 'RULES', run: () => startSafari() },
+  { id: 'skirmish', label: 'SKIRMISH', tag: 'HQ vs HQ', lines: ['A random battlefield.', 'Earn funds, deploy your Box,', 'catch wild Pokémon mid-war.'], goal: 'Rout them or take their HQ', next: 'RULES', run: () => startSkirmishSetup(),
+    bullets: [['map', 'A random battlefield'], ['flag', 'Rout them or take their HQ'], ['ball', 'Deploy from your PC Box']] },
+  { id: 'conquest', label: 'CONQUEST', tag: 'CENTERS', lines: ['Three bridges, six teammates.', 'Capture centers to earn points', 'and call reserves.'], goal: 'Take the HQ or hold 2 centers', next: 'SETUP', run: () => startTerritorySetup(),
+    bullets: [['flag', 'Take the HQ or hold 2 centers'], ['map', 'Three bridges, six teammates'], ['ball', 'Captured centers call reserves']] },
+  { id: 'tower', label: 'BATTLE TOWER', tag: 'RANKED', lines: ['Ten floors, a commander on each.', 'Rental armies, equal terms:', 'climb for an S rank.'], goal: 'Rank S on every floor', next: 'FLOORS', run: () => startTower(),
+    bullets: [['star', 'Ten floors, a commander on each'], ['ball', 'Rental armies on equal terms'], ['up', 'Climb for an S rank']],
+    record: () => { const R = loadRecords().tower || {}, v = Object.values(R); return v.length ? ['star', TR('Floors {0}/{1} · S ranks {2}', v.length, TOWER.length, v.filter(r => r.rank === 'S').length)] : null; } },
+  { id: 'safari', label: 'SAFARI ZONE', tag: 'CATCH RACE', lines: ['Eight days, twelve Safari Balls.', 'Weaken, never knock out:', 'rare ones score more.'], goal: 'Out-catch Blue', next: 'RULES', run: () => startSafari(),
+    bullets: [['ball', 'Twelve Safari Balls, eight days'], ['heart', 'Weaken, never knock out'], ['star', 'Rare Pokémon score more']],
+    record: () => { const b = loadRecords().safari; return b ? ['star', TR('Best haul {0} pts', b)] : null; } },
 ];
 function quickPreview(m) { const S = SC.data || (SC.data = {}); if (!S[m.id]) S[m.id] = makeBackdrop(m.id === 'conquest' ? TERRITORY_MAP : m.id === 'tower' ? towerMap(4) : m.id === 'safari' ? safariMap(21, 16) : skirmishMap(412, 16, 11, 12)); return S[m.id]; }
-function quickCols() { return narrowView() || portraitView() ? 1 : 2; }
+// Four in a row on a wide screen (art on top), two by two on a smaller landscape, a list on a phone (art on the left).
+function quickCols() { const W = VIEW.w, H = VIEW.h; return W >= 560 && H >= 280 ? 4 : W >= 380 && W > H ? 2 : 1; }
 function quickDraw() {
-  const W = VIEW.w, H = VIEW.h, narrow = narrowView() || portraitView(), bh = btnH(); rect(0, 0, W, H, UI.bg); SC.hits = []; if (SC.data && SC.data.i != null) { SC.i = SC.data.i; delete SC.data.i; } // back from a mode: that mode keeps the focus
-  const bd = quickPreview(QUICK_MODES[SC.i]); drawBackdrop(bd, (W - bd.canvas.width) / 2 - SC.t * 5, (H - bd.canvas.height) / 2, .78);
-  const top = screenTitle('QUICK BATTLE', 'Battle the CPU · four ways to play', 5);
-  const foot = setupFootTop(), gap = narrow ? 5 : 8, n = QUICK_MODES.length, cols = quickCols(), rows = Math.ceil(n / cols);
-  const cw = narrow ? W - 16 : Math.min(230, Math.floor((W - 24 - gap) / 2)), ch = Math.min(narrow ? 999 : 150, Math.floor((foot - top - 8 - gap * (rows - 1)) / rows));
-  const x0 = narrow ? 8 : Math.round(W / 2 - (cw * 2 + gap) / 2), y0 = top + Math.max(4, Math.round((foot - top - (ch * rows + gap * (rows - 1))) / 2) - 2);
-  QUICK_MODES.forEach((m, i) => {
-    const sel = SC.i === i, x = x0 + (i % cols) * (cw + gap), y = y0 + Math.floor(i / cols) * (ch + gap), lift = sel && !REDUCED ? -2 : 0;
-    const tok = unfold('quick' + i, x, y, cw, ch, .22 + i * .06);
-    const p = panel(x, y + lift, cw, ch, { header: m.label, headerRight: m.tag, headerRightCol: sel ? UI.gold : UI.muted, fill: sel ? UI.panel2 : UI.panel, border: sel ? UI.gold : UI.border });
-    const pv = quickPreview(m), room = ch - (narrow ? 66 : 70), sc = Math.min((cw - 16) / pv.canvas.width, room / pv.canvas.height);
-    const pw = Math.floor(pv.canvas.width * sc), ph = Math.floor(pv.canvas.height * sc), px0 = x + Math.round((cw - pw) / 2), py0 = p.cy;
-    if (ph >= 18) { rect(px0 - 2, py0 - 2, pw + 4, ph + 4, UI.inset); ctx.drawImage(pv.canvas, px0, py0, pw, ph); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, sel ? UI.gold : UI.border2); }
-    const tx = x + 8, ty = py0 + (ph >= 18 ? ph + 6 : 0), tw = x + cw - 8 - tx;
-    let ly = ty; for (const l of m.lines) { if (ly + 8 > y + lift + ch - 16) break; text(fitLabel(l, tw), tx, ly, UI.ink); ly += 9; }
-    const gy = y + lift + ch - 15; iconAt('flag', x + 8, gy - 1, sel ? UI.gold : UI.muted); text(fitLabel(m.goal, cw - 28), x + 20, gy, sel ? UI.gold : UI.muted);
-    unfoldEnd(tok);
-    if (sel && !REDUCED) { const k = SC.t * 2.2; sparkle(x + cw - 6, y + lift + 3 + Math.round(Math.sin(k) * 1), Math.round(1 + (Math.sin(k * 1.7) + 1)), '#fff2b0'); }
-    hit(x, y, cw, ch, () => { if (SC.i === i) quickGo(); else { SC.i = i; Audio.sfx('cursor'); } }, m.label);
-  });
-  setupFooter({ back: { label: '◂ TITLE', run: () => { Audio.sfx('cancel'); goScene('title'); } }, next: { label: QUICK_MODES[SC.i].next + ' ▸', run: quickGo }, hints: VIEW.touch ? ['tap a card twice'] : [['◂▸', 'mode'], ['Z', 'choose']] });
+  const W = VIEW.w, H = VIEW.h, cols = quickCols(); SC.hits = []; if (SC.data && SC.data.i != null) { SC.i = SC.data.i; delete SC.data.i; } // back from a mode: that mode keeps the focus
+  const m0 = QUICK_MODES[SC.i]; mkBackdrop(m0.id);
+  const top = screenTitle('QUICK BATTLE', H >= 220 ? 'Battle the CPU · four ways to play' : null, 5), foot = setupFootTop();
+  const tipH = cols > 1 && H >= 280 ? 14 : 0, gap = cols === 1 ? 5 : 8, n = QUICK_MODES.length, rows = Math.ceil(n / cols), avail = foot - top - 10 - tipH;
+  const cw = cols === 4 ? Math.min(160, Math.floor((W - 16 - gap * 3) / 4)) : cols === 2 ? Math.min(300, Math.floor((W - 16 - gap) / 2)) : W - 16;
+  const ch = cols === 4 ? Math.min(250, avail) : Math.min(cols === 2 ? 118 : 96, Math.floor((avail - gap * (rows - 1)) / rows));
+  const x0 = Math.round(W / 2 - (cw * cols + gap * (cols - 1)) / 2), y0 = top + 6 + Math.max(0, Math.round((avail - (ch * rows + gap * (rows - 1))) / 2));
+  QUICK_MODES.forEach((m, i) => { const x = x0 + (i % cols) * (cw + gap), y = y0 + Math.floor(i / cols) * (ch + gap);
+    mkModeCard(x, y, cw, ch, m, SC.i === i, i); hit(x, y, cw, ch, () => { if (SC.i === i) quickGo(); else { SC.i = i; Audio.sfx('cursor'); } }, m.label); });
+  // the chosen mode in a sentence, under the cards
+  if (tipH) { const tip = m0.lines.map(l => TRX(l)).join(' '), ty = foot - tipH + 1, k = REDUCED ? 1 : clamp(appear('quicktip' + SC.i) / .25, 0, 1); ctx.globalAlpha = k; const tw = Math.min(W - 24, textWidth(tip, FONT) + 14);
+    iconAt('info', Math.round(W / 2 - tw / 2), ty - 1, (MK_THEME[m0.id] || MK_THEME.quick).glow); text(fitLabel(tip, tw - 12), Math.round(W / 2 - tw / 2) + 12, ty, UI.ink, { outline: UI.inset }); ctx.globalAlpha = 1; }
+  setupFooter({ back: { label: '◂ TITLE', run: () => { Audio.sfx('cancel'); goScene('title'); } }, next: { label: m0.next + ' ▸', run: quickGo, glow: (MK_THEME[m0.id] || MK_THEME.quick).band }, hints: VIEW.touch ? ['tap a card twice'] : [['◂▸', 'mode'], ['Z', 'choose']] });
 }
 function quickGo() { Audio.sfx('select'); QUICK_MODES[SC.i].run(); }
 function quickInput(ev) {
-  if (ev.type === 'key') { const n = QUICK_MODES.length, cols = quickCols(); if (['left', 'right', 'up', 'down'].includes(ev.key)) { const d = ev.key === 'left' ? -1 : ev.key === 'right' ? 1 : ev.key === 'up' ? -cols : cols; SC.i = (SC.i + d + n) % n; Audio.sfx('cursor'); } else if (ev.key === 'ok') quickGo(); else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('title'); } else if (ev.key === 'mute') Audio.toggle(); return; }
+  if (ev.type === 'move' && !ev.touch) { const k = QUICK_MODES.findIndex(m => { const h = SC.hits.find(h2 => h2.label === m.label); return h && ev.x >= h.x && ev.y >= h.y && ev.x < h.x + h.w && ev.y < h.y + h.h; }); if (k >= 0 && k !== SC.i) { SC.i = k; Audio.sfx('cursor'); } return; } // a pointer over a card chooses it
+  if (ev.type === 'key') { const n = QUICK_MODES.length, cols = quickCols(); if (['left', 'right', 'up', 'down'].includes(ev.key)) { const d = ev.key === 'left' ? -1 : ev.key === 'right' ? 1 : cols === 4 ? 0 : ev.key === 'up' ? -cols : cols; if (d) { SC.i = (SC.i + d + n) % n; Audio.sfx('cursor'); } } else if (ev.key === 'ok') quickGo(); else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('title'); } else if (ev.key === 'mute') Audio.toggle(); return; }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
 
@@ -463,15 +465,15 @@ function quickInput(ev) {
 // Skirmish setup: the battlefield framed on the left (a dice rolls another) with both HQs, the centers and the foe's
 // squad; on the right the two commanders face each other over the rules. Arrows pick a row, ◂▸ change it.
 const SK_RULES = [
-  { k: 'co', label: 'YOU', vals: S => S.cos, show: v => v === 'you' ? 'Tactician' : COS[v].name },
-  { k: 'foe', label: 'FOE', vals: CO_FOES, show: v => COS[v].name },
-  { k: 'level', label: 'LEVEL', vals: SKIRMISH.levels, show: v => 'Lv ' + v },
-  { k: 'diff', label: 'CPU', vals: ['easy', 'normal', 'hard'], show: v => SK_DIFF[v].name + ' · ' + TR(v === 'normal' ? 'even funds' : v === 'easy' ? 'poorer' : 'richer, Lv+2') },
-  { k: 'funds', label: 'FUNDS', vals: SKIRMISH.funds, show: v => TR('{0} each', money(v)) },
-  { k: 'weather', label: 'WEATHER', vals: SKIRMISH.weather, show: v => v === 'none' ? 'Clear' : v === 'random' ? 'Random' : WEATHER[v].name },
-  { k: 'biome', label: 'LAND', vals: SKIRMISH.biomes, show: (v, S) => v === 'random' ? TR('Random · {0}', BIOMES[skirmishBiome(S)].name) : BIOMES[v].name },
-  { k: 'size', label: 'SIZE', vals: ['s', 'm', 'l'], show: v => SKIRMISH.sizes[v][2] + ' ' + SKIRMISH.sizes[v][0] + '×' + SKIRMISH.sizes[v][1] },
-  { k: 'seed', label: 'MAP', vals: null, show: v => '#' + v },
+  { k: 'co', label: 'YOU', icon: 'crown', vals: S => S.cos, show: v => v === 'you' ? 'Tactician' : COS[v].name },
+  { k: 'foe', label: 'FOE', icon: 'skull', vals: CO_FOES, show: v => COS[v].name },
+  { k: 'level', label: 'LEVEL', icon: 'up', vals: SKIRMISH.levels, show: v => 'Lv ' + v, tip: 'Both armies fight at this level.' },
+  { k: 'diff', label: 'CPU', icon: 'chip', vals: ['easy', 'normal', 'hard'], show: v => SK_DIFF[v].name + ' · ' + TR(v === 'normal' ? 'even funds' : v === 'easy' ? 'poorer' : 'richer, Lv+2'), short: v => SK_DIFF[v].name, tip: 'Easy: the CPU starts poorer. Hard: richer, and two levels up.' },
+  { k: 'funds', label: 'FUNDS', icon: 'coin', vals: SKIRMISH.funds, show: v => TR('{0} each', money(v)), short: v => money(v), tip: 'What each side has on day one to deploy from its PC.' },
+  { k: 'weather', label: 'WEATHER', icon: 'sun', vals: SKIRMISH.weather, show: v => v === 'none' ? 'Clear' : v === 'random' ? 'Random' : WEATHER[v].name, tip: 'Rain, sun, sand and snow change moves and movement for the whole battle.' },
+  { k: 'biome', label: 'LAND', icon: 'hill', vals: SKIRMISH.biomes, show: (v, S) => v === 'random' ? TR('Random · {0}', BIOMES[skirmishBiome(S)].name) : BIOMES[v].name, tip: 'The land shapes the terrain and who lives in the tall grass.' },
+  { k: 'size', label: 'SIZE', icon: 'map', vals: ['s', 'm', 'l'], show: v => SKIRMISH.sizes[v][2] + ' ' + SKIRMISH.sizes[v][0] + '×' + SKIRMISH.sizes[v][1], tip: 'Bigger maps: more centers to take, longer marches.' },
+  { k: 'seed', label: 'MAP', icon: 'dice', vals: null, show: v => '#' + v, tip: 'Every number is another map; the dice picks one at random.' },
 ];
 function skirmishRoot() { return typeof SAVE !== 'undefined' && SAVE && SAVE.starter && !(SC.data && SC.data.preset) ? SAVE.starter : 4; }
 // The battlefield in miniature: deploy tiles, each property under its owner's colour (HQs flagged), every Pokémon.
@@ -483,35 +485,40 @@ function drawWarPreview(map, bd, px0, py0, pw, ph, centers = -1) {
     if (PROP_KIND[ch] === 'hq') { const fx = ux + Math.round(c / 2), fy = uy - 5; vline(fx, fy, 7, '#e8e0d0'); rect(fx + 1, fy, 4, 3, col); } } });
   for (const u of map.units) { const d = DEX[u.mon], ux = px0 + (u.x + .5) * cell, uy = py0 + (u.y + 1) * cell, iw = Math.max(12, Math.round(cell * 1.1)); ellipse(Math.round(ux), Math.round(uy), Math.round(iw / 3), 2, teamColor(u.team == null ? 1 : u.team)); ctx.drawImage(monIcon(d.num, true), Math.round(ux - iw / 2), Math.round(uy - iw * .75), iw, Math.round(iw * .75)); }
 }
+// Skirmish setup: the two commanders face off (tap a side to change it), the rules sit under them as tiles, and the
+// battlefield waits on the table beside (the dice rolls another). Wide screens put the map on the left; phones stack.
 function skirmishDraw() {
-  const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t; rect(0, 0, W, H, UI.bg);
+  const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t;
   const size = SKIRMISH.sizes[S.size] || SKIRMISH.sizes.m, mapKey = [S.seed, S.level, S.foe, S.biome, S.size, S.diff].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = skirmishMap(S.seed, size[0], size[1], S.level + (SK_DIFF[S.diff] || SK_DIFF.normal).level, { foe: S.foe, biome: skirmishBiome(S) }); S.bd = makeBackdrop(S.map); if (S.bdKey && S.bdKey.split('|')[0] !== String(S.seed)) S.rolledAt = SC.t; S.bdKey = mapKey; }
-  drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 + 40 - t * 4, (H - S.bd.canvas.height) / 2 + 30, .84); drawCloudShadows(t);
-  const narrow = narrowView() || portraitView(), bh = btnH(); SC.hits = []; S.focus = clamp(S.focus || 0, 0, SK_RULES.length - 1);
-  const top = setupHeader('SKIRMISH', H >= 220 ? ['RULES', 'TEAM', 'BATTLE'] : null, 0, null, 4), foot = setupFootTop();
-  const rh = narrow ? 16 : 14, cardH = narrow ? 58 : clamp(foot - top - 8 - 22 - SK_RULES.length * rh - 40, 50, 66), sideH = 22 + cardH + 14 + SK_RULES.length * rh + 28;
-  const sideW = narrow ? W - 12 : Math.min(190, Math.floor(W * .36)), mapW = narrow ? W - 12 : W - 18 - sideW, mapH = narrow ? Math.max(60, foot - 8 - top - sideH) : foot - 10 - top;
-  // the map, framed, with a dice to reroll it; it shakes when rolled
-  const sc = Math.min((mapW - 8) / S.bd.canvas.width, (mapH - 8) / S.bd.canvas.height), pw = Math.floor(S.bd.canvas.width * sc), ph = Math.floor(S.bd.canvas.height * sc), px0 = 6 + Math.floor((mapW - pw) / 2), py0 = top + 2 + Math.floor((mapH - ph) / 2);
-  const k = clamp((t - (S.rolledAt || -9)) / .3, 0, 1), shake = REDUCED ? 0 : Math.round(Math.sin(k * Math.PI * 3) * 2 * (1 - k));
-  rrect(px0 - 5, py0 - 5 + shake, pw + 10, ph + 10, UI.inset, 2); rect(px0 - 3, py0 - 3 + shake, pw + 6, ph + 6, UI.border2); ctx.drawImage(S.bd.canvas, px0, py0 + shake, pw, ph); outline(px0 - 1, py0 - 1 + shake, pw + 2, ph + 2, UI.border);
-  if (S.weather !== 'none' && S.weather !== 'random' && !REDUCED) { ctx.save(); ctx.beginPath(); ctx.rect(px0, py0 + shake, pw, ph); ctx.clip(); ctx.translate(px0, py0 + shake); drawWeather(S.weather, pw, ph, t); ctx.restore(); }
-  drawWarPreview(S.map, S.bd, px0, py0 + shake, pw, ph);
-  const dz = 18; bigButton(px0 + pw - dz - 2, py0 + 3 + shake, dz, dz, '', () => { S.seed = (S.seed + 1 + Math.floor(Math.random() * 97)) % 1000; Audio.sfx('shake'); }, { small: true, variant: 'dark', icon: 'dice' }); SC.hits[SC.hits.length - 1].label = 'REROLL';
-  { const nw = textWidth(S.map.name) + 8; ctx.globalAlpha = .8; rrect(px0 + 3, py0 + ph - 14 + shake, nw, 11, UI.inset, 2); ctx.globalAlpha = 1; text(S.map.name, px0 + 7, py0 + ph - 12 + shake, UI.ink); }
-  // the commanders face to face, then the rules
-  const sx = narrow ? 6 : 12 + mapW, sy = narrow ? top + mapH + 4 : top + 2, pnl = panel(sx, sy, sideW, Math.min(foot - 6 - sy, sideH), { header: 'COMMANDERS', headerRight: S.preset ? 'loaner team' : null, headerRightCol: UI.muted });
-  let y = pnl.cy; const cw = Math.floor((sideW - 30) / 2), cycle = (k, dir) => vsCycle(S, SK_RULES.find(r => r.k === k), dir);
-  coCard(sx + 6, y, cw, cardH, S.co, 0, () => { S.focus = 0; cycle('co', 1); S.coAt = SC.t; }, { hot: S.focus === 0, tag: 'YOU', pop: SC.t - (S.coAt || -9), col: S.co === 'you' ? CAPTAINS[skirmishRoot()].col : null });
-  coCard(sx + sideW - 6 - cw, y, cw, cardH, S.foe, 1, () => { S.focus = 1; cycle('foe', 1); S.foeAt = SC.t; }, { hot: S.focus === 1, tag: 'FOE', pop: SC.t - (S.foeAt || -9) });
-  { const vx = sx + sideW / 2, vy = y + Math.round(cardH / 2) - 6, pulse = REDUCED ? 0 : Math.round(Math.sin(t * 5)); circle(Math.round(vx), vy + 5, 9 + pulse, UI.inset); circle(Math.round(vx), vy + 5, 8 + pulse, '#2a1646'); bigC('VS', vx, vy + 1, UI.gold, { shadow: '#000' }); }
-  y += cardH + 3; { const a = coOf({ co: S.co, root: skirmishRoot() }), b = coOf({ co: S.foe }); text(fitLabel(a.power.name, cw), sx + 6, y, UI.info); textR(fitLabel(b.power.name, cw), sx + sideW - 6, y, UI.info); } y += 11;
-  vsRuleRows(S, sx + 4, y, sideW - 8, rh, SK_RULES, S.focus); y += SK_RULES.length * rh + 4;
-  if (y + 18 <= pnl.y + pnl.h) { const box = SKIRMISH.slots, rest = Math.max(SKIRMISH.slots + SKIRMISH.box, S.party.length) - box; text(fitLabel(TR('You: {0} on the map · {1} in the Box', box, rest), sideW - 12), sx + 6, y, UI.muted); text(fitLabel(TR('{0}: squad + Ace · 8 in the Box', COS[S.foe].name), sideW - 12), sx + 6, y + 9, UI.muted); }
-  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 0 }); } }, next: { label: 'TEAM ▸', run: () => { Audio.sfx('select'); S.go(); } }, hints: VIEW.touch ? null : [['▲▼', 'rule'], ['◂▸', 'change'], ['Z', 'team']] });
+  mkBackdrop('skirmish'); SC.hits = []; S.focus = clamp(S.focus || 0, 0, SK_RULES.length - 1);
+  const top = setupHeader('SKIRMISH', H >= 220 ? ['RULES', 'TEAM', 'BATTLE'] : null, 0, null, 4), foot = setupFootTop(), wide = W >= 400 && W > H, short = H < 220, root = skirmishRoot();
+  const cyc = (k, d) => { const i = SK_RULES.findIndex(r => r.k === k); S.focus = i; vsCycle(S, SK_RULES[i], d); }, rules = SK_RULES.slice(2);
+  const L = mkCoSide(S.co, root, { tag: 'YOU', run: () => cyc('co', 1), label: 'YOU+', mon: S.co === 'you' ? formAt(root, S.level) : COS[S.co].ace }), R = mkCoSide(S.foe, root, { tag: 'FOE', run: () => cyc('foe', 1), label: 'FOE+' });
+  if (short) { L.sub = null; R.sub = null; }
+  const k = clamp((t - (S.rolledAt || -9)) / .3, 0, 1), shake = REDUCED ? 0 : Math.round(Math.sin(k * Math.PI * 3) * 2 * (1 - k)), cap = [S.map.name, size[0] + '×' + size[1]], rule = SK_RULES[S.focus];
+  const tip = S.focus < 2 ? (() => { const c = coOf({ co: S.focus ? S.foe : S.co, root }); return c.power.name + ': ' + TRX(c.power.text); })() : rule.tip;
+  let mapR;
+  if (wide) {
+    const rw = Math.min(272, Math.floor(W * .45)), rx = W - 6 - rw, bandH = short ? 34 : clamp(Math.round((foot - top) * .26), 40, 80);
+    mapR = mkMapFrame(S.bd, S.map, 6, top + 2, rx - 14, foot - top - 6, { weather: S.weather, shake, caption: cap });
+    const fo = mkFaceOff(rx, top + 4, rw, bandH, L, R, { id: 'skface', focus: S.focus < 2 ? S.focus : -1 }); let y = top + 4 + fo.h + (short ? 3 : 7);
+    y += mkTiles(S, rules, rx, y, rw, { cols: 2, th: short ? 20 : 23, focus: S.focus - 2, onFocus: i => { S.focus = i + 2; } }) + 6;
+    if (y + 9 <= foot - 4) mkTip(tip, rx, y, rw, MK_THEME.skirmish.glow);
+  } else {
+    const bandH = clamp(Math.round((foot - top) * .15), 40, 56), fo = mkFaceOff(6, top + 3, W - 12, bandH, L, R, { id: 'skface', focus: S.focus < 2 ? S.focus : -1 }); let y = top + 3 + fo.h + 5;
+    const th = 24, tilesH = Math.ceil(rules.length / 2) * (th + 3) - 3, mapH = clamp(foot - 6 - y - tilesH - 20, 56, 120);
+    mapR = mkMapFrame(S.bd, S.map, 6, y, W - 12, mapH, { weather: S.weather, shake, caption: cap }); y += mapH + 4;
+    y += mkTiles(S, rules, 6, y, W - 12, { cols: 2, th, focus: S.focus - 2, onFocus: i => { S.focus = i + 2; } }) + 5;
+    if (y + 9 <= foot - 4) mkTip(tip, 6, y, W - 12, MK_THEME.skirmish.glow);
+  }
+  // a dice on the map rolls another battlefield
+  const dz = 18; bigButton(mapR.x + mapR.w - dz - 2, mapR.y + 2 + shake, dz, dz, '', () => { S.seed = (S.seed + 1 + Math.floor(Math.random() * 97)) % 1000; Audio.sfx('shake'); }, { small: true, variant: 'dark', icon: 'dice' }); SC.hits[SC.hits.length - 1].label = 'REROLL';
+  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 0 }); } }, next: { label: 'TEAM ▸', run: () => { Audio.sfx('select'); S.go(); }, glow: MK_THEME.skirmish.band }, hints: VIEW.touch ? null : [['▲▼', 'rule'], ['◂▸', 'change'], ['Z', 'team']] });
 }
 function skirmishInput(ev) {
-  const S = SC.data; if (ev.type === 'key') { const n = SK_RULES.length; S.focus = S.focus || 0;
+  const S = SC.data;
+  if (ev.type === 'move' && !ev.touch) { const h = hitAt(ev.x, ev.y), k = h && h.label ? SK_RULES.findIndex(r => h.label === r.label || h.label === r.label + '+' || h.label === r.label + '-') : -1; if (k >= 0 && k !== S.focus) S.focus = k; return; } // the rule under the pointer grows its arrows
+  if (ev.type === 'key') { const n = SK_RULES.length; S.focus = S.focus || 0;
     if (ev.key === 'up') { S.focus = (S.focus + n - 1) % n; Audio.sfx('cursor'); } else if (ev.key === 'down') { S.focus = (S.focus + 1) % n; Audio.sfx('cursor'); }
     else if (ev.key === 'left' || ev.key === 'right') { const rule = SK_RULES[S.focus]; vsCycle(S, rule, ev.key === 'left' ? -1 : 1); if (rule.k === 'co') S.coAt = SC.t; if (rule.k === 'foe') S.foeAt = SC.t; }
     else if (ev.key === 'ok' || ev.key === 'next') { Audio.sfx('select'); S.go(); } else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick', { i: 0 }); } else if (ev.key === 'mute') Audio.toggle(); return; }

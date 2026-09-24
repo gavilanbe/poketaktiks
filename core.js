@@ -271,13 +271,17 @@ function screenTitle(title, sub, y = 6) {
 // Every way into a battle walks the same steps (a front: MISSION › TEAM › BATTLE; a Skirmish: RULES › TEAM › BATTLE...).
 // The header names the screen and shows where the player is on that path, done steps ticked; the footer keeps the way
 // back on the left and the one way forward on the right, named after the step it leads to.
+// The path as pills on a rail: done steps green with a tick (tappable, they lead back), the current one gold with its
+// number, the ones ahead dim; on wide screens every pill carries its number.
 function stepper(steps, cur, cx, y, onStep) {
-  const gap = 12, parts = steps.map((s, i) => (i < cur ? '✓ ' : '') + TRX(s)), w = parts.reduce((a, p) => a + textWidth(p), 0) + gap * (parts.length - 1); let x = Math.round(cx - w / 2);
-  parts.forEach((p, i) => { const tw = textWidth(p), done = i < cur, now = i === cur;
-    if (now) { rrect(x - 4, y - 2, tw + 8, 11, '#2a2470', 2); outline(x - 4, y - 2, tw + 8, 11, UI.goldDark); }
-    text(p, x, y, done ? '#8ae89a' : now ? UI.gold : UI.dim, { shadow: UI.inset });
-    if (done && onStep) hit(x - 4, y - 3, tw + 8, 13, () => { Audio.sfx('cancel'); onStep(i); }, 'STEP ' + steps[i]);
-    x += tw; if (i < parts.length - 1) { text('▸', x + Math.round((gap - textWidth('▸')) / 2), y, UI.dim); x += gap; } });
+  const narrow = VIEW.w < 300, gap = narrow ? 8 : 12, parts = steps.map((s, i) => (i < cur ? '✓ ' : narrow ? '' : (i + 1) + ' ') + TRX(s)), pw = p => textWidth(p) + 10, w = parts.reduce((a, p) => a + pw(p), 0) + gap * (parts.length - 1); let x = Math.round(cx - w / 2);
+  hline(x + 4, y + 3, w - 8, UI.inset); hline(x + 4, y + 4, w - 8, '#343a7a');
+  parts.forEach((p, i) => { const tw = pw(p), done = i < cur, now = i === cur, fill = now ? UI.gold : done ? '#1d4a34' : '#15183c', ink = now ? '#3a2400' : done ? '#8ae89a' : UI.dim;
+    if (now && !REDUCED && CLOCK.frame) { ctx.globalAlpha = .25 + .2 * Math.sin(CLOCK.t * 4); rrect(x - 2, y - 4, tw + 4, 15, UI.gold, 3); ctx.globalAlpha = 1; }
+    rrect(x, y - 2, tw, 11, UI.inset, 2); rect(x + 1, y - 1, tw - 2, 9, fill); hline(x + 2, y - 1, tw - 4, shade(fill, .35)); hline(x + 2, y + 7, tw - 4, shade(fill, -.3));
+    text(p, x + 5, y, ink, { raw: true });
+    if (done && onStep) hit(x - 1, y - 3, tw + 2, 13, () => { Audio.sfx('cancel'); onStep(i); }, 'STEP ' + steps[i]);
+    x += tw + gap; });
   return y + 11;
 }
 // The screen's name with the path under it (steps may be null for screens outside a path). Returns the top of the body.
@@ -286,15 +290,14 @@ function setupFootTop() { const bh = btnH(); return VIEW.h - (narrowView() ? 2 *
 // o = { back: {label, run}, next: {label, run, disabled, variant}, extra: [{label, run, variant, disabled}], hints }
 function setupFooter(o) {
   const W = VIEW.w, H = VIEW.h, bh = btnH(), back = o.back, next = o.next, extra = o.extra || []; footerBand(H - setupFootTop());
-  const nextOpt = n => n.disabled ? { disabled: true } : { variant: n.variant || 'primary' };
   if (narrowView()) { const r1 = H - 2 * (bh + 4), r2 = H - bh - 4, n = 1 + extra.length, cw = Math.floor((W - 12 - 4 * (n - 1)) / n);
     bigButton(6, r1, cw, bh, back.label, back.run, { variant: 'ghost', small: textWidth(back.label, BIG) > cw - 8 });
     extra.forEach((e, i) => bigButton(6 + (i + 1) * (cw + 4), r1, cw, bh, e.label, e.run, { variant: e.variant, disabled: e.disabled, small: textWidth(e.label, BIG) > cw - 8 }));
-    if (next) bigButton(6, r2, W - 12, bh, next.label, next.run, nextOpt(next)); return; }
+    if (next) mkCTA(6, r2, W - 12, bh, next.label, next.run, { disabled: next.disabled, variant: next.variant || 'primary', glow: next.glow }); return; }
   const fy = H - bh - 6, bw = l => Math.max(64, textWidth(l, BIG) + 16); let x = 6;
   bigButton(x, fy, bw(back.label), bh, back.label, back.run, { variant: 'ghost' }); x += bw(back.label) + 6;
   for (const e of extra) { bigButton(x, fy, bw(e.label), bh, e.label, e.run, { variant: e.variant, disabled: e.disabled }); x += bw(e.label) + 6; }
-  let nx = W - 6; if (next) { const nw = Math.max(90, textWidth(next.label, BIG) + 20); nx = W - 6 - nw; bigButton(nx, fy, nw, bh, next.label, next.run, nextOpt(next)); }
+  let nx = W - 6; if (next) { const nw = Math.max(90, textWidth(next.label, BIG) + 20); nx = W - 6 - nw; mkCTA(nx, fy, nw, bh, next.label, next.run, { disabled: next.disabled, variant: next.variant || 'primary', glow: next.glow }); }
   if (o.hints && o.hints.length) { let items = o.hints.filter(Boolean); while (items.length && hintWidth(items) > nx - x - 12) items = items.slice(0, -1); if (items.length) hintLine(items, Math.round((x + nx) / 2), fy + Math.round((bh - 7) / 2), { pill: false }); }
 }
 function footerBand(h) { const W = VIEW.w, H = VIEW.h; ctx.globalAlpha = .88; rect(0, H - h, W, h, '#08071a'); ctx.globalAlpha = 1; hline(0, H - h, W, UI.gold); hline(0, H - h + 1, W, UI.goldDark); hline(0, H - h + 2, W, UI.inset); return H - h; }

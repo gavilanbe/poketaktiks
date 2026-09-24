@@ -164,7 +164,7 @@ function drawRouteCard(S, L) {
     rect(px0 - 2, py0 - 2, pw + 4, ph + 4, UI.inset); ctx.drawImage(bd.canvas, px0, py0, pw, ph); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); const cell = TILE * sc;
     for (const d of ch.map.deploy || []) rect(px0 + d.x * cell, py0 + d.y * cell, Math.ceil(cell), Math.ceil(cell), '#3d7dffa0');
     for (const u of ch.map.units || []) { const ux = Math.round(px0 + (u.x + .5) * cell), uy = Math.round(py0 + (u.y + .5) * cell); if (u.boss) drawSkull(ux - 2, uy - 3); else { rect(ux - 1, uy - 1, 3, 3, UI.inset); px(ux, uy, u.team === 2 ? '#ffe070' : '#ff5a5a'); } } }
-  bigButton(c.x + 7, by, c.w - 14, bh, cleared ? 'REPLAY' : 'PLAY', routePlay, { variant: cleared ? 'neutral' : 'primary', disabled: !!(S.reveal || S.walk) });
+  mkCTA(c.x + 7, by, c.w - 14, bh, cleared ? 'REPLAY' : 'PLAY', routePlay, { variant: cleared ? 'neutral' : 'primary', disabled: !!(S.reveal || S.walk), glow: cleared ? '#9cdbff' : '#8ae89a' });
   unfoldEnd(tok);
 }
 function routeInput(ev) {

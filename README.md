@@ -246,6 +246,22 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
   way forward bottom-right (named after the next step). The TEAM step says what
   you will face: the foes' commonest types, the types that hit most of them hard
   and the ones they resist, and how many foes the focused Pokémon hits hard.
+- **The menus before a battle** share one look (`menukit.js`): a themed sky that
+  moves (slanted light, drifting Poké Ball rings, motes; the battlefield faintly
+  under a briefing); the two commanders facing off on a slanted band, blue
+  against red, each trainer sliding in with their Ace and a VS on the seam (tap a
+  side to change who leads it); the rules as tiles with an icon, a name and a
+  value, where the focused tile grows arrows, a changed value slides in with a
+  flash, and a line under them says what it means; the battlefield framed like a
+  board on the table; the path as numbered pills; and a call to action that
+  breathes. Quick Battle shows each mode as a hero card with painted key art —
+  Charizard and Blastoise squaring up, Pidgeot over the three bridges, the Battle
+  Tower at dusk, rare Pokémon peeking out of the Safari's tall grass — with the
+  record you hold in it. Commanders and briefings put the trainer on a band in
+  their colour with their Ace, their words in a speech bubble and their Passive,
+  Power and Super as cards; the Tower's floors, the Safari's rarities, Conquest's
+  Aces and the Versus draft (slots that fill as each player picks, a roster tinted
+  by type) follow the same kit.
 - **Dialogues**: trainer portraits slide in on their side and darken while they
   listen, voices blip per letter, *emphasis* glows in gold, cinematic bars close.
 - **Battle screen**: each half is a painted panorama of the terrain its Pokémon

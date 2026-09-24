@@ -11,7 +11,7 @@ function journeyDraw() {
   rect(0, 0, W, H, UI.bg); SC.hits = [];
   if (S.bg === 'lab') { drawLab({ x: 0, y: 0, w: W, h: H }, Math.round(H * .72)); dimScreen(.55); }
   else if (S.bg === 'map' && BACKDROP) drawBackdrop(BACKDROP, (W - BACKDROP.canvas.width) / 2 - t * 3, (H - BACKDROP.canvas.height) / 2, .78);
-  else { for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .18 * y / H; rect(0, y, W, 2, '#2a2f78'); } ctx.globalAlpha = 1; }
+  else mkBackdrop('campaign');
   const pw = portrait ? 64 : 0, tw = w - 20 - (pw ? pw + 8 : 0), rows = S.lines.slice(1).map(s2 => wrap(s2, tw - 16));
   const h = Math.min(H - 12, 44 + rows.reduce((n, a) => n + a.length * 10 + 5, 0) + 30), y = Math.round((H - h) / 2), tok = unfold('journey', x, y, w, h, .22);
   const p = panel(x, y, w, h, { header: fitLabel(S.lines[0], w - 16), headerFill: '#2a2470' });
@@ -51,7 +51,7 @@ function drawLab(st, tableY) {
 }
 function captainChoiceDraw() {
   const W = VIEW.w, H = VIEW.h, t = SC.t, wide = W >= 380 && W > H, bh = btnH(); SC.hits = [];
-  rect(0, 0, W, H, '#120f2a');
+  mkBackdrop('lab');
   const top = screenTitle('CHOOSE YOUR PARTNER', H >= 240 ? (W >= 300 ? 'It becomes your Ace: it wears the crown and leads your team' : 'It becomes your Ace and leads your team') : null, 5), foot = setupFootTop() - 4;
   const stage = wide ? { x: 6, y: top, w: Math.round(W * .54) - 6, h: foot - top - 4 } : { x: 6, y: top, w: W - 12, h: Math.max(64, Math.round((foot - top) * .48)) };
   const card = wide ? { x: stage.x + stage.w + 6, y: top + 4, w: W - stage.w - 18, h: foot - top - 10 } : { x: 8, y: stage.y + stage.h + 6, w: W - 16, h: foot - stage.y - stage.h - 12 };
@@ -79,6 +79,7 @@ function captainChoiceDraw() {
   STARTERS.forEach((n, i) => { const cx = Math.round(stage.x + stage.w / 2 + (i - 1) * gap); hit(cx - Math.round(gap / 2) + 1, stage.y, gap - 2, stage.h, () => { if (SC.i === i) confirmStarter(); else starterFocus(i); }, DEX[n].name.toUpperCase()); });
   // the card for the focused partner
   const n = STARTERS[SC.i], c = CAPTAINS[n], d = DEX[n], tok = unfold('starter' + SC.i, card.x, card.y, card.w, card.h, .18);
+  if (!REDUCED) { ctx.globalAlpha = .2 + .16 * Math.sin(t * 3.2); rrect(card.x - 3, card.y - 3, card.w + 6, card.h + 6, c.col, 4); ctx.globalAlpha = 1; }
   const p = panel(card.x, card.y, card.w, card.h, { header: c.style, headerFill: shade(c.col, -.45), headerCol: '#ffffff', headerRight: 'YOUR ACE', headerRightCol: shade(c.col, .5), border: c.col });
   let y = p.cy; const x = card.x + 8, w = card.w - 16, room = card.y + card.h - 6;
   const line = (str, col, bigText2) => { if (y + (bigText2 ? 9 : 7) > room) return false; if (bigText2) bigText(fitLabel(str.toUpperCase(), w), x, y, col, { shadow: UI.inset }); else text(fitLabel(str, w), x, y, col); y += bigText2 ? 12 : 9; return true; };
@@ -217,35 +218,45 @@ function drawOutposts() {
 // Conquest setup: pick the captain (both sides lead with the same one), see the six teammates (three start, three wait as
 // reserves with their cost), the three rules, and the Three Bridges map. Controls: the captain cards, BACK, START.
 function territorySetupDraw() {
-  const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t, bh = btnH(); S.captain = CAPTAINS[S.captain] ? S.captain : 7; rect(0, 0, W, H, UI.bg); SC.hits = [];
-  drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 - t * 4, (H - S.bd.canvas.height) / 2, .82);
+  const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t, bh = btnH(); S.captain = CAPTAINS[S.captain] ? S.captain : 7; mkBackdrop('conquest'); SC.hits = [];
   const top = setupHeader('CONQUEST', H >= 220 ? ['SETUP', 'BATTLE'] : null, 0, null, 5), by = setupFootTop() - 2, wide = W >= 420;
   const colW = wide ? Math.min(250, Math.floor((W - 20) / 2)) : Math.min(W - 12, 300), x0 = wide ? Math.round(W / 2 - colW - 4) : Math.round((W - colW) / 2);
   // captains
-  const cw = Math.floor((colW - 8) / 3), chh = H >= 260 ? 50 : 38, cy0 = top + 2;
-  STARTERS.forEach((n, i) => { const xx = x0 + i * (cw + 4), c = CAPTAINS[n], sel = S.captain === n, focus = SC.i === i;
-    panel(xx, cy0, cw, chh, { fill: sel ? UI.panel2 : UI.panelDark, border: sel ? c.col : focus ? UI.gold : UI.border2, flat: true });
-    requestAnim(n); const hop = sel && !REDUCED ? Math.round(Math.abs(Math.sin(t * 5)) * 2) : 0; if (chh >= 50 && animReady(n)) { ctx.save(); ctx.beginPath(); ctx.rect(xx + 3, cy0 + 3, cw - 6, chh - 16); ctx.clip(); drawAnim(n, xx + cw / 2, cy0 + chh - 13 - hop, t + i, { sx: 1, sy: 1 }); ctx.restore(); } else drawMon(n, xx + cw / 2, cy0 + chh - 12 - hop, { outline: sel ? c.col : null });
-    textC(fitLabel(c.name, cw - 6), xx + cw / 2, cy0 + chh - 11, sel ? c.col : UI.muted);
-    hit(xx, cy0, cw, chh, () => { S.captain = n; SC.i = i; Audio.sfx('catch'); }); });
+  const cw = Math.floor((colW - 8) / 3), tall = wide && H >= 300, chh = tall ? clamp(Math.round((by - top) * .4), 50, 104) : H >= 260 ? 50 : 38, cy0 = top + 2;
+  // three Ace cards: the partner on its colour, its power's name under it; the chosen one lifts, glows and hops
+  STARTERS.forEach((n, i) => { const xx = x0 + i * (cw + 4), c = CAPTAINS[n], sel = S.captain === n, focus = SC.i === i, lift = sel && !REDUCED ? 2 : 0, yy = cy0 - lift;
+    if (sel && !REDUCED) { ctx.globalAlpha = .25 + .2 * Math.sin(t * 3.5); rrect(xx - 2, yy - 2, cw + 4, chh + 4, c.col, 3); ctx.globalAlpha = 1; }
+    rrect(xx + 1, cy0 + 2, cw, chh, UI.shadow, 2); rrect(xx, yy, cw, chh, sel ? c.col : focus ? UI.gold : UI.inset, 2);
+    for (let j = 1; j < chh - 1; j++) rect(xx + 1, yy + j, cw - 2, 1, mix(shade(c.col, sel ? -.35 : -.62), shade(c.col, -.82), j / chh));
+    if (sel) { ctx.save(); ctx.beginPath(); ctx.rect(xx + 1, yy + 1, cw - 2, chh - 2); ctx.clip(); ctx.globalAlpha = .12; const dr = REDUCED ? 0 : Math.floor(t * 10) % 10; for (let k = -chh + dr; k < cw; k += 10) { ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(xx + k, yy + chh); ctx.lineTo(xx + k + chh, yy); ctx.lineTo(xx + k + chh + 4, yy); ctx.lineTo(xx + k + 4, yy + chh); ctx.fill(); } ctx.restore(); ctx.globalAlpha = 1; }
+    requestAnim(n); const hop = sel && !REDUCED ? Math.round(Math.abs(Math.sin(t * 5)) * 2) : 0; ctx.save(); ctx.beginPath(); ctx.rect(xx + 2, yy + 2, cw - 4, chh - 13); ctx.clip(); ctx.globalAlpha = .4; ellipse(xx + cw / 2, yy + chh - 13, 10, 2, '#000'); ctx.globalAlpha = sel ? 1 : .7;
+    const sc = chh >= 96 ? 2 : 1; if (chh >= 50 && animReady(n)) drawAnim(n, xx + cw / 2, yy + chh - 13 - hop, sel ? t + i : 0, { sx: sc, sy: sc }); else drawMon(n, xx + cw / 2, yy + chh - 12 - hop, { outline: sel ? c.col : null, sx: sc, sy: sc }); ctx.globalAlpha = 1; ctx.restore();
+    rect(xx + 1, yy + chh - 11, cw - 2, 10, '#07061ae0'); hline(xx + 1, yy + chh - 12, cw - 2, sel ? c.col : '#2a2f66');
+    textC(fitLabel(c.name, cw - 6), xx + cw / 2, yy + chh - 10, sel ? '#ffffff' : UI.muted);
+    if (sel) drawCrown(xx + 3, yy + 3);
+    hit(xx, cy0, cw, chh, () => { S.captain = n; SC.i = i; Audio.sfx('catch'); }, 'ACE ' + DEX[n].name.toUpperCase()); });
   let y = cy0 + chh + 6; const c = CAPTAINS[S.captain];
-  if (y + 9 < by - 4) { textC(fitLabel(c.normal, colW), x0 + colW / 2, y, UI.ink, { outline: UI.inset }); y += 10; }
-  if (y + 9 < by - 4 && H >= 260) { textC(fitLabel(TR('Super {0}: {1}', c.superName, c.super), colW), x0 + colW / 2, y, c.col, { outline: UI.inset }); y += 12; } else y += 2;
+  if (tall) { // wide and tall: the power and the super power in full, each on its card-like line
+    for (const [lb, s2, col] of [['POWER', c.name + ': ' + TRX(c.normal), UI.ink], ['SUPER', TR('Super {0}: {1}', c.superName, c.super).replace(/^[^:]*?(?=[A-ZÁÉÍÓÚÑ])/, ''), c.col]]) { const ls = wrap(s2, colW - 12).slice(0, 2); if (y + ls.length * 9 > by - 4) break; iconAt(lb === 'POWER' ? 'skill' : 'star', x0, y - 1, col); ls.forEach((l, k) => text(l, x0 + 12, y + k * 9, col, { outline: UI.inset })); y += ls.length * 9 + 4; }
+    const ls = wrap('Both sides lead with the same Ace: the battle is won on the map.', colW - 12).slice(0, 2); if (y + 6 + ls.length * 9 <= by - 4) { y += 6; iconAt('info', x0, y - 1, MK_THEME.conquest.glow); ls.forEach((l, k) => text(l, x0 + 12, y + k * 9, UI.muted)); y += ls.length * 9; } }
+  else { if (y + 9 < by - 4) { textC(fitLabel(c.normal, colW), x0 + colW / 2, y, UI.ink, { outline: UI.inset }); y += 10; }
+    if (y + 9 < by - 4 && H >= 260) { textC(fitLabel(TR('Super {0}: {1}', c.superName, c.super), colW), x0 + colW / 2, y, c.col, { outline: UI.inset }); y += 12; } else y += 2; }
   // the six: who starts, who waits and what each costs
   const rosterX = wide ? x0 + colW + 8 : x0, rosterW = wide ? colW : colW; let ry = wide ? cy0 : y;
   const roster = territoryRoster(S.captain), cellW = Math.floor((rosterW - 4) / 3), cellH = 24;
   if (ry + 12 + cellH * 2 < by - 4) { sectionLabel('Your six', rosterX, ry, rosterW, UI.gold); ry += 10;
-    roster.forEach((num, i) => { const cost = warCost(num, TERRITORY.level); const xx = rosterX + (i % 3) * (cellW + 2), yy = ry + Math.floor(i / 3) * (cellH + 2), starts = i < 3; rrect(xx, yy, cellW, cellH, starts ? '#1c3a6a' : '#1c1d3c', 1); drawMon(num, xx + 14, yy + cellH - 1, { outline: starts ? teamColor(0) : null }); text(starts ? 'START' : money(cost), xx + 28, yy + 4, starts ? UI.green : UI.gold); text(fitLabel(ROLES[roleFor(DEX[num])].name, cellW - 30), xx + 28, yy + 13, UI.muted); });
+    roster.forEach((num, i) => { const cost = warCost(num, TERRITORY.level); const xx = rosterX + (i % 3) * (cellW + 2), yy = ry + Math.floor(i / 3) * (cellH + 2), starts = i < 3, bob = starts && !REDUCED && Math.floor(t * 2) % 3 === i ? -1 : 0;
+      rrect(xx, yy, cellW, cellH, UI.inset, 2); rect(xx + 1, yy + 1, cellW - 2, cellH - 2, starts ? '#1c3a6a' : '#17183a'); hline(xx + 2, yy + 1, cellW - 4, starts ? '#2c5aa0' : '#23244e'); rect(xx + 1, yy + 1, 2, cellH - 2, starts ? UI.green : UI.gold);
+      drawMon(num, xx + 15, yy + cellH - 1 + bob, { outline: starts ? teamColor(0) : null }); text(starts ? 'START' : money(cost), xx + 29, yy + 4, starts ? UI.green : UI.gold); text(fitLabel(ROLES[roleFor(DEX[num])].name, cellW - 31), xx + 29, yy + 13, UI.muted); });
     ry += (cellH + 2) * 2 + 4; if (!wide) y = ry; }
   // the rules, one line each
   const rules = [['flag', 'Take the enemy HQ, or', UI.gold], ['flag', 'hold 2 of 3 middle centers 3 turns', UI.gold], ['ball', 'Centers pay ₽1000 a day: deploy from the PC', UI.info]];
   let rY = wide ? ry : y; const rX = wide ? rosterX : x0, rW = wide ? rosterW : colW;
   for (const [ic, s2, col] of rules) { if (rY + 9 > by - 4) break; iconAt(ic, rX, rY - 1, col); text(fitLabel(s2, rW - 12), rX + 12, rY, UI.ink); rY += 11; }
-  // the map, when there is room left in the left column
-  const mapTop = wide ? y + 2 : rY + 4, avail = by - 6 - mapTop;
-  if (avail > 50) { const bd = S.bd, sc = Math.min(colW / bd.canvas.width, avail / bd.canvas.height), mw = Math.floor(bd.canvas.width * sc), mh = Math.floor(bd.canvas.height * sc), mx = (wide ? x0 : x0) + Math.floor((colW - mw) / 2), my = mapTop + Math.floor((avail - mh) / 2);
-    rect(mx - 2, my - 2, mw + 4, mh + 4, UI.inset); ctx.drawImage(bd.canvas, mx, my, mw, mh); outline(mx - 1, my - 1, mw + 2, mh + 2, UI.border2); }
-  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 1 }); } }, next: { label: 'BATTLE! ▸', run: () => launchTerritory(S.seed, false, [S.captain, S.captain]), variant: 'danger' }, hints: VIEW.touch ? ['tap your Ace'] : [['◂▸', 'your Ace'], ['Z', 'battle']] });
+  // the map: under the rules on wide screens (the left column holds the Aces), else where room is left
+  const mapTop = tall ? rY + 4 : wide ? y + 2 : rY + 4, avail = by - 6 - mapTop;
+  if (avail > 50) mkMapFrame(S.bd, TERRITORY_MAP, tall ? rX : x0, mapTop, tall ? rW : colW, avail, { war: false });
+  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 1 }); } }, next: { label: 'BATTLE! ▸', run: () => launchTerritory(S.seed, false, [S.captain, S.captain]), variant: 'danger', glow: '#ff8a9a' }, hints: VIEW.touch ? ['tap your Ace'] : [['◂▸', 'your Ace'], ['Z', 'battle']] });
 }
 
 // ---------------------------------------------------------------- the briefing before a front
@@ -254,41 +265,43 @@ function territorySetupDraw() {
 function briefChapter(idx) { if (SAVE) migrateCaptain(SAVE); const cos = coUnlocked(SAVE); goScene('brief', { idx, cos, co: SAVE && cos.includes(SAVE.co) ? SAVE.co : 'you' }); }
 function briefGo(S) { if (SAVE) { SAVE.co = S.co; writeSave(); } Audio.sfx('select'); prepChapter(S.idx); }
 function briefDraw() {
-  const S = SC.data, ch = CHAPTERS[S.idx], W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), bh = btnH(); if (!S.bd) S.bd = makeBackdrop(ch.map);
-  rect(0, 0, W, H, UI.bg); drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 - t * 3, (H - S.bd.canvas.height) / 2, .8); SC.hits = [];
+  const S = SC.data, ch = CHAPTERS[S.idx], W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(); if (!S.bd) S.bd = makeBackdrop(ch.map);
+  mkBackdrop('campaign', { map: S.bd, mapAlpha: .22 }); SC.hits = [];
   const top = setupHeader(TR('FRONT {0}', ch.num) + ' · ' + ch.title.toUpperCase(), H >= 220 ? ['MISSION', 'TEAM', 'BATTLE'] : null, 0, null, 4), foot = setupFootTop();
   const co = ch.co ? COS[ch.co] : null, sp = ch.foe ? SPEAKERS[ch.foe] : null, as = co ? null : { tr: sp ? sp.tr : 'rocketgrunt', name: ch.foe || 'Rocket', col: sp ? sp.col : UI.red };
-  const lw = narrow ? W - 12 : Math.min(250, Math.floor(W * .42)), lx = 6, ly = top + 2, cardW = narrow ? 70 : 84, cardH = narrow ? 60 : 76;
-  // the enemy commander and their words
-  const note = co || narrow ? [] : wrap('A local trainer paid by Team Rocket. No commander powers yet: those start at Mt. Moon.', lw - 16); // sized in, so it never spills
-  const fp = panel(lx, ly, lw, narrow ? cardH + 18 : Math.min(foot - 6 - ly, cardH + (co ? 110 : 34 + note.length * 9)), { header: co ? 'ENEMY COMMANDER' : 'ENEMY TRAINER', headerFill: shade(co ? co.col : as.col, -.55) });
-  coCard(lx + 6, fp.cy, cardW, cardH, co ? ch.co : 'you', 1, null, { as, tag: 'FOE', pop: t });
-  const qx = lx + 12 + cardW, qw = lw - (qx - lx) - 8, ql = wrap('"' + (ch.brief || '') + '"', qw - 8).slice(0, Math.floor((cardH - 6) / 9)); rrect(qx, fp.cy + 2, qw, ql.length * 9 + 8, '#fff6d8', 2); outline(qx, fp.cy + 2, qw, ql.length * 9 + 8, UI.inset); for (let k = 0; k < 3; k++) px(qx - 1 - k, fp.cy + 10 + k, '#fff6d8');
-  ql.forEach((l, k) => { const a = REDUCED ? 1 : clamp((t - .3 - k * .25) / .2, 0, 1); ctx.globalAlpha = a; text(l, qx + 4, fp.cy + 6 + k * 9, '#3a2a18'); ctx.globalAlpha = 1; });
-  const foes0 = ch.map.units.filter(u => u.team == null || u.team === 1), lead = co && (foes0.find(u => u.mon === co.ace) || foes0.find(u => u.boss) || foes0[0]); // who wears their crown on this front
-  if (!narrow && co) { let y = fp.cy + cardH + 8; const c = coOf({ co: ch.co }); sectionLabel('HOW THEY FIGHT', lx + 8, y, lw - 16, co.col); y += 11;
-    for (const [k, v] of [['Ace', DEX[lead ? lead.mon : co.ace].name], ['Passive', c.passive.text], ['Power', c.power.name + ': ' + c.power.text], ['Super', c.super.name + ': ' + c.super.text]]) { if (y + 9 > fp.y + fp.h - 4) break; text(k, lx + 8, y, UI.muted); const ls = wrap(v, lw - 62); ls.slice(0, 2).forEach((l, i) => text(l, lx + 52, y + i * 9, k === 'Super' ? UI.gold : UI.ink)); y += Math.min(2, ls.length) * 9 + 3; } }
-  else if (!narrow) { const y = fp.cy + cardH + 8; note.forEach((l, i) => text(l, lx + 8, y + i * 9, UI.muted)); }
-  // the mission
-  const mx = narrow ? 6 : lx + lw + 6, my = narrow ? ly + cardH + 24 : ly, mw = narrow ? W - 12 : W - mx - 6, mh = foot - 6 - my;
-  const mp = panel(mx, my, mw, mh, { header: 'MISSION', headerRight: TR('Lv {0} · par {1} days', ch.level, ch.par), headerRightCol: UI.gold }); let y = mp.cy;
-  const goal = wrap(goalText(ch.map.objective, ch.map), mw - 22).slice(0, 2); iconAt('flag', mx + 6, y - 1, UI.gold); goal.forEach((l, i) => text(l, mx + 17, y + i * 9, UI.ink)); y += 12 + (goal.length - 1) * 9; // two lines on a phone
-  const foes = ch.map.units.filter(u => u.team == null || u.team === 1), wild = ch.map.units.filter(u => u.team === 2), rocket = briefSites(ch), per = Math.max(1, Math.floor((mw - 12) / 20));
-  const row = (label, list, col, flip, crown) => { if (!list.length || y + 26 > my + mh - 4) return; sectionLabel(label, mx + 8, y, mw - 16, col); y += 10; list.slice(0, per).forEach((n, k) => { const bob = !REDUCED && k === Math.floor(t * 3) % Math.min(per, list.length) ? -1 : 0; ctx.drawImage(monIcon(n, flip), mx + 4 + k * 20, y + bob, 24, 18); if (k === 0 && crown && co) drawCrown(mx + 17 + k * 20, y); }); y += 20; };
+  const foes = ch.map.units.filter(u => u.team == null || u.team === 1), wild = ch.map.units.filter(u => u.team === 2), allies = ch.map.units.filter(u => u.team === 3), lead = co && (foes.find(u => u.mon === co.ace) || foes.find(u => u.boss) || foes[0]); // who wears their crown on this front
+  const lw = narrow ? W - 12 : Math.min(262, Math.floor(W * .43)), lx = 6; let ly = top + 3;
+  // the enemy on their band, then what they said
+  const bandH = narrow ? 52 : clamp(Math.round((foot - top) * .3), 54, 96);
+  mkHero(lx, ly, lw, bandH, { tr: co ? co.tr : as.tr, col: co ? co.col : as.col, name: co ? co.name : as.name, sub: co ? co.blurb : 'ENEMY TRAINER', mon: lead ? lead.mon : (foes.find(u => u.boss) || {}).mon }, { id: 'brief' + S.idx });
+  ly += bandH + 6; if (ch.brief) ly += mkBubble(ch.brief, lx + 3, ly + 2, lw - 6, narrow ? 3 : 4, .35, 'up') + 7;
+  // how they fight: the passive, the power and the super as cards (a plain trainer gets a note instead)
+  if (!narrow) {
+    if (co) { const c = coOf({ co: ch.co }), bottom = foot - 4; sectionLabel('HOW THEY FIGHT', lx + 2, ly, lw - 4, co.col); ly += 10;
+      for (const [ic, lb, v, col, nm] of [['shield', 'PASSIVE', c.passive.text, '#9cdbff', lead ? DEX[lead.mon].name : null], ['skill', 'POWER', c.power.text, co.col, c.power.name], ['star', 'SUPER', c.super.text, UI.gold, c.super.name]]) { const ls = wrap(v, lw - 12).slice(0, 2), hh = 12 + ls.length * 9 + 2; if (ly + hh > bottom) break;
+        rrect(lx, ly, lw, hh, UI.inset, 2); rect(lx + 1, ly + 1, lw - 2, hh - 2, '#15183ecc'); rect(lx + 1, ly + 1, 2, hh - 2, col); iconAt(ic, lx + 5, ly + 2, col); text(lb, lx + 17, ly + 3, col); if (nm) textR(fitLabel(nm, lw - 26 - textWidth(lb)), lx + lw - 4, ly + 3, UI.ink); ls.forEach((l, k) => text(l, lx + 6, ly + 12 + k * 9, UI.muted)); ly += hh + 3; } }
+    else { const note = wrap('A local trainer paid by Team Rocket. No commander powers yet: those start at Mt. Moon.', lw - 16); iconAt('info', lx + 2, ly - 1, UI.info); note.forEach((l, k) => text(l, lx + 14, ly + k * 9, UI.muted)); ly += note.length * 9 + 4; }
+  }
+  // the mission: the goal as a headline, level and par, who they field, then your commander and the battlefield
+  const mx = narrow ? 6 : lx + lw + 8, my = narrow ? ly : top + 3, mw = narrow ? W - 12 : W - mx - 6, bottom = foot - 4; let y = my;
+  const goal = wrap(goalText(ch.map.objective, ch.map), mw - 18).slice(0, 2), gh = goal.length * 10 + 7; rrect(mx, y, mw, gh, UI.inset, 2); rect(mx + 1, y + 1, mw - 2, gh - 2, '#2a2470'); hline(mx + 2, y + 1, mw - 4, '#3e37a0'); rect(mx + 1, y + 1, 2, gh - 2, UI.gold);
+  iconAt('flag', mx + 5, y + 4, UI.gold); goal.forEach((l, k) => text(l, mx + 16, y + 4 + k * 10, UI.gold, { outline: UI.inset })); y += gh + 4;
+  if (y + 20 <= bottom) y += mkChips([['up', 'LEVEL', TR('Lv {0}', ch.level)], ['clock', 'PAR', TR('{0} days', ch.par)], ['skull', 'FOES', String(foes.length)]], mx, y, mw, { cols: 3, th: 20 }) + 5;
+  const per = Math.max(1, Math.floor((mw - 8) / 20)), rocket = briefSites(ch);
+  const row = (label, list, col, flip, crown) => { if (!list.length || y + 26 > bottom) return; sectionLabel(label, mx + 2, y, mw - 4, col); y += 10; list.slice(0, per).forEach((n, k) => { const bob = !REDUCED && k === Math.floor(t * 3) % Math.min(per, list.length) ? -1 : 0; ctx.drawImage(monIcon(n, flip), mx + k * 20, y + bob, 24, 18); if (k === 0 && crown && co) drawCrown(mx + 13 + k * 20, y); }); y += 20; };
   row(TR('ENEMY FORCES · {0}', foes.length), (lead ? [lead.mon] : []).concat(foes.filter(u => u !== lead).map(u => u.mon)), '#ff9a9a', true, true); // their Ace first, crowned
-  if (rocket && co && y + 9 <= my + mh - 4) { const c2 = rocket.centers, line = rocket.hq && c2 ? TR(c2 > 1 ? 'The Rocket HQ and {0} centers send {1}\'s reinforcements: take them!' : 'The Rocket HQ and a Rocket center send {1}\'s reinforcements: take them!', c2, co.name) : rocket.hq ? TR('The Rocket HQ sends {0}\'s reinforcements: take it!', co.name) : TR(c2 > 1 ? '{0} Rocket centers send {1}\'s reinforcements: take them!' : 'A Rocket center sends {1}\'s reinforcements: take it!', c2, co.name);
-    for (const l of wrap(line, mw - 16).slice(0, 3)) { text(l, mx + 8, y, UI.red); y += 9; } y += 3; }
-  const allies = ch.map.units.filter(u => u.team === 3); row('ALLIES · FIGHTING WITH YOU', allies.map(u => u.mon), '#a0f0b0', false);
+  if (rocket && co && y + 9 <= bottom) { const c2 = rocket.centers, line = rocket.hq && c2 ? TR(c2 > 1 ? 'The Rocket HQ and {0} centers send {1}\'s reinforcements: take them!' : 'The Rocket HQ and a Rocket center send {1}\'s reinforcements: take them!', c2, co.name) : rocket.hq ? TR('The Rocket HQ sends {0}\'s reinforcements: take it!', co.name) : TR(c2 > 1 ? '{0} Rocket centers send {1}\'s reinforcements: take them!' : 'A Rocket center sends {1}\'s reinforcements: take it!', c2, co.name);
+    const ls = wrap(line, mw - 14).slice(0, 3); iconAt('skull', mx, y - 1, UI.red); ls.forEach((l, k) => text(l, mx + 12, y + k * 9, '#ff9a9a')); y += ls.length * 9 + 4; }
+  row('ALLIES · FIGHTING WITH YOU', allies.map(u => u.mon), '#a0f0b0', false);
   row('WILD POKéMON', wild.map(u => u.mon), '#fff0a0', true);
-  if (SAVE && y + 9 <= my + mh - 4) { const full = TR('Your collection: {0} · {1} open the battle, the rest wait in the PC Box', SAVE.party.length, ch.slots), ws = wrap(full, mw - 16), cl = ws.length <= 2 && y + 18 <= my + mh - 4 ? ws : [fitLabel(full, mw - 16)]; cl.forEach((l, i) => text(l, mx + 8, y + i * 9, UI.muted)); y += 12 + (cl.length - 1) * 9; }
-  // your commander
-  if (y + 16 <= my + mh - 2) { if (S.cos.length > 1) { vsRuleRows(S, mx + 4, y, mw - 8, 14, [{ k: 'co', label: 'YOUR COMMANDER', vals: X => X.cos, show: v => v === 'you' ? 'Tactician' : COS[v].name }], 0); y += 16; if (S.co !== 'you' && y + 9 <= my + mh - 4) { text(fitLabel(TR('{0} leads: {1} joins your team', COS[S.co].name, DEX[COS[S.co].ace].name), mw - 16), mx + 8, y, UI.info); y += 10; } }
-    else { text(fitLabel('Your commander: the Tactician. Freed Gym Leaders can lead too.', mw - 16), mx + 8, y + 2, UI.dim); y += 13; } }
+  // your commander (a tile when a freed Gym Leader can lead), then the collection
+  if (y + 20 <= bottom) { if (S.cos.length > 1) { y += mkTiles(S, [{ k: 'co', label: 'YOUR COMMANDER', icon: 'crown', vals: X => X.cos, show: v => v === 'you' ? 'Tactician' : COS[v].name }], mx, y, mw, { cols: 1, th: 20, focus: 0 }) + 3; if (S.co !== 'you' && y + 9 <= bottom) { text(fitLabel(TR('{0} leads: {1} joins your team', COS[S.co].name, DEX[COS[S.co].ace].name), mw - 4), mx + 2, y, UI.info); y += 10; } }
+    else { text(fitLabel('Your commander: the Tactician. Freed Gym Leaders can lead too.', mw - 4), mx + 2, y + 2, UI.dim); y += 13; } }
+  if (SAVE && y + 9 <= bottom) { const full = TR('Your collection: {0} · {1} open the battle, the rest wait in the PC Box', SAVE.party.length, ch.slots), ws = wrap(full, mw - 4), cl = ws.length <= 2 && y + 18 <= bottom ? ws : [fitLabel(full, mw - 4)]; cl.forEach((l, i) => text(l, mx + 2, y + i * 9, UI.muted)); y += 12 + (cl.length - 1) * 9; }
   // the battlefield: your deploy tiles and center, the Rocket-held ones, every Pokémon on it
-  const room = my + mh - 6 - y; if (room >= 40) { const sc = Math.min((mw - 16) / S.bd.canvas.width, room / S.bd.canvas.height), pw = Math.floor(S.bd.canvas.width * sc), ph = Math.floor(S.bd.canvas.height * sc), px0 = mx + Math.round((mw - pw) / 2), py0 = y + 2;
-    rect(px0 - 2, py0 - 2, pw + 4, ph + 4, UI.inset); ctx.drawImage(S.bd.canvas, px0, py0, pw, ph); drawWarPreview(ch.map, S.bd, px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); }
+  if (bottom - y >= 44) mkMapFrame(S.bd, ch.map, mx, y, mw, bottom - y, { centers: 0 });
   const back = () => { Audio.sfx('cancel'); openRoute({ sel: S.idx }); };
-  setupFooter({ back: { label: '◂ ROUTE', run: back }, next: { label: 'TEAM ▸', run: () => briefGo(S) }, hints: VIEW.touch ? null : S.cos.length > 1 ? [['◂▸', 'commander'], ['Z', 'team']] : [['Z', 'team'], ['X', 'route']] });
+  setupFooter({ back: { label: '◂ ROUTE', run: back }, next: { label: 'TEAM ▸', run: () => briefGo(S), glow: UI.gold }, hints: VIEW.touch ? null : S.cos.length > 1 ? [['◂▸', 'commander'], ['Z', 'team']] : [['Z', 'team'], ['X', 'route']] });
 }
 function briefInput(ev) {
   const S = SC.data; if (ev.type === 'key') { if (ev.key === 'left' || ev.key === 'right') { if (S.cos.length > 1) vsCycle(S, { k: 'co', vals: X => X.cos }, ev.key === 'left' ? -1 : 1); } else if (ev.key === 'ok' || ev.key === 'next') briefGo(S); else if (ev.key === 'back') { Audio.sfx('cancel'); openRoute({ sel: S.idx }); } else if (ev.key === 'mute') Audio.toggle(); return; }

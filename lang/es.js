@@ -254,4 +254,17 @@ Object.assign(ES, {
   'Player {0} captured the flag!': '¡El jugador {0} ha capturado la bandera!', 'Player {0} held the hill.': 'El jugador {0} ha mantenido la colina.',
   'More hill points at the turn limit.': 'Más puntos de colina al llegar al límite.', 'Equal teams at the turn limit.': 'Equipos iguales al llegar al límite.', 'The larger team at the turn limit.': 'El equipo más numeroso al llegar al límite.',
   'loading sprites…': 'cargando sprites…', 'Map': 'Mapa',
+  // the menus between the title and a battle (menukit)
+  'A random battlefield': 'Un campo de batalla al azar', 'Deploy from your PC Box': 'Despliega desde tu Caja del PC', 'Three bridges, six teammates': 'Tres puentes, seis compañeros',
+  'Captured centers call reserves': 'Los centros capturados traen refuerzos', 'Ten floors, a commander on each': 'Diez pisos, un comandante en cada uno', 'Rental armies on equal terms': 'Ejércitos de alquiler, en igualdad',
+  'Climb for an S rank': 'Sube a por el rango S', 'Twelve Safari Balls, eight days': 'Doce Safari Balls, ocho días', 'Weaken, never knock out': 'Debilita, nunca derrotes', 'Rare Pokémon score more': 'Los raros puntúan más',
+  'Floors {0}/{1} · S ranks {2}': 'Pisos {0}/{1} · rangos S {2}', 'Best haul {0} pts': 'Récord: {0} pts',
+  'Both armies fight at this level.': 'Los dos ejércitos luchan a este nivel.', 'Easy: the CPU starts poorer. Hard: richer, and two levels up.': 'Fácil: la CPU empieza con menos fondos. Difícil: con más, y dos niveles por encima.',
+  'What each side has on day one to deploy from its PC.': 'Lo que tiene cada bando el primer día para desplegar desde su PC.', 'Rain, sun, sand and snow change moves and movement for the whole battle.': 'La lluvia, el sol, la arena y la nieve cambian ataques y movimientos durante todo el combate.',
+  'The land shapes the terrain and who lives in the tall grass.': 'El terreno decide el mapa y quién vive en la hierba alta.', 'Bigger maps: more centers to take, longer marches.': 'Mapas más grandes: más centros que tomar, marchas más largas.',
+  'Every number is another map; the dice picks one at random.': 'Cada número es otro mapa; el dado elige uno al azar.',
+  'Best: {0} pts · {1} days': 'Récord: {0} pts · {1} días',
+  'Team of four': 'Equipo de cuatro', 'by rarity': 'por rareza', 'BALLS': 'BALLS', 'DAYS': 'DÍAS', 'SCORE': 'PUNTOS',
+  'Both sides lead with the same Ace: the battle is won on the map.': 'Los dos bandos llevan el mismo As: la batalla se gana en el mapa.',
+  'FOES': 'RIVALES', 'route': 'ruta',
 });

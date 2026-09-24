@@ -76,8 +76,7 @@ function towerLayout() {
 }
 function towerDraw() {
   const T = SC.data, L = towerLayout(), { W, H } = L, t = SC.t; T.i = clamp(T.i, 0, TOWER.length - 1); const F = TOWER[T.i], open = towerOpen(T.recs, T.i);
-  rect(0, 0, W, H, '#100c24'); for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .5 * (1 - y / H); hline(0, y, W, '#2a1c5a'); } ctx.globalAlpha = 1; // dusk sky
-  for (let k = 0; k < 40; k++) { const sx = (k * 97) % W, sy = (k * 53) % Math.round(H * .6), tw2 = Math.sin(t * 2 + k) > .6; px(sx, sy, tw2 ? '#ffffff' : '#6a64a0'); }
+  mkBackdrop('tower'); for (let k = 0; k < 40; k++) { const sx = (k * 97) % W, sy = (k * 53) % Math.round(H * .6), tw2 = Math.sin(t * 2 + k) > .6; px(sx, sy, tw2 ? '#ffffff' : '#6a64a0'); } // stars over the dusk
   const recs = Object.values(T.recs.tower || {}), sub = recs.length ? TR('Cleared {0}/{1} · S ranks {2} · best total {3}', recs.length, TOWER.length, recs.filter(r => r.rank === 'S').length, recs.reduce((a, r) => a + r.total, 0)) : TR('Ten floors · one commander on each · ranked S to C');
   SC.hits = []; setupHeader('BATTLE TOWER', H >= 220 ? ['FLOOR', 'TEAM', 'BATTLE'] : null, 0, null, 4);
   // the tower: a spire, then the floors from the top (10F) down to 1F
@@ -101,24 +100,23 @@ function towerDraw() {
     if (f === T.opened && !REDUCED && t < 1.6) { const k = clamp((t - .3) / .5, 0, 1); ctx.globalAlpha = (1 - k) * .8 * (t > .3 ? 1 : 0); rect(x, y, w, rowH - 1, '#fff6d0'); ctx.globalAlpha = 1; if (t > .3) for (let q = 0; q < 5; q++) sparkle(x + 20 + ((q * 47 + Math.floor(t * 9) * 13) % (w - 40)), y + 2 + (q * 5) % Math.max(2, rowH - 4), 1 + (q + Math.floor(t * 8)) % 2, '#fff2b0'); if (!T.chimed && t > .3) { T.chimed = true; Audio.sfx('chime'); } }
     hit(x, y, w, rowH, () => { if (T.i === f) T.go(); else { T.i = f; T.at = SC.t; Audio.sfx('cursor'); } }, fl);
   }
-  // the chosen floor
-  const p = panel(L.px, L.py, L.pw, L.ph, { header: TR('FLOOR {0}', T.i + 1) + ' · ' + (open ? COS[F.co].name.toUpperCase() : TR('LOCKED')), headerRight: open ? BIOMES[F.biome].name : null, headerFill: open ? shade(COS[F.co].col, -.55) : UI.panelDark });
-  let y = p.cy; const cardW = L.narrow ? 64 : 76, cardH = L.narrow ? 54 : 64;
+  // the chosen floor: you against its commander (tap your side to change who leads you), their line, the facts
+  const x = L.px, w = L.pw, bottom = L.py + L.ph; let y = L.py; const cycleCo = d => { vsCycle(T, { k: 'co', vals: S => S.cos }, d); T.coAt = SC.t; };
+  const bandH = L.narrow ? 40 : clamp(Math.round(L.ph * .28), 44, 84);
   if (open) {
-    coCard(p.x + 6, y, cardW, cardH, F.co, 1, null, { tag: 'FOE', pop: SC.t - (T.at || -9) });
-    const qx = p.x + 12 + cardW, qw = p.w - (qx - p.x) - 8, lines = wrap('"' + F.quote + '"', qw - 8).slice(0, Math.floor((cardH - 8) / 9)); rrect(qx, y + 2, qw, lines.length * 9 + 8, '#fff6d8', 2); outline(qx, y + 2, qw, lines.length * 9 + 8, UI.inset);
-    for (let k = 0; k < 3; k++) px(qx - 1 - k, y + 10 + k, '#fff6d8'); lines.forEach((l, k) => text(l, qx + 4, y + 6 + k * 9, '#3a2a18'));
-    const co = coOf({ co: F.co }), ty = y + lines.length * 9 + 14; text(fitLabel(co.passive.text, qw), qx, ty, UI.muted); text(fitLabel(co.power.name + ' · ' + co.super.name, qw), qx, ty + 10, UI.info);
-    y = Math.max(y + cardH, ty + 18) + 5;
-  } else { textC(TR('Clear floor {0} to open this one.', T.i), p.x + p.w / 2, y + 20, UI.muted); y += 40; }
-  const rows = [['LEVEL', TR('Lv {0} · both armies', F.level)], ['PAR', TR('{0} days', F.par)], ['WEATHER', F.weather ? WEATHER[F.weather].name : TR('Clear')], ['FUNDS', TR('{0} · foe {1}', money(2000), money(2000 + T.i * 500))]], rh = L.narrow ? 11 : 12;
-  for (const [k, v] of rows) { if (y + rh > p.y + p.h - 34) break; text(k, p.x + 8, y, UI.muted); textR(fitLabel(v, p.w - 70), p.x + p.w - 8, y, UI.ink); y += rh; }
-  y += 2; const rule = { k: 'co', label: 'YOUR COMMANDER', vals: S => S.cos, show: v => v === 'you' ? 'Tactician' : COS[v].name }; vsRuleRows(T, p.x + 4, y, p.w - 8, 14, [rule], 0); y += 18;
-  const rec = T.recs.tower && T.recs.tower[T.i]; if (y + 9 <= p.y + p.h - 4) { if (rec) { text('BEST', p.x + 8, y, UI.muted); text(rec.rank, p.x + 34, y, RANK_COL[rec.rank]); text(TR('{0} pts · {1} days', rec.total, rec.days), p.x + 44, y, UI.ink); } else text(open ? 'Not cleared yet' : 'Locked', p.x + 8, y, UI.dim); } y += 13;
+    const fo = mkFaceOff(x, y, w, bandH, mkCoSide(T.co, T.root, { tag: 'YOU', run: () => cycleCo(1), label: 'YOUR COMMANDER+' }), mkCoSide(F.co, 4, { tag: TR('FLOOR {0}', T.i + 1) }), { id: 'towerface' + T.i });
+    y += fo.h + 4; if (!L.narrow && y + 30 <= bottom) y += mkBubble(F.quote, x + 4, y + 3, w - 8, 2, .35, 'up') + 7;
+  } else {
+    const co = COS[F.co], sil = trainerCanvas(co.tr, true, true); rrect(x, y, w, bandH + 11, UI.inset, 2); rect(x + 1, y + 1, w - 2, bandH + 9, '#12102a');
+    if (sil) { ctx.save(); ctx.beginPath(); ctx.rect(x + 1, y + 1, w - 2, bandH + 9); ctx.clip(); ctx.globalAlpha = .35; ctx.drawImage(sil, x + w - 70, y + 4 - (TRAINER_HEADS[co.tr] || [40, 6])[1], 80, 80); ctx.restore(); ctx.globalAlpha = 1; }
+    iconAt('x', x + 10, y + 10, UI.dim); const ls = wrap(TR('Clear floor {0} to open this one.', T.i), w - 110).slice(0, 3); ls.forEach((l, k) => text(l, x + 24, y + 10 + k * 9, UI.muted)); y += bandH + 16;
+  }
+  if (y + 18 <= bottom) y += mkChips([['up', 'LEVEL', TR('Lv {0} · both armies', F.level)], ['clock', 'PAR', TR('{0} days', F.par)], ['sun', 'WEATHER', F.weather ? WEATHER[F.weather].name : TR('Clear')], ['coin', 'FUNDS', TR('{0} · foe {1}', money(2000), money(2000 + T.i * 500))]], x, y, w, { cols: 2, th: L.narrow ? 18 : 20 }) + 5;
+  const rec = T.recs.tower && T.recs.tower[T.i]; if (y + 9 <= bottom) { if (rec) { const rc = RANK_COL[rec.rank]; rrect(x, y - 1, 13, 11, UI.inset, 1); rect(x + 1, y, 11, 9, shade(rc, -.5)); bigC(rec.rank, x + 6, y, rc, { shadow: '#000' }); text(fitLabel(TR('Best: {0} pts · {1} days', rec.total, rec.days), w - 18), x + 17, y + 1, UI.ink); } else text(open ? 'Not cleared yet' : 'Locked', x + 2, y + 1, UI.dim); } y += 13;
   // both armies at the floor's level: the foe's (their Ace first) and the Tower's rentals you pick four from
-  const armies = [['FOE ARMY', open ? [COS[F.co].ace].concat(CO_TEAMS[F.co].map(n => formAt(n, F.level))) : [], true], ['YOUR RENTALS', TOWER_RENTALS.map(n => formAt(n, F.level)), false]], per = Math.max(1, Math.floor((p.w - 12) / 20));
-  for (const [label, list, foe] of armies) { if (!list.length || y + 30 > p.y + p.h - 4) continue; sectionLabel(label, p.x + 8, y, p.w - 16, foe ? '#ff9a9a' : '#8ab4ff'); y += 10;
-    list.slice(0, per * 2).forEach((n, k) => { const ix = p.x + 6 + (k % per) * 20, iy = y + Math.floor(k / per) * 16; if (iy + 16 > p.y + p.h - 3) return; const bob = !REDUCED && k === Math.floor(t * 3) % list.length ? -1 : 0; ctx.drawImage(monIcon(n, foe), ix - 2, iy + bob, 24, 18); if (foe && k === 0) drawCrown(ix + 13, iy); });
+  const armies = [['FOE ARMY', open ? [COS[F.co].ace].concat(CO_TEAMS[F.co].map(n => formAt(n, F.level))) : [], true], ['YOUR RENTALS', TOWER_RENTALS.map(n => formAt(n, F.level)), false]], per = Math.max(1, Math.floor((w - 8) / 20));
+  for (const [label, list, foe] of armies) { if (!list.length || y + 28 > bottom) continue; sectionLabel(label, x + 2, y, w - 4, foe ? '#ff9a9a' : '#8ab4ff'); y += 10;
+    list.slice(0, per * 2).forEach((n, k) => { const ix = x + 2 + (k % per) * 20, iy = y + Math.floor(k / per) * 16; if (iy + 16 > bottom) return; const bob = !REDUCED && k === Math.floor(t * 3) % list.length ? -1 : 0; ctx.drawImage(monIcon(n, foe), ix - 2, iy + bob, 24, 18); if (foe && k === 0) drawCrown(ix + 13, iy); });
     y += Math.ceil(Math.min(list.length, per * 2) / per) * 16 + 4; }
   // the tower's record so far, under the floors
   if (!L.narrow && recs.length && ty + L.th + 12 <= L.foot - 4) textC(fitLabel(sub, L.tw), tx + tw / 2, ty + L.th + 4, UI.muted);
@@ -226,21 +224,26 @@ function startSafari() {
 // The Safari's RULES step: the meadow, what each rarity scores (with who you may meet), the balls and the days, what
 // makes a catch worth nothing, Blue's team racing yours, and your best haul. TEAM ▸ picks who goes in.
 function safariBriefDraw() {
-  const D = SC.data, W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(); if (!D.bd) D.bd = makeBackdrop(D.map); rect(0, 0, W, H, UI.bg); drawBackdrop(D.bd, (W - D.bd.canvas.width) / 2 - t * 3, (H - D.bd.canvas.height) / 2, .8); SC.hits = [];
-  const top = setupHeader('SAFARI ZONE', H >= 220 ? ['RULES', 'TEAM', 'BATTLE'] : null, 0, null, 4), foot = setupFootTop();
-  const mw = narrow ? W - 12 : Math.min(250, Math.floor(W * .42)), rx = narrow ? 6 : 12 + mw, rw = narrow ? W - 12 : W - rx - 6;
-  // the meadow, with Blue's team on the far side
-  const mapH = narrow ? Math.min(90, Math.floor((foot - top) * .32)) : foot - top - 8, sc = Math.min((mw - 8) / D.bd.canvas.width, (mapH - 8) / D.bd.canvas.height), pw = Math.floor(D.bd.canvas.width * sc), ph = Math.floor(D.bd.canvas.height * sc), px0 = 6 + Math.floor((mw - pw) / 2), py0 = top + 2 + Math.floor((mapH - ph) / 2);
-  rrect(px0 - 4, py0 - 4, pw + 8, ph + 8, UI.inset, 2); ctx.drawImage(D.bd.canvas, px0, py0, pw, ph); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border); drawWarPreview(D.map, D.bd, px0, py0, pw, ph);
-  // the rules
-  const ry = narrow ? py0 + ph + 8 : top + 2, rh = foot - 6 - ry, p = panel(rx, ry, rw, rh, { header: 'OUT-CATCH BLUE', headerRight: D.best ? TR('BEST {0} PTS', D.best) : null, headerRightCol: UI.gold, headerFill: '#1c4a2a' }); let y = p.cy;
-  const line = (icon, col, s) => { if (y + 9 > ry + rh - 4) return; iconAt(icon, rx + 6, y - 1, col); const ls = wrap(s, rw - 22).slice(0, 2); ls.forEach((l, k) => text(l, rx + 18, y + k * 9, UI.ink)); y += ls.length * 9 + 3; };
-  line('ball', UI.red, TR('{0} Safari Balls each and {1} days. Weaken a wild Pokémon, then throw.', SAFARI.balls, SAFARI.days));
-  line('flag', UI.gold, 'The bigger haul when the days run out wins. Each catch scores by rarity:');
-  for (const T of SAFARI.tiers) { if (y + 18 > ry + rh - 4) break; text(T.name, rx + 18, y + 5, T.col); textR(TR(T.pts > 1 ? '{0} pts' : '{0} pt', T.pts), rx + 18 + 74, y + 5, T.col); const ix = rx + 18 + 80, per = Math.max(1, Math.floor((rx + rw - 6 - ix) / 18)); T.mons.slice(0, per).forEach((n, k) => ctx.drawImage(monIcon(n, true), ix + k * 18, y, 24, 18)); y += 18; }
-  y += 2; line('skull', '#ff9a9a', 'A knocked-out Pokémon scores nothing, and a wounded one may run off at dawn.');
-  line('vs', '#8ab4ff', 'Blue brings a team of four: it fights yours when that pays.');
-  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 3 }); } }, next: { label: 'TEAM ▸', run: () => { Audio.sfx('select'); goScene('prep', D.P); } }, hints: VIEW.touch ? null : [['Z', 'team'], ['X', 'modes']] });
+  const D = SC.data, W = VIEW.w, H = VIEW.h, t = SC.t, wide = W >= 400 && W > H, short = H < 220; if (!D.bd) D.bd = makeBackdrop(D.map); mkBackdrop('safari'); SC.hits = [];
+  const top = setupHeader('SAFARI ZONE', H >= 220 ? ['RULES', 'TEAM', 'BATTLE'] : null, 0, null, 4), foot = setupFootTop(), root = SAVE && SAVE.starter ? SAVE.starter : 4;
+  const rx = wide ? Math.round(W * .42) + 6 : 6, rw = W - 6 - rx; let y = top + 3;
+  // the meadow on the table (wide screens), with Blue's team on the far side
+  if (wide) mkMapFrame(D.bd, D.map, 6, top + 2, rx - 12, foot - top - 6, { caption: [TRX('Safari Zone'), TR('{0} days', SAFARI.days)] });
+  // you against Blue
+  const band = short ? 30 : wide ? clamp(Math.round((foot - top) * .22), 40, 70) : 44, fo = mkFaceOff(rx, y, rw, band, mkCoSide('you', root, { tag: 'YOU', sub: short ? null : TR('Best {0} pts', D.best || 0) }), { tr: 'blue', col: COS.blue.col, name: COS.blue.name, sub: short ? null : TRX('Team of four'), mon: 18, tag: 'RIVAL' }, { id: 'safariface' }); y += fo.h + 5;
+  // the race in three facts
+  const tight = rw < 240; y += mkChips([['ball', 'BALLS', tight ? String(SAFARI.balls) : TR('{0} each', SAFARI.balls)], ['clock', 'DAYS', String(SAFARI.days)], ['star', 'SCORE', tight ? '1-8' : TRX('by rarity')]], rx, y, rw, { cols: 3, th: short ? 18 : 20 }) + 5;
+  // what each rarity scores, as cards with who you may meet
+  const cols = rw >= 300 ? 4 : 2, gap = 3, cw = Math.floor((rw - gap * (cols - 1)) / cols), rows = Math.ceil(SAFARI.tiers.length / cols), chh = short ? 24 : clamp(Math.floor((foot - 4 - y - 44) / rows) - gap, 26, 46), big = chh >= 38;
+  SAFARI.tiers.forEach((T, i) => { const cx = rx + (i % cols) * (cw + gap), cy = y + Math.floor(i / cols) * (chh + gap); if (cy + chh > foot - 4) return;
+    rrect(cx, cy, cw, chh, UI.inset, 2); rect(cx + 1, cy + 1, cw - 2, chh - 2, shade(T.col, -.72)); hline(cx + 2, cy + 1, cw - 4, shade(T.col, -.45)); rect(cx + 1, cy + 1, 2, chh - 2, T.col);
+    text(fitLabel(T.name, cw - 34), cx + 5, cy + 3, T.col); textR(TR(T.pts > 1 ? '{0} pts' : '{0} pt', T.pts), cx + cw - 4, cy + 3, T.col, { outline: UI.inset });
+    const iw = big ? 24 : 20, ih = big ? 18 : 15, per = Math.max(1, Math.floor((cw - 8) / (iw - 3))); T.mons.slice(0, per).forEach((n, k) => { const bob = !REDUCED && (T.pts >= 5 || k === Math.floor(t * 2) % per) ? Math.round(Math.sin(t * 4 + k) * 1) : 0; ctx.drawImage(monIcon(n, true), cx + 2 + k * (iw - 3), cy + chh - ih - 2 + bob, iw, ih); });
+    if (T.pts >= 8 && !REDUCED) sparkle(cx + cw - 6, cy + chh - 7, 1 + Math.round(Math.abs(Math.sin(t * 4))), '#fff2b0'); });
+  y += Math.ceil(SAFARI.tiers.length / cols) * (chh + gap) + 3;
+  // the two ways to lose points
+  for (const [ic, col, s] of [['skull', '#ff9a9a', 'A knocked-out Pokémon scores nothing, and a wounded one may run off at dawn.'], ['vs', '#8ab4ff', 'Blue brings a team of four: it fights yours when that pays.']]) { if (y + 9 > foot - 4) break; const ls = wrap(s, rw - 14).slice(0, 2); if (y + ls.length * 9 > foot - 4) break; iconAt(ic, rx, y - 1, col); ls.forEach((l, k) => text(l, rx + 13, y + k * 9, UI.muted)); y += ls.length * 9 + 3; }
+  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 3 }); } }, next: { label: 'TEAM ▸', run: () => { Audio.sfx('select'); goScene('prep', D.P); }, glow: MK_THEME.safari.band }, hints: VIEW.touch ? null : [['Z', 'team'], ['X', 'modes']] });
 }
 function safariBriefInput(ev) { if (ev.type === 'key') { if (ev.key === 'ok' || ev.key === 'next') { Audio.sfx('select'); goScene('prep', SC.data.P); } else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick', { i: 3 }); } else if (ev.key === 'mute') Audio.toggle(); return; } if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); } }
 // Safari Pokémon are skittish: at dawn each wounded one may run off into the grass (a fifth of the time).
@@ -318,34 +321,38 @@ const CO_ROOM = ['you', 'brock', 'misty', 'erika', 'surge', 'koga', 'blaine', 's
 function coUnlockText(id) { if (id === 'you') return 'Always yours'; if (id === 'rocket') return 'Enemy commander only'; const n = CO_UNLOCK[id]; return n >= 8 ? TR('Joins when Kanto is free') : TR('Freed on front {0}: {1}', n, CHAPTERS[n - 1].title); }
 function openCoRoom() { const save = loadSave(); goScene('cos', { i: 0, cos: coUnlocked(save), root: save && save.starter ? save.starter : 4 }); CO_ROOM.forEach(id => trainerImg((COS[id] || COS.you).tr)); }
 function coRoomDraw() {
-  const S = SC.data, W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), bh = btnH(); S.i = clamp(S.i, 0, CO_ROOM.length - 1);
-  rect(0, 0, W, H, '#0e0c22'); for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .25 * (1 - y / H); hline(0, y, W, '#3a2a6a'); } ctx.globalAlpha = 1; SC.hits = [];
+  if (!SC.data || !SC.data.cos) { const save = loadSave(); SC.data = { i: 0, cos: coUnlocked(save), root: save && save.starter ? save.starter : 4 }; } // opened by a deep link
+  const S = SC.data, W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(); S.i = clamp(S.i, 0, CO_ROOM.length - 1);
+  mkBackdrop('cos'); SC.hits = [];
   const have = S.cos.filter(c => c !== 'you').length, top = screenTitle('COMMANDERS', narrow ? null : TR('Gym Leaders freed: {0} / 9 · pick one in a briefing or a setup screen', have), 4), foot = setupFootTop();
-  const cols = narrow ? 4 : 4, cw = narrow ? Math.floor((W - 12 - 3 * 4) / 4) : 56, ch = narrow ? 50 : 62, gx = 6, gy = top + 4;
+  const cols = 4, cw = narrow ? Math.floor((W - 12 - 3 * 4) / 4) : 56, ch = narrow ? 50 : 62, gx = 6, gy = top + 4;
   CO_ROOM.forEach((id, k) => { const x = gx + (k % cols) * (cw + 4), y = gy + Math.floor(k / cols) * (ch + 4), open = S.cos.includes(id) || id === 'rocket', sel = S.i === k, co = COS[id];
+    if (sel && !REDUCED) { ctx.globalAlpha = .25 + .2 * Math.sin(t * 3.5); rrect(x - 2, y - 2, cw + 4, ch + 4, open ? (id === 'you' ? CAPTAINS[S.root].col : co.col) : UI.gold, 3); ctx.globalAlpha = 1; }
     if (open) coCard(x, y, cw, ch, id, 0, () => { if (S.i === k) return; S.i = k; S.at = SC.t; Audio.sfx('cursor'); }, { hot: sel, col: id === 'you' ? CAPTAINS[S.root].col : null, tag: id === 'rocket' ? 'FOE' : null, label: 'CO ' + (co ? co.name : id) });
     else { rrect(x, y, cw, ch, sel ? UI.gold : UI.inset, 2); rect(x + 1, y + 1, cw - 2, ch - 2, '#16142e'); const sil = trainerCanvas(co.tr, false, true); if (sil) { ctx.save(); ctx.beginPath(); ctx.rect(x + 1, y + 1, cw - 2, ch - 2); ctx.clip(); ctx.globalAlpha = .5; ctx.drawImage(sil, x + Math.round((cw - 48) / 2) - 16, y + ch - 60, 80, 80); ctx.restore(); ctx.globalAlpha = 1; } textC('?', x + cw / 2, y + ch / 2 - 4, UI.dim); hit(x, y, cw, ch, () => { S.i = k; S.at = SC.t; Audio.sfx('cursor'); }, 'CO ' + co.name); } });
-  // the chosen commander
-  const id = CO_ROOM[S.i], open = S.cos.includes(id) || id === 'rocket', c = coOf({ co: id, root: S.root }), px0 = narrow ? 6 : gx + cols * (cw + 4) + 4, py0 = narrow ? gy + Math.ceil(CO_ROOM.length / cols) * (ch + 4) + 2 : top + 4, pw = W - 6 - px0, ph = foot - 6 - py0;
-  const p = panel(px0, py0, pw, ph, { header: open ? (id === 'you' ? 'THE TACTICIAN' : c.name.toUpperCase()) : '???', headerRight: open ? c.blurb || c.style : 'LOCKED', headerRightCol: open ? UI.muted : UI.dim, headerFill: open ? shade(c.col, -.55) : UI.panelDark });
-  let y = p.cy; const ace = id === 'you' ? S.root : COS[id].ace;
-  if (!open) { const co = COS[id], aw = Math.min(90, pw - 16), ah = narrow ? 40 : 56; rect(px0 + 8, y, aw, ah, '#12102a'); outline(px0 + 7, y - 1, aw + 2, ah + 2, UI.border2); bigC('?', px0 + 8 + aw / 2, y + ah / 2 - 5, UI.dim);
-    const tx = px0 + 16 + aw, tw = pw - (tx - px0) - 8; const hd = wrap(id === 'blue' ? 'YOUR RIVAL' : id === 'giovanni' ? 'THE BOSS' : 'A GYM LEADER', tw).slice(0, 2), y0 = 13 + (hd.length - 1) * 9; hd.forEach((l, k) => text(l, tx, y + 2 + k * 9, UI.muted));
-    const ls = wrap(TR('Team Rocket holds them. {0}.', TRX(coUnlockText(id))), tw).slice(0, 5); ls.forEach((l, k) => text(l, tx, y + y0 + k * 9, UI.gold)); y += Math.max(ah, y0 + ls.length * 9) + 8;
-    sectionLabel('WORD IS', px0 + 8, y, pw - 16, UI.muted); y += 10; text(fitLabel(TR('"{0}"', co.blurb), pw - 16), px0 + 8, y, UI.ink); }
-  else {
-    const aw = Math.min(90, pw - 16), ah = narrow ? 40 : 56; portraitBg(px0 + 8, y, aw, ah, 0); ctx.save(); ctx.beginPath(); ctx.rect(px0 + 8, y, aw, ah); ctx.clip(); requestAnim(ace); if (animReady(ace)) drawAnim(ace, px0 + 8 + aw / 2, y + ah - 3, t); else drawMon(ace, px0 + 8 + aw / 2, y + ah - 2, {}); ctx.restore(); outline(px0 + 7, y - 1, aw + 2, ah + 2, c.col); drawCrown(px0 + 10, y + 2);
-    const tx = px0 + 16 + aw, tw = pw - (tx - px0) - 8; text('ACE', tx, y + 2, UI.muted); text(fitLabel(id === 'you' ? TR('Your partner ({0} line)', DEX[ace].name) : DEX[ace].name, tw), tx, y + 12, UI.ink); text(fitLabel(coUnlockText(id), tw), tx, y + 24, UI.green); y += ah + 6;
-    const rows = [['PASSIVE', c.passive ? c.passive.text + ' ' + TR('(within 2 of the Ace)') : '-', UI.ink], ['POWER · 50', c.power.name + ': ' + c.power.text, c.col], ['SUPER · 100', c.super.name + ': ' + c.super.text, UI.gold]];
-    for (const [k, v, col] of rows) { if (y + 18 > py0 + ph - 4) break; sectionLabel(k, px0 + 8, y, pw - 16, col); y += 10; const ls = wrap(v, pw - 16); ls.slice(0, 2).forEach(l => { text(l, px0 + 8, y, UI.ink); y += 9; }); y += 3; }
+  // the chosen commander on their band, then what they bring
+  const id = CO_ROOM[S.i], open = S.cos.includes(id) || id === 'rocket', c = coOf({ co: id, root: S.root }), co = COS[id], px0 = narrow ? 6 : gx + cols * (cw + 4) + 4, py0 = narrow ? gy + Math.ceil(CO_ROOM.length / cols) * (ch + 4) + 2 : top + 4, pw = W - 6 - px0, ph = foot - 6 - py0, bottom = py0 + ph;
+  const ace = id === 'you' ? S.root : co.ace, bandH = narrow ? 58 : clamp(Math.round(ph * .36), 60, 104);
+  mkHero(px0, py0, pw, bandH, { tr: co.tr, col: c.col, name: open ? (id === 'you' ? 'THE TACTICIAN' : c.name) : '???', sub: open ? c.blurb || c.style : 'LOCKED', mon: open ? ace : null, dim: !open }, { id: 'cohero' + S.i });
+  let y = py0 + bandH + 6;
+  if (!open) {
+    const hd = wrap(id === 'blue' ? 'YOUR RIVAL' : id === 'giovanni' ? 'THE BOSS' : 'A GYM LEADER', pw - 16).slice(0, 2); hd.forEach((l, k) => text(l, px0 + 4, y + k * 9, UI.muted)); y += hd.length * 9 + 3;
+    const ls = wrap(TR('Team Rocket holds them. {0}.', TRX(coUnlockText(id))), pw - 16).slice(0, 4); iconAt('x', px0 + 2, y - 1, UI.gold); ls.forEach((l, k) => text(l, px0 + 14, y + k * 9, UI.gold)); y += ls.length * 9 + 6;
+    if (y + 19 <= bottom) { sectionLabel('WORD IS', px0 + 4, y, pw - 8, UI.muted); y += 10; text(fitLabel(TR('"{0}"', co.blurb), pw - 8), px0 + 4, y, UI.ink); }
+  } else {
+    // passive, power and super as three cards: an icon, the cost, the name and what it does
+    const cards = [['shield', 'PASSIVE', c.passive ? c.passive.text + ' ' + TR('(within 2 of the Ace)') : '-', '#9cdbff', null], ['skill', 'POWER · 50', c.power.text, c.col, c.power.name], ['star', 'SUPER · 100', c.super.text, UI.gold, c.super.name]];
+    for (const [ic, lb, v, col, nm] of cards) { const ls = wrap(v, pw - 16).slice(0, ic === 'shield' ? 3 : 2), hh = 12 + ls.length * 9 + 3; if (y + hh > bottom) break;
+      rrect(px0, y, pw, hh, UI.inset, 2); rect(px0 + 1, y + 1, pw - 2, hh - 2, '#15183e'); rect(px0 + 1, y + 1, 2, hh - 2, col); iconAt(ic, px0 + 5, y + 2, col);
+      text(lb, px0 + 17, y + 3, col); if (nm) textR(fitLabel(nm, pw - 24 - textWidth(lb)), px0 + pw - 4, y + 3, UI.ink); ls.forEach((l, k) => text(l, px0 + 6, y + 12 + k * 9, UI.muted)); y += hh + 3; }
     // the Tactician's powers follow the partner; a trainer's army hops in a row
-    if (id === 'you') { const full = y + 11 + 3 * 20 <= py0 + ph - 4; if (full || y + 11 + 20 <= py0 + ph - 4) { sectionLabel('BY PARTNER', px0 + 8, y, pw - 16, UI.muted); y += 11;
-      [4, 7, 1].forEach((r, k) => { const C = CAPTAINS[r], on = r === S.root, cw3 = Math.floor((pw - 16) / 3), rx = full ? px0 + 8 : px0 + 8 + k * cw3, ry = full ? y + k * 20 : y;
-        if (full) { if (on) rrect(px0 + 6, ry - 1, pw - 12, 19, '#2a2c68', 1); ctx.drawImage(monIcon(r), rx, ry, 24, 18); text(TR('{0} line', DEX[r].name), rx + 28, ry + 1, on ? UI.ink : UI.muted); text(fitLabel(C.name + ' · ' + C.superName + ' · ' + C.style.toLowerCase(), pw - 46), rx + 28, ry + 10, on ? C.col : shade(C.col, -.35)); }
+    if (id === 'you') { const full = y + 11 + 3 * 20 <= bottom; if (full || y + 11 + 20 <= bottom) { sectionLabel('BY PARTNER', px0 + 4, y, pw - 8, UI.muted); y += 11;
+      [4, 7, 1].forEach((r, k) => { const C = CAPTAINS[r], on = r === S.root, cw3 = Math.floor((pw - 8) / 3), rx = full ? px0 + 4 : px0 + 4 + k * cw3, ry = full ? y + k * 20 : y;
+        if (full) { if (on) rrect(px0 + 2, ry - 1, pw - 4, 19, '#2a2c68', 1); ctx.drawImage(monIcon(r), rx, ry, 24, 18); text(TR('{0} line', DEX[r].name), rx + 28, ry + 1, on ? UI.ink : UI.muted); text(fitLabel(C.name + ' · ' + C.superName + ' · ' + C.style.toLowerCase(), pw - 38), rx + 28, ry + 10, on ? C.col : shade(C.col, -.35)); }
         else { if (on) rrect(rx - 2, ry - 1, cw3 - 2, 19, '#2a2c68', 1); ctx.drawImage(monIcon(r), rx, ry, 24, 18); text(fitLabel(C.name, cw3 - 30), rx + 26, ry + 5, on ? C.col : shade(C.col, -.35)); } }); y += full ? 60 : 20; } }
-    else if (CO_TEAMS[id] && y + 34 <= py0 + ph - 4) { sectionLabel('ARMY', px0 + 8, y, pw - 16, UI.muted); y += 11; const n = Math.min(CO_TEAMS[id].length, Math.floor((pw - 16) / 26));
-      CO_TEAMS[id].slice(0, n).forEach((num, k) => { const hop = REDUCED ? 0 : Math.round(Math.max(0, Math.sin(t * 5 - k * .6)) * -2); ctx.drawImage(monIcon(num), px0 + 8 + k * 26, y + hop, 24, 18); }); y += 22;
-      if (y + 9 <= py0 + ph - 4) text(fitLabel(TR('They evolve with the level; the Ace {0} wears the crown', DEX[ace].name), pw - 16), px0 + 8, y, UI.dim); }
+    else if (CO_TEAMS[id] && y + 34 <= bottom) { sectionLabel('ARMY', px0 + 4, y, pw - 8, UI.muted); y += 11; const n = Math.min(CO_TEAMS[id].length, Math.floor((pw - 8) / 26));
+      CO_TEAMS[id].slice(0, n).forEach((num, k) => { const hop = REDUCED ? 0 : Math.round(Math.max(0, Math.sin(t * 5 - k * .6)) * -2); ctx.drawImage(monIcon(num), px0 + 4 + k * 26, y + hop, 24, 18); }); y += 22;
+      if (y + 9 <= bottom) text(fitLabel(TR('They evolve with the level; the Ace {0} wears the crown', DEX[ace].name), pw - 8), px0 + 4, y, UI.dim); }
   }
   setupFooter({ back: { label: '◂ TITLE', run: () => { Audio.sfx('cancel'); goScene('title'); } }, hints: VIEW.touch ? ['tap a commander'] : [['◂▸▲▼', 'commander'], ['X', 'back']] });
 }

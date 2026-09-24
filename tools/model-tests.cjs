@@ -6,7 +6,7 @@
 'use strict';
 const vm = require('vm'), fs = require('fs'), path = require('path'), assert = require('assert');
 const ROOT = path.join(__dirname, '..');
-const FILES = ['core.js', 'i18n.js', 'lang/es.js', 'lang/es-data.js', 'lang/es-story.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'scenery.js', 'model.js', 'captain.js', 'battle.js', 'menus.js', 'duel.js', 'campaign.js', 'war.js', 'territory.js', 'scenes.js', 'title.js', 'route.js', 'journey.js', 'modes.js', 'main.js'];
+const FILES = ['core.js', 'i18n.js', 'lang/es.js', 'lang/es-data.js', 'lang/es-story.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'scenery.js', 'model.js', 'captain.js', 'battle.js', 'menus.js', 'duel.js', 'campaign.js', 'war.js', 'territory.js', 'scenes.js', 'menukit.js', 'title.js', 'route.js', 'journey.js', 'modes.js', 'main.js'];
 
 // ---------------------------------------------------------------- harness
 // Tests run in English unless PK_LANG=es, which also records every drawn string that has no Spanish (tools/i18n-misses.txt).
