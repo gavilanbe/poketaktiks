@@ -70,7 +70,7 @@ function towerEnd(result) {
 function towerLayout() {
   const W = VIEW.w, H = VIEW.h, narrow = narrowView() || portraitView(), bh = btnH(), top = H >= 220 ? 35 : 20, foot = setupFootTop();
   const tw = narrow ? W - 12 : Math.min(244, Math.floor(W * .42) - 6), rowH = narrow ? clamp(Math.floor((foot - top) * .44 / 10.6), 14, 18) : clamp(Math.floor((foot - top - 22) / 10), 14, 24);
-  const roof = narrow ? 10 : 18, th = roof + rowH * 10 + 4, tx = narrow ? 6 : 12, ty = top + (narrow ? 2 : Math.max(2, Math.floor((foot - top - th) / 2)));
+  const roof = narrow ? 10 : clamp(foot - top - 22 - rowH * 10 - 8, 18, 46), th = roof + rowH * 10 + 4, tx = narrow ? 6 : 12, ty = top + (narrow ? 2 : Math.max(2, Math.floor((foot - top - th) / 2)));
   const px = narrow ? 6 : tx + tw + 8, py = narrow ? ty + th + 6 : top + 2, pw = narrow ? W - 12 : W - px - 6, ph = foot - 6 - py;
   return { W, H, narrow, bh, top, foot, tw, rowH, roof, th, tx, ty, px, py, pw, ph };
 }
@@ -81,7 +81,12 @@ function towerDraw() {
   SC.hits = []; setupHeader('BATTLE TOWER', H >= 220 ? ['FLOOR', 'TEAM', 'BATTLE'] : null, 0, null, 4);
   // the tower: a spire, then the floors from the top (10F) down to 1F
   const { tx, ty, tw, rowH } = L, cx = tx + Math.round(tw / 2);
-  for (let k = 0; k < L.roof; k++) { const half = Math.round((tw / 2 - 6) * (k + 1) / L.roof); hline(cx - half, ty + k, half * 2, k % 3 === 0 ? '#5a4a9a' : '#46387e'); } vline(cx, ty - 6, 6, '#c8c0e8'); rect(cx + 1, ty - 6, 5, 3, UI.red);
+  // the roof: slate rows rising to a gold-trimmed spire with Rocket's flag (it waves); a glow where the top floor waits
+  if (!REDUCED) { ctx.globalAlpha = .12 + .06 * Math.sin(t * 1.5); circle(cx, ty + 4, Math.round(L.roof * .9), '#d8b8ff'); ctx.globalAlpha = 1; }
+  // a ledge the width of the tower, then a slim slate spire rising from it
+  rect(cx - Math.round(tw / 2 - 2), ty + L.roof - 3, tw - 4, 3, '#3a2e72'); hline(cx - Math.round(tw / 2 - 2), ty + L.roof - 3, tw - 4, '#6a5ab0'); hline(cx - Math.round(tw / 2 - 2), ty + L.roof - 1, tw - 4, UI.goldDark);
+  for (let k = 0; k < L.roof - 3; k++) { const half = Math.max(1, Math.round(tw * .2 * Math.pow((k + 1) / (L.roof - 3), 1.1))); hline(cx - half, ty + k, half * 2, k % 4 === 0 ? '#6a5ab0' : k % 2 ? '#46387e' : '#4e4090'); px(cx - half, ty + k, '#8a7ad0'); px(cx + half - 1, ty + k, '#2a2058'); } if (L.roof >= 24) for (let k = 0; k < 3; k++) { const wy = ty + Math.round(L.roof * (.45 + k * .16)), ww = 2 + k; rect(cx - ww, wy, ww * 2, 2, Math.floor(t * 2 + k) % 3 ? '#ffe39a' : '#c8a040'); }
+  vline(cx, ty - 10, 10, '#e8e0f8'); px(cx, ty - 11, UI.gold); const wv = REDUCED ? 0 : Math.floor(t * 5) % 2; rect(cx + 1, ty - 10, 6 + wv, 4, UI.red); px(cx + 6 + wv, ty - 9, '#a81c27');
   const fy0 = ty + L.roof;
   for (let f = TOWER.length - 1; f >= 0; f--) {
     const y = fy0 + (TOWER.length - 1 - f) * rowH, x = tx + 2, w = tw - 4, sel = f === T.i, isOpen = towerOpen(T.recs, f), rec = T.recs.tower && T.recs.tower[f], co = COS[TOWER[f].co];
