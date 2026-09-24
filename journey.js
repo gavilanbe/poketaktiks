@@ -272,7 +272,7 @@ function briefDraw() {
   const row = (label, list, col, flip) => { if (!list.length || y + 26 > my + mh - 4) return; sectionLabel(label, mx + 8, y, mw - 16, col); y += 10; list.slice(0, per).forEach((n, k) => { const bob = !REDUCED && k === Math.floor(t * 3) % Math.min(per, list.length) ? -1 : 0; ctx.drawImage(monIcon(n, flip), mx + 4 + k * 20, y + bob, 24, 18); if (k === 0 && label.startsWith('ENEMY') && co) drawCrown(mx + 17 + k * 20, y); }); y += 20; };
   row('ENEMY FORCES · ' + foes.length, (lead ? [lead.mon] : []).concat(foes.filter(u => u !== lead).map(u => u.mon)), '#ff9a9a', true); // their Ace first
   if (rocket && co && y + 9 <= my + mh - 4) { const n = rocket.hq + rocket.centers, who = rocket.hq && rocket.centers ? 'The Rocket HQ and ' + (rocket.centers > 1 ? rocket.centers + ' centers' : 'a Rocket center') : rocket.hq ? 'The Rocket HQ' : rocket.centers > 1 ? rocket.centers + ' Rocket centers' : 'A Rocket center';
-    for (const l of wrap(who + (n > 1 ? ' send ' : ' sends ') + co.name + '\'s reinforcements: take ' + (n > 1 ? 'them' : 'it') + '!', mw - 16).slice(0, 2)) { text(l, mx + 8, y, UI.red); y += 9; } y += 3; }
+    for (const l of wrap(who + (n > 1 ? ' send ' : ' sends ') + co.name + '\'s reinforcements: take ' + (n > 1 ? 'them' : 'it') + '!', mw - 16).slice(0, 3)) { text(l, mx + 8, y, UI.red); y += 9; } y += 3; }
   const allies = ch.map.units.filter(u => u.team === 3); row('ALLIES · FIGHTING WITH YOU', allies.map(u => u.mon), '#a0f0b0', false);
   row('WILD POKéMON', wild.map(u => u.mon), '#fff0a0', true);
   if (SAVE && y + 9 <= my + mh - 4) { text(fitLabel('Your collection: ' + SAVE.party.length + ' · ' + ch.slots + ' open the battle, the rest wait in the PC Box', mw - 16), mx + 8, y, UI.muted); y += 12; }
@@ -312,6 +312,9 @@ function prologueStage(d) {
   const flick = REDUCED ? .5 : (Math.sin(t * 9) > .2 || Math.sin(t * 23) > .7 ? .9 : .25), b = S.fx.building || { x: W / 2 + SCENE_PAD, y: hz + 2 }, cx = Math.round(b.x - SCENE_PAD + drift), cy = b.y - 20; ctx.globalAlpha = .22 * flick; circle(cx, cy, 30, '#ff3040'); ctx.globalAlpha = .12 * flick; circle(cx, cy, 52, '#ff3040'); ctx.globalAlpha = 1;
   const sign = 'PC OFFLINE', sw = textWidth(sign) + 8; rrect(cx - sw / 2, cy - 5, sw, 11, '#1a0610', 1); textC(sign, cx, cy - 3, flick > .5 ? '#ff5a6a' : '#6a2030');
   drawWeather('rain', W, H, t);
-  const cap = 'KANTO · THE NIGHT THE PCs WENT DARK', a = REDUCED ? 1 : clamp(t / .8, 0, 1) * clamp((6 - t) / 1, 0, 1); if (a > 0) { ctx.globalAlpha = a; bigC(cap, W / 2, 18, '#ffe2a8', { outline: '#0a0820' }); ctx.globalAlpha = 1; }
+  // the caption splits in two on a phone (and drops to the small face if a half still does not fit)
+  const cap = 'KANTO · THE NIGHT THE PCs WENT DARK', a = REDUCED ? 1 : clamp(t / .8, 0, 1) * clamp((6 - t) / 1, 0, 1);
+  if (a > 0) { const ls = textWidth(cap, BIG) <= W - 8 ? [cap] : ['KANTO', 'THE NIGHT THE PCs WENT DARK']; let y = 18; ctx.globalAlpha = a;
+    for (const l of ls) { if (textWidth(l, BIG) <= W - 8) { bigC(l, W / 2, y, '#ffe2a8', { outline: '#0a0820' }); y += 13; } else { textC(l, W / 2, y, '#ffe2a8', { outline: '#0a0820' }); y += 10; } } ctx.globalAlpha = 1; }
 }
 function startPrologue(next) { trainerImg('oak'); trainerImg('bill'); startDialog(PROLOGUE, next, { stage: prologueStage }); Audio.playMusic('calm'); }

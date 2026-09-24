@@ -248,12 +248,15 @@ function storyDraw() {
   const tx = box.x + 12, tw = box.w - 26, lines = wrap(R.plain, tw); let shown = Math.floor(d.chars), gi = 0;
   lines.forEach((l, li) => { let cx = tx; const y = box.y + 12 + li * 12; for (let i = 0; i < l.length; i++, gi++) { if (gi >= shown) return; const c = l[i], em = R.em[gi], fresh = !REDUCED && shown - gi <= 2 && shown < R.plain.length ? -1 : 0; if (c !== ' ') text(c, cx, y + fresh + (em && !REDUCED ? Math.round(Math.sin(t * 7 + gi * .6)) : 0), em ? UI.gold : UI.ink, em ? { outline: '#3a2000' } : { shadow: '#0a0c26' }); cx += c === ' ' ? 3 : glyph(c, FONT).w + 1; } gi++; });
   if (d.chars >= R.plain.length) { const ax = box.x + box.w - 12, ay = box.y + box.h - 11 + (REDUCED ? 0 : Math.round(Math.abs(Math.sin(t * 6)) * 2)); if (d.i < d.lines.length - 1) { rect(ax - 3, ay, 7, 1, UI.gold); rect(ax - 2, ay + 1, 5, 1, UI.gold); rect(ax - 1, ay + 2, 3, 1, UI.gold); px(ax, ay + 3, UI.gold); } else { rect(ax - 2, ay, 5, 5, UI.gold); rect(ax - 1, ay + 1, 3, 3, '#fff2b0'); } }
-  const hint = [(d.i + 1) + ' / ' + d.lines.length, ['X', 'skip']], hw = hintWidth(hint), nameR = line.who ? nx + nameW : -1, nameL = line.who ? nx : 1e9;
+  // phones have no X key: a SKIP pill in the corner ends the scene instead
+  d.skipHit = null; if (VIEW.touch) { const sw = textWidth('SKIP ▸▸') + 12, sx = W - sw - 6, sy = bar + 5; uiButton(sx, sy, sw, 16, 'SKIP ▸▸', { variant: 'ghost' }); d.skipHit = { x: sx, y: sy, w: sw, h: 16 }; }
+  const hint = VIEW.touch ? [(d.i + 1) + ' / ' + d.lines.length] : [(d.i + 1) + ' / ' + d.lines.length, ['X', 'skip']], hw = hintWidth(hint), nameR = line.who ? nx + nameW : -1, nameL = line.who ? nx : 1e9;
   if (S.side === 0 && box.x + box.w - 4 - hw > nameR + 4) hintLine(hint, box.x + box.w - 4, box.y - 12, { right: true }); else if (S.side === 1 && box.x + 8 + hw < nameL - 4) hintLine(hint, box.x + 8, box.y - 12, { left: true }); else textR((d.i + 1) + '/' + d.lines.length, box.x + box.w - 20, box.y + box.h - 11, UI.muted);
   // focus the camera on the speaker's Pokémon if it is on the board
   const spk = !d.stage && B && B.units.find(u => u.num === line.mon && u.hp > 0); if (spk && !d.focused) { d.focused = true; centerCam(spk.x, spk.y); spk.fx.sy = .8; spk.fx.sx = 1.2; }
 }
-function storyInput(ev) { const d = SC.dialog; if (!d) return; if (ev.type === 'key' && ev.key === 'back') { finishDialog(); return; } if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) { const line = d.lines[d.i]; if (d.chars < richLine(line).plain.length) { d.chars = richLine(line).plain.length; d.pause = 0; return; } d.i++; d.chars = 0; d.t = 0; d.pause = 0; d.focused = false; Audio.sfx('ok'); if (d.i >= d.lines.length) finishDialog(); } }
+function storyInput(ev) { const d = SC.dialog; if (!d) return; if (ev.type === 'key' && ev.key === 'back') { finishDialog(); return; }
+  const k = d.skipHit; if (ev.type === 'up' && k && ev.x >= k.x && ev.y >= k.y && ev.x < k.x + k.w && ev.y < k.y + k.h) { Audio.sfx('cancel'); finishDialog(); return; } if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) { const line = d.lines[d.i]; if (d.chars < richLine(line).plain.length) { d.chars = richLine(line).plain.length; d.pause = 0; return; } d.i++; d.chars = 0; d.t = 0; d.pause = 0; d.focused = false; Audio.sfx('ok'); if (d.i >= d.lines.length) finishDialog(); } }
 function finishDialog() { const d = SC.dialog; SC.dialog = null; if (d && d.done) d.done(); }
 
 // ---------------------------------------------------------------- prep: choose who deploys

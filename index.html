@@ -3907,7 +3907,7 @@ function boardRect() { const z = BT.zoom; return { x: toScreenX(tileX(0) - FX.sh
 function hudLayout() {
   const W = VIEW.w, H = VIEW.h, bh = btnH(), stack = narrowView() && portraitView(); const br = boardRect();
   const L = { W, H, stack, bh, top: { x: 4, y: 4, w: stack ? W - 8 : W >= 320 ? Math.min(W - 8, 152) : Math.min(W - 8, B.versus ? 128 : 118), h: stack ? 28 : W < 320 ? 24 : 36 } };
-  if (B.territory) { L.top.h = stack ? 34 : 44; if (!stack) L.top.w = Math.min(202, W - 72); }
+  if (B.territory) { L.top.h = stack ? 38 : 44; if (!stack) L.top.w = Math.min(202, W - 72); }
   if (stack) {
     L.bar = { x: 4, y: H - 2 * bh - 8, w: W - 8, rows: 2 }; L.ctxH = 42; L.ctxY = L.bar.y - L.ctxH - 4;
     L.ctx = { x: 4, y: L.ctxY, w: W - 8, h: L.ctxH, unit: true, terrain: true, combined: true };
@@ -4406,7 +4406,9 @@ function drawBanner() {
   const list = alive(b.team).slice(0, 6), dir = b.team === 0 ? 1 : -1, base = cy + Math.round(bh / 2) + 34; list.forEach((u, i) => { const ux = Math.round(W / 2 + dir * ((t - .15) * W * 1.1 - W * .55) - dir * i * 26), hop = Math.round(Math.abs(Math.sin(t * 14 + i)) * 3); if (ux < -30 || ux > W + 30) return; ctx.globalAlpha = 1 - out; drawMon(u.num, ux, base - hop, { flip: dir < 0, outline: teamColor(u.team) }); ctx.globalAlpha = 1; });
 }
 // The unit sheet: two columns on wide screens (stats + evolution | traits + moves), one taller column on narrow ones.
-function sheetRect() { const W = VIEW.w, H = VIEW.h; const narrow = W < 250; const w = narrow ? W - 12 : Math.min(260, W - 12), h = narrow ? 194 : 134; return { x: W / 2 - w / 2, y: Math.max(12, H / 2 - h / 2), w, h, narrow }; }
+function sheetRect() { const W = VIEW.w, H = VIEW.h; const narrow = W < 250; const w = narrow ? W - 12 : Math.min(260, W - 12), sl = BT.info ? Math.min(2, wrap(sheetSkillText(BT.info), w - 12).length) : 1, h = (narrow ? 194 : 134) + (sl - 1) * 9; return { x: W / 2 - w / 2, y: Math.max(12, H / 2 - h / 2), w, h, narrow, sl }; }
+// What the role does right now: the state (cooldown, braced, rooted) first, then the skill or the plain-striker note.
+function sheetSkillText(u) { const st = []; if (u.skill && !u.skill.passive && u.cd > 0) st.push('ready in ' + u.cd + (u.cd > 1 ? ' turns' : ' turn')); if (u.brace) st.push('BRACED'); if (u.root) st.push('ROOTED'); return (st.length ? st.join(' · ') + ' · ' : '') + (u.skill ? u.skill.blurb : 'Striker: plain attacker, strikes twice when 10+ SPE faster'); }
 function drawUnitSheet(u) {
   const W = VIEW.w; const r = sheetRect(), { x, y, w, h, narrow } = r; hudPanel(x, y, w, h, { title: B.versus ? (u.team === 2 ? 'WILD POKÉMON' : teamName(u.team)) : u.team === 0 ? 'YOUR POKÉMON' : u.team === 2 ? 'WILD POKÉMON' : u.team === 3 ? 'ALLY' : 'ENEMY' });
   portraitBg(x + 6, y + 8, 48, 40, u.team); drawMon(u.num, x + 30, y + 44, { flip: u.team !== 0, sy: 1 + Math.sin(BT.time * 4) * .03 }); teamGlyph(x + 9, y + 11, u.team, teamColorL(u.team));
@@ -4424,12 +4426,10 @@ function drawUnitSheet(u) {
   // type matchup hints
   const weak = TYPES.filter(t => effRaw(t, u.types) >= 2).slice(0, 4), res = TYPES.filter(t => effRaw(t, u.types) < 1).slice(0, 4);
   const wy = narrow ? y + 150 : y + 88; text('Weak:', x + 6, wy, UI.muted); weak.forEach((t, i) => typeBadge(t, x + 36 + i * 25, wy - 1, 24)); text('Resist:', x + 6, wy + 11, UI.muted); res.forEach((t, i) => typeBadge(t, x + 36 + i * 25, wy + 10, 24));
-  // what the role does right now: the skill, its state (cooldown, braced, rooted) or the plain-striker note
-  // the state (cooldown, braced, rooted) leads so it survives the truncation on narrow sheets
-  const st = []; if (u.skill && !u.skill.passive && u.cd > 0) st.push('ready in ' + u.cd + (u.cd > 1 ? ' turns' : ' turn')); if (u.brace) st.push('BRACED'); if (u.root) st.push('ROOTED');
-  let sk = (st.length ? st.join(' · ') + ' · ' : '') + (u.skill ? u.skill.blurb : 'Striker: plain attacker, strikes twice when 10+ SPE faster');
-  if (textWidth(sk) > w - 12) { while (textWidth(sk + '…') > w - 12 && sk.length > 8) sk = sk.slice(0, -1); sk = sk.replace(/ +$/, '') + '…'; } hline(x + 5, y + h - 16, w - 10, UI.inset); text(sk, x + 6, y + h - 13, R.col);
-  hintLine([['◂▸', 'browse'], ['X', 'close']], W / 2, y + h + 5);
+  // what the role does right now, on up to two lines (the state leads, so it survives when even two are not enough)
+  const skl = wrap(sheetSkillText(u), w - 12), sl = r.sl || 1, sk = skl.slice(0, sl); if (skl.length > sl) { let last = sk[sl - 1]; while (textWidth(last + '…') > w - 12 && last.length > 8) last = last.slice(0, -1); sk[sl - 1] = last.replace(/ +$/, '') + '…'; }
+  hline(x + 5, y + h - 16 - (sl - 1) * 9, w - 10, UI.inset); sk.forEach((l, i) => text(l, x + 6, y + h - 13 - (sl - 1) * 9 + i * 9, R.col));
+  hintLine(VIEW.touch ? ['tap to close'] : [['◂▸', 'browse'], ['X', 'close']], W / 2, y + h + 5);
 }
 const HELP_PAGES = [
   ['HOW TO PLAY', 'Pick one of your Pokémon, walk it through the blue tiles, then act: Attack, Capture a property, use its role Skill, Catch a weak wild Pokémon, or Wait. Red tiles show what it can hit.', 'When everyone has acted the day passes; END TURN passes early. The objective in the top card is how you win: rout the foe, take their HQ, beat a boss, seize a Gym, survive or out-catch.', 'Keys: arrows move · Z confirm · X back · Q/E next Pokémon · C info · V forecast details · P power · F fast · H help. Mouse or touch: tap to select and confirm, drag to pan.'],
@@ -4444,7 +4444,7 @@ function drawHelp() {
   const W = VIEW.w; const r = helpRect(); dimScreen(.5); const p = hudPanel(r.x, r.y, r.w, r.h, { header: 'HELP' + (BT.helpOffset ? ' · CONTINUED' : ''), headerRight: (BT.helpPage + 1) + ' / ' + HELP_PAGES.length });
   sectionLabel(HELP_PAGES[BT.helpPage][0], r.x + 8, p.cy, r.w - 16, UI.gold); r.lines.forEach((l, i) => text(l, r.x + 8, p.cy + 12 + i * 10, UI.ink));
   rect(r.x + 4, r.y + r.h - 18, r.w - 8, 14, UI.panelDark); hline(r.x + 4, r.y + r.h - 18, r.w - 8, UI.inset);
-  hintLine(VIEW.touch ? ['tap: next page', 'X: close'] : [['Z', 'next page'], ['X', 'close']], W / 2, r.y + r.h - 14, { pill: false });
+  hintLine(VIEW.touch ? [r.next != null || BT.helpPage < HELP_PAGES.length - 1 ? 'tap: next page' : 'tap: close'] : [['Z', 'next page'], ['X', 'close']], W / 2, r.y + r.h - 14, { pill: false });
 }
 function drawHandoff() {
   const W = VIEW.w, H = VIEW.h, h = BT.handoff; const t = h.team; const k = Math.min(1, h.t / .3); ctx.globalAlpha = .78 * k; rect(0, 0, W, H, '#05070f'); ctx.globalAlpha = 1;
@@ -5761,7 +5761,7 @@ function drawTerritoryGuide() {
   const r = territoryGuideRect(); ctx.globalAlpha = .65; rect(0, 0, VIEW.w, VIEW.h, '#050915'); ctx.globalAlpha = 1;
   const p = hudPanel(r.x, r.y, r.w, r.h, { header: 'WIN WITH YOUR TEAM' });
   r.lines.forEach((s, i) => text(s, r.x + 8, p.cy + i * 10, UI.ink));
-  button(r.x + 8, r.y + r.h - 28, r.w - 16, 20, 'GOT IT · H FOR RULES', closeTerritoryGuide, { variant: 'primary' });
+  button(r.x + 8, r.y + r.h - 28, r.w - 16, 20, VIEW.touch ? 'GOT IT' : 'GOT IT · H FOR RULES', closeTerritoryGuide, { variant: 'primary' });
 }
 // Conquest's objective card: TURN and a pip per Pokémon that can still act; command points with their income, the three
 // middle centers as tiny buildings in their owner's colour; the hold race as pips (yours against the foe's); then the
@@ -6071,12 +6071,15 @@ function storyDraw() {
   const tx = box.x + 12, tw = box.w - 26, lines = wrap(R.plain, tw); let shown = Math.floor(d.chars), gi = 0;
   lines.forEach((l, li) => { let cx = tx; const y = box.y + 12 + li * 12; for (let i = 0; i < l.length; i++, gi++) { if (gi >= shown) return; const c = l[i], em = R.em[gi], fresh = !REDUCED && shown - gi <= 2 && shown < R.plain.length ? -1 : 0; if (c !== ' ') text(c, cx, y + fresh + (em && !REDUCED ? Math.round(Math.sin(t * 7 + gi * .6)) : 0), em ? UI.gold : UI.ink, em ? { outline: '#3a2000' } : { shadow: '#0a0c26' }); cx += c === ' ' ? 3 : glyph(c, FONT).w + 1; } gi++; });
   if (d.chars >= R.plain.length) { const ax = box.x + box.w - 12, ay = box.y + box.h - 11 + (REDUCED ? 0 : Math.round(Math.abs(Math.sin(t * 6)) * 2)); if (d.i < d.lines.length - 1) { rect(ax - 3, ay, 7, 1, UI.gold); rect(ax - 2, ay + 1, 5, 1, UI.gold); rect(ax - 1, ay + 2, 3, 1, UI.gold); px(ax, ay + 3, UI.gold); } else { rect(ax - 2, ay, 5, 5, UI.gold); rect(ax - 1, ay + 1, 3, 3, '#fff2b0'); } }
-  const hint = [(d.i + 1) + ' / ' + d.lines.length, ['X', 'skip']], hw = hintWidth(hint), nameR = line.who ? nx + nameW : -1, nameL = line.who ? nx : 1e9;
+  // phones have no X key: a SKIP pill in the corner ends the scene instead
+  d.skipHit = null; if (VIEW.touch) { const sw = textWidth('SKIP ▸▸') + 12, sx = W - sw - 6, sy = bar + 5; uiButton(sx, sy, sw, 16, 'SKIP ▸▸', { variant: 'ghost' }); d.skipHit = { x: sx, y: sy, w: sw, h: 16 }; }
+  const hint = VIEW.touch ? [(d.i + 1) + ' / ' + d.lines.length] : [(d.i + 1) + ' / ' + d.lines.length, ['X', 'skip']], hw = hintWidth(hint), nameR = line.who ? nx + nameW : -1, nameL = line.who ? nx : 1e9;
   if (S.side === 0 && box.x + box.w - 4 - hw > nameR + 4) hintLine(hint, box.x + box.w - 4, box.y - 12, { right: true }); else if (S.side === 1 && box.x + 8 + hw < nameL - 4) hintLine(hint, box.x + 8, box.y - 12, { left: true }); else textR((d.i + 1) + '/' + d.lines.length, box.x + box.w - 20, box.y + box.h - 11, UI.muted);
   // focus the camera on the speaker's Pokémon if it is on the board
   const spk = !d.stage && B && B.units.find(u => u.num === line.mon && u.hp > 0); if (spk && !d.focused) { d.focused = true; centerCam(spk.x, spk.y); spk.fx.sy = .8; spk.fx.sx = 1.2; }
 }
-function storyInput(ev) { const d = SC.dialog; if (!d) return; if (ev.type === 'key' && ev.key === 'back') { finishDialog(); return; } if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) { const line = d.lines[d.i]; if (d.chars < richLine(line).plain.length) { d.chars = richLine(line).plain.length; d.pause = 0; return; } d.i++; d.chars = 0; d.t = 0; d.pause = 0; d.focused = false; Audio.sfx('ok'); if (d.i >= d.lines.length) finishDialog(); } }
+function storyInput(ev) { const d = SC.dialog; if (!d) return; if (ev.type === 'key' && ev.key === 'back') { finishDialog(); return; }
+  const k = d.skipHit; if (ev.type === 'up' && k && ev.x >= k.x && ev.y >= k.y && ev.x < k.x + k.w && ev.y < k.y + k.h) { Audio.sfx('cancel'); finishDialog(); return; } if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) { const line = d.lines[d.i]; if (d.chars < richLine(line).plain.length) { d.chars = richLine(line).plain.length; d.pause = 0; return; } d.i++; d.chars = 0; d.t = 0; d.pause = 0; d.focused = false; Audio.sfx('ok'); if (d.i >= d.lines.length) finishDialog(); } }
 function finishDialog() { const d = SC.dialog; SC.dialog = null; if (d && d.done) d.done(); }
 
 // ---------------------------------------------------------------- prep: choose who deploys
@@ -7107,7 +7110,7 @@ function briefDraw() {
   const row = (label, list, col, flip) => { if (!list.length || y + 26 > my + mh - 4) return; sectionLabel(label, mx + 8, y, mw - 16, col); y += 10; list.slice(0, per).forEach((n, k) => { const bob = !REDUCED && k === Math.floor(t * 3) % Math.min(per, list.length) ? -1 : 0; ctx.drawImage(monIcon(n, flip), mx + 4 + k * 20, y + bob, 24, 18); if (k === 0 && label.startsWith('ENEMY') && co) drawCrown(mx + 17 + k * 20, y); }); y += 20; };
   row('ENEMY FORCES · ' + foes.length, (lead ? [lead.mon] : []).concat(foes.filter(u => u !== lead).map(u => u.mon)), '#ff9a9a', true); // their Ace first
   if (rocket && co && y + 9 <= my + mh - 4) { const n = rocket.hq + rocket.centers, who = rocket.hq && rocket.centers ? 'The Rocket HQ and ' + (rocket.centers > 1 ? rocket.centers + ' centers' : 'a Rocket center') : rocket.hq ? 'The Rocket HQ' : rocket.centers > 1 ? rocket.centers + ' Rocket centers' : 'A Rocket center';
-    for (const l of wrap(who + (n > 1 ? ' send ' : ' sends ') + co.name + '\'s reinforcements: take ' + (n > 1 ? 'them' : 'it') + '!', mw - 16).slice(0, 2)) { text(l, mx + 8, y, UI.red); y += 9; } y += 3; }
+    for (const l of wrap(who + (n > 1 ? ' send ' : ' sends ') + co.name + '\'s reinforcements: take ' + (n > 1 ? 'them' : 'it') + '!', mw - 16).slice(0, 3)) { text(l, mx + 8, y, UI.red); y += 9; } y += 3; }
   const allies = ch.map.units.filter(u => u.team === 3); row('ALLIES · FIGHTING WITH YOU', allies.map(u => u.mon), '#a0f0b0', false);
   row('WILD POKéMON', wild.map(u => u.mon), '#fff0a0', true);
   if (SAVE && y + 9 <= my + mh - 4) { text(fitLabel('Your collection: ' + SAVE.party.length + ' · ' + ch.slots + ' open the battle, the rest wait in the PC Box', mw - 16), mx + 8, y, UI.muted); y += 12; }
@@ -7147,7 +7150,10 @@ function prologueStage(d) {
   const flick = REDUCED ? .5 : (Math.sin(t * 9) > .2 || Math.sin(t * 23) > .7 ? .9 : .25), b = S.fx.building || { x: W / 2 + SCENE_PAD, y: hz + 2 }, cx = Math.round(b.x - SCENE_PAD + drift), cy = b.y - 20; ctx.globalAlpha = .22 * flick; circle(cx, cy, 30, '#ff3040'); ctx.globalAlpha = .12 * flick; circle(cx, cy, 52, '#ff3040'); ctx.globalAlpha = 1;
   const sign = 'PC OFFLINE', sw = textWidth(sign) + 8; rrect(cx - sw / 2, cy - 5, sw, 11, '#1a0610', 1); textC(sign, cx, cy - 3, flick > .5 ? '#ff5a6a' : '#6a2030');
   drawWeather('rain', W, H, t);
-  const cap = 'KANTO · THE NIGHT THE PCs WENT DARK', a = REDUCED ? 1 : clamp(t / .8, 0, 1) * clamp((6 - t) / 1, 0, 1); if (a > 0) { ctx.globalAlpha = a; bigC(cap, W / 2, 18, '#ffe2a8', { outline: '#0a0820' }); ctx.globalAlpha = 1; }
+  // the caption splits in two on a phone (and drops to the small face if a half still does not fit)
+  const cap = 'KANTO · THE NIGHT THE PCs WENT DARK', a = REDUCED ? 1 : clamp(t / .8, 0, 1) * clamp((6 - t) / 1, 0, 1);
+  if (a > 0) { const ls = textWidth(cap, BIG) <= W - 8 ? [cap] : ['KANTO', 'THE NIGHT THE PCs WENT DARK']; let y = 18; ctx.globalAlpha = a;
+    for (const l of ls) { if (textWidth(l, BIG) <= W - 8) { bigC(l, W / 2, y, '#ffe2a8', { outline: '#0a0820' }); y += 13; } else { textC(l, W / 2, y, '#ffe2a8', { outline: '#0a0820' }); y += 10; } } ctx.globalAlpha = 1; }
 }
 function startPrologue(next) { trainerImg('oak'); trainerImg('bill'); startDialog(PROLOGUE, next, { stage: prologueStage }); Audio.playMusic('calm'); }
 // ============================================================================

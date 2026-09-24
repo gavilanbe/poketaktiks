@@ -880,7 +880,7 @@ function boardRect() { const z = BT.zoom; return { x: toScreenX(tileX(0) - FX.sh
 function hudLayout() {
   const W = VIEW.w, H = VIEW.h, bh = btnH(), stack = narrowView() && portraitView(); const br = boardRect();
   const L = { W, H, stack, bh, top: { x: 4, y: 4, w: stack ? W - 8 : W >= 320 ? Math.min(W - 8, 152) : Math.min(W - 8, B.versus ? 128 : 118), h: stack ? 28 : W < 320 ? 24 : 36 } };
-  if (B.territory) { L.top.h = stack ? 34 : 44; if (!stack) L.top.w = Math.min(202, W - 72); }
+  if (B.territory) { L.top.h = stack ? 38 : 44; if (!stack) L.top.w = Math.min(202, W - 72); }
   if (stack) {
     L.bar = { x: 4, y: H - 2 * bh - 8, w: W - 8, rows: 2 }; L.ctxH = 42; L.ctxY = L.bar.y - L.ctxH - 4;
     L.ctx = { x: 4, y: L.ctxY, w: W - 8, h: L.ctxH, unit: true, terrain: true, combined: true };
@@ -1379,7 +1379,9 @@ function drawBanner() {
   const list = alive(b.team).slice(0, 6), dir = b.team === 0 ? 1 : -1, base = cy + Math.round(bh / 2) + 34; list.forEach((u, i) => { const ux = Math.round(W / 2 + dir * ((t - .15) * W * 1.1 - W * .55) - dir * i * 26), hop = Math.round(Math.abs(Math.sin(t * 14 + i)) * 3); if (ux < -30 || ux > W + 30) return; ctx.globalAlpha = 1 - out; drawMon(u.num, ux, base - hop, { flip: dir < 0, outline: teamColor(u.team) }); ctx.globalAlpha = 1; });
 }
 // The unit sheet: two columns on wide screens (stats + evolution | traits + moves), one taller column on narrow ones.
-function sheetRect() { const W = VIEW.w, H = VIEW.h; const narrow = W < 250; const w = narrow ? W - 12 : Math.min(260, W - 12), h = narrow ? 194 : 134; return { x: W / 2 - w / 2, y: Math.max(12, H / 2 - h / 2), w, h, narrow }; }
+function sheetRect() { const W = VIEW.w, H = VIEW.h; const narrow = W < 250; const w = narrow ? W - 12 : Math.min(260, W - 12), sl = BT.info ? Math.min(2, wrap(sheetSkillText(BT.info), w - 12).length) : 1, h = (narrow ? 194 : 134) + (sl - 1) * 9; return { x: W / 2 - w / 2, y: Math.max(12, H / 2 - h / 2), w, h, narrow, sl }; }
+// What the role does right now: the state (cooldown, braced, rooted) first, then the skill or the plain-striker note.
+function sheetSkillText(u) { const st = []; if (u.skill && !u.skill.passive && u.cd > 0) st.push('ready in ' + u.cd + (u.cd > 1 ? ' turns' : ' turn')); if (u.brace) st.push('BRACED'); if (u.root) st.push('ROOTED'); return (st.length ? st.join(' · ') + ' · ' : '') + (u.skill ? u.skill.blurb : 'Striker: plain attacker, strikes twice when 10+ SPE faster'); }
 function drawUnitSheet(u) {
   const W = VIEW.w; const r = sheetRect(), { x, y, w, h, narrow } = r; hudPanel(x, y, w, h, { title: B.versus ? (u.team === 2 ? 'WILD POKÉMON' : teamName(u.team)) : u.team === 0 ? 'YOUR POKÉMON' : u.team === 2 ? 'WILD POKÉMON' : u.team === 3 ? 'ALLY' : 'ENEMY' });
   portraitBg(x + 6, y + 8, 48, 40, u.team); drawMon(u.num, x + 30, y + 44, { flip: u.team !== 0, sy: 1 + Math.sin(BT.time * 4) * .03 }); teamGlyph(x + 9, y + 11, u.team, teamColorL(u.team));
@@ -1397,12 +1399,10 @@ function drawUnitSheet(u) {
   // type matchup hints
   const weak = TYPES.filter(t => effRaw(t, u.types) >= 2).slice(0, 4), res = TYPES.filter(t => effRaw(t, u.types) < 1).slice(0, 4);
   const wy = narrow ? y + 150 : y + 88; text('Weak:', x + 6, wy, UI.muted); weak.forEach((t, i) => typeBadge(t, x + 36 + i * 25, wy - 1, 24)); text('Resist:', x + 6, wy + 11, UI.muted); res.forEach((t, i) => typeBadge(t, x + 36 + i * 25, wy + 10, 24));
-  // what the role does right now: the skill, its state (cooldown, braced, rooted) or the plain-striker note
-  // the state (cooldown, braced, rooted) leads so it survives the truncation on narrow sheets
-  const st = []; if (u.skill && !u.skill.passive && u.cd > 0) st.push('ready in ' + u.cd + (u.cd > 1 ? ' turns' : ' turn')); if (u.brace) st.push('BRACED'); if (u.root) st.push('ROOTED');
-  let sk = (st.length ? st.join(' · ') + ' · ' : '') + (u.skill ? u.skill.blurb : 'Striker: plain attacker, strikes twice when 10+ SPE faster');
-  if (textWidth(sk) > w - 12) { while (textWidth(sk + '…') > w - 12 && sk.length > 8) sk = sk.slice(0, -1); sk = sk.replace(/ +$/, '') + '…'; } hline(x + 5, y + h - 16, w - 10, UI.inset); text(sk, x + 6, y + h - 13, R.col);
-  hintLine([['◂▸', 'browse'], ['X', 'close']], W / 2, y + h + 5);
+  // what the role does right now, on up to two lines (the state leads, so it survives when even two are not enough)
+  const skl = wrap(sheetSkillText(u), w - 12), sl = r.sl || 1, sk = skl.slice(0, sl); if (skl.length > sl) { let last = sk[sl - 1]; while (textWidth(last + '…') > w - 12 && last.length > 8) last = last.slice(0, -1); sk[sl - 1] = last.replace(/ +$/, '') + '…'; }
+  hline(x + 5, y + h - 16 - (sl - 1) * 9, w - 10, UI.inset); sk.forEach((l, i) => text(l, x + 6, y + h - 13 - (sl - 1) * 9 + i * 9, R.col));
+  hintLine(VIEW.touch ? ['tap to close'] : [['◂▸', 'browse'], ['X', 'close']], W / 2, y + h + 5);
 }
 const HELP_PAGES = [
   ['HOW TO PLAY', 'Pick one of your Pokémon, walk it through the blue tiles, then act: Attack, Capture a property, use its role Skill, Catch a weak wild Pokémon, or Wait. Red tiles show what it can hit.', 'When everyone has acted the day passes; END TURN passes early. The objective in the top card is how you win: rout the foe, take their HQ, beat a boss, seize a Gym, survive or out-catch.', 'Keys: arrows move · Z confirm · X back · Q/E next Pokémon · C info · V forecast details · P power · F fast · H help. Mouse or touch: tap to select and confirm, drag to pan.'],
@@ -1417,7 +1417,7 @@ function drawHelp() {
   const W = VIEW.w; const r = helpRect(); dimScreen(.5); const p = hudPanel(r.x, r.y, r.w, r.h, { header: 'HELP' + (BT.helpOffset ? ' · CONTINUED' : ''), headerRight: (BT.helpPage + 1) + ' / ' + HELP_PAGES.length });
   sectionLabel(HELP_PAGES[BT.helpPage][0], r.x + 8, p.cy, r.w - 16, UI.gold); r.lines.forEach((l, i) => text(l, r.x + 8, p.cy + 12 + i * 10, UI.ink));
   rect(r.x + 4, r.y + r.h - 18, r.w - 8, 14, UI.panelDark); hline(r.x + 4, r.y + r.h - 18, r.w - 8, UI.inset);
-  hintLine(VIEW.touch ? ['tap: next page', 'X: close'] : [['Z', 'next page'], ['X', 'close']], W / 2, r.y + r.h - 14, { pill: false });
+  hintLine(VIEW.touch ? [r.next != null || BT.helpPage < HELP_PAGES.length - 1 ? 'tap: next page' : 'tap: close'] : [['Z', 'next page'], ['X', 'close']], W / 2, r.y + r.h - 14, { pill: false });
 }
 function drawHandoff() {
   const W = VIEW.w, H = VIEW.h, h = BT.handoff; const t = h.team; const k = Math.min(1, h.t / .3); ctx.globalAlpha = .78 * k; rect(0, 0, W, H, '#05070f'); ctx.globalAlpha = 1;

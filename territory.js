@@ -45,7 +45,7 @@ function drawTerritoryGuide() {
   const r = territoryGuideRect(); ctx.globalAlpha = .65; rect(0, 0, VIEW.w, VIEW.h, '#050915'); ctx.globalAlpha = 1;
   const p = hudPanel(r.x, r.y, r.w, r.h, { header: 'WIN WITH YOUR TEAM' });
   r.lines.forEach((s, i) => text(s, r.x + 8, p.cy + i * 10, UI.ink));
-  button(r.x + 8, r.y + r.h - 28, r.w - 16, 20, 'GOT IT · H FOR RULES', closeTerritoryGuide, { variant: 'primary' });
+  button(r.x + 8, r.y + r.h - 28, r.w - 16, 20, VIEW.touch ? 'GOT IT' : 'GOT IT · H FOR RULES', closeTerritoryGuide, { variant: 'primary' });
 }
 // Conquest's objective card: TURN and a pip per Pokémon that can still act; command points with their income, the three
 // middle centers as tiny buildings in their owner's colour; the hold race as pips (yours against the foe's); then the
