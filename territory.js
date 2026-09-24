@@ -56,13 +56,13 @@ function drawTerritoryGuide() {
 function miniCenter(x, y, owner) { const roof = owner === 0 ? '#3f6fd6' : owner === 1 ? '#e04848' : '#a8a8b4'; rect(x, y + 3, 7, 4, '#f2eee6'); outline(x, y + 3, 7, 4, UI.inset); rect(x - 1, y + 1, 9, 3, UI.inset); rect(x, y + 1, 7, 2, roof); px(x + 3, y, UI.inset); px(x + 3, y + 5, '#6a7aa8'); }
 function drawTerritoryTurn(r) {
   const t = HT(), W = B.war, mine = alive(t), ready = mine.filter(u => !u.acted).length, pips = mine.length <= 6;
-  hudPanel(r.x, r.y, r.w, r.h, { header: 'TURN ' + B.turn + '/' + TERRITORY.turns, headerRight: pips ? null : 'READY ' + ready + '/' + mine.length, headerRightCol: UI.green, headerFill: teamColorD(t) });
+  hudPanel(r.x, r.y, r.w, r.h, { header: TR('TURN {0}', B.turn + '/' + TERRITORY.turns), headerRight: pips ? null : TR('READY {0}/{1}', ready, mine.length), headerRightCol: UI.green, headerFill: teamColorD(t) });
   if (pips) mine.forEach((u, i) => { const px0 = r.x + r.w - 7 - (mine.length - 1 - i) * 6, py0 = r.y + 8; circle(px0, py0, 2, UI.inset); if (!u.acted) { circle(px0, py0, 2, UI.green); px(px0 - 1, py0 - 1, '#d8ffe0'); } else circle(px0, py0, 1, shade(teamColorD(t), -.3)); });
   const y1 = r.y + 16, cash = money(W.funds[t]); drawBall(r.x + 9, y1 + 3, UI.gold, 3); text(cash, r.x + 15, y1, UI.gold); text('+' + warIncome(t), r.x + 18 + textWidth(cash), y1, UI.muted);
   const mids = W.props.filter(p => p.kind !== 'hq'); mids.forEach((p, i) => miniCenter(r.x + r.w - 12 - (mids.length - 1 - i) * 10, y1, p.owner));
   if (r.h >= 32) { const y2 = r.y + 26, H = W.hold; text('HOLD', r.x + 6, y2, UI.muted); const hx = r.x + 10 + textWidth('HOLD'); for (let k = 0; k < H.turns; k++) { const on = H.count[t] > k; rect(hx + k * 7, y2 + 1, 5, 5, UI.inset); if (on) rect(hx + 1 + k * 7, y2 + 2, 3, 3, UI.green); }
-    const fx0 = r.x + r.w - 6 - H.turns * 7; text(B.versus ? 'P' + (2 - t) : 'FOE', fx0 - textWidth('FOE') - 4, y2, UI.muted); for (let k = 0; k < H.turns; k++) { const on = H.count[1 - t] > k; rect(fx0 + k * 7, y2 + 1, 5, 5, UI.inset); if (on) rect(fx0 + 1 + k * 7, y2 + 2, 3, 3, UI.red); } }
-  if (r.h >= 44) { const p = warProperty(BT.cx, BT.cy); let s2 = p ? p.name + ' · ' + (p.owner < 0 ? 'neutral' : p.owner === t ? 'yours' : 'enemy') + (p.progress ? ' · ' + p.progress + '/20' : '') : 'Take the HQ or hold 2 of 3'; text(fitLabel(s2, r.w - 12), r.x + 6, r.y + 34, p ? UI.gold : UI.muted); }
+    const fx0 = r.x + r.w - 6 - H.turns * 7; text(B.versus ? TR('P{0}', 2 - t) : 'FOE', fx0 - textWidth('FOE') - 4, y2, UI.muted); for (let k = 0; k < H.turns; k++) { const on = H.count[1 - t] > k; rect(fx0 + k * 7, y2 + 1, 5, 5, UI.inset); if (on) rect(fx0 + 1 + k * 7, y2 + 2, 3, 3, UI.red); } }
+  if (r.h >= 44) { const p = warProperty(BT.cx, BT.cy); let s2 = p ? TRX(p.name) + ' · ' + TR(p.owner < 0 ? 'neutral' : p.owner === t ? 'yours' : 'enemy') + (p.progress ? ' · ' + p.progress + '/20' : '') : TR('Take the HQ or hold 2 of 3'); text(fitLabel(s2, r.w - 12), r.x + 6, r.y + 34, p ? UI.gold : UI.muted); }
 }
 // Conquest results: the outcome stamped letter by letter, why it ended, three stat plates (turn, middle centers, deployments)
 // and both captains; REMATCH keeps the captain, TITLE leaves.

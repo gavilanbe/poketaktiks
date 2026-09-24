@@ -208,7 +208,7 @@ function initTitle() {
   // Save state is a scene snapshot, not a localStorage read on every animation frame.
   const save = loadSave(), suspended = loadSuspend(); const items = [];
   if (suspended) items.push({ label: 'RESUME BATTLE', sub: 'Back to your last turn', icon: 'play', col: '#5ee06a', run: resumeSuspend });
-  if (save) { const chapter = CHAPTERS[clamp(save.chapter || 0, 0, CHAPTERS.length - 1)]; items.push({ label: 'CONTINUE', sub: save.beaten ? 'Kanto is free · replay for stars' : 'Front ' + chapter.num + ' · ' + chapter.title, icon: 'map', col: '#5ec8ff', run: continueCampaign }); }
+  if (save) { const chapter = CHAPTERS[clamp(save.chapter || 0, 0, CHAPTERS.length - 1)]; items.push({ label: 'CONTINUE', sub: save.beaten ? 'Kanto is free · replay for stars' : TR('Front {0}', chapter.num) + ' · ' + chapter.title, icon: 'map', col: '#5ec8ff', run: continueCampaign }); }
   items.push({ label: 'NEW GAME', sub: 'Free Kanto from Team Rocket', icon: 'star', col: '#ffd049', run: () => { if (save) openTitleConfirm(); else startNewGame(); } });
   items.push({ label: 'QUICK BATTLE', sub: 'Skirmish · Tower · Safari · Conquest', icon: 'blades', col: '#ff6a5a', run: () => goScene('quick') });
   items.push({ label: 'VERSUS', sub: 'Two players, one screen', icon: 'duo', col: '#8ab4ff', run: startVersusSetup });
@@ -280,7 +280,7 @@ function titleCard(x, y, w, h, item, selected, run, index) {
 }
 // Time for entrance animations: outside the main loop (tests, tools) every entrance has already finished.
 function titleTime() { return CLOCK.frame ? SC.t : 99; }
-function titleFitText(s, w) { if (textWidth(s) <= w) return s; while (s.length && textWidth(s + '…') > w) s = s.slice(0, -1); return s.trimEnd() + '…'; }
+function titleFitText(s, w) { s = String(TRX(s)); if (rawTextWidth(s) <= w) return trNote(s); while (s.length && rawTextWidth(s + '…') > w) s = s.slice(0, -1); return trNote(s.trimEnd() + '…'); }
 function titleDraw() {
   if (!SC.titleItems) initTitle();
   const items = SC.titleItems, W = VIEW.w, H = VIEW.h, L = titleLayout(items.length);
@@ -294,11 +294,17 @@ function titleDraw() {
   SC.hits = [];
   items.forEach((item, i) => { const x = L.cols === 2 ? 18 + (i % 2) * (L.w + 8) : L.x, y = L.menuY + Math.floor(i / L.cols) * (L.rowH + L.gap); titleCard(x, y, L.w, L.rowH, item, SC.i === i, () => titleActivate(i), i); });
   // the sound control is its own touch target, separate from keyboard navigation
-  const sound = Audio.muted ? 'SOUND OFF' : 'SOUND ON', sw = textWidth(sound) + 20; SC.titleSound = { x: 6, y: H - 24, w: sw, h: 20 };
+  // on a narrow screen the sound control keeps only its note (struck through when muted), so the credit fits beside it
+  const credit = TR('A GAME BY GAVILANBE'), langW = rawTextWidth('ES · EN') + 20, sound = Audio.muted ? 'SOUND OFF' : 'SOUND ON', compact = L.portrait && 6 + textWidth(sound) + 20 + 6 + langW + 10 + rawTextWidth(credit) > W - 8, sw = compact ? 18 : textWidth(sound) + 20; SC.titleSound = { x: 6, y: H - 24, w: sw, h: 20 };
   const soundHot = !VIEW.touch && INPUT.x >= 6 && INPUT.x < 6 + sw && INPUT.y >= H - 24; if (soundHot) rrect(6, H - 23, sw, 18, '#2c2f78', 2);
-  iconAt('note', 9, H - 19, Audio.muted ? '#8d8fbe' : UI.gold); text(sound, 21, H - 17, soundHot ? UI.ink : '#b9bce0', { shadow: '#07051c' });
-  if (!L.portrait) { hintLine(VIEW.touch ? ['tap to begin'] : [['↑↓', 'select'], ['Z', 'confirm']], W / 2, H - 17, { pill: false, col: '#b9bce0' }); textR('GEN I · FAN GAME', W - 10, H - 17, '#8d8fbe', { shadow: '#07051c' }); }
-  else textR('GEN I · FAN GAME', W - 8, H - 17, '#8d8fbe', { shadow: '#07051c' });
+  iconAt('note', 9, H - 19, Audio.muted ? '#8d8fbe' : UI.gold); if (compact && Audio.muted) for (let k = 0; k < 8; k++) px(9 + k, H - 19 + 7 - k, '#e86a6a');
+  if (!compact) text(sound, 21, H - 17, soundHot ? UI.ink : '#b9bce0', { shadow: '#07051c' });
+  // the language: ES · EN, the one in use lit; a tap switches (Spanish is the default)
+  { const lx = 6 + sw + 6, lw = langW; SC.titleLang = { x: lx, y: H - 24, w: lw, h: 20 }; const hot = !VIEW.touch && INPUT.x >= lx && INPUT.x < lx + lw && INPUT.y >= H - 24; if (hot) rrect(lx, H - 23, lw, 18, '#2c2f78', 2);
+    iconAt('globe', lx + 3, H - 19, UI.gold); let tx = lx + 15; for (const l of LANGS) { const on = l === LANG; text(l.toUpperCase(), tx, H - 17, on ? UI.gold : '#6a6c9a', { shadow: '#07051c', raw: true }); if (on) hline(tx, H - 9, rawTextWidth(l.toUpperCase()), UI.gold); tx += rawTextWidth(l.toUpperCase()); if (l !== LANGS[LANGS.length - 1]) { text(' · ', tx, H - 17, '#6a6c9a', { raw: true }); tx += rawTextWidth(' · '); } } }
+  if (!L.portrait) { hintLine(VIEW.touch ? ['tap to begin'] : [['↑↓', 'select'], ['Z', 'confirm']], W / 2, H - 17, { pill: false, col: '#b9bce0' }); textR(credit, W - 10, H - 17, '#c8b080', { shadow: '#07051c', raw: true }); }
+  else if (6 + sw + 6 + langW + 10 + rawTextWidth(credit) <= W - 8) textR(credit, W - 8, H - 17, '#c8b080', { shadow: '#07051c', raw: true });
+  else { const menuBottom = L.menuY + Math.ceil(items.length / L.cols) * (L.rowH + L.gap) - L.gap; const cy = Math.max(menuBottom + 3, H - 29); if (cy <= H - 26) textC(credit, W / 2, cy, '#c8b080', { shadow: '#07051c', raw: true }); } // its own line above the foot
   if (SC.titleSave && items[SC.i] && items[SC.i].label === 'CONTINUE' && !SC.titleConfirm) drawTrainerCard(L, SC.titleSave);
   drawTitleParticles();
   if (SC.titleConfirm) drawTitleConfirm();
@@ -309,7 +315,7 @@ function titleDraw() {
 function drawTrainerCard(L, save) {
   const W = VIEW.w, t = SC.t, wide = !L.portrait, n = CHAPTERS.length, reached = clamp(save.chapter || 0, 0, n), ch = CHAPTERS[Math.min(reached, n - 1)], party = save.party || [], ace = party[save.captainPid || 0];
   const stars = CHAPTERS.reduce((a, c) => a + ((save.rating && save.rating[c.id]) || 0), 0), leaders = coUnlocked(save).filter(c => c !== 'you');
-  const where = save.beaten ? 'KANTO IS FREE' : 'FRONT ' + ch.num + ' · ' + ch.title.toUpperCase(), fx = SC.titleFx, pop = REDUCED ? 1 : easeOutBack(clamp((t - (fx.cardAt == null ? (fx.cardAt = t) : fx.cardAt)) / .3, 0, 1), 1.8);
+  const where = save.beaten ? TR('KANTO IS FREE') : TR('FRONT {0}', ch.num) + ' · ' + ch.title.toUpperCase(), fx = SC.titleFx, pop = REDUCED ? 1 : easeOutBack(clamp((t - (fx.cardAt == null ? (fx.cardAt = t) : fx.cardAt)) / .3, 0, 1), 1.8);
   const icons = (x, y, max) => party.slice(0, max).forEach((p, i) => { const bob = !REDUCED && i === Math.floor(t * 2) % Math.min(max, party.length) ? -1 : 0; ctx.drawImage(monIcon(p.num), x + i * 22, y + bob, 24, 18); if (p === ace) drawCrown(x + i * 22 + 13, y - 2 + bob); });
   if (!wide) { const w = W - 20, h = 38, x = 10, y = L.logoY + L.logoH + 12; if (y + h > L.menuY - 30) return; ctx.save(); ctx.globalAlpha = clamp(pop, 0, 1);
     panel(x, y, w, h, { fill: '#1a1e4a' }); text(fitLabel(where, w - 60), x + 7, y + 6, UI.gold); textR('★ ' + stars + '/' + n * 3, x + w - 7, y + 6, '#ffe070'); icons(x + 5, y + 16, Math.min(6, Math.floor((w - 10) / 22))); ctx.restore(); return; }
@@ -318,7 +324,7 @@ function drawTrainerCard(L, save) {
   const bust = trainerBust('red', false); portraitBg(x + 6, p.cy, 34, 34, 0); if (bust) { ctx.save(); ctx.beginPath(); ctx.rect(x + 6, p.cy, 34, 34); ctx.clip(); ctx.drawImage(bust, x + 6 - 7, p.cy - 4); ctx.restore(); } outline(x + 5, p.cy - 1, 36, 36, UI.border2);
   const tx = x + 46, tw = w - 52; text(fitLabel(save.beaten ? 'KANTO IS FREE' : ch.title.toUpperCase(), tw), tx, p.cy + 1, UI.gold);
   for (let i = 0; i < n; i++) { const on = i < reached, cur = i === reached && !save.beaten; rect(tx + i * 9, p.cy + 12, 7, 5, UI.inset); rect(tx + 1 + i * 9, p.cy + 13, 5, 3, on ? UI.gold : cur ? (Math.floor(t * 3) % 2 ? '#8ab4ff' : '#3d5aa0') : '#2a2d5a'); }
-  text('★ ' + stars + ' / ' + n * 3 + ' stars', tx, p.cy + 22, '#ffe070');
+  text(TR('★ {0} / {1} stars', stars, n * 3), tx, p.cy + 22, '#ffe070');
   let yy = p.cy + 38; text('LEADERS', x + 7, yy + 5, UI.muted); const lx = x + 7 + textWidth('LEADERS') + 5;
   if (leaders.length) leaders.slice(0, Math.floor((x + w - 6 - lx) / 19)).forEach((id, i) => { const f = trainerFace(COS[id].tr); rect(lx + i * 19, yy, 17, 17, shade(COS[id].col, -.45)); if (f) { ctx.save(); ctx.beginPath(); ctx.rect(lx + i * 19, yy, 17, 17); ctx.clip(); ctx.drawImage(f, lx + i * 19, yy); ctx.restore(); } outline(lx + i * 19 - 1, yy - 1, 19, 19, COS[id].col); });
   else text('none freed yet', lx, yy + 5, UI.dim);
@@ -354,6 +360,7 @@ function titleInput(ev) {
   if (ev.type === 'up' && (ev.btn == null || ev.btn === 0)) {
     const from = fx.down; fx.down = null; const s = SC.titleSound;
     if (s && ev.x >= s.x && ev.x < s.x + s.w && ev.y >= s.y && ev.y < s.y + s.h) { Audio.toggle(); return; }
+    const lg = SC.titleLang; if (lg && ev.x >= lg.x && ev.x < lg.x + lg.w && ev.y >= lg.y && ev.y < lg.y + lg.h) { setLang(LANG === 'es' ? 'en' : 'es'); Audio.sfx('menu'); const i0 = SC.i; initTitle(); SC.i = i0; return; }
     const b = hitAt(ev.x, ev.y), i = b ? SC.hits.indexOf(b) : -1;
     if (i >= 0 && (from == null || from === i)) { titleActivate(i); return; }
     if (SC.titleLetters?.some(l => ev.x >= l.x && ev.x <= l.x + l.w && ev.y >= l.y && ev.y <= l.y + l.h)) { fx.logoAt = SC.t; titleBurst(ev.x, ev.y, 12); Audio.sfx('titleFocus'); for (let k = 0; k < 4; k++) titleHop(k); }
@@ -368,9 +375,10 @@ const MOTION_LABEL = { auto: 'Auto', full: 'Full', reduced: 'Reduced' };
 function optionRows() {
   const cycle = (k, d) => { const vs = PREF_VALUES[k]; setPref(k, vs[(vs.indexOf(PREF[k]) + d + vs.length) % vs.length]); };
   return [
+    { id: 'lang', label: 'Language', icon: 'globe', col: '#5a8ad8', value: LANG_NAME[LANG], change: d => { setLang(LANGS[(LANGS.indexOf(LANG) + d + LANGS.length) % LANGS.length]); initTitle(); }, sub: 'Español and English' },
     { id: 'sound', label: 'Sound', icon: 'note', col: '#3aa870', lamp: !Audio.muted, change: () => Audio.toggle(), sub: VIEW.touch ? 'Music and sound effects' : 'Music and sound effects (M in any screen)' },
     { id: 'battle', label: 'Battle scene', icon: 'vs', col: '#d8a030', value: BATTLE_PREF_LABEL[PREF.battle], change: d => cycle('battle', d), sub: PREF.battle === 'full' ? 'Every attack plays in the side view, blow by blow' : PREF.battle === 'quick' ? 'The side view, faster' : 'Attacks play on the board itself' },
-    { id: 'motion', label: 'Motion', icon: 'wing', col: '#3a8ad8', value: MOTION_LABEL[PREF.motion] + (PREF.motion === 'auto' ? (PREFERS_REDUCED ? ' · reduced' : ' · full') : ''), change: d => cycle('motion', d), sub: 'Reduced drops screen shakes, flashes and most animation; Auto follows your system' },
+    { id: 'motion', label: 'Motion', icon: 'wing', col: '#3a8ad8', value: TR(MOTION_LABEL[PREF.motion]) + (PREF.motion === 'auto' ? ' · ' + TR(PREFERS_REDUCED ? 'reduced' : 'full') : ''), change: d => cycle('motion', d), sub: 'Reduced drops screen shakes, flashes and most animation; Auto follows your system' },
     { id: 'guide', label: 'Conquest guide', icon: 'help', col: '#3a8ad8', lamp: PREF.territoryGuide === 'show', change: d => cycle('territoryGuide', d), sub: 'Show the three rules before each Conquest battle' },
     { id: 'opening', label: 'Watch the opening', icon: 'play', col: '#3aa870', more: true, run: () => { Audio.sfx('ok'); startIntro(); }, sub: 'The night the PCs went dark' },
     { id: 'credits', label: 'Credits', icon: 'book', col: '#7a7a8a', more: true, run: () => { Audio.sfx('ok'); const s = loadSave(); goScene('credits', { party: s ? s.party : [], back: 'options' }); }, sub: 'Who made the game, and the sprites it uses' },
@@ -387,8 +395,8 @@ function optionsDraw() {
   rows.forEach((r, i) => { const ry = p.cy - 1 + i * rh, hot = SC.i === i, cy = ry + Math.round(rh / 2);
     if (hot) { rrect(x + 4, ry, w - 8, rh - 1, r.danger ? '#4a1a2a' : '#34408e', 1); rect(x + 4, ry + 1, 2, rh - 3, r.danger ? UI.red : UI.gold); }
     rrect(x + 9, cy - 6, 13, 13, UI.inset, 2); rrect(x + 10, cy - 5, 11, 11, r.col, 1); iconAt(r.icon, x + 11, cy - 4, '#ffffff');
-    text(r.label, x + 27, cy - 3, r.danger ? (hot ? '#ffb0b0' : '#e87878') : hot ? '#ffffff' : UI.ink);
-    let rx = x + w - 10;
+    let rx = x + w - 10; const vw = r.lamp != null ? textWidth(r.lamp ? 'ON' : 'OFF') + 18 : r.value != null ? textWidth(r.value) + 24 : r.more ? 8 : 0; // the label gives way to the value
+    text(fitLabel(r.label, rx - vw - 6 - (x + 27)), x + 27, cy - 3, r.danger ? (hot ? '#ffb0b0' : '#e87878') : hot ? '#ffffff' : UI.ink, { raw: true });
     if (r.lamp != null) { circle(rx - 4, cy, 4, UI.inset); circle(rx - 4, cy, 3, r.lamp ? '#5ee06a' : '#3a3a50'); if (r.lamp) px(rx - 5, cy - 1, '#d8ffe0'); textR(r.lamp ? 'ON' : 'OFF', rx - 11, cy - 3, r.lamp ? '#8ae89a' : UI.dim); }
     else if (r.value != null) { const aw = 10; text('▸', rx - 5, cy - 3, hot ? UI.gold : UI.dim); textR(r.value, rx - aw, cy - 3, hot ? UI.gold : '#e8d8a0'); text('◂', rx - aw - textWidth(r.value) - 8, cy - 3, hot ? UI.gold : UI.dim);
       hit(rx - aw - textWidth(r.value) - 10, ry, 12, rh, () => { SC.i = i; r.change(-1); Audio.sfx('menu'); }, r.label.toUpperCase() + '-'); hit(rx - 8, ry, 12, rh, () => { SC.i = i; r.change(1); Audio.sfx('menu'); }, r.label.toUpperCase() + '+'); }
@@ -426,7 +434,29 @@ function optionsInput(ev) {
 // Center glowing in a sleeping town until Team Rocket's airship arrives, its searchlight finds the Center and the lights
 // go out, window after window; the commanders face off, Advance Wars style, the Tactician against Giovanni; a white
 // flash, and the logo slams down letter by letter over the dusk, then glides to its place as the title's menu arrives.
-const INTRO_T = { night: 3.7, vs: 6.1, end: 8.7 };
+const INTRO_T = { credit: 2.1, night: 5.8, vs: 8.2, end: 10.8 };
+// gavilanbe's mark: a sparrowhawk (gavilán) with its wings spread, drawn in gold with a dark outline. Two frames: the
+// wings up and level, so it can beat them once as the card appears.
+const HAWK = [
+  ['##...............##', '###.............###', '.###....###....###.', '.####..#####..####.', '..###############..', '...#############...', '....###########....', '.......#####.......', '......#######......', '.....###.#.###.....', '.....##.....##.....'],
+  ['...................', '........###........', '.......#####.......', '##...#########...##', '###################', '.#################.', '...#############...', '.......#####.......', '......#######......', '.....###.#.###.....', '.....##.....##.....'],
+];
+function drawHawk(cx, y, sc, frame) {
+  const rows = HAWK[frame], w = rows[0].length, x0 = Math.round(cx - w * sc / 2), cols = ['#fff6c8', '#ffe07a', '#ffd049', '#f0b030', '#d8901a'];
+  const at = (r, c) => r >= 0 && r < rows.length && c >= 0 && c < w && rows[r][c] === '#';
+  for (let r = -1; r <= rows.length; r++) for (let c = -1; c <= w; c++) if (!at(r, c) && (at(r - 1, c) || at(r + 1, c) || at(r, c - 1) || at(r, c + 1))) rect(x0 + c * sc, y + r * sc, sc, sc, '#1a1006');
+  for (let r = 0; r < rows.length; r++) for (let c = 0; c < w; c++) if (at(r, c)) rect(x0 + c * sc, y + r * sc, sc, sc, cols[Math.min(cols.length - 1, Math.floor(r / rows.length * cols.length))]);
+  const eye = frame ? 2 : 3; rect(x0 + Math.floor(w / 2) * sc + Math.floor(sc / 2), y + eye * sc, Math.max(1, Math.round(sc / 2)), Math.max(1, Math.round(sc / 2)), '#1a1006'); // its eye
+}
+// The first card: the maker's mark, GAVILANBE and PRESENTS, fading in out of the dark and away again.
+function introCredit(t) {
+  const W = VIEW.w, H = VIEW.h, D = SC.data, sc = W >= 360 && H >= 260 ? 3 : 2, ts = W >= 300 ? 2 : 1, a = Math.min(clamp(t / .45, 0, 1), clamp((INTRO_T.credit - t) / .4, 0, 1));
+  rect(0, 0, W, H, '#04040c'); if (!D.chimed && t > .15) { D.chimed = true; Audio.sfx('chime'); }
+  const hh = HAWK[0].length * sc, th = 11 * ts, total = hh + 12 + th + 14, y0 = Math.round(H / 2 - total / 2), flap = !REDUCED && t > .3 && t < .6 ? 1 : 0;
+  ctx.globalAlpha = a; drawHawk(W / 2, y0 + Math.round((1 - easeOut(clamp(t / .6, 0, 1))) * 6), sc, flap);
+  displayC('GAVILANBE', W / 2, y0 + hh + 12, { scale: ts, style: 'silver', slant: 1, shine: true, phase: 1.6 });
+  const pr = TR('PRESENTS'), spaced = [...pr].join(' '); textC(spaced, W / 2, y0 + hh + 12 + th + 8, '#8a88c0'); ctx.globalAlpha = 1;
+}
 // It plays on the first visit, behind a PRESS START screen (a browser only lets sound play after a key or a tap), and
 // again from OPTIONS; later visits open on the title. Reduced motion skips it.
 function introSeen() { try { return localStorage.getItem('pk_intro') === '1'; } catch (_) { return false; } }
@@ -439,6 +469,7 @@ function splashDraw() {
   const a = clamp(t / .6, 0, 1); ctx.globalAlpha = a; drawTitleBall(cx, cy, r, t); ctx.globalAlpha = 1;
   if (t > .5 && Math.floor(t * 2.2) % 3) displayC('PRESS START', cx, cy + r + 18, { style: 'gold', slant: 1 });
   textC(VIEW.touch ? 'tap anywhere' : 'any key or click', cx, cy + r + 38, '#6a6a9a');
+  textC(TR('A GAME BY GAVILANBE'), cx, cy + r + 56, '#c8a860');
   const full = 'A fan game · Pokémon © Nintendo / Game Freak / Creatures', notice = textWidth(full) <= W - 16 ? [full] : ['A fan game'].concat(wrap('Pokémon © Nintendo / Game Freak / Creatures', W - 16)); // it breaks at the dot first
   notice.forEach((l, k) => textC(l, cx, H - 14 - (notice.length - 1 - k) * 9, '#4a4a72'));
 }
@@ -447,7 +478,7 @@ function finishIntro() { if (SC.name !== 'intro') return; goScene('title'); SC.t
 function introInput(ev) { if (SC.t > .6 && (ev.type === 'key' || ev.type === 'up')) { Audio.sfx('ok'); finishIntro(); } }
 function introDraw() {
   const t = SC.t, T = INTRO_T; SC.hits = []; if (!SC.data) SC.data = {};
-  if (t < T.night) introNight(t); else if (t < T.vs) introVersus(t - T.night); else if (t < T.end) introLogo(t - T.vs); else { finishIntro(); return; }
+  if (t < T.credit) introCredit(t); else if (t < T.night) introNight(t - T.credit); else if (t < T.vs) introVersus(t - T.night); else if (t < T.end) introLogo(t - T.vs); else { finishIntro(); return; }
   if (t > .6 && t < T.end - .5) textR(VIEW.touch ? 'tap to skip' : 'any key to skip', VIEW.w - 6, VIEW.h - 11, '#6a6a9a', { shadow: '#000' });
 }
 const INTRO_CACHE = { key: null };
@@ -481,9 +512,12 @@ function introNight(t) {
   drawAirshipHull(ax, ay, t);
   if (out && !D.blackout) { D.blackout = true; Audio.sfx('elec'); D.shakeAt = t; } if (t >= OUT + .32 && !D.thud) { D.thud = true; Audio.sfx('thud'); }
   // the caption types itself out, and turns red when the lights die
-  const cap = 'KANTO · THE NIGHT THE PCs WENT DARK', n = Math.floor(clamp((t - .5) / 1.7, 0, 1) * cap.length), cx0 = Math.round(W / 2 - textWidth(cap) / 2), cy0 = g + Math.round((H - g) / 2) - 4;
-  text(cap.slice(0, n) + (n < cap.length && Math.floor(t * 6) % 2 ? '_' : ''), cx0, cy0, out ? '#ff8a9a' : '#e8e0c8', { shadow: '#000' }); if (n > (D.typed || 0)) { D.typed = n; if (n % 2 && cap[n - 1] !== ' ') Audio.sfx('text'); }
-  const fade = Math.min(clamp(t / .5, 0, 1), clamp((INTRO_T.night - t) / .45, 0, 1)); if (fade < 1) { ctx.globalAlpha = 1 - fade; rect(0, 0, W, H, '#000000'); ctx.globalAlpha = 1; }
+  // (on a narrow phone it breaks after KANTO, and again between words if it must)
+  const cap = String(TR('KANTO · THE NIGHT THE PCs WENT DARK')), lines = rawTextWidth(cap) <= W - 12 ? [cap] : wrap(cap.replace(' · ', '\n'), W - 12), all = lines.join(''), n = Math.floor(clamp((t - .5) / 1.7, 0, 1) * all.length);
+  let left = n; lines.forEach((l, i) => { const k = clamp(left, 0, l.length), cur = left >= 0 && left < l.length; left -= l.length; const cy0 = g + Math.round((H - g) / 2) - 4 - (lines.length - 1) * 5 + i * 10;
+    if (k || cur) text(l.slice(0, k) + (cur && n < all.length && Math.floor(t * 6) % 2 ? '_' : ''), Math.round(W / 2 - rawTextWidth(l) / 2), cy0, out ? '#ff8a9a' : '#e8e0c8', { shadow: '#000', raw: true }); });
+  if (n > (D.typed || 0)) { D.typed = n; if (n % 2 && all[n - 1] !== ' ') Audio.sfx('text'); }
+  const fade = Math.min(clamp(t / .5, 0, 1), clamp((INTRO_T.night - INTRO_T.credit - t) / .45, 0, 1)); if (fade < 1) { ctx.globalAlpha = 1 - fade; rect(0, 0, W, H, '#000000'); ctx.globalAlpha = 1; }
 }
 function introVersus(t) {
   const W = VIEW.w, H = VIEW.h, D = SC.data, big = W >= 400 && H >= 300 ? 2 : 1, mid = Math.round(H / 2), bh = Math.round(H * .34), sk = D.vsAt != null && t - D.vsAt < .3 && !REDUCED ? Math.round(Math.sin(t * 90) * 3 * (1 - (t - D.vsAt) / .3)) : 0;

@@ -33,7 +33,11 @@ async function main() {
     await send('Runtime.enable'); await send('Page.enable');
     await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: mobile ? 3 : 1, mobile });
     if (mobile) await send('Emulation.setTouchEmulationEnabled', { enabled: true });
-    const nav = async q => { await send('Page.navigate', { url: 'file://' + ROOT + '/index.html?' + q }); await sleep(1200); };
+    // PK_LANG=en|es plays the walk in that language (the game's default is Spanish); PK_MISS=1 collects every string drawn
+    // without a translation into tools/i18n-misses-web.txt
+    const LQ = process.env.PK_LANG ? '&lang=' + process.env.PK_LANG : '';
+    const nav = async q => { await send('Page.navigate', { url: 'file://' + ROOT + '/index.html?' + q + LQ }); await sleep(1200); };
+    if (process.env.PK_MISS) { await nav('silent&nosave'); await ev("localStorage.setItem('pk_trmiss_on', '1'); localStorage.removeItem('pk_trmiss'); 1"); }
     if (script === 'smoke' || script === 'full') {
       await nav('silent&nosave'); out.push('title scene: ' + await ev('__pk.SC.name')); await shot('01-title');
       await nav('ch=1&silent&nosave&seed=3'); await waitMode('idle', 6000); out.push('ch1 mode: ' + await ev('__pk.BT.mode') + ' units=' + await ev('__pk.B.units.length')); await shot('02-ch1-idle');
@@ -226,12 +230,13 @@ async function main() {
     }
     if (script === 'page' || script === 'page-m') {
       // ad-hoc: PK_Q query string, optional PK_EXPR run after PK_WAIT ms, screenshot as artifacts/PK_NAME.png
-      await send('Page.navigate', { url: 'file://' + ROOT + '/index.html?' + (process.env.PK_Q || 'silent&nosave') }); await sleep(+(process.env.PK_WAIT || 1500));
+      await send('Page.navigate', { url: 'file://' + ROOT + '/index.html?' + (process.env.PK_Q || 'silent&nosave') + LQ }); await sleep(+(process.env.PK_WAIT || 1500));
       if (process.env.PK_EXPR) { out.push('expr: ' + await ev(process.env.PK_EXPR)); await sleep(+(process.env.PK_WAIT2 || 600)); }
       // PK_FRAMES=ms: a burst of shots (PK_NAME-00, -01, ...) every PK_STEP ms instead of one, to review an animation
       if (process.env.PK_FRAMES) { const t0 = Date.now(); let i = 0; while (Date.now() - t0 < +process.env.PK_FRAMES) { await shot((process.env.PK_NAME || 'page') + '-' + String(i).padStart(2, '0')); i++; await sleep(+(process.env.PK_STEP || 50)); } }
       else await shot(process.env.PK_NAME || 'page');
     }
+    if (process.env.PK_MISS) { await sleep(1200); const m = JSON.parse(await ev("localStorage.getItem('pk_trmiss') || '{}'")); await ev("localStorage.removeItem('pk_trmiss_on'); 1"); const rows = Object.entries(m).sort((a, b) => b[1] - a[1]).map(([k, n]) => n + '\t' + JSON.stringify(k)); fs.writeFileSync(path.join(__dirname, 'i18n-misses-web.txt'), rows.join('\n') + '\n'); out.push(rows.length + ' untranslated strings → tools/i18n-misses-web.txt'); }
     out.push('--- console ---'); out.push(...logs.slice(0, 40));
   } finally { chrome.kill(); }
   console.log(out.join('\n'));

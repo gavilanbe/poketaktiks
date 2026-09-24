@@ -15,7 +15,7 @@ function partyUnit(num, level, hpBonus = BOND_HP) { const u = makeUnit(num, leve
 
 // ---------------------------------------------------------------- campaign flow
 function startNewGame() { clearSuspend(); SAVE = { chapter: 0, party: [], bag: { pokeball: 5 }, stars: {}, beaten: false, co: 'you', journey: { version: 1, firstCatch: false } }; if (PARAMS.has('nostory')) goScene('starter'); else startPrologue(() => goScene('starter')); }
-function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; SAVE.starter = num; SAVE.captainPid = 0; writeSave(); showJourney(['YOUR PARTNER, YOUR PC BOX', DEX[num].name + ' is your partner: it wears the crown and leads your army. Pidgey joins as your scout.', 'Every Pokémon you catch waits in your PC Box, ready to deploy.', 'Hold Poké Centers: each pays ₽1,000 a day, and your Box deploys there.', 'Eight fronts to free across Kanto, each with a goal and three stars.'], () => openRoute({ sel: 0 }), 'lab'); }
+function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; SAVE.starter = num; SAVE.captainPid = 0; writeSave(); showJourney(['YOUR PARTNER, YOUR PC BOX', TR('{0} is your partner: it wears the crown and leads your army. Pidgey joins as your scout.', DEX[num].name), 'Every Pokémon you catch waits in your PC Box, ready to deploy.', 'Hold Poké Centers: each pays ₽1,000 a day, and your Box deploys there.', 'Eight fronts to free across Kanto, each with a goal and three stars.'], () => openRoute({ sel: 0 }), 'lab'); }
 function continueCampaign() { SAVE = loadSave(); if (!SAVE) { startNewGame(); return; } openRoute(); }
 function prepChapter(idx) {
   migrateCaptain(SAVE);
@@ -62,7 +62,7 @@ function onBattleEnd(result) {
     SAVE.rating = SAVE.rating || {}; SAVE.rating[ch.id] = Math.max(SAVE.rating[ch.id] || 0, stars);
     // training: everyone below the next chapter's level catches up
     const nextCh = CHAPTERS[idx + 1]; const target = nextCh ? nextCh.level - 1 : ch.level + 4;
-    SAVE.party = SAVE.party.map(p => { const u = restoreUnit(p); let msg = null; if (u.level < target) { const from = u.level; while (u.level < target) { levelUp(u); const evo = evolutionFor(u); if (evo) { R.evolved.push(u.name + ' evolved into ' + evo.name + '!'); evolve(u, evo); } } msg = u.name + ' trained from Lv' + from + ' to Lv' + u.level; } if (msg) R.trained.push(msg); u.hp = u.maxHp; u.status = null; return serializeUnit(u); });
+    SAVE.party = SAVE.party.map(p => { const u = restoreUnit(p); let msg = null; if (u.level < target) { const from = u.level; while (u.level < target) { levelUp(u); const evo = evolutionFor(u); if (evo) { R.evolved.push(TR('{0} evolved into {1}!', u.name, evo.name)); evolve(u, evo); } } msg = TR('{0} trained from Lv{1} to Lv{2}', u.name, from, u.level); } if (msg) R.trained.push(msg); u.hp = u.maxHp; u.status = null; return serializeUnit(u); });
     const coBefore = coUnlocked(SAVE); SAVE.stars[ch.id] = Math.min(SAVE.stars[ch.id] || 99, B.turn); SAVE.chapter = Math.max(SAVE.chapter || 0, idx + 1); if (SAVE.chapter >= CHAPTERS.length) SAVE.beaten = true; writeSave();
     R.newCos = coUnlocked(SAVE).filter(c => !coBefore.includes(c)); // Gym Leaders freed on this front join as commanders
     const unlocked = first && idx + 1 < CHAPTERS.length ? idx + 1 : null;
@@ -182,7 +182,7 @@ function frame(t) {
 }
 // Deep links for testing: ?ch=3 jumps into chapter 3 with a loaner party; ?skirmish=42 a skirmish; ?silent mutes.
 function boot() {
-  buildTileset();
+  buildTileset(); applyLang();
   if (PARAMS.has('silent')) { Audio.muted = true; }
   if (PARAMS.has('territory')) { const seed = parseInt(PARAMS.get('territory')) || 7; if (PARAMS.has('auto')) launchTerritory(seed); else startTerritorySetup(seed); return; }
   if (PARAMS.has('ch')) {

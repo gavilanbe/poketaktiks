@@ -55,7 +55,7 @@ function duelSides(att, def) {
   const rank = u => B && B.versus ? u.team : u.team === 0 ? 0 : u.team === 3 ? 1 : u.team === 2 ? 2 : 3;
   return rank(def) < rank(att) ? { left: def, right: att } : { left: att, right: def };
 }
-function duelTeamTag(u) { if (B && B.versus) return u.team === 2 ? 'WLD' : 'P' + (u.team + 1); return u.team === 0 ? 'YOU' : u.team === 1 ? 'FOE' : u.team === 2 ? 'WLD' : 'ALY'; }
+function duelTeamTag(u) { if (B && B.versus) return u.team === 2 ? 'WLD' : TR('P{0}', u.team + 1); return u.team === 0 ? 'YOU' : u.team === 1 ? 'FOE' : u.team === 2 ? 'WLD' : 'ALY'; }
 function duelBiome(q) {
   const m = B.map, ids = [q.terr[q.att.id].id, q.terr[q.def.id].id], n = {}; for (const row of m.tiles) for (const t of row) n[t.id] = (n[t.id] || 0) + 1;
   const share = (...ks) => ks.reduce((a, k) => a + (n[k] || 0), 0) / (m.w * m.h); const on = (...ks) => ids.some(i => ks.includes(i));
@@ -152,7 +152,7 @@ function duelBeat(q, b) {
       if (e.eff > 1) { floatText(cx, ty + 4, e.eff >= 2 ? 'SUPER EFFECTIVE!!' : 'Super effective!', '#ffd24a', { big: e.eff >= 2, delay: .18, life: .8, outline: '#402000', vy: -8 }); ty += 12; }
       else if (e.eff === 0) { floatText(cx, ty + 4, 'No effect...', '#c0c0c0', { delay: .18, life: .8, vy: -8 }); ty += 10; }
       else if (e.eff < 1) { floatText(cx, ty + 4, 'Not very effective', '#a0d0ff', { delay: .18, life: .8, vy: -8 }); ty += 10; }
-      if (e.status) { floatText(cx, ty + 6, STATUS[e.status].text.toUpperCase() + '!', STATUS[e.status].col, { delay: .38, life: .9, outline: '#000', vy: -8 }); duelStatusFx(e.status, d, q); }
+      if (e.status) { floatText(cx, ty + 6, TR('{0}!', STATUS[e.status].text.toUpperCase()), STATUS[e.status].col, { delay: .38, life: .9, outline: '#000', vy: -8 }); duelStatusFx(e.status, d, q); }
       if (e.drain) { floatText(a.x, a.y - 70, '+' + e.drain, UI.green, { delay: .45, outline: '#0a3a10', big: true }); for (let i = 0; i < 7; i++) spawnSprite('bubble', cx + (vrnd() - .5) * 16, cy + (vrnd() - .5) * 16, { tx: a.x + (vrnd() - .5) * 10, ty: a.y - 40 + (vrnd() - .5) * 14, life: .45, arc: 14 + i * 3, size: 2 + (i % 2), col: '#7cf0a0', col2: '#ffffff', delay: .1 + i * .04 }); }
       break;
     }
@@ -375,7 +375,7 @@ function drawDuel(q) {
   if (!REDUCED && t > .28 && t < .82) { const kv = t - .28, [a, b] = f.split, vx = Math.round((a[0] + b[0]) / 2), vy = Math.round((f.pos[q.sides.left.id].y + f.pos[q.sides.right.id].y) / 2 - 60), s2 = (W >= 300 ? 3 : 2) + (kv < .06 ? 2 : kv < .12 ? 1 : 0); ctx.globalAlpha = kv > .42 ? Math.max(0, 1 - (kv - .42) / .12) : 1; if (kv < .1) { ctx.globalAlpha *= .5; circle(vx, vy, 30 - Math.round(kv * 100), '#ffffff'); ctx.globalAlpha = kv > .42 ? Math.max(0, 1 - (kv - .42) / .12) : 1; } ctx.save(); ctx.translate(vx, vy); ctx.scale(s2, s2); bigC('VS', 0, -4.5, UI.gold, { outline: UI.goldDark }); ctx.restore(); ctx.globalAlpha = 1; }
   const b = q.banner;
   if (b && t < b.until) {
-    const kb = Math.min(1, (t - b.t0) / .12), name = b.move.name.toUpperCase(), col = TYPE_COL[b.move.type] || UI.ink; const w = textWidth(name, BIG) + 44, x = Math.round(W / 2 - w / 2), y = Math.round(f.bannerY - (1 - easeOutBack(kb, 2)) * 10);
+    const kb = Math.min(1, (t - b.t0) / .12), name = mvName(b.move).toUpperCase(), col = TYPE_COL[b.move.type] || UI.ink; const w = textWidth(name, BIG) + 44, x = Math.round(W / 2 - w / 2), y = Math.round(f.bannerY - (1 - easeOutBack(kb, 2)) * 10);
     rrect(x + 1, y + 2, w, 17, UI.shadow, 2); rrect(x, y, w, 17, UI.inset, 2); rrect(x + 1, y + 1, w - 2, 15, '#101a30', 1); hline(x + 2, y + 1, w - 4, shade(col, -.2)); hline(x + 2, y + 15, w - 4, shade(col, -.5)); rect(x + 1, y + 2, 2, 13, col);
     typeBadge(b.move.type, x + 7, y + 4, 24); bigText(name, x + 35, y + 4, col, { outline: '#000' });
     // a shine sweeps across the banner as it lands

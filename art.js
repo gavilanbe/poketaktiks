@@ -957,11 +957,14 @@ function drawBall(x, y, col = '#f04848', r = 5) {
   circle(x, y, r, UI.shadow); circle(x, y, r - 1, '#f6f2e6'); ctx.fillStyle = col; for (let j = -r + 1; j < 0; j++) { const w = Math.floor(Math.sqrt((r - 1) * (r - 1) - j * j) + .5); ctx.fillRect(x - w, y + j, 2 * w + 1, 1); } hline(x - r + 1, y, 2 * r - 1, UI.shadow); px(x, y, '#ffffff'); px(x - 1, y - 2, shade(col, .5));
 }
 const TYPE_ABBR = { Normal: 'NRM', Fire: 'FIR', Water: 'WTR', Electric: 'ELC', Grass: 'GRS', Ice: 'ICE', Fighting: 'FGT', Poison: 'PSN', Ground: 'GRD', Flying: 'FLY', Psychic: 'PSY', Bug: 'BUG', Rock: 'RCK', Ghost: 'GHO', Dragon: 'DRG', Dark: 'DRK', Steel: 'STL', Fairy: 'FRY' };
+// The Spanish abbreviations, as the games shorten Fuego, Agua, Eléctrico... (looked up directly: the short forms would
+// collide with other words in the dictionary, ICE with Ice, BUG with Bug).
+const TYPE_ABBR_ES = { Normal: 'NOR', Fire: 'FUE', Water: 'AGU', Electric: 'ELE', Grass: 'PLA', Ice: 'HIE', Fighting: 'LUC', Poison: 'VEN', Ground: 'TIE', Flying: 'VOL', Psychic: 'PSI', Bug: 'BIC', Rock: 'ROC', Ghost: 'FAN', Dragon: 'DRA', Dark: 'SIN', Steel: 'ACE', Fairy: 'HAD' };
 // Type badge: `w` pixels wide (24 = three-letter code); w = 'auto' spells the type out and returns the width used.
-function typeBadge(t, x, y, w = 24) { const c = TYPE_COL[t] || '#888'; const full = w === 'auto'; if (full) w = textWidth(t.toUpperCase()) + 6; rrect(x, y, w, 9, shade(c, -.55), 1); rrect(x + 1, y + 1, w - 2, 7, c, 0); hline(x + 2, y + 1, w - 4, shade(c, .3)); hline(x + 2, y + 7, w - 4, shade(c, -.25)); textC(full || w >= 40 ? t.toUpperCase() : TYPE_ABBR[t] || t.slice(0, 3).toUpperCase(), x + w / 2, y + 1, '#ffffff', { shadow: shade(c, -.5) }); return w; }
-function miniBadge(label, col, x, y) { rrect(x, y, 15, 8, shade(col, -.55), 1); rrect(x + 1, y + 1, 13, 6, col, 0); hline(x + 2, y + 1, 11, shade(col, .3)); textC(label, x + 8, y + 1, '#ffffff', { shadow: shade(col, -.5) }); }
+function typeBadge(t, x, y, w = 24) { const c = TYPE_COL[t] || '#888'; const full = w === 'auto', long = String(typeName(t)).toUpperCase(); if (full) w = rawTextWidth(long) + 6; rrect(x, y, w, 9, shade(c, -.55), 1); rrect(x + 1, y + 1, w - 2, 7, c, 0); hline(x + 2, y + 1, w - 4, shade(c, .3)); hline(x + 2, y + 7, w - 4, shade(c, -.25)); textC(full || w >= 40 ? long : (LANG === 'es' ? TYPE_ABBR_ES : TYPE_ABBR)[t] || t.slice(0, 3).toUpperCase(), x + w / 2, y + 1, '#ffffff', { shadow: shade(c, -.5), raw: true }); return w; }
+function miniBadge(label, col, x, y) { rrect(x, y, 15, 8, shade(col, -.55), 1); rrect(x + 1, y + 1, 13, 6, col, 0); hline(x + 2, y + 1, 11, shade(col, .3)); textC(String(TRX(label)), x + 8, y + 1, '#ffffff', { shadow: shade(col, -.5), raw: true }); }
 // A badge sized to its label (miniBadge is fixed at 15 px); returns its width.
-function tagBadge(label, col, x, y) { const w = textWidth(label) + 5; rrect(x, y, w, 8, shade(col, -.55), 1); rrect(x + 1, y + 1, w - 2, 6, col, 0); hline(x + 2, y + 1, w - 4, shade(col, .3)); text(label, x + 3, y + 1, '#ffffff', { shadow: shade(col, -.5) }); return w; }
+function tagBadge(label, col, x, y) { label = String(TRX(label)); const w = rawTextWidth(label) + 5; rrect(x, y, w, 8, shade(col, -.55), 1); rrect(x + 1, y + 1, w - 2, 6, col, 0); hline(x + 2, y + 1, w - 4, shade(col, .3)); text(label, x + 3, y + 1, '#ffffff', { shadow: shade(col, -.5), raw: true }); return w; }
 function statusBadge(st, x, y) { const s = STATUS[st]; if (s) miniBadge(s.name, s.col, x, y); }
 function teamColor(team) { return team === 0 ? '#3d7dff' : team === 1 ? '#ff4b4b' : team === 2 ? '#e0c040' : '#40d060'; }
 function teamColorD(team) { return team === 0 ? '#1c3a8a' : team === 1 ? '#8a1c1c' : team === 2 ? '#7a6010' : '#1a6a30'; }
@@ -1027,6 +1030,7 @@ const ICONS = {
   wave: ['.........', '..OO.....', '.OWWO..OO', 'OWOOWOOWO', 'OW..OWWWO', '.........', '..OO.....', '.OWWO..OO', 'OWOOWOOWO'],
   vine: ['....O....', '...OWO...', '..OWOWO..', '.OWO.OWO.', 'OWO...OWO', 'OO.OWO.OO', '...OWO...', '...OWO...', '....O....'],
   target: ['..OOOOO..', '.OWWWWWO.', 'OWOOOOOWO', 'OWOWWWOWO', 'OWOWOWOWO', 'OWOWWWOWO', 'OWOOOOOWO', '.OWWWWWO.', '..OOOOO..'],
+  globe: ['..OOOOO..', '.OWOWOWO.', 'OWOOWOOWO', 'OOOOOOOOO', 'OWOOWOOWO', 'OOOOOOOOO', 'OWOOWOOWO', '.OWOWOWO.', '..OOOOO..'],
   heart: ['.OO...OO.', 'OWWO.OWWO', 'OWWWOWWWO', 'OWWWWWWWO', 'OWWWWWWWO', '.OWWWWWO.', '..OWWWO..', '...OWO...', '....O....'],
 };
 // Draw a UI icon; `col` overrides the main (W) colour.

@@ -13,7 +13,7 @@ function field(root = 4, chapter = 8) {
 }
 function flush(T) { for (let i = 0; i < 1200 && T.G('BT.mode') === 'anim'; i++) T.g.battleUpdate(.1); assert.notEqual(T.G('BT.mode'), 'anim'); }
 function textHook(T) {
-  T.G(`var __textBoxes=[],__matrix=[1,1,0,0],__matrixStack=[];ctx.save=()=>__matrixStack.push(__matrix.slice());ctx.restore=()=>{__matrix=__matrixStack.pop()||[1,1,0,0];};ctx.translate=(x,y)=>{__matrix[2]+=__matrix[0]*x;__matrix[3]+=__matrix[1]*y;};ctx.scale=(x,y)=>{__matrix[0]*=x;__matrix[1]*=y;};text=(s,x,y,c,o={})=>{const w=textWidth(s,o.font||FONT);__textBoxes.push({text:String(s),x:x*__matrix[0]+__matrix[2],y:y*__matrix[1]+__matrix[3],w:w*__matrix[0]});return w;};textBoxHook=(s,x,y,w)=>{__textBoxes.push({text:String(s),x:x*__matrix[0]+__matrix[2],y:y*__matrix[1]+__matrix[3],w:w*__matrix[0],display:true});};`);
+  T.G(`var __textBoxes=[],__matrix=[1,1,0,0],__matrixStack=[];ctx.save=()=>__matrixStack.push(__matrix.slice());ctx.restore=()=>{__matrix=__matrixStack.pop()||[1,1,0,0];};ctx.translate=(x,y)=>{__matrix[2]+=__matrix[0]*x;__matrix[3]+=__matrix[1]*y;};ctx.scale=(x,y)=>{__matrix[0]*=x;__matrix[1]*=y;};text=(s,x,y,c,o={})=>{const w=(o.raw?rawTextWidth:textWidth)(s,o.font||FONT);__textBoxes.push({text:String(o.raw?s:TRX(s)),x:x*__matrix[0]+__matrix[2],y:y*__matrix[1]+__matrix[3],w:w*__matrix[0]});return w;};textBoxHook=(s,x,y,w)=>{__textBoxes.push({text:String(s),x:x*__matrix[0]+__matrix[2],y:y*__matrix[1]+__matrix[3],w:w*__matrix[0],display:true});};`);
   return () => T.G('__textBoxes');
 }
 

@@ -132,6 +132,11 @@ scenes draw it; the forecast includes it.
   snow) in parallax layers, team-coloured HP panels, muzzle flashes, explosions, smoke and bouncing
   debris; weather and active powers show in it.
 - HUD: funds, the day, weather, the commander's portrait and meter.
+- Languages: Spain Spanish by default, English on request (OPTIONS or the title's ES · EN pill). Terms follow
+  the Spanish games: Nv for level, PS for HP, the official move and type names (Lanzallamas, Planta), la Caja
+  del PC, cuartel for HQ, el As for the Ace, FASE DEL JUGADOR / FASE ENEMIGA.
+- The opening starts on the maker's card (a sparrowhawk, GAVILANBE PRESENTS); PRESS START and the title's
+  foot sign the game "a game by gavilanbe".
 
 ## Phases
 

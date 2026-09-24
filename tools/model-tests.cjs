@@ -6,11 +6,13 @@
 'use strict';
 const vm = require('vm'), fs = require('fs'), path = require('path'), assert = require('assert');
 const ROOT = path.join(__dirname, '..');
-const FILES = ['core.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'scenery.js', 'model.js', 'captain.js', 'battle.js', 'menus.js', 'duel.js', 'campaign.js', 'war.js', 'territory.js', 'scenes.js', 'title.js', 'route.js', 'journey.js', 'modes.js', 'main.js'];
+const FILES = ['core.js', 'i18n.js', 'lang/es.js', 'lang/es-data.js', 'lang/es-story.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'scenery.js', 'model.js', 'captain.js', 'battle.js', 'menus.js', 'duel.js', 'campaign.js', 'war.js', 'territory.js', 'scenes.js', 'title.js', 'route.js', 'journey.js', 'modes.js', 'main.js'];
 
 // ---------------------------------------------------------------- harness
+// Tests run in English unless PK_LANG=es, which also records every drawn string that has no Spanish (tools/i18n-misses.txt).
+const MISSES = [], EN = process.env.PK_LANG !== 'es'; // EN: wording checks run in English; layout checks run in both
 function loadGame() {
-  const store = new Map();
+  const store = new Map(); store.set('pk_lang', process.env.PK_LANG === 'es' ? 'es' : 'en');
   const ctx2d = () => new Proxy({}, {
     get(t, k) { if (k in t) return t[k]; if (k === 'measureText') return () => ({ width: 0 }); if (k === 'getImageData' || k === 'createImageData') return (a, b, w, h) => ({ width: w || a, height: h || b, data: new Uint8ClampedArray((w || a) * (h || b) * 4) }); return () => undefined; },
     set(t, k, v) { t[k] = v; return true; },
@@ -26,6 +28,7 @@ function loadGame() {
   g.window = g; vm.createContext(g);
   vm.runInContext(FILES.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n'), g, { filename: 'game.js' });
   const G = expr => vm.runInContext(expr, g); // evaluates inside the game: reaches top-level let/const such as B, BT, rnd
+  if (process.env.PK_LANG === 'es') { G('applyLang(); TRMISS = new Map(); TROUT = new Set()'); MISSES.push(() => G('TRMISS')); }
   const C = {}; for (const n of ['BOND_HP', 'CHAPTERS', 'DEX', 'DEX_LIST', 'SIGNATURE', 'key']) C[n] = G(n); // top-level consts are not global properties
   return { g, G, C, store, B: () => G('B') };
 }
@@ -439,7 +442,7 @@ test('forecast lines follow the ordered strikes: damage, odds, KO marks and the 
   assert.strictEqual(L[1].side, 'c'); assert.strictEqual(L[1].nominal, false); assert.strictEqual(L[1].cond, 'only if Caterpie survives'); assert.strictEqual(L[1].ko, false);
   assert.strictEqual(L[2].side, 'a'); assert.strictEqual(L[2].nominal, false); assert.strictEqual(L[2].cond, 'only if Caterpie survives', 'the double is conditional too'); assert.strictEqual(L[2].ko, false);
   arena(T); const p = place(T, 25, 20, 1, 1, 1), s = place(T, 79, 20, 0, 2, 1); const fc2 = g.forecast(p, s, move(p, 'Thunder Shock'), p); const L2 = g.forecastLines(fc2, p, s);
-  assert.strictEqual(L2.map(l => l.side).join(''), 'aca'); assert(L2.every(l => l.nominal && !l.ko), 'nobody drops'); assert.strictEqual(L2[1].counter, true); assert.strictEqual(L2[0].eff, '×1.5', 'Electric on Water is marked');
+  assert.strictEqual(L2.map(l => l.side).join(''), 'aca'); assert(L2.every(l => l.nominal && !l.ko), 'nobody drops'); assert.strictEqual(L2[1].counter, true); assert.strictEqual(L2[0].eff, EN ? '×1.5' : '×1,5', 'Electric on Water is marked');
 });
 
 test('an attack runs through the board queue: duel, then XP on the board, then the unit is spent; map mode ends the same', T => {
@@ -461,7 +464,7 @@ const uniqueIds = (B, label) => { const ids = B.units.map(u => u.id); assert.str
 function walkNextTo(g, u, t) { for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) { const x = t.x + dx, y = t.y + dy; if (g.inMap(x, y) && g.moveCost(g.terrAt(x, y), u) < 99 && !g.unitAt(x, y)) { u.x = x; u.y = y; return; } } assert.fail('no free tile beside ' + t.name); }
 
 test('chapter launch, Versus and resume give every unit a unique id; the chapter-6 Charmeleon vs Voltorb duel has two sides', T => {
-  const { g, G, C } = T; const ch = C.CHAPTERS[5]; const L = ch.level; assert.strictEqual(ch.title, 'Power Plant');
+  const { g, G, C } = T; const ch = C.CHAPTERS[5]; const L = ch.level; assert.strictEqual(ch.title, G("TRX('Power Plant')"));
   const party = [4, 7, 1, 25, 133, 66].map(n => g.partyUnit(n, L)); assert(party.every(p => p.id), 'serialized party members carry ids from their own creation');
   g.startBattle(ch.map, party.slice(0, ch.slots), { pokeball: 1 }, { chapter: 5, seed: 7, defer: true }); const B = T.B(); uniqueIds(B, 'chapter 6');
   const char = B.units.find(u => u.team === 0 && u.num === 5), volt = B.units.find(u => u.team === 1 && u.num === 100); assert(char && volt, 'Charmeleon and a Voltorb are on the board');
@@ -529,7 +532,7 @@ test('drain reports the HP actually restored: nothing at full HP, the missing HP
 // Hooks `text` to record where each string lands (following save/translate/scale), like the supervisor's text-check script.
 function textHook(T) {
   T.G(`var __boxes = [], __m = [1, 0, 0, 1, 0, 0], __st = []; ctx.save = () => __st.push(__m.slice()); ctx.restore = () => { __m = __st.pop() || [1, 0, 0, 1, 0, 0]; }; ctx.translate = (x, y) => { __m[4] += __m[0] * x; __m[5] += __m[3] * y; }; ctx.scale = (x, y) => { __m[0] *= x; __m[3] *= y; };
-    text = (s, x, y, col, opt = {}) => { const w = textWidth(s, opt.font || FONT); __boxes.push({ text: String(s), x: __m[0] * x + __m[4], y: __m[3] * y + __m[5], w: w * __m[0], h: 7 * __m[3] }); return w; };
+    text = (s, x, y, col, opt = {}) => { const w = (opt.raw ? rawTextWidth : textWidth)(s, opt.font || FONT); __boxes.push({ text: String(opt.raw ? s : TRX(s)), x: __m[0] * x + __m[4], y: __m[3] * y + __m[5], w: w * __m[0], h: 7 * __m[3] }); return w; };
     textBoxHook = (s, x, y, w, h) => { __boxes.push({ text: String(s), x: __m[0] * x + __m[4], y: __m[3] * y + __m[5], w: w * __m[0], h: 7 * __m[3], display: true }); };`);
   const take = () => { const b = T.G('__boxes'); T.G('__boxes = []'); take.__last = b; return b; }; return take;
 }
@@ -567,7 +570,7 @@ test('phone keyboard and touch access: Versus draft, prep toggles and starter pi
   const plus = k => hits.find(h => h.label === k + '+'); assert(plus('MAP') && plus('MODE') && plus('P2 COMMANDER'), 'the map, mode and commander [+] controls are on screen'); const cap = S.co1; plus('P2 COMMANDER').run(); assert.notStrictEqual(S.co1, cap, 'the commander [+] is usable'); const seed = S.seed; plus('MAP').run(); assert.strictEqual(S.seed, (seed + 1) % 1000, 'the map [+] is usable');
   for (const k of ['right', 'down', 'ok']) g.versusInput({ type: 'key', key: k }); assert.strictEqual(S.teams[0].length + S.teams[1].length, 1, 'keys draft a Pokémon'); assert.strictEqual(G('SC.i'), 1 + g.vsCols(), 'down moves one roster row (four columns on phones)');
   g.versusDraw(); for (const l of ['◂ TITLE', 'RANDOM', 'CLEAR', 'BATTLE! ▸']) assert(G('SC.hits').some(h => h.label === l), l + ' button present'); assert(G('SC.hits').some(h => h.label && h.label.startsWith('FOG')), 'FOG toggle present');
-  g.goScene('title'); g.titleDraw(); G('SAVE = { chapter: 0, party: [], bag: {}, stars: {}, beaten: false }'); g.goScene('starter'); g.starterDraw(); assert.strictEqual(G('SC.hits').filter(h => ['BULBASAUR', 'CHARMANDER', 'SQUIRTLE'].includes(h.label)).length, 3, 'three starter balls'); assert(G('SC.hits').some(h => /^CHOOSE/.test(h.label)), 'a CHOOSE button'); g.starterInput({ type: 'key', key: 'right' }); assert.strictEqual(G('SC.i'), 1);
+  g.goScene('title'); g.titleDraw(); G('SAVE = { chapter: 0, party: [], bag: {}, stars: {}, beaten: false }'); g.goScene('starter'); g.starterDraw(); assert.strictEqual(G('SC.hits').filter(h => ['BULBASAUR', 'CHARMANDER', 'SQUIRTLE'].includes(h.label)).length, 3, 'three starter balls'); assert(G('SC.hits').some(h => h.label.startsWith(G("TRX('CHOOSE')"))), 'a CHOOSE button'); g.starterInput({ type: 'key', key: 'right' }); assert.strictEqual(G('SC.i'), 1);
   G('SAVE.party = [partyUnit(4, 5), partyUnit(25, 5), partyUnit(7, 5), partyUnit(1, 5)]'); g.prepChapter(0); const P = G('SC.data'); g.prepDraw(); const n0 = P.deploy.length; g.prepInput({ type: 'key', key: 'down' }); g.prepInput({ type: 'key', key: 'ok' }); assert.notStrictEqual(P.deploy.length, n0, 'OK toggles the selected card'); g.prepDraw(); for (const l of ['◂ MISSION', 'AUTO PICK', 'BATTLE! ▸']) assert(G('SC.hits').some(h => h.label === l), l + ' button present on the phone layout');
 });
 test('every UI label uses glyphs the pixel font has (no "?" fallbacks)', T => {
@@ -580,6 +583,14 @@ test('every UI label uses glyphs the pixel font has (no "?" fallbacks)', T => {
   for (const s of ['OK: attack  ·  X: back  ·  C: move', '◂ ▸ browse  ·  X close', 'READY 3/5', 'ZOOM -', 'ZOOM +', '32 →', '×1.5', '×2.25', 'A fan game · Pokémon © Nintendo / Game Freak / Creatures']) check(s, 'label');
   for (const s of ['POKÉ', 'TAKTIKS', 'PRESS START', 'THE TACTICIAN', 'GIOVANNI', 'VS', 'VICTORY!', 'DEFEAT', 'RETREAT', 'DRAW', 'ENEMY PHASE', 'PLAYER 1 WINS!']) for (const c of s) if (c !== ' ') assert(G('!!DISPLAY_SRC[' + JSON.stringify(c) + '] || !!DISPLAY_ACCENT[' + JSON.stringify(c) + ']'), 'the display face has ' + c + ' (for ' + s + ')');
   for (const ch of C.CHAPTERS) for (const c of ch.title.toUpperCase()) if (c !== ' ') assert(G('!!DISPLAY_SRC[' + JSON.stringify(c) + '] || !!DISPLAY_ACCENT[' + JSON.stringify(c) + '] || !!DISPLAY_SRC[stripAccents(' + JSON.stringify(c) + ')]'), 'the display face has ' + c + ' (front ' + ch.title + ')');
+  // Spanish: every translation draws in the small face, its capitals in the big one (the story's *emphasis* marks and
+  // the credits' © stay small), and the display face has the Spanish capitals and marks: ÁÉÍÓÚÑÜ ¡¿
+  const bad = G(`(() => { const out = []; const has = (c, f) => f[c] || f[stripAccents(c)] || (f === BIG && BIG[stripAccents(c).toUpperCase()]);
+    for (const k in ES) for (const c of String(ES[k]).replace(/\\{\\d\\}|[*©~\\n ]/g, '')) { if (!has(c, FONT)) out.push('small ' + c + ' in ' + ES[k]); if (!has(c.toUpperCase(), BIG)) out.push('big ' + c + ' in ' + ES[k]); }
+    for (const c of 'ÁÉÍÓÚÑÜ¡¿') if (!DISPLAY_SRC[c] && !DISPLAY_ACCENT[c]) out.push('display ' + c); return out.slice(0, 5).join(' | '); })()`);
+  assert.strictEqual(bad, '', 'Spanish glyphs: ' + bad);
+  // big accented capitals keep the whole letter and put the mark above the cap line
+  for (const c of 'ÁÉÍÓÚÑÜ') { const gl = G('BIG[' + JSON.stringify(c) + ']'), base = G('BIG[stripAccents(' + JSON.stringify(c) + ')]'); assert(gl.off < 0 && gl.rows.slice(-base.rows.length).join('/') === base.rows.join('/'), 'big ' + c + ' keeps its letter whole'); }
 });
 
 // Stage 4: roles, skills, speed rules, AI use, saves and the menu/target flow.
@@ -627,7 +638,7 @@ test('speed rules: crits are flat (4 / 24 / 100 on frozen), hit bonus capped at 
   d.hp = fc.a.dmg; fc = g.forecast(a, d, mv, a); L = g.forecastLines(fc, a, d); assert.strictEqual(L[0].ko, true); assert.strictEqual(L[0].critKo, false, 'no crit flag when the normal hit already KOs');
   d.hp = 500; fc = g.forecast(a, d, mv, a); L = g.forecastLines(fc, a, d); assert.strictEqual(L[0].critKo, false); assert.strictEqual(L[0].crit, 4);
   const G = T.G; G('VIEW.w = 480; VIEW.h = 270'); const BT = G('BT'); BT.sel = a; BT.targets = [d]; BT.tIdx = 0; BT.moveIdx = a.moves.indexOf(mv); BT.mode = 'target'; d.hp = fc.a.dmg + 1; BT.forecastDetail = true; const boxes = textHook(T); g.drawHUD(); const strs = boxes().map(b => b.text);
-  assert(strs.some(s => s.includes('NORMAL HITS')), 'the forecast title says the numbers are for normal hits');
+  assert(strs.some(s => s.includes(EN ? 'NORMAL HITS' : 'GOLPES NORMALES')), 'the forecast title says the numbers are for normal hits: ' + strs.join(' | '));
   { const all = boxes.__last || []; const crit = all.find(b => b.text === '4%'); assert(crit && all.some(b => b.text === 'KO' && b.y === crit.y && b.x > crit.x), 'the crit KO risk is spelled out next to the crit odds: ' + strs.join(' | ')); }
 });
 
@@ -645,9 +656,9 @@ test('skills: legal targets, action cost, cooldown, brace and root expiry, clean
   hurt.hp = 10; far.hp = 10; en.hp = 1; cle.hp = 5;
   same(g.skillTargetsAt(cle).map(u => u.name), ['Charmander'], 'only the adjacent hurt ally'); fine.status = 'psn'; same(g.skillTargetsAt(cle).map(u => u.name).sort(), ['Charmander', 'Squirtle'], 'a statused ally counts');
   assert.strictEqual(g.mendAmount(hurt), Math.floor(hurt.maxHp * .3)); hurt.hp = hurt.maxHp - 2; assert.strictEqual(g.mendAmount(hurt), 2, 'capped by the missing HP'); hurt.hp = 10;
-  assert.strictEqual(g.skillPreview(cle, cle.skill, hurt), '+' + Math.floor(hurt.maxHp * .3) + ' HP (10 → ' + (10 + Math.floor(hurt.maxHp * .3)) + ')');
+  assert.strictEqual(g.skillPreview(cle, cle.skill, hurt), T.G('TRX')('+' + Math.floor(hurt.maxHp * .3) + ' HP (10 → ' + (10 + Math.floor(hurt.maxHp * .3)) + ')'));
   const before2 = cle.hp; const ev2 = g.useSkill(cle, cle.skill, hurt); assert.strictEqual(hurt.hp, 10 + Math.floor(hurt.maxHp * .3)); assert(ev2.some(e => e.type === 'heal' && e.amount === Math.floor(hurt.maxHp * .3))); assert.strictEqual(cle.hp, before2, 'Mend never heals the healer');
-  assert.strictEqual(cle.cd, 2); assert.strictEqual(g.skillBlock(cle), 'cooldown 2'); assert.strictEqual(g.skillReady(cle), false); assert(ev2.some(e => e.type === 'xp' && e.unit === cle), 'using a skill earns XP');
+  assert.strictEqual(cle.cd, 2); assert.strictEqual(g.skillBlock(cle), T.G("TR('cooldown {0}', 2)")); assert.strictEqual(g.skillReady(cle), false); assert(ev2.some(e => e.type === 'xp' && e.unit === cle), 'using a skill earns XP');
   g.upkeep(0); assert.strictEqual(cle.cd, 1); assert.strictEqual(g.skillReady(cle), false); g.upkeep(0); assert.strictEqual(cle.cd, 0); assert.strictEqual(g.skillReady(cle), true, 'usable every other turn');
   g.useSkill(cle, cle.skill, fine); assert.strictEqual(fine.status, null, 'cured'); assert.strictEqual(fine.hp, fine.maxHp);
   cle.cd = 0; fine.hp = fine.maxHp; hurt.hp = hurt.maxHp; assert.strictEqual(g.skillBlock(cle), 'no target', 'nothing to mend'); cle.recharge = 1; assert.strictEqual(g.skillReady(cle), false, 'not while recharging'); cle.recharge = 0;
@@ -713,28 +724,28 @@ test('player flow: the skill sits in the action menu with its reason when unusab
   const { g, G, C } = T; G('VIEW.w = 480; VIEW.h = 270');
   // menu: Mend listed, greyed with the reason when there is no target; Brace usable at once
   arena(T, Array(9).fill('.'.repeat(9))); const BT = G('BT'); const cle = place(T, 35, 20, 0, 4, 4), hurt = place(T, 4, 20, 0, 5, 4), foe = place(T, 19, 20, 1, 4, 6); T.B().phase = 0;
-  BT.sel = cle; g.openActionMenu(cle); let it = BT.menu.items.find(i => i.id === 'skill'); assert(it && it.label === 'Mend' && it.off, 'Mend listed but off: ' + JSON.stringify(it)); assert(/no target/.test(it.sub));
+  BT.sel = cle; g.openActionMenu(cle); let it = BT.menu.items.find(i => i.id === 'skill'); assert(it && it.label === G("TRX('Mend')") && it.off, 'Mend listed but off: ' + JSON.stringify(it)); assert(it.sub.includes(G("TRX('no target')")));
   g.menuChoose('skill'); assert.strictEqual(BT.mode, 'menu', 'choosing an unusable skill does nothing');
-  hurt.hp = 10; g.openActionMenu(cle); it = BT.menu.items.find(i => i.id === 'skill'); assert(it && !it.off && /1 target/.test(it.sub) && /every other turn/.test(it.sub) && !/every 3/.test(it.sub), it.sub);
+  hurt.hp = 10; g.openActionMenu(cle); it = BT.menu.items.find(i => i.id === 'skill'); assert(it && !it.off && it.sub.includes(G("TR('{0} target', 1)")) && it.sub.includes(G("TRX('every other turn')")) && !/every 3/.test(it.sub), it.sub);
   g.menuChoose('skill'); assert.strictEqual(BT.mode, 'skillTarget'); same(BT.targets, [hurt]); same([BT.cx, BT.cy], [5, 4], 'cursor on the target');
-  const boxes = textHook(T); g.battleDraw(); const strs = boxes().map(b => b.text); assert(strs.some(s => s === 'MEND'), 'skill card title'); assert(strs.some(s => /\+\d+ HP/.test(s)), 'the card shows the exact heal: ' + strs.join(' | ')); assert(strs.some(s => /uses the action/.test(s)));
+  const boxes = textHook(T); g.battleDraw(); const strs = boxes().map(b => b.text); assert(strs.some(s => s === G("TRX('MEND')")), 'skill card title'); assert(strs.some(s => /\+\d+ (HP|PS) /.test(s)), 'the card shows the exact heal: ' + strs.join(' | ')); assert(strs.some(s => s.includes(G("TRX('uses the action')"))));
   g.cancel(); assert.strictEqual(BT.mode, 'menu', 'back to the menu'); assert.strictEqual(hurt.hp, 10, 'nothing applied'); assert.strictEqual(cle.cd, 0);
   g.menuChoose('skill'); g.keyInput('ok'); assert.strictEqual(BT.mode, 'anim'); let n = 0; while (BT.mode === 'anim' && n++ < 2000) { g.battleUpdate(1 / 60); g.battleDraw(); }
   assert.strictEqual(BT.mode, 'idle'); assert.strictEqual(cle.acted, true, 'the action is spent'); assert.strictEqual(hurt.hp, 10 + Math.floor(hurt.maxHp * .3)); assert.strictEqual(cle.cd, 2); assert(cle.xp > 0);
   // Brace via the pointer: self is the only target, tapping the forecast area confirms
-  const geo = place(T, 74, 20, 0, 2, 2); BT.sel = geo; g.openActionMenu(geo); it = BT.menu.items.find(i => i.id === 'skill'); assert(it && it.label === 'Brace' && !it.off); g.menuChoose('skill'); same(BT.targets, [geo]);
+  const geo = place(T, 74, 20, 0, 2, 2); BT.sel = geo; g.openActionMenu(geo); it = BT.menu.items.find(i => i.id === 'skill'); assert(it && it.label === G("TRX('Brace')") && !it.off); g.menuChoose('skill'); same(BT.targets, [geo]);
   const fr = g.forecastRect(); g.pointerInput({ type: 'down', x: fr.x + 5, y: fr.y + 5, btn: 0 }); g.pointerInput({ type: 'up', x: fr.x + 5, y: fr.y + 5, btn: 0 }); n = 0; while (BT.mode === 'anim' && n++ < 2000) { g.battleUpdate(1 / 60); g.battleDraw(); }
   assert.strictEqual(geo.brace, 1); assert.strictEqual(geo.acted, true); assert.strictEqual(BT.mode, 'idle');
   // the unit sheet and card mention the role and the state; the HUD stays inside every size in skillTarget mode
   for (const [w, h] of SIZES) { G('VIEW.w = ' + w + '; VIEW.h = ' + h); const HUD = G('HUD'); BT.sel = cle; cle.acted = false; cle.cd = 0; hurt.hp = 10; g.openActionMenu(cle); g.menuChoose('skill'); assert.strictEqual(BT.mode, 'skillTarget'); g.battleDraw(); for (const p of HUD.panels) assert(inside(p, w, h), w + 'x' + h + ': skill card inside'); for (const b of HUD.hits) assert(inside(b, w, h)); g.cancel(); g.cancel(); g.cancel(); BT.mode = 'idle'; }
-  G('VIEW.w = 480; VIEW.h = 270'); BT.info = geo; BT.mode = 'unitinfo'; const bx = textHook(T); g.battleDraw(); const sheet = bx().map(b => b.text); assert(sheet.some(s => s.startsWith('DEFENDER')), 'role on the sheet'); assert(sheet.some(s => /BRACED.*Brace:/.test(s)), 'skill line with the state: ' + sheet.filter(s => /Brace/.test(s)).join(' | ')); BT.mode = 'idle';
-  BT.cx = geo.x; BT.cy = geo.y; const bx2 = textHook(T); g.battleDraw(); assert(bx2().some(b => b.text === 'Defender'), 'role name on the unit card');
+  G('VIEW.w = 480; VIEW.h = 270'); BT.info = geo; BT.mode = 'unitinfo'; const bx = textHook(T); g.battleDraw(); const sheet = bx().map(b => b.text); const tx = k => G('TRX(' + JSON.stringify(k) + ')'); assert(sheet.some(s => s.startsWith(tx('DEFENDER'))), 'role on the sheet'); assert(sheet.some(s => s.includes(tx('BRACED')) && s.includes(tx('Brace') + ':')), 'skill line with the state: ' + sheet.join(' | ')); BT.mode = 'idle';
+  BT.cx = geo.x; BT.cy = geo.y; const bx2 = textHook(T); g.battleDraw(); assert(bx2().some(b => b.text === G("TRX('Defender')")), 'role name on the unit card');
   // dart: after a player attack the scout gets a 2-tile move, no undo, and ends spent; X stays put and ends the turn too
   fixedRoll(T, .5); const pid = place(T, 16, 20, 0, 6, 6), cat = place(T, 10, 5, 1, 7, 6); cat.hp = cat.maxHp = 500; pid.hp = pid.maxHp = 500;
   BT.sel = pid; BT.targets = [cat]; BT.tIdx = 0; BT.moveIdx = pid.moves.indexOf(move(pid, 'Wing Attack')); BT.mode = 'target'; g.confirmAttack(); n = 0; while (BT.mode === 'anim' && n++ < 3000) { g.battleUpdate(1 / 60); g.battleDraw(); }
   assert.strictEqual(BT.mode, 'move', 'dart move offered'); assert.strictEqual(BT.dart, true); assert.strictEqual(BT.sel, pid); assert.strictEqual(pid.acted, false); assert.strictEqual(BT.undo, null, 'no undo of the attack');
   const reach = [...BT.reach.values()]; assert(reach.every(c => g.dist(c, pid) <= 2) && reach.length > 1, 'two tiles of reach'); assert.strictEqual(BT.atk.length, 0, 'no second attack');
-  const bx3 = textHook(T); g.battleDraw(); assert(bx3().some(b => /DART 2/.test(b.text)), 'the HUD names the dart');
+  const bx3 = textHook(T); g.battleDraw(); assert(bx3().some(b => b.text.includes(G("TR('DART {0}', 2)"))), 'the HUD names the dart');
   g.tileAction(6, 4); n = 0; while (BT.mode === 'anim' && n++ < 2000) { g.battleUpdate(1 / 60); g.battleDraw(); } same([pid.x, pid.y], [6, 4]); assert.strictEqual(pid.acted, true); assert.strictEqual(BT.mode, 'idle'); assert.strictEqual(BT.dart, false);
   const pid2 = place(T, 16, 20, 0, 2, 7); BT.sel = pid2; BT.targets = [cat]; cat.x = 3; cat.y = 7; BT.tIdx = 0; BT.moveIdx = pid2.moves.indexOf(move(pid2, 'Wing Attack')); BT.mode = 'target'; g.confirmAttack(); n = 0; while (BT.mode === 'anim' && n++ < 3000) { g.battleUpdate(1 / 60); g.battleDraw(); }
   assert.strictEqual(BT.mode, 'move'); g.cancel(); assert.strictEqual(pid2.acted, true, 'staying ends the turn'); same([pid2.x, pid2.y], [2, 7]); assert.strictEqual(BT.mode, 'idle');
@@ -775,7 +786,7 @@ test('review: Brace earns no XP, useSkill refuses illegal calls without mutating
   const refuse = (u, sk, t, why, from) => { const before = snap(); assert.strictEqual(g.skillCheck(u, sk, t, from), why, 'check: ' + why); assert.strictEqual(g.useSkill(u, sk, t, from), null, 'useSkill refuses: ' + why); assert.strictEqual(snap(), before, 'nothing mutated for: ' + why); };
   assert.strictEqual(g.skillCheck(bul, bul.skill, rat), null, 'the legal case');
   bul.hp = 0; refuse(bul, bul.skill, rat, 'fainted'); bul.hp = bul.maxHp; bul.acted = true; refuse(bul, bul.skill, rat, 'acted'); bul.acted = false;
-  bul.status = 'frz'; refuse(bul, bul.skill, rat, 'frozen'); bul.status = null; bul.recharge = 1; refuse(bul, bul.skill, rat, 'recharging'); bul.recharge = 0; bul.cd = 1; refuse(bul, bul.skill, rat, 'cooldown 1'); bul.cd = 0;
+  bul.status = 'frz'; refuse(bul, bul.skill, rat, 'frozen'); bul.status = null; bul.recharge = 1; refuse(bul, bul.skill, rat, 'recharging'); bul.recharge = 0; bul.cd = 1; refuse(bul, bul.skill, rat, G("TR('cooldown {0}', 1)")); bul.cd = 0;
   refuse(bul, SK.mend, pal, 'none', undefined); refuse(bul, SK.brace, bul, 'none'); refuse(bul, SK.dart, rat, 'none');
   refuse(bul, bul.skill, farRat, 'bad target'); refuse(bul, bul.skill, pal, 'bad target'); refuse(bul, bul.skill, bird, 'bad target'); rat.root = 2; refuse(bul, bul.skill, rat, 'no target'); rat.root = 0; // the only foe in range is already rooted
   refuse(cle, cle.skill, cle, 'no target'); refuse(cle, cle.skill, rat, 'no target'); refuse(cle, cle.skill, pal, 'no target', undefined); // Charmander is two tiles from Clefairy: nothing legal from here
@@ -792,34 +803,35 @@ test('review: Brace earns no XP, useSkill refuses illegal calls without mutating
   const rec = { num: 1, level: 5, xp: 0, hp: 20, team: 0, x: 1, y: 3, root: 2, brace: 1, cd: 2, id: 9 }; const ru = g.restoreUnit(rec); same([ru.root, ru.brace, ru.cd], [2, 1, 2], 'restoreUnit itself keeps them (suspend path)');
   // 4. wording: menu, card and sheet all say every other turn / ready in n turns; nothing says "every 3"
   arena(T, Array(9).fill('.'.repeat(9))); G('VIEW.w = 480; VIEW.h = 270'); const c2 = place(T, 35, 20, 0, 4, 4), h2 = place(T, 4, 20, 0, 5, 4); h2.hp = 10; T.B().phase = 0;
-  BT.sel = c2; g.openActionMenu(c2); const it = BT.menu.items.find(i => i.id === 'skill'); assert(/every other turn/.test(it.sub) && !/every 3/.test(it.sub), it.sub);
-  g.menuChoose('skill'); let boxes = textHook(T); g.battleDraw(); let strs = boxes().map(b => b.text); assert(strs.some(s => /every other turn/.test(s)) && !strs.some(s => /next in 3|every 3/.test(s)), 'card wording: ' + strs.filter(s => /turn/.test(s)).join(' | ')); assert(strs.some(s => /\+12 XP/.test(s)), 'card shows the XP');
-  g.cancel(); g.cancel(); BT.mode = 'idle'; c2.cd = 2; BT.info = c2; BT.mode = 'unitinfo'; boxes = textHook(T); g.battleDraw(); strs = boxes().map(b => b.text); assert(strs.some(s => /ready in 2 turns/.test(s)), 'sheet: ' + strs.filter(s => /ready/.test(s)).join(' | ')); BT.mode = 'idle';
+  BT.sel = c2; g.openActionMenu(c2); const it = BT.menu.items.find(i => i.id === 'skill'), eot = G("TRX('every other turn')"); assert(it.sub.includes(eot) && !/every 3/.test(it.sub), it.sub);
+  g.menuChoose('skill'); let boxes = textHook(T); g.battleDraw(); let strs = boxes().map(b => b.text); assert(strs.some(s => s.includes(eot)) && !strs.some(s => /next in 3|every 3/.test(s)), 'card wording: ' + strs.filter(s => /turn/.test(s)).join(' | ')); assert(strs.includes(G("TR('+{0} XP', 12)")) || strs.some(s => s.includes(G("TR('+{0} XP', 12)"))), 'card shows the XP');
+  g.cancel(); g.cancel(); BT.mode = 'idle'; c2.cd = 2; BT.info = c2; BT.mode = 'unitinfo'; boxes = textHook(T); g.battleDraw(); strs = boxes().map(b => b.text); assert(strs.some(s => s.includes(G("TR('ready in {0} turns', 2)"))), 'sheet: ' + strs.join(' | ')); BT.mode = 'idle';
   // 5. narrow forecast rows: long move name, a conditional counter and a conditional follow-up keep damage, hit%, crit% and the condition; the crit KO tag survives
   for (const [w, h] of [[180, 390], [195, 422], [207, 448], [480, 270]]) {
     const T2 = loadGame(); const g2 = T2.g, G2 = T2.G; G2('VIEW.w = ' + w + '; VIEW.h = ' + h); arena(T2); G2('rnd = () => .5'); const BT2 = G2('BT');
     const a = place(T2, 6, 30, 0, 1, 1), d = place(T2, 10, 3, 1, 2, 1); const mv = a.moves.find(m => m.name === 'Flamethrower'); BT2.sel = a; BT2.targets = [d]; BT2.tIdx = 0; BT2.moveIdx = a.moves.indexOf(mv); BT2.mode = 'target';
     // the summary view answers the three questions on three lines (deal / answer / risk) and marks the KO; the detailed table is one toggle away
-    { const bx0 = textHook(T2); g2.drawHUD(); const all0 = bx0(); const fr0 = g2.forecastRect(); const inCard = all0.filter(b => b.y >= fr0.y + 55 && b.y < fr0.y + fr0.h - 16).map(b => b.text); assert(inCard.some(t => /^▸ FLAMETHROWER 555/.test(t)) && inCard.some(t => /^◂ TACKLE 2 · only if it survives/.test(t)) && inCard.some(t => /^Risk: /.test(t)) && inCard.includes('KO'), w + 'x' + h + ': summary lines: ' + inCard.join(' | ')); for (const b of all0) assert(b.x >= fr0.x - 1 && b.x + b.w <= fr0.x + fr0.w + 1 || b.y < fr0.y || b.y > fr0.y + fr0.h + 12, w + 'x' + h + ': summary text inside its card: ' + b.text); assert(g2.detailHit(fr0.x + 5, fr0.y + 60) && !g2.forecastHit(fr0.x + 5, fr0.y + 60) && !g2.moveSwitchHit(fr0.x + 5, fr0.y + 60), 'the lines are their own hit area'); g2.keyInput('detail'); assert.strictEqual(BT2.forecastDetail, true, 'V opens the details'); }
+    { const bx0 = textHook(T2); g2.drawHUD(); const all0 = bx0(); const fr0 = g2.forecastRect(); const inCard = all0.filter(b => b.y >= fr0.y + 55 && b.y < fr0.y + fr0.h - 16).map(b => b.text); assert(inCard.includes('KO') && inCard.some(t => /^▸ .* 555/.test(t)) && inCard.some(t => /^◂ .* 2 · /.test(t)) && inCard.some(t => t.startsWith(G2("TR('Risk: ')"))), w + 'x' + h + ': summary lines: ' + inCard.join(' | ')); if (EN) assert(inCard.some(t => /^▸ FLAMETHROWER 555/.test(t)) && inCard.some(t => /^◂ TACKLE 2 · only if it survives/.test(t)), w + 'x' + h + ': summary wording: ' + inCard.join(' | ')); for (const b of all0) assert(b.x >= fr0.x - 1 && b.x + b.w <= fr0.x + fr0.w + 1 || b.y < fr0.y || b.y > fr0.y + fr0.h + 12, w + 'x' + h + ': summary text inside its card: ' + b.text); assert(g2.detailHit(fr0.x + 5, fr0.y + 60) && !g2.forecastHit(fr0.x + 5, fr0.y + 60) && !g2.moveSwitchHit(fr0.x + 5, fr0.y + 60), 'the lines are their own hit area'); g2.keyInput('detail'); assert.strictEqual(BT2.forecastDetail, true, 'V opens the details'); }
     const rows = () => { const bx = textHook(T2); g2.drawHUD(); const all = bx(); const fr = g2.forecastRect(); for (const b of all) assert(b.x >= fr.x - 1 && b.x + b.w <= fr.x + fr.w + 1 || b.y < fr.y || b.y > fr.y + fr.h + 12, w + 'x' + h + ': forecast text inside its card: ' + b.text); const rb = all.filter(b => /^[▸◂] /.test(b.text)); return { rows: rb.map(b => b.text), cells: rb.map(r => all.filter(b => b.y === r.y && b.x > r.x).map(b => b.text)), ko: all.filter(b => b.text === 'KO').map(b => b.x), fr, table: fr.w >= 200 }; };
     let R = rows(); const tag = w + 'x' + h + ': '; assert.strictEqual(R.rows.length, 3, tag + 'three strike rows');
     if (R.table) { // wide cards lay the strikes out as a table: the name and condition in the first column, DMG / HIT / CRIT as cells
-      assert(/^▸ FLAMET\w*(  .*)?$/.test(R.rows[0]) && R.cells[0].includes('555') && R.cells[0].includes('100%') && R.cells[0].includes('4%') && R.cells[0].includes('KO'), tag + 'first row: ' + R.rows[0] + ' | ' + R.cells[0].join(' '));
-      assert(/^◂ TACKLE  if (Caterpie )?alive$/.test(R.rows[1]) && R.cells[1].includes('2') && R.cells[1].some(s => /^\d+%$/.test(s)) && R.cells[1].includes('4%'), tag + 'conditional counter keeps hit, crit and the condition: ' + R.rows[1] + ' | ' + R.cells[1].join(' '));
-      assert(/^▸ FLAMET\w*  if (Caterpie )?alive$/.test(R.rows[2]) && R.cells[2].includes('555') && R.cells[2].includes('100%') && R.cells[2].includes('4%'), tag + 'conditional follow-up too: ' + R.rows[2] + ' | ' + R.cells[2].join(' '));
+      assert((!EN || /^▸ FLAMET\w*(  .*)?$/.test(R.rows[0])) && R.cells[0].includes('555') && R.cells[0].includes('100%') && R.cells[0].includes('4%') && R.cells[0].includes('KO'), tag + 'first row: ' + R.rows[0] + ' | ' + R.cells[0].join(' '));
+      assert((!EN || /^◂ TACKLE  if (Caterpie )?alive$/.test(R.rows[1])) && R.cells[1].includes('2') && R.cells[1].some(s => /^\d+%$/.test(s)) && R.cells[1].includes('4%'), tag + 'conditional counter keeps hit, crit and the condition: ' + R.rows[1] + ' | ' + R.cells[1].join(' '));
+      assert((!EN || /^▸ FLAMET\w*  if (Caterpie )?alive$/.test(R.rows[2])) && R.cells[2].includes('555') && R.cells[2].includes('100%') && R.cells[2].includes('4%'), tag + 'conditional follow-up too: ' + R.rows[2] + ' | ' + R.cells[2].join(' '));
     } else {
-      assert(/^▸ FLAMET\w* 555 KO  100% · crit 4%/.test(R.rows[0]), tag + 'first row: ' + R.rows[0]);
-      assert(/^◂ TACKLE 2  \d+% · c(rit )?4% · if (Caterpie )?alive$/.test(R.rows[1]), tag + 'conditional counter keeps hit, crit and the condition: ' + R.rows[1]);
-      assert(/^▸ FLAMET\w* 555  100% · c(rit )?4% · if (Caterpie )?alive$/.test(R.rows[2]), tag + 'conditional follow-up too: ' + R.rows[2]);
+      const cond = G2("TR('if {0} alive', '')").trim().split(/\s+/).pop(); // the condition's last word: alive / sigue
+      if (EN) assert(/^▸ FLAMET\w* 555 KO  100% · crit 4%/.test(R.rows[0]), tag + 'first row: ' + R.rows[0]); else assert(/ 555 KO  100% · /.test(R.rows[0]) && /4%/.test(R.rows[0]), tag + 'first row: ' + R.rows[0]);
+      assert(EN ? /^◂ TACKLE 2  \d+% · c(rit )?4% · if (Caterpie )?alive$/.test(R.rows[1]) : / 2  \d+% · .*4% · .*/.test(R.rows[1]) && R.rows[1].endsWith(cond), tag + 'conditional counter keeps hit, crit and the condition: ' + R.rows[1]);
+      assert(EN ? /^▸ FLAMET\w* 555  100% · c(rit )?4% · if (Caterpie )?alive$/.test(R.rows[2]) : / 555  100% · .*4% · .*/.test(R.rows[2]) && R.rows[2].endsWith(cond), tag + 'conditional follow-up too: ' + R.rows[2]);
     }
     assert(R.ko.length >= 1, tag + 'KO tag drawn'); assert(g2.textWidth(R.rows[0]) <= R.fr.w - 12 && g2.textWidth(R.rows[1]) <= R.fr.w - 12 && g2.textWidth(R.rows[2]) <= R.fr.w - 12, tag + 'rows fit the card');
     // a critical that would KO where the normal hit does not: the crit part reads "crit 4% KO" (a second KO tag next to the crit cell on wide cards)
-    const fc = g2.forecast(a, d, mv, a); d.hp = fc.a.dmg + 1; R = rows(); if (!R.table) assert(/^▸ FLAMET\w* 555  100% · c(rit )?4% KO/.test(R.rows[0]), tag + 'crit KO warning: ' + R.rows[0]); assert(R.ko.length >= 2, tag + 'crit KO tag drawn (' + R.ko.length + ')');
+    const fc = g2.forecast(a, d, mv, a); d.hp = fc.a.dmg + 1; R = rows(); if (!R.table) assert(/ 555  100% · .*4% KO/.test(R.rows[0]), tag + 'crit KO warning: ' + R.rows[0]); assert(R.ko.length >= 2, tag + 'crit KO tag drawn (' + R.ko.length + ')');
     const HUD = G2('HUD'); const fr = g2.forecastRect(); assert(inside(fr, w, h)); for (const b of HUD.hits) assert(inside(b, w, h) && !overlaps(fr, b), tag + 'forecast clear of ' + b.label); assert(g2.forecastHit(fr.x + 5, fr.y + 5) && g2.moveSwitchHit(fr.x + 5, fr.y + fr.h - 6), tag + 'hit areas intact');
     BT2.mode = 'help'; for (let p = 0; p < G2('HELP_PAGES').length; p++) { BT2.helpPage = p; g2.battleDraw(); const hr = g2.helpRect(); assert(inside(hr, w, h) && hr.lines.every(l => g2.textWidth(l) <= hr.w - 16), tag + 'help page ' + p + ' fits'); }
   }
   assert.strictEqual(g.fitForecastLine({ side: 'a', name: 'HYPER BEAM', dmg: 12, ko: false, hit: 90, crit: 4, critKo: true, braced: true, eff: '×1.5', drain: 3, cond: 'only if Wigglytuff survives' }, 100).text.length > 0, true);
-  const tiny = g.fitForecastLine({ side: 'c', name: 'THUNDERBOLT', dmg: 12, ko: false, hit: 85, crit: 24, critKo: false, braced: false, eff: '', drain: 0, cond: 'only if Wigglytuff survives' }, 150); assert(/85%/.test(tiny.text) && /c(rit )?24%/.test(tiny.text) && /if (Wigglytuff )?alive/.test(tiny.text) && g.textWidth(tiny.text) <= 150, 'the fitter keeps odds and condition at 150 px: ' + tiny.text);
+  const tiny = g.fitForecastLine({ side: 'c', name: 'THUNDERBOLT', dmg: 12, ko: false, hit: 85, crit: 24, critKo: false, braced: false, eff: '', drain: 0, cond: 'only if Wigglytuff survives' }, 150); assert(/85%/.test(tiny.text) && /24%/.test(tiny.text) && (!EN || /c(rit )?24%/.test(tiny.text) && /if (Wigglytuff )?alive/.test(tiny.text)) && g.textWidth(tiny.text) <= 150, 'the fitter keeps odds and condition at 150 px: ' + tiny.text);
 });
 
 
@@ -831,9 +843,9 @@ test('skill card: Root/Mend/Brace text, panel and hint stay inside 180/195/512 w
     const boxes = textHook(T); g.battleDraw(); const all = boxes(); const tag = w + ' ' + u.name + ': '; const r = g.skillCardRect();
     for (const b of all) assert(b.x >= 0 && b.x + b.w <= w && b.y >= 0 && b.y + b.h <= 390, tag + 'text inside the view: ' + b.text);
     const card = all.filter(b => b.y >= r.y && b.y < r.y + r.h); for (const b of card) assert(b.x >= r.x + 2 && b.x + b.w <= r.x + r.w - 2, tag + 'text inside the card: ' + b.text);
-    const joined = r.cost.join(' '); assert(/uses the action/.test(joined), tag + 'cost present'); if (u.skill.cd) assert(/every other turn/.test(joined), tag + 'cadence present'); if (u.skill.xp) assert(/\+12 XP/.test(joined), tag + 'XP present'); else assert(!/XP/.test(joined), tag + 'Brace shows no XP');
+    const joined = r.cost.join(' '), tr = G('TR'), xp = tr('+{0} XP', 12).replace(/\+\d+ /, ''); assert(joined.includes(tr('uses the action')), tag + 'cost present'); if (u.skill.cd) assert(joined.includes(tr('every other turn')), tag + 'cadence present'); if (u.skill.xp) assert(joined.includes(tr('+{0} XP', 12)), tag + 'XP present'); else assert(!joined.includes(xp), tag + 'Brace shows no XP');
     assert(r.cost.every(l => g.textWidth(l) <= r.w - 12), tag + 'footer lines fit'); assert(all.some(b => b.text === r.cost[r.cost.length - 1]), tag + 'last footer line rendered');
-    const hint = all.find(b => /confirm/.test(b.text)); assert(hint && hint.y >= r.y + r.h, tag + 'hint below the card'); assert(inside(r, w, 390), tag + 'card inside'); for (const p of HUD.panels) assert(inside(p, w, 390), tag + 'panel inside'); for (const b of HUD.hits) assert(inside(b, w, 390) && !overlaps(r, b), tag + 'card clear of ' + b.label);
+    const hint = all.find(b => b.text.includes(G("TRX('confirm')"))); assert(hint && hint.y >= r.y + r.h, tag + 'hint below the card: ' + JSON.stringify(hint) + ' card ' + JSON.stringify([r.x, r.y, r.w, r.h])); assert(inside(r, w, 390), tag + 'card inside'); for (const p of HUD.panels) assert(inside(p, w, 390), tag + 'panel inside'); for (const b of HUD.hits) assert(inside(b, w, 390) && !overlaps(r, b), tag + 'card clear of ' + b.label);
     assert(r.h >= 40 + r.cost.length * 9, tag + 'panel tall enough for ' + r.cost.length + ' footer lines');
     // pointer: a tap inside the card confirms, a tap on empty board cancels back to the menu
     const before = JSON.stringify([u.cd, u.brace, t.hp, t.root]); g.pointerInput({ type: 'down', x: r.x + 5, y: r.y + 5, btn: 0 }); g.pointerInput({ type: 'up', x: r.x + 5, y: r.y + 5, btn: 0 }); assert.strictEqual(BT.mode, 'anim', tag + 'tap on the card confirms'); assert.notStrictEqual(JSON.stringify([u.cd, u.brace, t.hp, t.root]), before, tag + 'skill applied');
@@ -853,7 +865,7 @@ test('versus rules: capture the flag, king of the hill, fog of war vision and am
   me.x = 5; me.y = 5; g.syncFlags(); assert(f1.x === 5 && f1.y === 5, 'the flag follows its carrier');
   me.hp = 0; g.syncFlags(); assert.strictEqual(f1.carrier, null, 'a fainted carrier drops the flag'); assert(f1.x === 5 && f1.y === 5, 'dropped where it fell');
   const foe = B.units.find(u => u.team === 1); foe.x = 5; foe.y = 5; ev = g.versusAfterAction(foe); assert(ev && ev.what === 'returned' && f1.x === f1.home.x && f1.y === f1.home.y, 'its owner sends a dropped flag home');
-  const me2 = B.units.filter(u => u.team === 0 && u.hp > 0)[0]; me2.x = f1.home.x; me2.y = f1.home.y; g.versusAfterAction(me2); me2.x = f0.home.x; me2.y = f0.home.y; ev = g.versusAfterAction(me2); assert(ev && ev.what === 'captured', 'carrying it home captures'); assert.strictEqual(g.checkObjective(), 'p1'); assert(/captured/.test(B.endReason));
+  const me2 = B.units.filter(u => u.team === 0 && u.hp > 0)[0]; me2.x = f1.home.x; me2.y = f1.home.y; g.versusAfterAction(me2); me2.x = f0.home.x; me2.y = f0.home.y; ev = g.versusAfterAction(me2); assert(ev && ev.what === 'captured', 'carrying it home captures'); assert.strictEqual(g.checkObjective(), 'p1'); assert.strictEqual(B.endReason, G("TR('Player {0} captured the flag!', 1)"));
   // king of the hill
   g.launchVersus({ seed: 5, level: 20, wild: false, mode: 'hill', arena: 'm', fog: false, turns: 30, teams: [[25, 5], [4, 7]], order: [0, 1, 1, 0], size: 2, cur: 0 });
   B = T.B(); assert(B.hill && B.hill.need === 3, 'hill needs three turns'); const h = B.hill; for (const u of B.units.filter(u => u.team === 0)) { u.x = h.x; u.y = h.y; } B.units.filter(u => u.team === 0)[1].x = h.x + 1;
@@ -912,11 +924,18 @@ test('title and options: your party on the knoll with its Ace, the trainer card,
   g.goScene('title'); g.titleDraw(); const team = G('SC.titleTeam'), ace = G('SC.titleAce'); assert.strictEqual(team.length, 3); assert.strictEqual(G('DEX')[team[ace]].name.startsWith('Char'), true, 'the Ace stands beside the Tactician: ' + team);
   assert.strictEqual(G('SC.titleItems')[0].label, 'CONTINUE'); assert(G('SC.titleItems').some(it => it.label === 'OPTIONS'), 'OPTIONS is on the menu');
   const oi = G("SC.titleItems.findIndex(it => it.label === 'OPTIONS')"); g.titleActivate(oi); g.titleUpdate(.21); assert.strictEqual(G('SC.name'), 'options');
-  g.optionsDraw(); const before = G('PREF.battle'); G('SC.i = 1'); g.optionsInput({ type: 'key', key: 'right' }); assert.notStrictEqual(G('PREF.battle'), before, 'right changes the battle scene'); assert.strictEqual(store.get('pk_battle'), G('PREF.battle'), 'and it is kept');
-  G('SC.i = 2'); g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('PREF.motion'), 'full'); g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('PREF.motion'), 'reduced'); assert.strictEqual(G('REDUCED'), true, 'Reduced motion applies at once'); g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('PREF.motion'), 'auto');
+  const row = id => G("optionRows().findIndex(r => r.id === '" + id + "')");
+  g.optionsDraw(); const before = G('PREF.battle'); G('SC.i = ' + row('battle')); g.optionsInput({ type: 'key', key: 'right' }); assert.notStrictEqual(G('PREF.battle'), before, 'right changes the battle scene'); assert.strictEqual(store.get('pk_battle'), G('PREF.battle'), 'and it is kept');
+  G('SC.i = ' + row('motion')); g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('PREF.motion'), 'full'); g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('PREF.motion'), 'reduced'); assert.strictEqual(G('REDUCED'), true, 'Reduced motion applies at once'); g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('PREF.motion'), 'auto');
   G("SC.i = optionRows().findIndex(r => r.id === 'erase')"); g.optionsInput({ type: 'key', key: 'ok' }); assert(G('SC.data.confirm'), 'erasing asks first'); g.optionsInput({ type: 'key', key: 'back' }); assert(store.get('pk_save'), 'KEEP keeps the journey');
   g.optionsInput({ type: 'key', key: 'ok' }); g.optionsInput({ type: 'key', key: 'right' }); g.optionsInput({ type: 'key', key: 'ok' }); assert(!store.get('pk_save'), 'ERASE removes the journey'); assert.strictEqual(G('SC.name'), 'title');
   g.openOptions(); g.optionsInput({ type: 'key', key: 'back' }); assert.strictEqual(G('SC.name'), 'title');
+  // the language: the first row switches it at once, keeps it, and the title follows (from English, whatever the run's language)
+  G("setLang('en')"); g.openOptions(); G('SC.i = ' + row('lang')); g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('LANG'), 'es'); assert.strictEqual(store.get('pk_lang'), 'es', 'the language is kept');
+  assert.strictEqual(G("optionRows().find(r => r.id === 'lang').value"), 'Español'); assert.strictEqual(G("TR('NEW GAME')"), 'NUEVA PARTIDA'); assert.strictEqual(G('CHAPTERS[1].title'), 'Bosque Verde', 'the fronts are renamed');
+  assert.strictEqual(G("mvName('Flamethrower')"), 'Lanzallamas'); assert.strictEqual(G("TR('{0} targets', 3)"), '3 objetivos'); assert.strictEqual(G("TR('ON|power')"), 'ACTIVO'); assert.strictEqual(G("TRX('Charmander Lv12')"), 'Charmander Nv12', 'levels read Nv');
+  g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('LANG'), 'en'); assert.strictEqual(G('CHAPTERS[1].title'), 'Viridian Forest', 'English comes back whole'); assert.strictEqual(G("TR('ON|power')"), 'ON');
+  G('setLang(' + JSON.stringify(process.env.PK_LANG === 'es' ? 'es' : 'en') + ')');
 });
 test('the opening: PRESS START, then night, the commanders face off and the logo lands; skippable, it ends on the title with the logo in place', T => {
   const { g, G, store } = T;
@@ -924,7 +943,7 @@ test('the opening: PRESS START, then night, the commanders face off and the logo
     G(`VIEW.w = ${w}; VIEW.h = ${h}; CLOCK.frame = 1`); store.delete('pk_intro'); assert.strictEqual(g.introWanted(), true, 'a first visit gets the opening');
     g.goScene('splash'); g.splashDraw(); G('SC.t = .5'); g.splashInput({ type: 'key', key: 'ok' }); assert.strictEqual(G('SC.name'), 'intro', 'PRESS START opens the opening'); assert.strictEqual(store.get('pk_intro'), '1', 'and it will not play by itself again');
     // the held moments (the caption typed out, the commanders facing off, the logo in place) fit the screen
-    const T0 = G('INTRO_T'); for (const at of [3.0, T0.night + 1.5, T0.vs + 2.55]) { const boxes = textHook(T); G('SC.t = ' + at); g.introDraw(); for (const b of boxes()) assert(b.x >= -1 && b.x + b.w <= w + 1 && b.y >= -1 && b.y <= h, w + 'x' + h + ' at ' + at + 's: opening text inside the view: ' + JSON.stringify(b)); }
+    const T0 = G('INTRO_T'); for (const at of [1.0, T0.credit + 3.0, T0.night + 1.5, T0.vs + 2.55]) { const boxes = textHook(T); G('SC.t = ' + at); g.introDraw(); for (const b of boxes()) assert(b.x >= -1 && b.x + b.w <= w + 1 && b.y >= -1 && b.y <= h, w + 'x' + h + ' at ' + at + 's: opening text inside the view: ' + JSON.stringify(b)); }
     G('SC.t = 0'); let n = 0; while (G('SC.name') === 'intro' && n++ < 800) { G('SC.t += 1 / 60'); g.titleUpdate(1 / 60); g.introDraw(); }
     assert.strictEqual(G('SC.name'), 'title', w + 'x' + h + ': the opening ends on the title'); assert.strictEqual(G('SC.titleFx.logoSettled'), true, 'with the logo already in place');
     g.startIntro(); G('SC.t = .2'); g.introInput({ type: 'key', key: 'ok' }); assert.strictEqual(G('SC.name'), 'intro', 'not skipped in its first moment'); G('SC.t = 1'); g.introInput({ type: 'key', key: 'ok' }); assert.strictEqual(G('SC.name'), 'title', 'any key skips it');
@@ -939,6 +958,7 @@ function run() {
     catch (e) { failed++; console.log('  FAIL ' + t.name + '\n       ' + (e && e.stack ? e.stack.split('\n').slice(0, 4).join('\n       ') : e)); }
   }
   console.log(failed ? `${failed} of ${tests.length} tests failed` : `${tests.length} tests passed`);
+  if (process.env.PK_LANG === 'es') { const all = new Map(); for (const get of MISSES) for (const [k, n] of get()) all.set(k, (all.get(k) || 0) + n); const rows = [...all].sort((a, b) => b[1] - a[1]).map(([k, n]) => n + '\t' + JSON.stringify(k)); fs.writeFileSync(path.join(ROOT, 'tools', 'i18n-misses.txt'), rows.join('\n') + '\n'); console.log(rows.length + ' untranslated strings → tools/i18n-misses.txt'); }
   process.exit(failed ? 1 : 0);
 }
 if (require.main === module) run(); else module.exports = { loadGame, arena, place }; // reusable headless harness

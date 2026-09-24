@@ -217,7 +217,9 @@ function uiButton(x, y, w, h, label, opt = {}) {
   hline(x + 2, fy, w - 4, shade(face, .45)); hline(x + 2, fy + 1, w - 4, shade(face, .14)); vline(x + 1, fy + 1, fh - 4, shade(face, .15)); vline(x + w - 2, fy + 1, fh - 4, shade(face, -.2)); hline(x + 2, fy + fh - 3, w - 4, shade(face, -.28));
   if (opt.hot && !dis && !REDUCED && CLOCK.frame) { const sx = Math.round(((CLOCK.t * 70) % (w + 40)) - 20); ctx.save(); ctx.beginPath(); ctx.rect(x + 2, fy + 1, w - 4, fh - 4); ctx.clip(); ctx.globalAlpha = .22; for (let i = 0; i < 3; i++) vline(x + sx + i, fy + 1, fh - 4, '#ffffff'); ctx.restore(); }
   const ink = dis ? UI.dim : opt.ink || (opt.hot ? UI.hi : UI.ink); const iw = opt.icon ? 12 : 0;
-  const big = opt.big && h >= 15; const lw = textWidth(big ? String(label).toUpperCase() : label, big ? BIG : FONT) + iw; let lx = x + Math.round((w - lw) / 2);
+  const room = w - 6 - (opt.on != null ? 9 : 0); let big = opt.big && h >= 15; if (big && textWidth(String(label).toUpperCase(), BIG) + iw > room) big = false; // a label too long for the big face (often in Spanish) drops to the small one
+  if (!big && textWidth(label) + iw > room && typeof fitLabel === 'function') label = fitLabel(label, room - iw);
+  const lw = textWidth(big ? String(label).toUpperCase() : label, big ? BIG : FONT) + iw; let lx = x + Math.round((w - lw) / 2);
   const cy = fy + Math.round((fh - 2) / 2);
   if (opt.icon) { iconAt(opt.icon, lx, cy - 5, dis ? UI.dim : ink); lx += iw; }
   if (opt.on != null) { const ly = cy - 3; lx -= 5; rect(lx + lw + 4, ly, 5, 5, UI.inset); rect(lx + lw + 5, ly + 1, 3, 3, opt.on ? UI.gold : '#3a4068'); if (opt.on) px(lx + lw + 5, ly + 1, '#fff3b0'); } // toggle lamp
@@ -256,10 +258,12 @@ function shinyTitle(s, cx, y, col = UI.gold, dark = UI.goldDark) {
 }
 // Screen chrome for setup / result scenes: a headline with a gold rule, and a footer band for buttons and hints.
 function screenTitle(title, sub, y = 6) {
-  const W = VIEW.w, k = easeOutBack(clamp(appear('title:' + title) / .35, 0, 1)), T = String(title).toUpperCase(), dw = displayWidth(T) + 2, yy = y + Math.round((1 - k) * -14);
+  const W = VIEW.w, k = easeOutBack(clamp(appear('title:' + title) / .35, 0, 1)), yy = y + Math.round((1 - k) * -14); let T = String(TRX(title)).toUpperCase();
+  if (displayWidth(T) + 2 > W - 16 && textWidth(T, BIG) > W - 8 && T.includes(' · ')) T = T.slice(T.lastIndexOf(' · ') + 3); // too long for a phone: "FRONT 6 · POWER PLANT" keeps the name
+  const dw = displayWidth(T) + 2;
   // the game's display face when the title fits, the plain rotulo face (with its rule) when it does not
   if (dw <= W - 16) { displayC(T, W / 2, yy - 1, { style: 'gold', slant: 1, shine: true, phase: T.length * .37 }); return y + (sub ? (textC(sub, W / 2, y + 17, UI.muted, { outline: UI.shadow }), 28) : 16); }
-  const tw = textWidth(T, BIG); shinyTitle(title, W / 2, yy, UI.gold, UI.goldDark);
+  const tw = textWidth(T, BIG); shinyTitle(T, W / 2, yy, UI.gold, UI.goldDark);
   const rw = Math.round((tw + 28) * clamp(k, 0, 1)); rect(W / 2 - rw / 2, y + 12, rw, 1, UI.gold); rect(W / 2 - rw / 2, y + 13, rw, 1, UI.goldDark); if (rw > 8) { px(W / 2 - rw / 2 - 2, y + 12, UI.gold); px(W / 2 + rw / 2 + 1, y + 12, UI.gold); }
   if (sub) textC(sub, W / 2, y + 17, UI.muted, { outline: UI.shadow }); return y + (sub ? 28 : 16);
 }
@@ -268,7 +272,7 @@ function screenTitle(title, sub, y = 6) {
 // The header names the screen and shows where the player is on that path, done steps ticked; the footer keeps the way
 // back on the left and the one way forward on the right, named after the step it leads to.
 function stepper(steps, cur, cx, y, onStep) {
-  const gap = 12, parts = steps.map((s, i) => (i < cur ? '✓ ' : '') + s), w = parts.reduce((a, p) => a + textWidth(p), 0) + gap * (parts.length - 1); let x = Math.round(cx - w / 2);
+  const gap = 12, parts = steps.map((s, i) => (i < cur ? '✓ ' : '') + TRX(s)), w = parts.reduce((a, p) => a + textWidth(p), 0) + gap * (parts.length - 1); let x = Math.round(cx - w / 2);
   parts.forEach((p, i) => { const tw = textWidth(p), done = i < cur, now = i === cur;
     if (now) { rrect(x - 4, y - 2, tw + 8, 11, '#2a2470', 2); outline(x - 4, y - 2, tw + 8, 11, UI.goldDark); }
     text(p, x, y, done ? '#8ae89a' : now ? UI.gold : UI.dim, { shadow: UI.inset });

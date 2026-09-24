@@ -34,7 +34,7 @@ function vsRandom(S) { const free = VS_ROSTER.filter(n => !S.teams[0].includes(n
 const VS_RULES = [
   { k: 'mode', label: 'MODE', vals: ['elim', 'ctf', 'hill'], show: v => VS_MODES[v].name },
   { k: 'arena', label: 'ARENA', vals: ['s', 'm', 'l'], show: v => VS_ARENAS[v].name + ' ' + VS_ARENAS[v].w + '×' + VS_ARENAS[v].h },
-  { k: 'seed', label: 'MAP', vals: null, show: v => 'Arena #' + v },
+  { k: 'seed', label: 'MAP', vals: null, show: v => TR('Arena #{0}', v) },
   { k: 'fog', label: 'FOG', vals: [false, true], show: v => v ? 'On' : 'Off' },
   { k: 'co0', label: 'P1 COMMANDER', vals: CO_ORDER.slice(1), show: v => COS[v].name },
   { k: 'co1', label: 'P2 COMMANDER', vals: CO_ORDER.slice(1), show: v => COS[v].name },
@@ -64,7 +64,7 @@ function versusDraw() {
   drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2, (H - S.bd.canvas.height) / 2, .8); SC.hits = [];
   const picks = S.teams[0].length + S.teams[1].length, full = picks >= S.size * 2; const cur = full ? -1 : S.order[picks]; S.cur = cur;
   screenTitle('VERSUS', null, 3);
-  textC(full ? 'Both teams are ready!' : 'PLAYER ' + (cur + 1) + ' picks  ·  ' + (picks + 1) + ' / ' + S.size * 2, W / 2, 18, full ? UI.green : cur === 0 ? '#8ab4ff' : '#ff9a9a', { outline: UI.shadow });
+  textC(full ? 'Both teams are ready!' : TR('PLAYER {0} picks  ·  {1} / {2}', cur + 1, picks + 1, S.size * 2), W / 2, 18, full ? UI.green : cur === 0 ? '#8ab4ff' : '#ff9a9a', { outline: UI.shadow });
   const narrow = narrowView(); const bh = btnH(); let gy;
   // arena preview with the mode furniture (flag bases, the hill, deploy zones)
   const preview = (mx, my, pwid, phei) => { const sc = pwid / S.bd.canvas.width; ctx.drawImage(S.bd.canvas, mx, my, pwid, phei); outline(mx - 1, my - 1, pwid + 2, phei + 2, UI.border);
@@ -81,10 +81,10 @@ function versusDraw() {
   } else {
     // team panels left / right, arena preview in the middle
     const pw = Math.min(140, Math.floor((W - 110) / 2) - 8), ph = 56, py = 28; const p1x = 6, p2x = W - pw - 6;
-    const teamPanel = (t, x) => { const coId = t === 0 ? S.co0 : S.co1, co = COS[coId]; panel(x, py, pw, ph, { title: 'PLAYER ' + (t + 1) + (co ? ' · ' + co.name.toUpperCase() : ''), fill: t === 0 ? '#17264a' : '#3a1a22', border: cur === t ? UI.gold : UI.border });
+    const teamPanel = (t, x) => { const coId = t === 0 ? S.co0 : S.co1, co = COS[coId]; panel(x, py, pw, ph, { title: TR('PLAYER {0}', t + 1) + (co ? ' · ' + co.name.toUpperCase() : ''), fill: t === 0 ? '#17264a' : '#3a1a22', border: cur === t ? UI.gold : UI.border });
       { const face = co && trainerFace(co.tr); if (face) { const fx = x + pw - 22, fy = py - 9; rect(fx - 1, fy - 1, 20, 20, co.col); ctx.drawImage(face, fx, fy); outline(fx - 2, fy - 2, 22, 22, UI.inset); hit(fx - 2, fy - 2, 22, 22, () => vsCycle(S, VS_RULES.find(r => r.k === (t === 0 ? 'co0' : 'co1')), 1), 'P' + (t + 1) + ' CO'); } }
       const sw = Math.floor((pw - 12) / S.size); for (let i = 0; i < S.size; i++) { const sx = x + 6 + i * sw; portraitBg(sx, py + 8, sw - 2, 34, t); const n = S.teams[t][i]; if (n != null) { drawMon(n, sx + (sw - 2) / 2, py + 40, { flip: t === 1, outline: i === 0 ? UI.gold : null }); if (i === 0) drawCrown(sx + 2, py + 10); hit(sx, py + 8, sw - 2, 34, () => { S.teams[t].splice(i, 1); Audio.sfx('cancel'); }); } else if (cur === t && i === S.teams[t].length) { if (Math.floor(SC.t * 3) % 2) outline(sx, py + 8, sw - 2, 34, UI.gold); } else textC('?', sx + (sw - 2) / 2, py + 22, '#ffffff40'); }
-      text(S.teams[t].length + '/' + S.size + ' picked', x + 6, py + ph - 10, UI.muted); textR(S.teams[t].length >= S.size ? 'READY' : cur === t ? 'PICKING…' : 'waiting', x + pw - 6, py + ph - 10, S.teams[t].length >= S.size ? UI.green : cur === t ? UI.gold : UI.muted); };
+      text(TR('{0}/{1} picked', S.teams[t].length, S.size), x + 6, py + ph - 10, UI.muted); textR(S.teams[t].length >= S.size ? 'READY' : cur === t ? 'PICKING…' : 'waiting', x + pw - 6, py + ph - 10, S.teams[t].length >= S.size ? UI.green : cur === t ? UI.gold : UI.muted); };
     teamPanel(0, p1x); teamPanel(1, p2x);
     const mw = p2x - (p1x + pw) - 12; const sc = Math.min(mw / S.bd.canvas.width, (ph - 4) / S.bd.canvas.height); const pwid = Math.round(S.bd.canvas.width * sc), phei = Math.round(S.bd.canvas.height * sc); preview(Math.round(W / 2 - pwid / 2), py + Math.round((ph - phei) / 2), pwid, phei);
     gy = py + ph + 8;
@@ -98,13 +98,13 @@ function versusDraw() {
     if (t >= 0) { rrect(x + cw - 13, y + 2, 11, 8, teamColor(t), 1); textC('P' + (t + 1), x + cw - 8, y + 2, '#ffffff'); }
     hit(x, y, cw, chh, () => { SC.i = i; vsPick(S, n); }); });
   const d = DEX[VS_ROSTER[SC.i]]; const iy = gy + rows * chh + 5;
-  if (d) { const u = makeUnit(d.num, S.level, 0); text(d.name, gx, iy, UI.ink, { outline: UI.shadow }); d.types.forEach((tp, j) => typeBadge(tp, gx + textWidth(d.name) + 6 + j * 26, iy - 1, 24)); const mv = u.moves.slice(0, 3).map(m => m.name).join(' / '); const R = ROLES[u.role]; if (narrow) { let s = mv; const avail = gx + cols * cw - (gx + textWidth(d.name) + 6 + d.types.length * 26 + 4); while (textWidth(s) > avail && s.length > 4) s = s.slice(0, -1); textR(s, gx + cols * cw, iy, UI.info, { outline: UI.shadow }); } else { textR(mv, gx + cols * cw, iy, UI.info, { outline: UI.shadow }); text('HP ' + u.maxHp + '  ATK ' + u.atk + '  DEF ' + u.def + '  SPA ' + u.spa + '  SPE ' + u.spe + '  MOV ' + u.mov, gx, iy + 10, UI.muted, { outline: UI.shadow }); const rx0 = gx + textWidth(d.name) + 6 + d.types.length * 26 + 4; let rs = R.name + ': ' + (u.skill ? u.skill.blurb.replace(/^[^:]+: /, '') : 'plain attacker'); while (textWidth(rs) > gx + cols * cw - textWidth(mv) - 8 - rx0 && rs.length > 8) rs = rs.slice(0, -1); text(rs, rx0, iy, R.col, { outline: UI.shadow }); } }
+  if (d) { const u = makeUnit(d.num, S.level, 0); text(d.name, gx, iy, UI.ink, { outline: UI.shadow }); d.types.forEach((tp, j) => typeBadge(tp, gx + textWidth(d.name) + 6 + j * 26, iy - 1, 24)); const mv = u.moves.slice(0, 3).map(mvName).join(' / '); const R = ROLES[u.role]; if (narrow) { const avail = gx + cols * cw - (gx + textWidth(d.name) + 6 + d.types.length * 26 + 4); textR(fitLabel(mv, avail), gx + cols * cw, iy, UI.info, { outline: UI.shadow }); } else { textR(mv, gx + cols * cw, iy, UI.info, { outline: UI.shadow }); text(TR('HP {0}  ATK {1}  DEF {2}  SPA {3}  SPE {4}  MOV {5}', u.maxHp, u.atk, u.def, u.spa, u.spe, u.mov), gx, iy + 10, UI.muted, { outline: UI.shadow }); const rx0 = gx + textWidth(d.name) + 6 + d.types.length * 26 + 4; const rs = R.name + ': ' + (u.skill ? u.skill.blurb.replace(/^[^:]+: /, '') : TR('plain attacker')); text(fitLabel(rs, gx + cols * cw - textWidth(mv) - 8 - rx0), rx0, iy, R.col, { outline: UI.shadow }); } }
   const go = () => { if (!full) { Audio.sfx('error'); return; } Audio.sfx('select'); S.go(); }, fy = setupFootTop();
   if (narrow) {
     const rulesY = iy + 12, rows = Math.ceil(VS_RULES.length / 2), rh = clamp(Math.floor((fy - 6 - rulesY) / rows) - 2, 14, 20);
     vsRuleGrid(S, 6, rulesY, W - 12, rh, VS_RULES);
   } else {
-    const rx = gx + cols * cw + 10, rw = W - 6 - rx, ry = gy; const rh = 14, lines = wrap(VS_MODES[S.mode].blurb + (S.fog ? ' Fog of war hides foes beyond your Pokémon\'s sight.' : '') + ' Each commander\'s Ace joins the team.', rw - 16); const nl = Math.min(lines.length, Math.max(0, Math.floor((fy - 6 - ry - 21 - VS_RULES.length * rh - 10) / 9)));
+    const rx = gx + cols * cw + 10, rw = W - 6 - rx, ry = gy; const rh = 14, lines = wrap(VS_MODES[S.mode].blurb + (S.fog ? ' ' + TR('Fog of war hides foes beyond your Pokémon\'s sight.') : '') + ' ' + TR('Each commander\'s Ace joins the team.'), rw - 16); const nl = Math.min(lines.length, Math.max(0, Math.floor((fy - 6 - ry - 21 - VS_RULES.length * rh - 10) / 9)));
     const p = panel(rx, ry, rw, Math.min(fy - 6 - ry, 21 + VS_RULES.length * rh + 8 + nl * 9 + 6), { header: 'MATCH RULES', headerRight: VS_MODES[S.mode].short + (S.fog ? ' · FOG' : '') });
     vsRuleRows(S, rx + 4, p.cy - 2, rw - 8, rh, VS_RULES);
     const by0 = p.cy - 2 + VS_RULES.length * rh + 3; if (nl) { hline(rx + 5, by0, rw - 10, UI.inset); lines.slice(0, nl).forEach((l, i) => text(l, rx + 8, by0 + 4 + i * 9, UI.muted)); }
@@ -135,12 +135,12 @@ function cardDraw() {
   if (!SC.data.bd) SC.data.bd = makeBackdrop(ch.map); const bd = SC.data.bd; drawBackdrop(bd, (W - bd.canvas.width) / 2 - t * 8, (H - bd.canvas.height) / 2, .7);
   const bars = Math.round(H * .2 * easeOut(clamp(t / .35, 0, 1))); rect(0, 0, W, bars, '#05040f'); rect(0, H - bars, W, bars, '#05040f'); hline(0, bars, W, UI.goldDark); hline(0, H - bars - 1, W, UI.goldDark);
   // the ribbon sits just over the name and the goal just under it, whatever the name's scale
-  const cy = Math.round(H * .46), label = ch.num ? 'FRONT ' + ch.num : ch.label || 'SKIRMISH', scale = displayStampScale(ch.title, W), ty = cy - Math.round(5.5 * scale) - 4, below = ty + 11 * scale + scale + 7;
+  const cy = Math.round(H * .46), label = ch.num ? TR('FRONT {0}', ch.num) : TR(ch.label || 'SKIRMISH'), scale = displayStampScale(ch.title, W), ty = cy - Math.round(5.5 * scale) - 4, below = ty + 11 * scale + scale + 7;
   const rib = REDUCED ? 0 : Math.round((1 - easeOut(clamp((t - .15) / .3, 0, 1))) * -W * .6), rw = textWidth(label) + 16; ribbonTab(label, Math.round(W / 2 - rw / 2) + rib, ty - 17);
   drawStampDisplay(ch.title, W / 2, ty, t - .25 + END_BEATS.letters, 'gold', scale);
   const landed = [...ch.title].filter((c2, i) => c2 !== ' ' && t - .25 >= i * .06 + .2).length; if (landed > (SC.data.stamped || 0)) { SC.data.stamped = landed; if (!REDUCED) Audio.sfx(landed === [...ch.title].filter(c2 => c2 !== ' ').length ? 'hit' : 'stamp'); }
-  if (t > .9) { ctx.globalAlpha = clamp((t - .9) / .3, 0, 1); const goal = objectiveTextFor(ch.map.objective, ch.map).replace('Objective: ', ''); const gl = goal[0].toUpperCase() + goal.slice(1), gw = textWidth(gl) + 14; iconAt('flag', Math.round(W / 2 - gw / 2), below - 1, UI.gold); text(gl, Math.round(W / 2 - gw / 2) + 14, below, UI.ink, { outline: UI.inset });
-    const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2); if (foes.length) textC(foes.length + ' foes' + (wild.length ? ' · ' + wild.length + ' wild' : '') + ' · Lv ' + Math.min(...foes.map(u => u.level)) + '-' + Math.max(...foes.map(u => u.level)), W / 2, below + 12, UI.muted, { outline: UI.inset }); ctx.globalAlpha = 1; }
+  if (t > .9) { ctx.globalAlpha = clamp((t - .9) / .3, 0, 1); const gl = goalText(ch.map.objective, ch.map), gw = textWidth(gl) + 14; iconAt('flag', Math.round(W / 2 - gw / 2), below - 1, UI.gold); text(gl, Math.round(W / 2 - gw / 2) + 14, below, UI.ink, { outline: UI.inset });
+    const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2); if (foes.length) textC(TR('{0} foes', foes.length) + (wild.length ? ' · ' + TR('{0} wild', wild.length) : '') + ' · ' + TR('Lv {0}', Math.min(...foes.map(u => u.level)) + '-' + Math.max(...foes.map(u => u.level))), W / 2, below + 12, UI.muted, { outline: UI.inset }); ctx.globalAlpha = 1; }
   // the boss slides in from the right on boss maps
   const boss = (ch.map.units || []).find(u => u.boss && (u.team == null || u.team === 1)); if (boss && H >= 200) { requestAnim(boss.mon); const bx = Math.round(W - 44 + (REDUCED ? 0 : (1 - easeOut(clamp((t - .6) / .4, 0, 1))) * 80)), by = H - bars - 6; if (bx < W + 40) { ctx.globalAlpha = .5; ellipse(bx, by, 16, 3, '#000'); ctx.globalAlpha = 1; if (animReady(boss.mon)) drawAnim(boss.mon, bx, by, t); else drawMon(boss.mon, bx, by, { flip: true }); if (t > 1.1) { const mh = typeof ANIM_META !== 'undefined' && ANIM_META[boss.mon] ? ANIM_META[boss.mon].b : 30; textC('BOSS', bx, Math.max(bars + 2, by - mh - 10), UI.red, { outline: UI.inset }); } } }
   if (SC.t > 2.6 || (SC.t > .6 && SC.skip)) { SC.skip = false; SC.data.next(); }
@@ -148,8 +148,9 @@ function cardDraw() {
 // drawStampWord with an explicit time (the chapter card starts its letters later than the end screen).
 function drawStampWordAt(word, cx, y, t, col, dark, scale) { return drawStampWord(word, cx, y, t + END_BEATS.letters, col, dark, scale); }
 // The goal of a map, and on campaign fronts the other way to win: taking the enemy base.
-function objectiveTextFor(o, map) { const hq = map && map.war && map.war.names && Object.entries(map.war.owners || {}).find(([k, t]) => t === 1 && /HQ|CAMP/.test(map.war.names[k] || '')), alt = hq && o.type !== 'war' && o.type !== 'versus' ? ' or take ' + (/CAMP/.test(map.war.names[hq[0]]) ? 'their camp' : 'the Rocket HQ') : ''; return objectiveTextOnly(o) + alt; }
-function objectiveTextOnly(o) { switch (o.type) { case 'rout': return 'Objective: defeat all enemies'; case 'war': return 'Objective: rout the foe or take their HQ'; case 'safari': return 'Objective: out-catch Blue in ' + o.days + ' days'; case 'boss': return 'Objective: defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Objective: survive ' + o.turns + ' turns'; case 'seize': return 'Objective: seize the ' + (o.what || 'gym'); case 'versus': return 'Objective: defeat the other trainer'; } return ''; }
+// The goal of a map as a phrase, and on campaign fronts the other way to win: taking the enemy base.
+function goalText(o, map) { const hq = map && map.war && map.war.names && Object.entries(map.war.owners || {}).find(([k, t]) => t === 1 && /HQ|CAMP/.test(map.war.names[k] || '')), g = goalOnly(o); return hq && o.type !== 'war' && o.type !== 'versus' ? TR(/CAMP/.test(map.war.names[hq[0]]) ? '{0} or take their camp' : '{0} or take the Rocket HQ', g) : g; }
+function goalOnly(o) { switch (o.type) { case 'rout': return TR('Defeat all enemies'); case 'war': return TR('Rout the foe or take their HQ'); case 'safari': return TR('Out-catch Blue in {0} days', o.days); case 'boss': return TR('Defeat {0}', o.bossName || TR('the boss')); case 'survive': return TR('Survive {0} turns', o.turns); case 'seize': return TR('Seize the {0}', TR(o.what || 'gym')); case 'versus': return TR('Defeat the other trainer'); } return ''; }
 function cardInput(ev) { if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) SC.skip = true; }
 
 // ---------------------------------------------------------------- story dialogue (drawn over the battle board)
@@ -204,7 +205,7 @@ function coCard(x, y, w, h, id, side, run, opt = {}) {
   if (run) hit(x, y, w, h, run, opt.label || (side ? 'FOE CO' : 'YOUR CO'));
 }
 // A line's text with its *emphasis* resolved: the plain text and which letters to colour.
-function richLine(line) { if (line._rich) return line._rich; const em = []; let plain = '', on = false; for (const c of line.text) { if (c === '*') { on = !on; continue; } if (on) em[plain.length] = true; plain += c; } return (line._rich = { plain, em }); }
+function richLine(line) { if (line._rich && line._richLang === LANG) return line._rich; const em = []; let plain = '', on = false; for (const c of String(TRX(line.text))) { if (c === '*') { on = !on; continue; } if (on) em[plain.length] = true; plain += c; } line._richLang = LANG; return (line._rich = { plain: trNote(plain), em }); }
 // opt.stage: draws the scene behind the dialogue when there is no battle board (the prologue)
 function startDialog(lines, done, opt = {}) { for (const l of lines) { const Sp = SPEAKERS[l.who]; if (Sp && Sp.tr) trainerImg(Sp.tr); } SC.dialog = { lines, i: 0, chars: 0, t: 0, T: 0, pause: 0, done, cast: [null, null], since: [0, 0], stage: opt.stage || null }; goScene('story'); }
 function storyUpdate(dt) {
@@ -287,7 +288,7 @@ function hardHits(u, adv) { const types = u.moves.filter(m => m.pow > 0).map(m =
 function prepDraw() {
   const P = SC.data, ch = P.chapter, L = prepLayout(P), W = L.W, H = L.H, t = SC.t; rect(0, 0, W, H, UI.bg); if (!P.bd) P.bd = makeBackdrop(ch.map); drawBackdrop(P.bd, (W - P.bd.canvas.width) / 2 - t * 3, (H - P.bd.canvas.height) / 2, .8);
   SC.hits = []; const cap = prepCaptain(P), adv = P.adv !== undefined ? P.adv : (P.adv = enemyAdvice(ch.map.units)), steps = P.steps || PREP_STEPS, back = () => { Audio.sfx('cancel'); if (P.back) P.back(); else goScene('title'); };
-  setupHeader((ch.num ? 'FRONT ' + ch.num + ' · ' : '') + ch.title.toUpperCase(), L.steps ? steps : null, 1, () => back());
+  setupHeader((ch.num ? TR('FRONT {0}', ch.num) + ' · ' : '') + ch.title.toUpperCase(), L.steps ? steps : null, 1, () => back());
   // TEAM bar: one box per slot, filled in deploy order
   const S = L.slots, bw = Math.max(20, Math.min(34, Math.floor((S.w - 60) / ch.slots) - 3));
   panel(S.x, S.y, S.w, S.h, { fill: UI.panelDark, flat: true }); text('TEAM', S.x + 7, S.y + Math.round(S.h / 2) - 4, UI.gold); text(P.deploy.length + '/' + ch.slots, S.x + 7, S.y + Math.round(S.h / 2) + 4, P.deploy.length ? UI.ink : UI.muted);
@@ -317,12 +318,12 @@ function prepDraw() {
     hit(x, y, L.cw, L.ch, () => { SC.i = i; toggleDeploy(P, i); });
   });
   ctx.restore();
-  if (total > L.rowsVisible) { const sy = L.gy + L.rowsVisible * (L.ch + 3) - 1; textC((SC.scroll > 0 ? '▲ ' : '') + 'more' + (SC.scroll < total - L.rowsVisible ? ' ▼' : ''), L.gx + L.lw / 2, Math.min(sy, H - L.foot - 9), UI.muted); }
+  if (total > L.rowsVisible) { const sy = L.gy + L.rowsVisible * (L.ch + 3) - 1; textC((SC.scroll > 0 ? '▲ ' : '') + TR('more') + (SC.scroll < total - L.rowsVisible ? ' ▼' : ''), L.gx + L.lw / 2, Math.min(sy, H - L.foot - 9), UI.muted); }
   // THE ENEMY: who they are, what hits them hard, what they shrug off; then the focused Pokémon against them
   if (L.side) {
     const x = L.sideX, w = L.sideW; let y = L.slots.y; const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), lv = foes.map(u => u.level);
     const icons = Math.min(foes.length, Math.floor((w - 12) / 18)), eh = 20 + (foes.length ? 20 : 0) + (adv ? 11 + (adv.strong.length ? 12 : 0) + (adv.weak.length ? 12 : 0) : 0) + 4;
-    const ep = panel(x, y, w, eh, { header: 'THE ENEMY', headerRight: foes.length ? foes.length + ' foes · Lv' + Math.min(...lv) + (Math.max(...lv) > Math.min(...lv) ? '-' + Math.max(...lv) : '') : null, headerRightCol: UI.red, headerFill: '#5a1d2e' }); let yy = ep.cy;
+    const ep = panel(x, y, w, eh, { header: 'THE ENEMY', headerRight: foes.length ? TR('{0} foes', foes.length) + ' · ' + TR('Lv{0}', Math.min(...lv) + (Math.max(...lv) > Math.min(...lv) ? '-' + Math.max(...lv) : '')) : null, headerRightCol: UI.red, headerFill: '#5a1d2e' }); let yy = ep.cy;
     const lead = foes.find(u => u.boss) || null, order = (lead ? [lead] : []).concat(foes.filter(u => u !== lead));
     order.slice(0, icons).forEach((u, k) => { const bob = !REDUCED && k === Math.floor(t * 3) % Math.max(1, icons) ? -1 : 0; ctx.drawImage(monIcon(u.mon, true), x + 4 + k * 18, yy + bob, 24, 18); if (u.boss) drawSkull(x + 14 + k * 18, yy - 2); }); if (foes.length) yy += 20;
     if (adv) { let bx = x + 6; text('Mostly', bx, yy, UI.muted); bx += textWidth('Mostly') + 4; for (const tp of adv.common) bx += typeBadge(tp, bx, yy - 1, 24) + 2; yy += 11;
@@ -330,10 +331,10 @@ function prepDraw() {
       tr('Hit them with', adv.strong, '#8ae89a'); tr('They resist', adv.weak, '#ff9a9a'); }
     y += eh + 6;
     const sel = party[SC.i]; if (sel && y + 60 <= H - L.foot - 4) { const u = restoreUnit(sel), R = ROLES[u.role], hh = Math.min(H - L.foot - 4 - y, 100); const up = panel(x, y, w, hh, { header: fitLabel(u.name, w - 50), headerRight: 'Lv' + u.level, headerRightCol: UI.gold, headerFill: '#1c3a8a' });
-      let yy2 = up.cy; iconAt(R.icon, x + 6, yy2 - 1, R.col); text(R.name, x + 17, yy2, R.col); textR('MOVE ' + u.mov, x + w - 6, yy2, UI.ink); yy2 += 10;
-      for (const m of u.moves.slice(0, 3)) { if (yy2 + 9 > y + hh - 14) break; typeBadge(m.type, x + 6, yy2 - 1, 24); const good = adv && m.pow > 0 && adv.strong.includes(m.type); text(fitLabel(m.name + ' ' + m.pow, w - 44), x + 33, yy2, good ? '#8ae89a' : UI.ink); yy2 += 10; }
-      if (adv && yy2 + 7 <= y + hh - 4) { const k = hardHits(u, adv); text(fitLabel(k ? 'Hits ' + k + ' of ' + adv.n + ' foes hard' : 'No super-effective hits here', w - 12), x + 6, yy2, k * 2 >= adv.n ? '#8ae89a' : k ? UI.gold : UI.dim); yy2 += 10; }
-      if (yy2 + 7 <= y + hh - 4) { const ev = u.dex.evos.length ? 'Evolves Lv' + Math.min(...u.dex.evos.map(e => e[1])) : 'Final form'; text(fitLabel(ev, w - 12), x + 6, yy2, UI.info); } }
+      let yy2 = up.cy; iconAt(R.icon, x + 6, yy2 - 1, R.col); text(R.name, x + 17, yy2, R.col); textR(TR('MOVE {0}', u.mov), x + w - 6, yy2, UI.ink); yy2 += 10;
+      for (const m of u.moves.slice(0, 3)) { if (yy2 + 9 > y + hh - 14) break; typeBadge(m.type, x + 6, yy2 - 1, 24); const good = adv && m.pow > 0 && adv.strong.includes(m.type); text(fitLabel(mvName(m) + ' ' + m.pow, w - 44), x + 33, yy2, good ? '#8ae89a' : UI.ink); yy2 += 10; }
+      if (adv && yy2 + 7 <= y + hh - 4) { const k = hardHits(u, adv); text(fitLabel(k ? TR('Hits {0} of {1} foes hard', k, adv.n) : TR('No super-effective hits here'), w - 12), x + 6, yy2, k * 2 >= adv.n ? '#8ae89a' : k ? UI.gold : UI.dim); yy2 += 10; }
+      if (yy2 + 7 <= y + hh - 4) { const ev = u.dex.evos.length ? TR('Evolves Lv{0}', Math.min(...u.dex.evos.map(e => e[1]))) : TR('Final form'); text(fitLabel(ev, w - 12), x + 6, yy2, UI.info); } }
   }
   const start = () => { if (!P.deploy.length) { Audio.sfx('error'); return; } Audio.sfx('select'); P.start(); }, auto = () => { Audio.sfx('ok'); autoDeploy(P); };
   setupFooter({ back: { label: P.backLabel || '◂ BACK', run: back }, extra: [{ label: 'AUTO PICK', run: auto }], next: { label: 'BATTLE! ▸', run: start, disabled: !P.deploy.length, variant: 'danger' },
@@ -358,10 +359,10 @@ function resultsDraw() {
   SC.hits = []; const win = R.win; const w = Math.min(300, W - 12), x = W / 2 - w / 2; let y = 10;
   if (R.versus) {
     const t = R.result === 'p1' ? 0 : R.result === 'p2' ? 1 : -1; const ph2 = 128; y = Math.max(10, H / 2 - ph2 / 2 - 16);
-    panel(x, y, w, ph2, { title: t < 0 ? 'DRAW' : 'PLAYER ' + (t + 1) + ' WINS!', fill: t === 0 ? '#17264a' : t === 1 ? '#3a1a22' : UI.panel, border: t >= 0 ? teamColor(t) : UI.border });
-    if (t >= 0) { ctx.save(); ctx.translate(x + w / 2, y + 10); ctx.scale(2, 2); bigC('PLAYER ' + (t + 1), 0, 0, teamColorL(t), { outline: '#000' }); ctx.restore(); bigC('WINS THE ARENA!', x + w / 2, y + 30, UI.gold, { outline: '#3a2000' }); } else bigC('NOBODY IS LEFT STANDING', x + w / 2, y + 16, UI.muted, { outline: UI.shadow });
-    const tl = 'Turns ' + R.turns + '   ·   KOs ' + R.kills; text(tl, x + 8, y + 44, UI.ink); if (R.reason && textWidth(R.reason) <= w - 24 - textWidth(tl)) textR(R.reason, x + w - 8, y + 44, UI.muted); // the end screen already said it in full
-    [0, 1].forEach(tm => { const yy = y + 58 + tm * 32; rrect(x + 6, yy, w - 12, 28, teamColorD(tm), 1); text('P' + (tm + 1), x + 10, yy + 3, teamColorL(tm)); R.rosters[tm].forEach((n, i) => { const cx = x + 40 + i * 34; const alive = R.teams[tm].includes(n); if (!alive) ctx.globalAlpha = .3; drawMon(n, cx, yy + 27, { flip: tm === 1 }); ctx.globalAlpha = 1; if (!alive) text('KO', cx - 5, yy + 4, UI.red, { shadow: '#000' }); }); textR(R.teams[tm].length + ' left', x + w - 10, yy + 3, UI.ink); });
+    panel(x, y, w, ph2, { title: t < 0 ? 'DRAW' : TR(t === 0 ? 'PLAYER 1 WINS!' : 'PLAYER 2 WINS!'), fill: t === 0 ? '#17264a' : t === 1 ? '#3a1a22' : UI.panel, border: t >= 0 ? teamColor(t) : UI.border });
+    if (t >= 0) { ctx.save(); ctx.translate(x + w / 2, y + 10); ctx.scale(2, 2); bigC(TR('PLAYER {0}', t + 1), 0, 0, teamColorL(t), { outline: '#000' }); ctx.restore(); bigC('WINS THE ARENA!', x + w / 2, y + 30, UI.gold, { outline: '#3a2000' }); } else bigC('NOBODY IS LEFT STANDING', x + w / 2, y + 16, UI.muted, { outline: UI.shadow });
+    const tl = TR('Turns {0}', R.turns) + '   ·   ' + TR('KOs {0}', R.kills); text(tl, x + 8, y + 44, UI.ink); if (R.reason && textWidth(R.reason) <= w - 24 - textWidth(tl)) textR(R.reason, x + w - 8, y + 44, UI.muted); // the end screen already said it in full
+    [0, 1].forEach(tm => { const yy = y + 58 + tm * 32; rrect(x + 6, yy, w - 12, 28, teamColorD(tm), 1); text('P' + (tm + 1), x + 10, yy + 3, teamColorL(tm)); R.rosters[tm].forEach((n, i) => { const cx = x + 40 + i * 34; const alive = R.teams[tm].includes(n); if (!alive) ctx.globalAlpha = .3; drawMon(n, cx, yy + 27, { flip: tm === 1 }); ctx.globalAlpha = 1; if (!alive) text('KO', cx - 5, yy + 4, UI.red, { shadow: '#000' }); }); textR(TR('{0} left', R.teams[tm].length), x + w - 10, yy + 3, UI.ink); });
     const bh = btnH();
     if (W < 280) { footerBand(2 * (bh + 4) + 4); bigButton(6, H - 2 * (bh + 4), (W - 16) / 2, bh, 'REMATCH', () => { Audio.sfx('select'); R.rematch(); }, { variant: 'danger' }); bigButton(10 + (W - 16) / 2, H - 2 * (bh + 4), (W - 16) / 2, bh, 'NEW TEAMS', () => { Audio.sfx('ok'); R.setup(); }); bigButton(6, H - bh - 4, W - 12, bh, 'TITLE', () => { Audio.sfx('cancel'); R.next(); }, { variant: 'ghost' }); return; }
     const fy = footerBand(30) + 6; bigButton(W / 2 - 132, fy, 80, 18, 'REMATCH', () => { Audio.sfx('select'); R.rematch(); }, { variant: 'danger' });
@@ -379,18 +380,18 @@ function resultsDraw() {
   y = p.cy;
   if (stars) { // three stars pop in one after another, then the goals they stand for
     for (let s2 = 0; s2 < 3; s2++) { const t0 = appear('res:star' + s2) - .25 - s2 * .3, u = clamp(t0 / .25, 0, 1), on = s2 < R.stars && u > 0, sc = on ? 1 + Math.round((1 - easeOutBack(u, 3)) * 1.5) : 1; drawBigStar(x + w / 2 + (s2 - 1) * 20, y + 7, sc, on); if (u > 0 && CLOCK.frame && (R.starSfx || 0) <= s2) { R.starSfx = s2 + 1; Audio.sfx(s2 < R.stars ? 'chime' : 'tick'); } }
-    y += 18; textC('win  ·  ' + (R.turns <= (R.par || 10) ? 'under par' : 'over par') + '  ·  ' + (R.faints ? R.faints + ' fainted' : 'nobody fainted'), x + w / 2, y, UI.muted); y += 12;
+    y += 18; textC(TR('win') + '  ·  ' + TR(R.turns <= (R.par || 10) ? 'under par' : 'over par') + '  ·  ' + (R.faints ? TR('{0} fainted', R.faints) : TR('nobody fainted')), x + w / 2, y, UI.muted); y += 12;
   }
-  if (win) { const tv = countUp('res:turns', R.turns, .5, .2), kv = countUp('res:kos', R.kills, .5, .35); text('Turns ' + tv + (R.par ? ' / par ' + R.par : ''), x + 8, y, R.par && R.turns <= R.par ? UI.green : UI.ink); textR('KOs ' + kv, x + w - 8, y, UI.ink); y += 12; }
-  if (R.war) { text(fitLabel('Captured ' + R.war.captures + ' · deployed ' + R.war.deployments + ' · left ' + money(R.war.funds) + (R.war.reason ? ' · ' + R.war.reason : ''), w - 16), x + 8, y, UI.info); y += 11; }
+  if (win) { const tv = countUp('res:turns', R.turns, .5, .2), kv = countUp('res:kos', R.kills, .5, .35); text(TR('Turns {0}', tv) + (R.par ? ' / ' + TR('par {0}', R.par) : ''), x + 8, y, R.par && R.turns <= R.par ? UI.green : UI.ink); textR(TR('KOs {0}', kv), x + w - 8, y, UI.ink); y += 12; }
+  if (R.war) { text(fitLabel(TR('Captured {0} · deployed {1} · left {2}', R.war.captures, R.war.deployments, money(R.war.funds)) + (R.war.reason ? ' · ' + TRX(R.war.reason) : ''), w - 16), x + 8, y, UI.info); y += 11; }
   else if (!win) { lose.forEach(l => { text(l, x + 8, y, UI.ink); y += 9; }); y += 3; }
-  if (nRew) { sectionLabel('Rewards', x + 8, y, w - 16, UI.gold); y += 10; let i = 0; for (const k in R.rewards) { const cx = x + 10 + (i % rc) * 96; const cy = y + Math.floor(i / rc) * 10; drawBall(cx + 4, cy + 4, (ITEMS[k] || ITEMS.pokeball).col, 3); text((ITEMS[k] || ITEMS.pokeball).name + ' ×' + countUp('res:rew' + k, R.rewards[k], .4, .6), cx + 12, cy + 1, UI.ink); i++; } y += Math.ceil(i / rc) * 10 + 4; }
+  if (nRew) { sectionLabel('Rewards', x + 8, y, w - 16, UI.gold); y += 10; let i = 0; for (const k in R.rewards) { const cx = x + 10 + (i % rc) * 96; const cy = y + Math.floor(i / rc) * 10; drawBall(cx + 4, cy + 4, (ITEMS[k] || ITEMS.pokeball).col, 3); text(TRX((ITEMS[k] || ITEMS.pokeball).name) + ' ×' + countUp('res:rew' + k, R.rewards[k], .4, .6), cx + 12, cy + 1, UI.ink); i++; } y += Math.ceil(i / rc) * 10 + 4; }
   else if (win && !R.skirmish) { text('Replay: rewards come with the first clear', x + 8, y, UI.dim); y += 12; }
   if (nC) { sectionLabel('New team members', x + 8, y, w - 16, UI.gold); y += 10; R.caught.forEach((c, i) => { const cx = x + 10 + (i % cc) * 70; const cy = y + Math.floor(i / cc) * 26; drawMon(c.num, cx + 16, cy + 22 + Math.round(Math.abs(Math.sin(SC.t * 6 + i)) * -3), { outline: teamColor(0) }); text(DEX[c.num].name, cx + 32, cy + 6, UI.ink); text('Lv' + c.level, cx + 32, cy + 14, UI.gold); }); y += Math.ceil(R.caught.length / cc) * 26 + 4; }
-  if (R.trained && R.trained.length) { sectionLabel('Training at the Center', x + 8, y, w - 16, UI.gold); y += 10; R.trained.forEach((t, i) => { if (i > 5) return; let s2 = t; while (textWidth(s2) > w - 20 && s2.length > 8) s2 = s2.slice(0, -1); text(s2, x + 10, y, '#98d8f8'); y += 9; }); y += 2; }
-  if (R.evolved && R.evolved.length) { R.evolved.forEach(e => { let s2 = e; while (textWidth(s2) > w - 20 && s2.length > 8) s2 = s2.slice(0, -1); text(s2, x + 10, y, UI.gold); y += 9; }); }
+  if (R.trained && R.trained.length) { sectionLabel('Training at the Center', x + 8, y, w - 16, UI.gold); y += 10; R.trained.forEach((t, i) => { if (i > 5) return; text(fitLabel(t, w - 20), x + 10, y, '#98d8f8'); y += 9; }); y += 2; }
+  if (R.evolved && R.evolved.length) { R.evolved.forEach(e => { text(fitLabel(e, w - 20), x + 10, y, UI.gold); y += 9; }); }
   if (nCo) { sectionLabel(nCo > 1 ? 'New commanders' : 'New commander', x + 8, y + 2, w - 16, UI.gold); y += 12; R.newCos.forEach((id, i) => { const co = COS[id], face = trainerFace(co.tr), a = clamp((appear('res:co' + i) - .6 - i * .2) / .25, 0, 1); if (a <= 0) { y += 22; return; } ctx.globalAlpha = a;
-      rect(x + 10, y, 20, 20, shade(co.col, -.4)); if (face) ctx.drawImage(face, x + 11, y + 1); outline(x + 9, y - 1, 22, 22, co.col); text(co.name.toUpperCase() + ' JOINS YOU!', x + 36, y + 2, co.col, { outline: UI.inset }); text(fitLabel(co.passive.text, w - 48), x + 36, y + 11, UI.muted); ctx.globalAlpha = 1;
+      rect(x + 10, y, 20, 20, shade(co.col, -.4)); if (face) ctx.drawImage(face, x + 11, y + 1); outline(x + 9, y - 1, 22, 22, co.col); text(TR('{0} JOINS YOU!', co.name.toUpperCase()), x + 36, y + 2, co.col, { outline: UI.inset }); text(fitLabel(co.passive.text, w - 48), x + 36, y + 11, UI.muted); ctx.globalAlpha = 1;
       if (!R['coSfx' + i] && a > 0) { R['coSfx' + i] = true; Audio.sfx('levelup'); } y += 22; }); }
   unfoldEnd(tok);
   { const fy = footerBand(30) + 6; if (R.route) { const bw = Math.min(100, Math.floor((W - 18) / 2)); bigButton(W / 2 - bw - 4, fy, bw, 18, 'ROUTE', () => { Audio.sfx('cancel'); R.route(); }, { variant: 'ghost' }); bigButton(W / 2 + 4, fy, bw, 18, R.nextLabel || 'CONTINUE', () => { Audio.sfx('ok'); R.next(); }, { variant: 'primary' }); } else bigButton(W / 2 - 50, fy, 100, 18, R.nextLabel || 'CONTINUE', () => { Audio.sfx('ok'); R.next(); }, { variant: 'primary' }); }
@@ -411,7 +412,7 @@ function creditsDraw() {
   updateFX(CLOCK.dt || 1 / 60); drawFX(0, 0);
   // the credits rise through the sky
   const stars = SAVE && SAVE.rating ? Object.values(SAVE.rating).reduce((a, b) => a + b, 0) : 0;
-  const lines = [['KANTO IS FREE!', UI.gold, true], ['', UI.ink], [party.length + ' Pokémon fought beside you.', UI.ink], ['Stars earned: ' + stars + ' / ' + CHAPTERS.length * 3, UI.gold], ['', UI.ink], ['Every Gym Leader now commands for you.', UI.muted], ['Climb the Battle Tower, race Blue', UI.muted], ['in the Safari Zone, or replay a front.', UI.muted], ['', UI.ink], ['Sprites: Pokémon Showdown icons', UI.muted], ['and trainers, PokeAPI Black/White', UI.muted], ['Pokémon © Nintendo / Game Freak / Creatures', UI.muted], ['Made with pixels and WebAudio', UI.muted], ['', UI.ink], ['THANK YOU FOR PLAYING', UI.gold, true]];
+  const lines = [['KANTO IS FREE!', UI.gold, true], ['', UI.ink], ['A GAME BY GAVILANBE', '#ffe08a'], ['', UI.ink], [TR('{0} Pokémon fought beside you.', party.length), UI.ink], [TR('Stars earned: {0} / {1}', stars, CHAPTERS.length * 3), UI.gold], ['', UI.ink], ['Every Gym Leader now commands for you.', UI.muted], ['Climb the Battle Tower, race Blue', UI.muted], ['in the Safari Zone, or replay a front.', UI.muted], ['', UI.ink], ['Sprites: Pokémon Showdown icons', UI.muted], ['and trainers, PokeAPI Black/White', UI.muted], ['Pokémon © Nintendo / Game Freak / Creatures', UI.muted], ['Made with pixels and WebAudio', UI.muted], ['', UI.ink], ['THANK YOU FOR PLAYING', UI.gold, true]];
   const top = L.horizon * .9, y0 = top - 8 - (t - .3) * 18; lines.forEach(([l, col, big], i) => { const y = y0 + i * 14; if (y < 4 || y > top - 8) return; ctx.globalAlpha = clamp(Math.min(y - 4, top - 8 - y) / 16, 0, 1); if (big) bigC(l, W / 2, y, col, { outline: UI.inset }); else textC(l, W / 2, y, col, { outline: UI.inset }); ctx.globalAlpha = 1; });
   // the wordmark lands once the credits have passed
   const endAt = .3 + (top - 12 + (lines.length - 1) * 14) / 18 + .6; if (t > endAt) { const saved = SC.t; SC.t = t - endAt; const cell = logoCell(W, H, W - 24); drawLogo(W / 2, Math.max(8, Math.round(top * .25)), cell); SC.t = saved; if (t > endAt + 1.6) { ctx.globalAlpha = clamp((t - endAt - 1.6) / .5, 0, 1); bigC('THE END', W / 2, Math.round(top * .25) + logoMetrics(cell).h + 8, UI.ink, { outline: UI.inset }); ctx.globalAlpha = 1; } }
@@ -465,10 +466,10 @@ const SK_RULES = [
   { k: 'co', label: 'YOU', vals: S => S.cos, show: v => v === 'you' ? 'Tactician' : COS[v].name },
   { k: 'foe', label: 'FOE', vals: CO_FOES, show: v => COS[v].name },
   { k: 'level', label: 'LEVEL', vals: SKIRMISH.levels, show: v => 'Lv ' + v },
-  { k: 'diff', label: 'CPU', vals: ['easy', 'normal', 'hard'], show: v => SK_DIFF[v].name + (v === 'normal' ? ' · even funds' : v === 'easy' ? ' · poorer' : ' · richer, Lv+2') },
-  { k: 'funds', label: 'FUNDS', vals: SKIRMISH.funds, show: v => money(v) + ' each' },
+  { k: 'diff', label: 'CPU', vals: ['easy', 'normal', 'hard'], show: v => SK_DIFF[v].name + ' · ' + TR(v === 'normal' ? 'even funds' : v === 'easy' ? 'poorer' : 'richer, Lv+2') },
+  { k: 'funds', label: 'FUNDS', vals: SKIRMISH.funds, show: v => TR('{0} each', money(v)) },
   { k: 'weather', label: 'WEATHER', vals: SKIRMISH.weather, show: v => v === 'none' ? 'Clear' : v === 'random' ? 'Random' : WEATHER[v].name },
-  { k: 'biome', label: 'LAND', vals: SKIRMISH.biomes, show: (v, S) => v === 'random' ? 'Random · ' + BIOMES[skirmishBiome(S)].name : BIOMES[v].name },
+  { k: 'biome', label: 'LAND', vals: SKIRMISH.biomes, show: (v, S) => v === 'random' ? TR('Random · {0}', BIOMES[skirmishBiome(S)].name) : BIOMES[v].name },
   { k: 'size', label: 'SIZE', vals: ['s', 'm', 'l'], show: v => SKIRMISH.sizes[v][2] + ' ' + SKIRMISH.sizes[v][0] + '×' + SKIRMISH.sizes[v][1] },
   { k: 'seed', label: 'MAP', vals: null, show: v => '#' + v },
 ];
@@ -506,7 +507,7 @@ function skirmishDraw() {
   { const vx = sx + sideW / 2, vy = y + Math.round(cardH / 2) - 6, pulse = REDUCED ? 0 : Math.round(Math.sin(t * 5)); circle(Math.round(vx), vy + 5, 9 + pulse, UI.inset); circle(Math.round(vx), vy + 5, 8 + pulse, '#2a1646'); bigC('VS', vx, vy + 1, UI.gold, { shadow: '#000' }); }
   y += cardH + 3; { const a = coOf({ co: S.co, root: skirmishRoot() }), b = coOf({ co: S.foe }); text(fitLabel(a.power.name, cw), sx + 6, y, UI.info); textR(fitLabel(b.power.name, cw), sx + sideW - 6, y, UI.info); } y += 11;
   vsRuleRows(S, sx + 4, y, sideW - 8, rh, SK_RULES, S.focus); y += SK_RULES.length * rh + 4;
-  if (y + 18 <= pnl.y + pnl.h) { const box = SKIRMISH.slots, rest = Math.max(SKIRMISH.slots + SKIRMISH.box, S.party.length) - box; text(fitLabel('You: ' + box + ' on the map · ' + rest + ' in the Box', sideW - 12), sx + 6, y, UI.muted); text(fitLabel(COS[S.foe].name + ': squad + Ace · 8 in the Box', sideW - 12), sx + 6, y + 9, UI.muted); }
+  if (y + 18 <= pnl.y + pnl.h) { const box = SKIRMISH.slots, rest = Math.max(SKIRMISH.slots + SKIRMISH.box, S.party.length) - box; text(fitLabel(TR('You: {0} on the map · {1} in the Box', box, rest), sideW - 12), sx + 6, y, UI.muted); text(fitLabel(TR('{0}: squad + Ace · 8 in the Box', COS[S.foe].name), sideW - 12), sx + 6, y + 9, UI.muted); }
   setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 0 }); } }, next: { label: 'TEAM ▸', run: () => { Audio.sfx('select'); S.go(); } }, hints: VIEW.touch ? null : [['▲▼', 'rule'], ['◂▸', 'change'], ['Z', 'team']] });
 }
 function skirmishInput(ev) {

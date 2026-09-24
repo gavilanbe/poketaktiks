@@ -65,6 +65,24 @@ function parseGlyphs(src) { const out = {}; for (const k in src) { let s = src[k
 const EXTRA_SRC = { '©': '0111110/1000001/1001101/1010001/1001101/1000001/0111110', '♪': '00011/00010/00010/00010/01110/11110/01100', '●': '1|01110/11111/11111/11111/01110', '○': '1|01110/10001/10001/10001/01110', '◂': '1|00001/00111/11111/00111/00001', '▸': '1|10000/11100/11111/11100/10000', '▲': '2|00100/01110/11111', '▼': '2|11111/01110/00100', '◆': '1|00100/01110/11111/01110/00100', '₽': '01110/01001/01001/01110/11100/01000/01000' };
 const BIG_EXTRA_SRC = { "'": '11/11/01/10/00/00/00/00/00', '★': '0001000/0001000/0011100/1111111/0111110/0011100/0110110/1100011/0000000', '♥': '0110110/1111111/1111111/1111111/0111110/0011100/0001000/0000000/0000000', '#': '0110110/0110110/1111111/0110110/0110110/1111111/0110110/0110110/0000000', '₽': '0111110/0110011/0110011/0110011/0111110/1111000/0110000/0110000/0000000', '▸': '1000/1100/1110/1111/1111/1110/1100/1000/0000', '◂': '0001/0011/0111/1111/1111/0111/0011/0001/0000' };
 const FONT = Object.assign(parseGlyphs(CUADERNO_SRC), parseGlyphs(EXTRA_SRC)), BIG = Object.assign(parseGlyphs(ROTULO_SRC), parseGlyphs(BIG_EXTRA_SRC));
+if (BIG['?'] && !BIG['¿']) { const q = BIG['?']; BIG['¿'] = Object.assign({}, q, { rows: q.rows.slice().reverse().map(r => [...r].reverse().join('')) }); } // turned over
+{ const flip = g => Object.assign({}, g, { rows: g.rows.map(r => [...r].reverse().join('')) }); if (BIG['»']) BIG['«'] = flip(BIG['»']); }
+Object.assign(BIG, parseGlyphs({ ';': '000/000/011/011/000/000/011/011/110', '…': '00000000/00000000/00000000/00000000/00000000/00000000/00000000/11011011/11011011',
+  '→': '0000000/0000100/0000110/1111111/1111111/0000110/0000100/0000000/0000000' }));
+// Small accented capitals too: the whole 7-row letter under its mark and a clear row, so TÍTULO does not read as
+// TíTULO (the dieresis takes one row).
+for (const [c, base, mark] of [['Á', 'A', 'acute'], ['É', 'E', 'acute'], ['Í', 'I', 'acute'], ['Ó', 'O', 'acute'], ['Ú', 'U', 'acute'], ['Ñ', 'N', 'tilde'], ['Ü', 'U', 'dots']]) {
+  const g = FONT[base], w = g.w, row = cols => Array.from({ length: w }, (_, i) => cols.includes(i) ? '1' : '0').join(''), a = Math.floor(w / 2);
+  const top = mark === 'acute' ? [row([a + 1]), row([a])] : mark === 'tilde' ? [row([1, 2, w - 1]), row([0, w - 2])] : [row([1, w - 2])];
+  FONT[c] = { off: -1 - top.length, rows: top.concat([row([])], g.rows), w, h: g.h + top.length + 1 };
+}
+// Big accented capitals keep the whole letter and wear the mark above the cap line, clear of it by a row, so Ú never
+// reads as a 6 or Ñ as an N.
+for (const [c, base, mark] of [['Á', 'A', 'acute'], ['É', 'E', 'acute'], ['Í', 'I', 'acute'], ['Ó', 'O', 'acute'], ['Ú', 'U', 'acute'], ['Ñ', 'N', 'tilde'], ['Ü', 'U', 'dots']]) {
+  const g = BIG[base], w = g.w, row = cols => Array.from({ length: w }, (_, i) => cols.includes(i) ? '1' : '0').join(''), a = Math.floor((w - 2) / 2);
+  const top = mark === 'acute' ? [row([a + 1, a + 2]), row([a, a + 1])] : mark === 'tilde' ? [row([1, 2, w - 2, w - 1]), row([0, 1, w - 3, w - 2])] : [row([1, 2, w - 3, w - 2]), row([1, 2, w - 3, w - 2])];
+  BIG[c] = { off: -3, rows: top.concat([row([])], g.rows), w, h: g.h + 3 };
+}
 const DESC = new Set('gjpqy,;¡¿ç');
 function stripAccents(c) { return c.normalize('NFD').replace(/[̀-ͯ]/g, ''); }
 function glyph(c, font) { return font[c] || font[stripAccents(c)] || (font === BIG ? BIG[c.toUpperCase()] || BIG[stripAccents(c).toUpperCase()] : null) || font['?']; }
@@ -76,20 +94,22 @@ function glyphCanvas(c, font, col) {
   for (let j = 0; j < g.h; j++) { const r = g.rows[j]; for (let i = 0; i < r.length; i++) if (r[i] === '1') x.fillRect(i, j, 1, 1); }
   GLYPH_CACHE[key] = cc; return cc;
 }
-function textWidth(s, font = FONT) { let w = 0; for (const c of String(s)) w += c === ' ' ? (font === BIG ? 4 : 3) : glyph(c, font).w + 1; return Math.max(0, w - 1); }
+// Every string drawn or measured is looked up in the player's language first (i18n.js), so a layout measures what it draws.
+function rawTextWidth(s, font = FONT) { let w = 0; for (const c of String(s)) w += c === ' ' ? (font === BIG ? 4 : 3) : glyph(c, font).w + 1; return Math.max(0, w - 1); }
+function textWidth(s, font = FONT) { return rawTextWidth(TRX(s), font); }
 // Draws small text with its top at y (cap line). opt: shadow (colour), outline (colour), font.
 function text(s, x, y, col = UI.ink, opt = {}) {
-  const font = opt.font || FONT; x = Math.round(x); y = Math.round(y); let cx = x;
+  if (!opt.raw) s = TRX(s); const font = opt.font || FONT; x = Math.round(x); y = Math.round(y); let cx = x; // opt.raw: already in the player's language
   const draw = (dx, dy, c2) => { let px2 = x; for (const c of String(s)) { if (c === ' ') { px2 += font === BIG ? 4 : 3; continue; } const g = glyph(c, font); ctx.drawImage(glyphCanvas(c, font, c2), px2 + dx, y + g.off + dy); px2 += g.w + 1; } return px2; };
   if (opt.outline) { for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) draw(dx, dy, opt.outline); }
   else if (opt.shadow) draw(1, 1, opt.shadow);
   cx = draw(0, 0, col); return cx - 1;
 }
-function textC(s, cx, y, col, opt = {}) { return text(s, cx - textWidth(s, opt.font || FONT) / 2, y, col, opt); }
-function textR(s, rx, y, col, opt = {}) { return text(s, rx - textWidth(s, opt.font || FONT), y, col, opt); }
-function bigText(s, x, y, col = UI.ink, opt = {}) { return text(String(s).toUpperCase(), x, y, col, Object.assign({ font: BIG }, opt)); }
-function bigC(s, cx, y, col, opt = {}) { return bigText(s, cx - textWidth(String(s).toUpperCase(), BIG) / 2, y, col, opt); }
-function wrap(s, width, font = FONT) { const out = []; for (const para of String(s).split('\n')) { let line = ''; for (const w of para.split(' ')) { const t = line ? line + ' ' + w : w; if (textWidth(t, font) > width && line) { out.push(line); line = w; } else line = t; } out.push(line); } return out; }
+function textC(s, cx, y, col, opt = {}) { return text(s, cx - (opt.raw ? rawTextWidth : textWidth)(s, opt.font || FONT) / 2, y, col, opt); }
+function textR(s, rx, y, col, opt = {}) { return text(s, rx - (opt.raw ? rawTextWidth : textWidth)(s, opt.font || FONT), y, col, opt); }
+function bigText(s, x, y, col = UI.ink, opt = {}) { return text(trNote(String(TRX(s)).toUpperCase()), x, y, col, Object.assign({ font: BIG }, opt)); }
+function bigC(s, cx, y, col, opt = {}) { return bigText(s, cx - rawTextWidth(String(TRX(s)).toUpperCase(), BIG) / 2, y, col, opt); }
+function wrap(s, width, font = FONT) { s = TRX(s); const out = []; for (const para of String(s).split('\n')) { let line = ''; for (const w of para.split(' ')) { const t = line ? line + ' ' + w : w; if (rawTextWidth(t, font) > width && line) { out.push(trNote(line)); line = w; } else line = t; } out.push(trNote(line)); } return out; }
 
 // ---------------------------------------------------------------- the display face (titles and the logo)
 // The game's own display type: bold square capitals 11 px tall with 3-px stems, 2-px bars and rounded shoulders, drawn
@@ -135,6 +155,8 @@ const DISPLAY_SRC = {
   '·': ['....', '....', '....', '....', '....', '.##.', '.##.', '....', '....', '....', '....'],
   '-': ['.....', '.....', '.....', '.....', '.....', '#####', '#####', '.....', '.....', '.....', '.....'],
   '.': ['...', '...', '...', '...', '...', '...', '...', '...', '...', '###', '###'],
+  ',': ['...', '...', '...', '...', '...', '...', '...', '...', '...', '###', '.##'],
+  '+': ['.......', '.......', '..###..', '..###..', '#######', '#######', '#######', '..###..', '..###..', '.......', '.......'],
   "'": ['###', '###', '.##', '.#.', '...', '...', '...', '...', '...', '...', '...'],
   '!': ['###', '###', '###', '###', '###', '###', '###', '...', '...', '###', '###'],
   '?': ['.######.', '########', '###..###', '.....###', '....####', '...####.', '...###..', '........', '........', '...###..', '...###..'],
@@ -142,8 +164,11 @@ const DISPLAY_SRC = {
   '/': ['....###', '....###', '...###.', '...###.', '..###..', '..###..', '.###...', '.###...', '###....', '###....', '###....'],
   '★': ['....#....', '...###...', '...###...', '#########', '.#######.', '..#####..', '..#####..', '.###.###.', '.##...##.', '##.....##', '.........'],
 };
-// Accents ride above the cap line (É in POKÉ): two rows over the letter.
-const DISPLAY_ACCENT = { 'É': ['E', ['....##.', '...##..']] };
+// Accents ride above the cap line (É in POKÉ): two rows over the letter. Spanish needs the acute vowels, Ñ and Ü.
+const DISPLAY_ACCENT = { 'É': ['E', ['....##.', '...##..']], 'Á': ['A', ['....##..', '...##...']], 'Í': ['I', ['..##.', '.##..']], 'Ó': ['O', ['....##..', '...##...']],
+  'Ú': ['U', ['....##..', '...##...']], 'Ñ': ['N', ['..###.##.', '.##.###..']], 'Ü': ['U', ['.##..##.', '........']] };
+// ¡ and ¿ are ! and ? turned over.
+DISPLAY_SRC['¡'] = DISPLAY_SRC['!'].slice().reverse(); DISPLAY_SRC['¿'] = DISPLAY_SRC['?'].slice().reverse().map(r => [...r].reverse().join(''));
 const DISPLAY_STYLES = {
   gold: { face: ['#fffbe0', '#fff1a0', '#ffe04e', '#ffc823', '#f9a912', '#ee8c0a'], top: '#ffffff', bot: '#c96a08', inline: ['#4a86ea', '#2c58b6'], outline: '#10133e', depth: '#0a0c2e' },
   red: { face: ['#fff0ea', '#ffb0a0', '#ff6a5a', '#f0403c', '#d42a30', '#b01c28'], top: '#ffffff', bot: '#7a0a18', inline: ['#5a1020', '#3a0814'], outline: '#12040a', depth: '#0a0206' },
@@ -152,12 +177,13 @@ const DISPLAY_STYLES = {
 };
 const DISPLAY_CACHE = new Map();
 function displayGlyph(c) { const a = DISPLAY_ACCENT[c]; if (a) return { rows: DISPLAY_SRC[a[0]], up: a[1] }; const k = String(c).toUpperCase(); return { rows: DISPLAY_SRC[k] || DISPLAY_SRC[stripAccents(k)] || DISPLAY_SRC['?'], up: null }; }
-function displayWidth(s, scale = 1) { let w = 0, n = 0; for (const c of String(s)) { w += c === ' ' ? 4 : displayGlyph(c).rows[0].length; n++; } return Math.max(0, (w + Math.max(0, n - 1)) * scale); }
+function rawDisplayWidth(s, scale = 1) { let w = 0, n = 0; for (const c of String(s)) { w += c === ' ' ? 4 : displayGlyph(c).rows[0].length; n++; } return Math.max(0, (w + Math.max(0, n - 1)) * scale); }
+function displayWidth(s, scale = 1) { return rawDisplayWidth(String(TRX(s)).toUpperCase(), scale); }
 // The whole string as one cached canvas: the glyph mask (slanted, scaled), then outline, inline, face and highlights.
 // box: where the cap-line/left of the letters sits inside the canvas (ox, oy), and the letters' own width and height.
 function displayCanvas(s, style, scale, slant) {
   const key = s + '|' + style + '|' + scale + '|' + slant; let D = DISPLAY_CACHE.get(key); if (D) return D;
-  const chars = [...String(s)], up = chars.some(c => displayGlyph(c).up) ? 3 : 0, H0 = 11 + up, W0 = displayWidth(s);
+  const chars = [...String(s)], up = chars.some(c => displayGlyph(c).up) ? 3 : 0, H0 = 11 + up, W0 = rawDisplayWidth(s);
   const m0 = new Uint8Array(W0 * H0); let x = 0;
   for (const c of chars) { if (c === ' ') { x += 5; continue; } const g = displayGlyph(c), gw = g.rows[0].length;
     const put = (rr, oy) => rr.forEach((row, r) => { for (let i = 0; i < row.length; i++) if (row[i] === '#') { const yy = r + oy, xx = x + i; if (xx >= 0 && xx < W0) m0[yy * W0 + xx] = 1; } });
@@ -179,15 +205,15 @@ function displayCanvas(s, style, scale, slant) {
     dot(fg, x2, y, !at(x2, y - 1) ? st.top : !at(x2, y + 1) ? st.bot : f[Math.max(0, k)]); }
   const c = mk(), cg = c.getContext('2d'); cg.drawImage(back, 0, 0); cg.drawImage(face, 0, 0);
   const shine = mk(), sg = shine.getContext('2d'); sg.fillStyle = '#ffffff'; for (let y = 0; y < CH; y++) for (let x2 = 0; x2 < CW; x2++) if (M[y * CW + x2]) sg.fillRect(x2, y, 1, 1);
-  D = { c, back, face, shine, ox: pad, oy: pad + up * S, w: displayWidth(s, S) + slant * S, h: capH }; DISPLAY_CACHE.set(key, D); return D;
+  D = { c, back, face, shine, ox: pad, oy: pad + up * S, w: rawDisplayWidth(s, S) + slant * S, h: capH }; DISPLAY_CACHE.set(key, D); return D;
 }
 function textBoxHook() { } // the layout tests listen here for text that is not drawn through text()
 // Draws a display string with its cap line at y. opt: scale (1-3), style (gold, red, blue, silver), slant (px at the top),
 // shine (a band sweeping through every few seconds). Returns the width.
 function displayText(s, x, y, opt = {}) {
-  s = String(s).toUpperCase(); const scale = opt.scale || 1, D = displayCanvas(s, opt.style || 'gold', scale, opt.slant || 0); x = Math.round(x); y = Math.round(y);
+  s = trNote(String(TRX(s)).toUpperCase()); const scale = opt.scale || 1, D = displayCanvas(s, opt.style || 'gold', scale, opt.slant || 0); x = Math.round(x); y = Math.round(y);
   ctx.drawImage(D.c, x - D.ox, y - D.oy);
   if (opt.shine && !REDUCED && CLOCK.frame) { const k = ((CLOCK.t + (opt.phase || 0)) % 3.4) / .8; if (k < 1) { const sx = x - 8 + Math.round((D.w + 16) * k); ctx.save(); ctx.beginPath(); ctx.rect(sx, y - D.oy, 2 * scale + 1, D.c.height); ctx.rect(sx + 3 * scale + 1, y - D.oy, scale, D.c.height); ctx.clip(); ctx.globalAlpha *= .8; ctx.drawImage(D.shine, x - D.ox, y - D.oy); ctx.restore(); } }
   textBoxHook(s, x, y, D.w, D.h); return D.w;
 }
-function displayC(s, cx, y, opt = {}) { const w = displayWidth(String(s).toUpperCase(), opt.scale || 1) + (opt.slant || 0) * (opt.scale || 1); return displayText(s, cx - w / 2, y, opt); }
+function displayC(s, cx, y, opt = {}) { const w = displayWidth(s, opt.scale || 1) + (opt.slant || 0) * (opt.scale || 1); return displayText(s, cx - w / 2, y, opt); }

@@ -12,7 +12,7 @@ const PROP_KIND = { Q: 'hq', J: 'hq', C: 'center', K: 'center' };
 // Pidgey ₽1900, a Lv 16 Ivysaur ₽2600, a Lv 30 Charizard ₽5300).
 function bstOf(num) { const b = DEX[num].base; return b.hp + b.atk + b.def + b.spa + b.spd + b.spe; }
 function warCost(num, level) { return Math.max(1000, Math.round(bstOf(num) * (level + 10) * .25 / 100) * 100); }
-function money(n) { return '₽' + Math.round(n).toLocaleString('en-US'); }
+function money(n) { return '₽' + fmtNum(n); }
 // A Box entry: a Pokémon a side can deploy. `data` is a serialized unit (a campaign Pokémon or a catch) that keeps its
 // moves and experience; otherwise the species is made fresh at `level`. state: 'box' (in the PC) or 'field'.
 function warEntry(e) {
@@ -79,11 +79,11 @@ function warEntryCost(e) { return e.fresh ? 0 : e.cost; }
 function warDeployBlock(team, i, p) {
   if (!B || !B.war || B.result || team !== B.phase || team < 0 || team > 1) return 'not your phase';
   const e = B.war.box[team][i]; if (!e) return 'not in the box';
-  if (e.state === 'field') return 'already on the map'; if (e.recovery) return 'recovering · ' + e.recovery + (e.recovery > 1 ? ' days' : ' day');
+  if (e.state === 'field') return 'already on the map'; if (e.recovery) return TR(e.recovery > 1 ? 'recovering · {0} days' : 'recovering · {0} day', e.recovery);
   if (!p || !B.war.props.includes(p) || p.owner !== team || (p.kind !== 'hq' && p.kind !== 'center')) return 'needs one of your centers';
   if (unitAt(p.x, p.y)) return 'the center is occupied';
-  if (alive(team).length >= B.war.cap) return B.war.cap + ' on the map already';
-  if (B.war.funds[team] < warEntryCost(e)) return 'needs ' + money(warEntryCost(e));
+  if (alive(team).length >= B.war.cap) return TR('{0} on the map already', B.war.cap);
+  if (B.war.funds[team] < warEntryCost(e)) return TR('needs {0}', money(warEntryCost(e)));
   return null;
 }
 // Withdraw a Pokémon from the Box onto a free property: a campaign Pokémon or a catch comes back as itself (moves,
@@ -110,10 +110,10 @@ function warObjective() {
   if (!B || !B.war || B.result) return B && B.result; warSettle(); const W = B.war;
   const finish = (winner, reason) => { W.reason = reason; if (B.versus) B.endReason = reason + '!'; return B.result = B.versus ? (winner < 0 ? 'draw' : winner === 0 ? 'p1' : 'p2') : winner < 0 ? 'draw' : winner === 0 ? 'win' : 'lose'; };
   // an HQ taken ends it (not while Oak's first lesson is still running: the catch comes first)
-  if (!(B.lesson && !B.lesson.complete)) for (const p of W.props) if (p.kind === 'hq' && p.hq >= 0 && p.owner !== p.hq) return finish(p.owner === 2 || p.owner === 3 || p.owner < 0 ? 1 - p.hq : p.owner, p.name + ' captured');
-  if (W.hold) for (const t of [0, 1]) if (W.hold.count[t] >= W.hold.turns) return finish(t, (t === 0 ? 'You' : 'The enemy') + ' held ' + W.hold.need + ' centers for ' + W.hold.turns + ' turn starts');
+  if (!(B.lesson && !B.lesson.complete)) for (const p of W.props) if (p.kind === 'hq' && p.hq >= 0 && p.owner !== p.hq) return finish(p.owner === 2 || p.owner === 3 || p.owner < 0 ? 1 - p.hq : p.owner, TR('{0} captured', TRX(p.name)));
+  if (W.hold) for (const t of [0, 1]) if (W.hold.count[t] >= W.hold.turns) return finish(t, TR(t === 0 ? 'You held {0} centers for {1} turn starts' : 'The enemy held {0} centers for {1} turn starts', W.hold.need, W.hold.turns));
   if (B.territory) for (const t of [0, 1]) if (!alive(t).length && !warDeploySites(t).length) return finish(1 - t, 'No Pokémon and no centers left');
-  if (W.turns && B.turn > W.turns) { const a = warMiddleHeld(0), b = warMiddleHeld(1); return finish(a === b ? -1 : a > b ? 0 : 1, 'Turn limit: centers ' + a + '-' + b); }
+  if (W.turns && B.turn > W.turns) { const a = warMiddleHeld(0), b = warMiddleHeld(1); return finish(a === b ? -1 : a > b ? 0 : 1, TR('Turn limit: centers {0}-{1}', a, b)); }
   return null;
 }
 // ---------------------------------------------------------------- the AI side of the war

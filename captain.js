@@ -190,7 +190,7 @@ function powerBlock(team, superPower = false) {
   if (superPower && !s.superUnlocked) return 'Unlocks in chapter 4';
   if (!powerCaptain(team)) return 'Captain has fainted';
   if (s.spent) return 'Already used this turn';
-  if (s.charge < (superPower ? 100 : 50)) return 'Need ' + (superPower ? 100 : 50) + ' charge';
+  if (s.charge < (superPower ? 100 : 50)) return TR('Need {0} charge', superPower ? 100 : 50);
   const co = coTrainer(s), fx = co ? (superPower ? co.super : co.power) : null;
   if (!co && s.root === 4 && !alive(team).some(u => canTakeAction(u))) return 'No attacks left this turn';
   if (!co && s.root === 1 && !superPower && !alive(team).some(u => u.hp < u.maxHp || u.status || u.root)) return 'Team already healthy';

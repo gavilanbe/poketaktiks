@@ -29,6 +29,10 @@ Ways to play:
 - **Versus**: two players on one screen, a snake draft, HQ War, Capture the Flag
   or King of the Hill, commanders, funds, weather and optional fog of war.
 
+The game speaks **Spanish** (from Spain, the default) and **English**: the
+language row at the top of OPTIONS, or the ES · EN pill at the foot of the title,
+switches everything at once and remembers the choice.
+
 [Published build](https://gavilanbe.github.io/poketaktiks/) — a published build
 may differ from a local checkout until that checkout is pushed and deployed.
 
@@ -203,7 +207,9 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
 
 ## Presentation
 
-- **Opening**: on the first visit, after PRESS START, a short cinematic: night
+- **Opening**: on the first visit, after PRESS START (signed "a game by
+  gavilanbe"), a short cinematic. First the maker's card: a pixel sparrowhawk
+  (a *gavilán*) over GAVILANBE PRESENTS in the display face. Then night
   over Kanto, Team Rocket's airship finds the Poké Center with its searchlight
   and the town's lights die ("the night the PCs went dark"); the Tactician and
   Giovanni face off on slanted bands, VS slams down, a white flash, and the logo
@@ -221,8 +227,18 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
   stands on the knoll with the starters, or with your own party (the Ace
   crowned) once a journey has begun; Team Rocket's airship crosses the sky with
   its searchlight. CONTINUE shows a trainer card (the front reached, stars, the
-  freed Gym Leaders, the party). OPTIONS holds sound, the battle scene, motion
-  (Auto, Full or Reduced), the Conquest guide, credits and ERASE ALL DATA.
+  freed Gym Leaders, the party). OPTIONS holds the language, sound, the battle
+  scene, motion (Auto, Full or Reduced), the Conquest guide, the opening,
+  credits and ERASE ALL DATA. The foot of the title signs the game: A GAME BY
+  GAVILANBE.
+- **Languages**: everything is localised into Spain Spanish, not only the menus:
+  the fronts and the story, commanders and their Powers, roles, skills, items,
+  terrain, weather, the help pages, and moves and types by their names in the
+  Spanish games (Lanzallamas, Placaje; Fuego, Planta), with levels as Nv, HP as
+  PS and numbers the Spanish way (₽1.000, ×1,5). The pixel fonts carry the
+  Spanish letters: accented capitals keep the whole letter under their mark, and
+  the display face has Á É Í Ó Ú Ñ Ü ¡ ¿. Layouts measure the text they draw, so
+  a longer Spanish label widens its button or steps down to the small face.
 - **Before a battle** every path walks the same steps, shown under the screen's
   title: a front is MISSION › TEAM › BATTLE, a Skirmish and the Safari RULES ›
   TEAM › BATTLE, the Tower FLOOR › TEAM › BATTLE, Conquest SETUP › BATTLE. The
@@ -292,11 +308,27 @@ Browser walks (Chrome over the DevTools protocol) save screenshots to
 (append `-m` for a phone viewport), and `PK_Q=… PK_EXPR=… PK_NAME=… node
 tools/cdp.cjs page` for a one-off capture.
 
+**Languages.** The code is written in English; `i18n.js` translates at the text
+layer, so whatever is drawn or measured goes through `TRX()` and a layout
+measures what it draws. `lang/es.js` (interface), `lang/es-data.js` (Pokémon
+data, moves, commanders) and `lang/es-story.js` (dialogues) map English to Spain
+Spanish. Phrases built from parts are templates, `TR('{0} targets', n)`, and a
+word that needs two translations carries a context key (`'ON|power'`). Data
+drawn in pieces (commanders, roles, fronts...) is translated in place by
+`applyLang()`, which keeps the English originals; move and type names stay
+English in the data (saves and rules use them) and are translated where shown.
+The suites run in English; `PK_LANG=es` runs them in Spanish (every layout
+check included) and lists strings drawn without a translation in
+`tools/i18n-misses.txt`. The walks take `PK_LANG=en|es`, and `PK_MISS=1`
+collects the same list from the browser into `tools/i18n-misses-web.txt`.
+
 Deep links: `?ch=N` (a front with a loaner collection; `&brief` or `&prep` to
 open its briefing or preparation, `&co=brock` to lead with a Gym Leader),
 `?skirmish=SEED`, `?tower=FLOOR`, `?safari`, `?versus=SEED` (`&auto` for random
 teams), `?territory=SEED` (`&auto` for the battle). `&silent` mutes; `&nosave`
-protects persistence during tests; `&nostory` skips dialogues.
+protects persistence during tests; `&nostory` skips dialogues. `?lang=en` or
+`?lang=es` picks the language for the visit; `?splash` / `?intro` open PRESS
+START or the opening.
 
 Source modules: `core.js` (canvas, input, motion helpers, design system,
 audio), `font.js`, `dex.js`, `data.js`, `animmeta.js` (generated), `art.js`

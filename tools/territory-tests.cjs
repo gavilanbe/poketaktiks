@@ -61,7 +61,7 @@ test('deployment checks owner, phase, occupancy, cost, active cap and finite rec
   assert.equal(g.warDeploy(0, 3, hq), null); assert.equal(g.warDeploy(0, 4, hq), null);
   hq.owner = 1; assert(g.warDeployBlock(0, 4, hq)); hq.owner = 0;
   const p = prop(T, 'NORTH'); p.owner = 0; const a = g.warDeploy(0, 4, p); assert(a); prop(T, 'SOUTH').owner = 0;
-  assert.equal(g.warDeployBlock(0, 5, prop(T, 'SOUTH')), '5 on the map already');
+  assert.equal(g.warDeployBlock(0, 5, prop(T, 'SOUTH')), T.G("TR('{0} on the map already', 5)"));
   u.hp = 0; g.warSettle(); assert.equal(W.box[0][3].recovery, 2); assert.equal(W.box[0][3].state, 'box');
   W.funds[0] = 0; assert(g.warDeployBlock(0, 5, hq));
   B.turn++; ownTick(T, 0); assert.equal(W.box[0][3].recovery, 1); g.warUpkeep(0); assert.equal(W.box[0][3].recovery, 1);

@@ -133,7 +133,7 @@ function forecast(att, def, move, from) {
       // drain: a share of the HP taken, then capped by what the striker is missing, so the preview promises only real healing
       const dr = Math.min(drainFor(s.move, Math.min(damage, targetHp)), isA ? att.maxHp - hpA : def.maxHp - hpD); e.drain = dr;
       if (isA) { hpD = Math.max(0, hpD - damage); hpA += dr; } else { hpA = Math.max(0, hpA - damage); hpD += dr; }
-    } else e.cond = 'only if ' + (strikerHp <= 0 ? s.unit : isA ? def : att).name + ' survives';
+    } else { e.condWho = (strikerHp <= 0 ? s.unit : isA ? def : att).name; e.cond = 'only if ' + e.condWho + ' survives'; } // the English text; the forecast shows TR('only if {0} survives', condWho)
     strikes.push(e);
   }
   return { a, c, d, strikes, hpA, hpD, koA: hpA <= 0, koD: hpD <= 0, noCounter: c ? null : (block || 'range'), recharge: needsRecharge(move) };
@@ -230,7 +230,7 @@ function skillCheck(u, sk = u.skill, t, from = u, strict = true) {
   if (strict && u.acted) return 'acted';
   if (u.status === 'frz') return 'frozen';
   if (u.recharge) return 'recharging';
-  if (u.cd > 0) return 'cooldown ' + u.cd;
+  if (u.cd > 0) return TR('cooldown {0}', u.cd);
   const legal = skillTargetsAt(u, sk, from); if (!legal.length) return 'no target';
   if (t !== undefined && !legal.includes(t)) return 'bad target';
   return null;
@@ -242,8 +242,8 @@ function skillBlock(u) { return skillCheck(u, u.skill); }
 function mendAmount(t) { return Math.min(t.maxHp - t.hp, Math.max(1, Math.floor(t.maxHp * MEND_RATIO))); }
 // Preview text of a skill on a target (also what the card shows). Pure.
 function skillPreview(u, sk, t) {
-  if (sk.id === 'brace') return 'takes ' + Math.round((1 - BRACE_MULT) * 100) + '% less damage until its next turn';
-  if (sk.id === 'mend') { const h = mendAmount(t); const parts = []; if (h > 0) parts.push('+' + h + ' HP (' + t.hp + ' → ' + (t.hp + h) + ')'); if (t.status) parts.push('cures ' + STATUS[t.status].name); if (t.root) parts.push('frees it'); return parts.join(' · '); }
+  if (sk.id === 'brace') return TR('takes {0}% less damage until its next turn', Math.round((1 - BRACE_MULT) * 100));
+  if (sk.id === 'mend') { const h = mendAmount(t); const parts = []; if (h > 0) parts.push(TR('+{0} HP ({1} → {2})', h, t.hp, t.hp + h)); if (t.status) parts.push(TR('cures {0}', STATUS[t.status].name)); if (t.root) parts.push(TR('frees it')); return parts.join(' · '); }
   if (sk.id === 'root') return 'cannot move on its next turn';
   return '';
 }
@@ -278,8 +278,8 @@ function checkObjective() {
   if (B.versus) {
     syncFlags(); const a = alive(0).length, b = alive(1).length; const win = (t, why) => { B.endReason = why; return B.result = t; };
     if (!a && !b) return win('draw', 'Everyone fainted at once.'); if (!a) return win('p2', 'Player 1 has no Pokémon left.'); if (!b) return win('p1', 'Player 2 has no Pokémon left.');
-    if (B.captureBy != null) return win(B.captureBy === 0 ? 'p1' : 'p2', 'Player ' + (B.captureBy + 1) + ' captured the flag!');
-    if (B.hill) for (const t of [0, 1]) if (B.hill.score[t] >= B.hill.need) return win(t === 0 ? 'p1' : 'p2', 'Player ' + (t + 1) + ' held the hill.');
+    if (B.captureBy != null) return win(B.captureBy === 0 ? 'p1' : 'p2', TR('Player {0} captured the flag!', B.captureBy + 1));
+    if (B.hill) for (const t of [0, 1]) if (B.hill.score[t] >= B.hill.need) return win(t === 0 ? 'p1' : 'p2', TR('Player {0} held the hill.', t + 1));
     if (B.map.turnLimit && B.turn > B.map.turnLimit) {
       if (B.hill && B.hill.score[0] !== B.hill.score[1]) return win(B.hill.score[0] > B.hill.score[1] ? 'p1' : 'p2', 'More hill points at the turn limit.');
       return win(a > b ? 'p1' : b > a ? 'p2' : 'draw', a === b ? 'Equal teams at the turn limit.' : 'The larger team at the turn limit.');
@@ -295,7 +295,7 @@ function checkObjective() {
   if (B.map.turnLimit && o.type !== 'survive' && B.turn > B.map.turnLimit) return B.result = 'lose';
   return null;
 }
-function objectiveText() { if (B.lesson && !B.lesson.complete) return 'Catch Caterpie + defeat foes'; const o = B.map.objective; switch (o.type) { case 'rout': return 'Defeat all enemies'; case 'war': return 'Rout the foe or take their HQ'; case 'safari': return 'Out-catch Blue in ' + o.days + ' days'; case 'boss': return 'Defeat ' + (o.bossName || 'the boss'); case 'survive': return 'Survive ' + o.turns + ' turns'; case 'seize': return 'Seize the ' + (o.what || 'gym'); case 'versus': return versusObjectiveText(); } return ''; }
+function objectiveText() { if (B.lesson && !B.lesson.complete) return 'Catch Caterpie + defeat foes'; const o = B.map.objective; switch (o.type) { case 'rout': return 'Defeat all enemies'; case 'war': return 'Rout the foe or take their HQ'; case 'safari': return TR('Out-catch Blue in {0} days', o.days); case 'boss': return TR('Defeat {0}', o.bossName || TR('the boss')); case 'survive': return TR('Survive {0} turns', o.turns); case 'seize': return TR('Seize the {0}', TR(o.what || 'gym')); case 'versus': return versusObjectiveText(); } return ''; }
 
 // ---------------------------------------------------------------- versus rules: modes, flags, the hill, fog of war
 const VS_MODES = {
@@ -331,7 +331,7 @@ function versusAfterAction(u) {
 function hillCount(team) { const h = B.hill; return B.units.filter(u => u.hp > 0 && u.team === team && Math.abs(u.x - h.x) <= h.r && Math.abs(u.y - h.y) <= h.r).length; }
 // King of the Hill: starting a turn with more Pokémon on the hill than the other team scores a point.
 function versusPhaseStart(team) { if (!B.versus) return null; syncFlags(); if (B.hill && team <= 1) { const mine = hillCount(team), theirs = hillCount(1 - team); if (mine > theirs) { B.hill.score[team]++; return { type: 'hill', team, score: B.hill.score[team] }; } } return null; }
-function versusObjectiveText() { const m = B.map.objective.mode || 'elim'; return m === 'ctf' ? 'Capture the enemy flag' : m === 'hill' ? 'Hold the hill ' + (B.hill ? B.hill.need : 3) + ' turns' : 'Rout them or take their HQ'; }
+function versusObjectiveText() { const m = B.map.objective.mode || 'elim'; return m === 'ctf' ? 'Capture the enemy flag' : m === 'hill' ? TR('Hold the hill {0} turns', B.hill ? B.hill.need : 3) : 'Rout them or take their HQ'; }
 
 // ---------------------------------------------------------------- AI
 // BFS distance field over terrain the unit can enter (ignores units) from a set of goal cells.

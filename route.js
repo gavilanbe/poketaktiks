@@ -139,23 +139,25 @@ function routeDraw() {
   if (SAVE && SAVE.party) { const list = SAVE.party.slice(0, L.side ? 6 : 4); list.forEach((p, i) => drawMon(p.num, (L.side ? L.view.w : W) - 14 - i * 20, 23, { flip: true })); }
   drawRouteCard(S, L);
   const fy = H - L.bh - 6; bigButton(6, fy, 64, L.bh, '◂ TITLE', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
-  if (!L.side || W > 420) hintLine(VIEW.touch ? ['tap a stop · tap again to play'] : [['◂▸', 'stop'], ['Z', 'play'], ['X', 'title']], L.side ? L.view.w / 2 + 30 : W / 2 + 30, fy + (L.bh - 7) / 2, { pill: true });
+  if (!L.side || W > 420) { // the hints sit between the TITLE button and the right edge; the longest set that fits
+    const x0 = 76, x1 = (L.side ? L.view.w : W) - 6, sets = VIEW.touch ? [['tap a stop · tap again to play'], ['tap again to play']] : [[['◂▸', 'stop'], ['Z', 'play'], ['X', 'title']], [['◂▸', 'stop'], ['Z', 'play']], [['Z', 'play']]];
+    const hs = sets.find(h => hintWidth(h) <= x1 - x0); if (hs) hintLine(hs, Math.min((L.side ? L.view.w : W) / 2 + 30, x1 - hintWidth(hs) / 2 + 5), fy + (L.bh - 7) / 2, { pill: true }); }
 }
 // The card for the selected stop: chapter, place, objective, the three star goals, the first-clear reward, PLAY.
 function drawRouteCard(S, L) {
   const c = L.card, i = S.sel, ch = CHAPTERS[i], o = ch.map.objective, stars = routeStars(i), cleared = SAVE && (SAVE.chapter > i), tok = unfold('routecard' + i, c.x, c.y, c.w, c.h, .18);
-  const p = panel(c.x, c.y, c.w, c.h, { title: 'FRONT ' + ch.num, fill: UI.panel });
+  const p = panel(c.x, c.y, c.w, c.h, { title: TR('FRONT {0}', ch.num), fill: UI.panel });
   let y = p.cy + 2; const x = c.x + 8, w = c.w - 16;
   bigText(fitLabel(ch.title.toUpperCase(), w), x, y, UI.gold, { shadow: UI.goldDark }); y += 13;
-  const goal = objectiveTextFor(o, ch.map).replace('Objective: ', ''), gw = wrap(goal[0].toUpperCase() + goal.slice(1), w - 12), gl = gw.slice(0, 2); if (gw.length > 2) gl[1] = fitLabel(gl[1] + '...', w - 12);
+  const goal = goalText(o, ch.map), gw = wrap(goal, w - 12), gl = gw.slice(0, 2); if (gw.length > 2) gl[1] = fitLabel(gl[1] + '...', w - 12);
   iconAt('flag', x, y - 1, UI.gold); gl.forEach((l, k) => text(l, x + 12, y + k * 9, UI.ink)); y += 11 + (gl.length - 1) * 9; // the goal wraps to two lines
-  text('Foes Lv ' + ch.level + ' · Deploy ' + ch.slots, x, y, UI.muted); y += 12;
+  text(TR('Foes Lv {0} · Deploy {1}', ch.level, ch.slots), x, y, UI.muted); y += 12;
   // who holds the front (a Gym Leader shown as freed once the front is cleared)
-  { const co = ch.co ? COS[ch.co] : null, sp = ch.foe ? SPEAKERS[ch.foe] : null, tr = co ? co.tr : sp && sp.tr, face = tr && trainerFace(tr), col = co ? co.col : sp ? sp.col : UI.red, freed = cleared && co && CO_UNLOCK[ch.co]; if (face) { rect(x, y - 3, 14, 14, shade(col, -.4)); ctx.save(); ctx.beginPath(); ctx.rect(x, y - 3, 14, 14); ctx.clip(); ctx.drawImage(face, x - 2, y - 4); ctx.restore(); outline(x - 1, y - 4, 16, 16, col); } text(fitLabel((freed ? 'Freed: ' : 'Held by ') + (co ? co.name : ch.foe || 'Team Rocket'), w - 20), x + 19, y, freed ? UI.green : col); y += 15; }
-  const goals = [['Win the battle', stars >= 1], ['Win within ' + ch.par + ' turns', stars >= 2], ['Nobody faints', stars >= 3]];
+  { const co = ch.co ? COS[ch.co] : null, sp = ch.foe ? SPEAKERS[ch.foe] : null, tr = co ? co.tr : sp && sp.tr, face = tr && trainerFace(tr), col = co ? co.col : sp ? sp.col : UI.red, freed = cleared && co && CO_UNLOCK[ch.co]; if (face) { rect(x, y - 3, 14, 14, shade(col, -.4)); ctx.save(); ctx.beginPath(); ctx.rect(x, y - 3, 14, 14); ctx.clip(); ctx.drawImage(face, x - 2, y - 4); ctx.restore(); outline(x - 1, y - 4, 16, 16, col); } text(fitLabel(TR(freed ? 'Freed: {0}' : 'Held by {0}', co ? co.name : TRX(ch.foe || 'Team Rocket')), w - 20), x + 19, y, freed ? UI.green : col); y += 15; }
+  const goals = [[TR('Win the battle'), stars >= 1], [TR('Win within {0} turns', ch.par), stars >= 2], [TR('Nobody faints'), stars >= 3]];
   if (c.h - (y - c.y) > 60 || L.side) { sectionLabel('Stars', x, y, w, UI.muted); y += 10; goals.forEach(([g, on], k) => { drawRouteStar(x, y - 1, on, true); text(g, x + 10, y, on ? UI.ink : UI.muted); y += 10; }); y += 2; }
-  else { goals.forEach(([, on], k) => drawRouteStar(x + k * 9, y - 1, on, true)); text(stars + '/3 stars', x + 30, y, UI.muted); y += 11; }
-  if (!cleared && (c.h - (y - c.y) > 40)) { drawBall(x + 3, y + 3, ITEMS.pokeball.col, 3); text('First clear: ×' + (ch.rewards.pokeball || 0), x + 10, y, UI.muted); y += 11; }
+  else { goals.forEach(([, on], k) => drawRouteStar(x + k * 9, y - 1, on, true)); text(TR('{0}/3 stars', stars), x + 30, y, UI.muted); y += 11; }
+  if (!cleared && (c.h - (y - c.y) > 40)) { drawBall(x + 3, y + 3, ITEMS.pokeball.col, 3); text(TR('First clear: ×{0}', ch.rewards.pokeball || 0), x + 10, y, UI.muted); y += 11; }
   const bh = L.bh + 4, by = c.y + c.h - bh - 7;
   // the battlefield: where you deploy (blue), every foe (red), wild Pokémon (yellow) and the boss (skull)
   const room = by - y - 6; if (room >= 34) { ROUTE.previews = ROUTE.previews || {}; const bd = ROUTE.previews[i] || (ROUTE.previews[i] = makeBackdrop(ch.map)); const sc = Math.min(w / bd.canvas.width, room / bd.canvas.height), pw = Math.floor(bd.canvas.width * sc), ph = Math.floor(bd.canvas.height * sc), px0 = c.x + Math.round((c.w - pw) / 2), py0 = y + Math.round((room - ph) / 2);
