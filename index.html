@@ -2972,7 +2972,7 @@ function powerAfterCombat(att, events) {
 }
 function powerBlock(team, superPower = false) {
   const s = powerState(team);
-  if (!s) return 'No captain';
+  if (!s) return 'No commander';
   if (B.result || B.phase !== team) return 'Wait for your turn';
   if (!s.unlocked) return 'Unlocks in chapter 2';
   if (superPower && !s.superUnlocked) return 'Unlocks in chapter 4';
@@ -6966,7 +6966,7 @@ function routeDraw() {
   bigText('ROUTE', 8, 8, UI.gold, { shadow: UI.goldDark }); const sx = 8 + textWidth('ROUTE', BIG) + 10; drawRouteStar(sx, 8, true, false); text(total + '/' + CHAPTERS.length * 3, sx + 8, 9, UI.ink);
   if (SAVE && SAVE.party) { const list = SAVE.party.slice(0, L.side ? 6 : 4); list.forEach((p, i) => drawMon(p.num, (L.side ? L.view.w : W) - 14 - i * 20, 23, { flip: true })); }
   drawRouteCard(S, L);
-  const fy = H - L.bh - 6; bigButton(6, fy, 64, L.bh, 'TITLE', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
+  const fy = H - L.bh - 6; bigButton(6, fy, 64, L.bh, '◂ TITLE', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
   if (!L.side || W > 420) hintLine(VIEW.touch ? ['tap a stop · tap again to play'] : [['◂▸', 'stop'], ['Z', 'play'], ['X', 'title']], L.side ? L.view.w / 2 + 30 : W / 2 + 30, fy + (L.bh - 7) / 2, { pill: true });
 }
 // The card for the selected stop: chapter, place, objective, the three star goals, the first-clear reward, PLAY.
@@ -7003,12 +7003,16 @@ function routeInput(ev) {
 'use strict';
 ITEMS.practiceball = { name: 'Practice Ball', kind: 'ball', rate: 1, col: '#f0c957', desc: 'Oak\'s free practice ball. Guaranteed at half HP.' };
 function fitLabel(s, w) { if (textWidth(s) <= w) return s; while (s.length > 1 && textWidth(s + '...') > w) s = s.slice(0, -1); return s + '...'; }
-function showJourney(lines, next) { trainerImg('oak'); goScene('journey', { lines, next }); }
+// bg: 'lab' keeps Oak's lab behind the card (after choosing a partner), 'map' the battlefield about to be played.
+function showJourney(lines, next, bg = null) { trainerImg('oak'); goScene('journey', { lines, next, bg }); }
 // A lesson card: the captain in a portrait on the left (when there is room), the lesson title on a ribbon, and each tip
 // sliding in after the one before with a numbered bullet; LET'S GO pulses once everything is on screen.
 function journeyDraw() {
   const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t, portrait = W >= 300, w = Math.min(360, W - 16), x = Math.round((W - w) / 2);
-  rect(0, 0, W, H, UI.bg); for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .18 * y / H; rect(0, y, W, 2, '#2a2f78'); } ctx.globalAlpha = 1; SC.hits = [];
+  rect(0, 0, W, H, UI.bg); SC.hits = [];
+  if (S.bg === 'lab') { drawLab({ x: 0, y: 0, w: W, h: H }, Math.round(H * .72)); dimScreen(.55); }
+  else if (S.bg === 'map' && BACKDROP) drawBackdrop(BACKDROP, (W - BACKDROP.canvas.width) / 2 - t * 3, (H - BACKDROP.canvas.height) / 2, .78);
+  else { for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .18 * y / H; rect(0, y, W, 2, '#2a2f78'); } ctx.globalAlpha = 1; }
   const pw = portrait ? 64 : 0, tw = w - 20 - (pw ? pw + 8 : 0), rows = S.lines.slice(1).map(s2 => wrap(s2, tw - 16));
   const h = Math.min(H - 12, 44 + rows.reduce((n, a) => n + a.length * 10 + 5, 0) + 30), y = Math.round((H - h) / 2), tok = unfold('journey', x, y, w, h, .22);
   const p = panel(x, y, w, h, { header: fitLabel(S.lines[0], w - 16), headerFill: '#2a2470' });
@@ -7640,7 +7644,7 @@ function openCoRoom() { const save = loadSave(); goScene('cos', { i: 0, cos: coU
 function coRoomDraw() {
   const S = SC.data, W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), bh = btnH(); S.i = clamp(S.i, 0, CO_ROOM.length - 1);
   rect(0, 0, W, H, '#0e0c22'); for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .25 * (1 - y / H); hline(0, y, W, '#3a2a6a'); } ctx.globalAlpha = 1; SC.hits = [];
-  const have = S.cos.filter(c => c !== 'you').length, top = screenTitle('COMMANDERS', narrow ? null : 'Gym Leaders freed: ' + have + ' / 9 · pick one in a briefing or a setup screen', 4), foot = footerBand(bh + 12);
+  const have = S.cos.filter(c => c !== 'you').length, top = screenTitle('COMMANDERS', narrow ? null : 'Gym Leaders freed: ' + have + ' / 9 · pick one in a briefing or a setup screen', 4), foot = setupFootTop();
   const cols = narrow ? 4 : 4, cw = narrow ? Math.floor((W - 12 - 3 * 4) / 4) : 56, ch = narrow ? 50 : 62, gx = 6, gy = top + 4;
   CO_ROOM.forEach((id, k) => { const x = gx + (k % cols) * (cw + 4), y = gy + Math.floor(k / cols) * (ch + 4), open = S.cos.includes(id) || id === 'rocket', sel = S.i === k, co = COS[id];
     if (open) coCard(x, y, cw, ch, id, 0, () => { if (S.i === k) return; S.i = k; S.at = SC.t; Audio.sfx('cursor'); }, { hot: sel, col: id === 'you' ? CAPTAINS[S.root].col : null, tag: id === 'rocket' ? 'FOE' : null, label: 'CO ' + (co ? co.name : id) });
@@ -7666,8 +7670,7 @@ function coRoomDraw() {
       CO_TEAMS[id].slice(0, n).forEach((num, k) => { const hop = REDUCED ? 0 : Math.round(Math.max(0, Math.sin(t * 5 - k * .6)) * -2); ctx.drawImage(monIcon(num), px0 + 8 + k * 26, y + hop, 24, 18); }); y += 22;
       if (y + 9 <= py0 + ph - 4) text(fitLabel('They evolve with the level; the Ace ' + DEX[ace].name + ' wears the crown', pw - 16), px0 + 8, y, UI.dim); }
   }
-  const fy = foot + 6; bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
-  if (!narrow) hintLine([['◂▸▲▼', 'commander'], ['X', 'back']], W / 2, fy + (bh - 7) / 2, { pill: false });
+  setupFooter({ back: { label: '◂ TITLE', run: () => { Audio.sfx('cancel'); goScene('title'); } }, hints: VIEW.touch ? ['tap a commander'] : [['◂▸▲▼', 'commander'], ['X', 'back']] });
 }
 function coRoomInput(ev) {
   const S = SC.data; if (ev.type === 'key') { const n = CO_ROOM.length, d = ev.key === 'left' ? -1 : ev.key === 'right' ? 1 : ev.key === 'up' ? -4 : ev.key === 'down' ? 4 : 0; if (d) { S.i = (S.i + d + n) % n; S.at = SC.t; Audio.sfx('cursor'); } else if (ev.key === 'back' || ev.key === 'ok') { Audio.sfx('cancel'); goScene('title'); } else if (ev.key === 'mute') Audio.toggle(); return; }
@@ -7690,7 +7693,7 @@ function partyUnit(num, level, hpBonus = BOND_HP) { const u = makeUnit(num, leve
 
 // ---------------------------------------------------------------- campaign flow
 function startNewGame() { clearSuspend(); SAVE = { chapter: 0, party: [], bag: { pokeball: 5 }, stars: {}, beaten: false, co: 'you', journey: { version: 1, firstCatch: false } }; if (PARAMS.has('nostory')) goScene('starter'); else startPrologue(() => goScene('starter')); }
-function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; SAVE.starter = num; SAVE.captainPid = 0; writeSave(); showJourney(['YOUR PARTNER, YOUR PC BOX', DEX[num].name + ' is your partner: it wears the crown and leads your army. Pidgey joins as your scout.', 'Every Pokémon you catch waits in your PC Box, ready to deploy.', 'Hold Poké Centers: each pays ₽1,000 a day, and your Box deploys there.', 'Eight fronts to free across Kanto, each with a goal and three stars.'], () => openRoute({ sel: 0 })); }
+function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; SAVE.starter = num; SAVE.captainPid = 0; writeSave(); showJourney(['YOUR PARTNER, YOUR PC BOX', DEX[num].name + ' is your partner: it wears the crown and leads your army. Pidgey joins as your scout.', 'Every Pokémon you catch waits in your PC Box, ready to deploy.', 'Hold Poké Centers: each pays ₽1,000 a day, and your Box deploys there.', 'Eight fronts to free across Kanto, each with a goal and three stars.'], () => openRoute({ sel: 0 }), 'lab'); }
 function continueCampaign() { SAVE = loadSave(); if (!SAVE) { startNewGame(); return; } openRoute(); }
 function prepChapter(idx) {
   migrateCaptain(SAVE);
@@ -7710,7 +7713,7 @@ function launchChapter(idx, deployed) {
   const box = SAVE.party.map((p, i) => Object.assign({}, p, { pid: i })).filter(p => !deployed.some(d => d.pid === p.pid));
   startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), chapterOpts(idx, box, (Date.now() & 0xffff) | 1));
   for (const u of alive(0)) { const src = deployed.find(d => d.pid != null && d.num === u.num && d.level === u.level && !d._used); if (src) { src._used = true; u.pid = src.pid; } }
-  const go = () => { const start = () => { goScene('battle'); beginPhase(0, true); }; if (CHAPTER_LESSONS[idx]) showJourney(CHAPTER_LESSONS[idx], start); else start(); };
+  const go = () => { const start = () => { goScene('battle'); beginPhase(0, true); }; if (CHAPTER_LESSONS[idx]) showJourney(CHAPTER_LESSONS[idx], start, 'map'); else start(); };
   if (ch.intro && !PARAMS.has('nostory')) { goScene('battle'); startDialog(ch.intro, go); } else go();
 }
 function onBattleEnd(result) {

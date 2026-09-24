@@ -184,7 +184,7 @@ function powerAfterCombat(att, events) {
 }
 function powerBlock(team, superPower = false) {
   const s = powerState(team);
-  if (!s) return 'No captain';
+  if (!s) return 'No commander';
   if (B.result || B.phase !== team) return 'Wait for your turn';
   if (!s.unlocked) return 'Unlocks in chapter 2';
   if (superPower && !s.superUnlocked) return 'Unlocks in chapter 4';

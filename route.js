@@ -138,7 +138,7 @@ function routeDraw() {
   bigText('ROUTE', 8, 8, UI.gold, { shadow: UI.goldDark }); const sx = 8 + textWidth('ROUTE', BIG) + 10; drawRouteStar(sx, 8, true, false); text(total + '/' + CHAPTERS.length * 3, sx + 8, 9, UI.ink);
   if (SAVE && SAVE.party) { const list = SAVE.party.slice(0, L.side ? 6 : 4); list.forEach((p, i) => drawMon(p.num, (L.side ? L.view.w : W) - 14 - i * 20, 23, { flip: true })); }
   drawRouteCard(S, L);
-  const fy = H - L.bh - 6; bigButton(6, fy, 64, L.bh, 'TITLE', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
+  const fy = H - L.bh - 6; bigButton(6, fy, 64, L.bh, '◂ TITLE', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
   if (!L.side || W > 420) hintLine(VIEW.touch ? ['tap a stop · tap again to play'] : [['◂▸', 'stop'], ['Z', 'play'], ['X', 'title']], L.side ? L.view.w / 2 + 30 : W / 2 + 30, fy + (L.bh - 7) / 2, { pill: true });
 }
 // The card for the selected stop: chapter, place, objective, the three star goals, the first-clear reward, PLAY.

@@ -15,7 +15,7 @@ function partyUnit(num, level, hpBonus = BOND_HP) { const u = makeUnit(num, leve
 
 // ---------------------------------------------------------------- campaign flow
 function startNewGame() { clearSuspend(); SAVE = { chapter: 0, party: [], bag: { pokeball: 5 }, stars: {}, beaten: false, co: 'you', journey: { version: 1, firstCatch: false } }; if (PARAMS.has('nostory')) goScene('starter'); else startPrologue(() => goScene('starter')); }
-function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; SAVE.starter = num; SAVE.captainPid = 0; writeSave(); showJourney(['YOUR PARTNER, YOUR PC BOX', DEX[num].name + ' is your partner: it wears the crown and leads your army. Pidgey joins as your scout.', 'Every Pokémon you catch waits in your PC Box, ready to deploy.', 'Hold Poké Centers: each pays ₽1,000 a day, and your Box deploys there.', 'Eight fronts to free across Kanto, each with a goal and three stars.'], () => openRoute({ sel: 0 })); }
+function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; SAVE.starter = num; SAVE.captainPid = 0; writeSave(); showJourney(['YOUR PARTNER, YOUR PC BOX', DEX[num].name + ' is your partner: it wears the crown and leads your army. Pidgey joins as your scout.', 'Every Pokémon you catch waits in your PC Box, ready to deploy.', 'Hold Poké Centers: each pays ₽1,000 a day, and your Box deploys there.', 'Eight fronts to free across Kanto, each with a goal and three stars.'], () => openRoute({ sel: 0 }), 'lab'); }
 function continueCampaign() { SAVE = loadSave(); if (!SAVE) { startNewGame(); return; } openRoute(); }
 function prepChapter(idx) {
   migrateCaptain(SAVE);
@@ -35,7 +35,7 @@ function launchChapter(idx, deployed) {
   const box = SAVE.party.map((p, i) => Object.assign({}, p, { pid: i })).filter(p => !deployed.some(d => d.pid === p.pid));
   startBattle(ch.map, deployed, Object.assign({}, SAVE.bag), chapterOpts(idx, box, (Date.now() & 0xffff) | 1));
   for (const u of alive(0)) { const src = deployed.find(d => d.pid != null && d.num === u.num && d.level === u.level && !d._used); if (src) { src._used = true; u.pid = src.pid; } }
-  const go = () => { const start = () => { goScene('battle'); beginPhase(0, true); }; if (CHAPTER_LESSONS[idx]) showJourney(CHAPTER_LESSONS[idx], start); else start(); };
+  const go = () => { const start = () => { goScene('battle'); beginPhase(0, true); }; if (CHAPTER_LESSONS[idx]) showJourney(CHAPTER_LESSONS[idx], start, 'map'); else start(); };
   if (ch.intro && !PARAMS.has('nostory')) { goScene('battle'); startDialog(ch.intro, go); } else go();
 }
 function onBattleEnd(result) {

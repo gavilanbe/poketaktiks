@@ -320,7 +320,7 @@ function openCoRoom() { const save = loadSave(); goScene('cos', { i: 0, cos: coU
 function coRoomDraw() {
   const S = SC.data, W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), bh = btnH(); S.i = clamp(S.i, 0, CO_ROOM.length - 1);
   rect(0, 0, W, H, '#0e0c22'); for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .25 * (1 - y / H); hline(0, y, W, '#3a2a6a'); } ctx.globalAlpha = 1; SC.hits = [];
-  const have = S.cos.filter(c => c !== 'you').length, top = screenTitle('COMMANDERS', narrow ? null : 'Gym Leaders freed: ' + have + ' / 9 · pick one in a briefing or a setup screen', 4), foot = footerBand(bh + 12);
+  const have = S.cos.filter(c => c !== 'you').length, top = screenTitle('COMMANDERS', narrow ? null : 'Gym Leaders freed: ' + have + ' / 9 · pick one in a briefing or a setup screen', 4), foot = setupFootTop();
   const cols = narrow ? 4 : 4, cw = narrow ? Math.floor((W - 12 - 3 * 4) / 4) : 56, ch = narrow ? 50 : 62, gx = 6, gy = top + 4;
   CO_ROOM.forEach((id, k) => { const x = gx + (k % cols) * (cw + 4), y = gy + Math.floor(k / cols) * (ch + 4), open = S.cos.includes(id) || id === 'rocket', sel = S.i === k, co = COS[id];
     if (open) coCard(x, y, cw, ch, id, 0, () => { if (S.i === k) return; S.i = k; S.at = SC.t; Audio.sfx('cursor'); }, { hot: sel, col: id === 'you' ? CAPTAINS[S.root].col : null, tag: id === 'rocket' ? 'FOE' : null, label: 'CO ' + (co ? co.name : id) });
@@ -346,8 +346,7 @@ function coRoomDraw() {
       CO_TEAMS[id].slice(0, n).forEach((num, k) => { const hop = REDUCED ? 0 : Math.round(Math.max(0, Math.sin(t * 5 - k * .6)) * -2); ctx.drawImage(monIcon(num), px0 + 8 + k * 26, y + hop, 24, 18); }); y += 22;
       if (y + 9 <= py0 + ph - 4) text(fitLabel('They evolve with the level; the Ace ' + DEX[ace].name + ' wears the crown', pw - 16), px0 + 8, y, UI.dim); }
   }
-  const fy = foot + 6; bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
-  if (!narrow) hintLine([['◂▸▲▼', 'commander'], ['X', 'back']], W / 2, fy + (bh - 7) / 2, { pill: false });
+  setupFooter({ back: { label: '◂ TITLE', run: () => { Audio.sfx('cancel'); goScene('title'); } }, hints: VIEW.touch ? ['tap a commander'] : [['◂▸▲▼', 'commander'], ['X', 'back']] });
 }
 function coRoomInput(ev) {
   const S = SC.data; if (ev.type === 'key') { const n = CO_ROOM.length, d = ev.key === 'left' ? -1 : ev.key === 'right' ? 1 : ev.key === 'up' ? -4 : ev.key === 'down' ? 4 : 0; if (d) { S.i = (S.i + d + n) % n; S.at = SC.t; Audio.sfx('cursor'); } else if (ev.key === 'back' || ev.key === 'ok') { Audio.sfx('cancel'); goScene('title'); } else if (ev.key === 'mute') Audio.toggle(); return; }

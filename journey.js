@@ -2,12 +2,16 @@
 'use strict';
 ITEMS.practiceball = { name: 'Practice Ball', kind: 'ball', rate: 1, col: '#f0c957', desc: 'Oak\'s free practice ball. Guaranteed at half HP.' };
 function fitLabel(s, w) { if (textWidth(s) <= w) return s; while (s.length > 1 && textWidth(s + '...') > w) s = s.slice(0, -1); return s + '...'; }
-function showJourney(lines, next) { trainerImg('oak'); goScene('journey', { lines, next }); }
+// bg: 'lab' keeps Oak's lab behind the card (after choosing a partner), 'map' the battlefield about to be played.
+function showJourney(lines, next, bg = null) { trainerImg('oak'); goScene('journey', { lines, next, bg }); }
 // A lesson card: the captain in a portrait on the left (when there is room), the lesson title on a ribbon, and each tip
 // sliding in after the one before with a numbered bullet; LET'S GO pulses once everything is on screen.
 function journeyDraw() {
   const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t, portrait = W >= 300, w = Math.min(360, W - 16), x = Math.round((W - w) / 2);
-  rect(0, 0, W, H, UI.bg); for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .18 * y / H; rect(0, y, W, 2, '#2a2f78'); } ctx.globalAlpha = 1; SC.hits = [];
+  rect(0, 0, W, H, UI.bg); SC.hits = [];
+  if (S.bg === 'lab') { drawLab({ x: 0, y: 0, w: W, h: H }, Math.round(H * .72)); dimScreen(.55); }
+  else if (S.bg === 'map' && BACKDROP) drawBackdrop(BACKDROP, (W - BACKDROP.canvas.width) / 2 - t * 3, (H - BACKDROP.canvas.height) / 2, .78);
+  else { for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .18 * y / H; rect(0, y, W, 2, '#2a2f78'); } ctx.globalAlpha = 1; }
   const pw = portrait ? 64 : 0, tw = w - 20 - (pw ? pw + 8 : 0), rows = S.lines.slice(1).map(s2 => wrap(s2, tw - 16));
   const h = Math.min(H - 12, 44 + rows.reduce((n, a) => n + a.length * 10 + 5, 0) + 30), y = Math.round((H - h) / 2), tok = unfold('journey', x, y, w, h, .22);
   const p = panel(x, y, w, h, { header: fitLabel(S.lines[0], w - 16), headerFill: '#2a2470' });
