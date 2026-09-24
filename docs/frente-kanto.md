@@ -135,6 +135,9 @@ scenes draw it; the forecast includes it.
 - Languages: Spain Spanish by default, English on request (OPTIONS or the title's ES · EN pill). Terms follow
   the Spanish games: Nv for level, PS for HP, the official move and type names (Lanzallamas, Planta), la Caja
   del PC, cuartel for HQ, el As for the Ace, FASE DEL JUGADOR / FASE ENEMIGA.
+- The screens before a battle share one kit (menukit.js): a moving sky in the mode's colour, the two commanders
+  facing off blue against red with their Aces, rules as tiles that explain themselves, the battlefield framed
+  like a board, and a call to action that breathes; Quick Battle's modes are hero cards with painted key art.
 - The opening starts on the maker's card (a sparrowhawk, GAVILANBE PRESENTS); PRESS START and the title's
   foot sign the game "a game by gavilanbe".
 
