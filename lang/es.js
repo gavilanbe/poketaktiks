@@ -267,4 +267,15 @@ Object.assign(ES, {
   'Team of four': 'Equipo de cuatro', 'by rarity': 'por rareza', 'BALLS': 'BALLS', 'DAYS': 'DÍAS', 'SCORE': 'PUNTOS',
   'Both sides lead with the same Ace: the battle is won on the map.': 'Los dos bandos llevan el mismo As: la batalla se gana en el mapa.',
   'FOES': 'RIVALES', 'route': 'ruta',
+  // commander powers (cofx.js): each commander's line and what a power does, as chips
+  'Not one step further!': '¡Ni un paso más!', 'Nothing gets through my defence!': '¡Nada atraviesa mi defensa!', 'Here comes the rain!': '¡Que llueva!', 'Ride the tide with me!': '¡Llega la marea!',
+  'Stand still, soldier!': '¡Firmes, soldado!', 'Feel the thunder, kid!': '¡Siente el trueno, chaval!', 'Breathe in, and heal.': 'Respirad hondo y sanad.', 'Let my garden bloom!': '¡Que florezca mi jardín!',
+  'Watch your step.': 'Cuidado dónde pisas.', 'You cannot hit what you cannot see.': 'No puedes golpear lo que no ves.', 'My mind is clear.': 'Mi mente está en calma.', 'I have already seen your defeat.': 'Ya he visto tu derrota.',
+  'Turn up the heat!': '¡Que suba el calor!', 'Stand back! She is going to blow!': '¡Atrás! ¡Va a estallar!', 'Try to keep up!': '¡A ver si me sigues!', 'Who is the champion here?': '¿Quién es aquí el campeón?',
+  'Kneel before Team Rocket.': 'Arrodíllate ante el Team Rocket.', 'Kanto belongs to Team Rocket!': '¡Kanto es del Team Rocket!', 'Thanks for the cash!': '¡Gracias por la pasta!', 'Team Rocket, full speed ahead!': '¡Team Rocket, a toda máquina!',
+  'Charge them!': '¡A por ellos!', 'Burn through their line!': '¡Arrasad su línea!', 'Shields up!': '¡Escudos arriba!', 'Nobody falls today!': '¡Hoy no cae nadie!', 'Hold on, team!': '¡Aguantad, equipo!', 'Grow strong together!': '¡Crezcamos juntos!',
+  '{0} moves +{1}%': 'Ataques {0} +{1}%', '+{0}% damage': '+{0}% de daño', 'Special moves +{0}%': 'Ataques especiales +{0}%', 'Take {0}% less': 'Reciben un {0}% menos', '+{0} evasion': '+{0} de evasión', '+{0} move': '+{0} de movimiento',
+  'Criticals +{0}%': 'Críticos +{0}%', 'Heal {0}%': 'Curan un {0}%', 'Foes take {0}%': 'Rivales: -{0}% de PS', 'Foes: {0}': 'Rivales: {0}', 'Foes {0} move': 'Rivales: {0} de movimiento', '{0} · {1} days': '{0} · {1} días',
+  'Foes take {0}% next turn': 'Rivales: -{0}% en tu turno', 'Steal {0}': 'Roba {0}', 'Next attack +{0}%': 'Próximo ataque +{0}%', 'Cures and blocks new status': 'Cura y bloquea estados', 'Cures status': 'Cura los estados',
+  'Paralyses foes': 'Paraliza a los rivales', 'Poisons foes': 'Envenena a los rivales', 'Burns foes': 'Quema a los rivales', 'Puts foes to sleep': 'Duerme a los rivales', 'Freezes foes': 'Congela a los rivales', 'Hurts foes': 'Daña a los rivales',
 });

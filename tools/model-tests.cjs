@@ -6,7 +6,7 @@
 'use strict';
 const vm = require('vm'), fs = require('fs'), path = require('path'), assert = require('assert');
 const ROOT = path.join(__dirname, '..');
-const FILES = ['core.js', 'i18n.js', 'lang/es.js', 'lang/es-data.js', 'lang/es-story.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'scenery.js', 'model.js', 'captain.js', 'battle.js', 'menus.js', 'duel.js', 'attackfx.js', 'campaign.js', 'war.js', 'territory.js', 'scenes.js', 'menukit.js', 'title.js', 'route.js', 'journey.js', 'modes.js', 'main.js'];
+const FILES = ['core.js', 'i18n.js', 'lang/es.js', 'lang/es-data.js', 'lang/es-story.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'scenery.js', 'model.js', 'captain.js', 'battle.js', 'menus.js', 'duel.js', 'attackfx.js', 'campaign.js', 'war.js', 'territory.js', 'scenes.js', 'menukit.js', 'cofx.js', 'title.js', 'route.js', 'journey.js', 'modes.js', 'main.js'];
 
 // ---------------------------------------------------------------- harness
 // Tests run in English unless PK_LANG=es, which also records every drawn string that has no Spanish (tools/i18n-misses.txt).
@@ -933,6 +933,38 @@ test('deploys play as a send-out: the Pokémon stays hidden until its ball opens
   const wild = g.makeUnit(10, 3, 2, { x: 0, y: 0 }); B.units.push(wild); for (const [u, recalled] of [[mine, true], [wild, false]]) { u.hp = 0; BT.queue.length = 0; G('BT').queue.push({ kind: 'event', ev: { type: 'ko', unit: u } }); g.playQueue(() => { BT.mode = 'idle'; });
     const kinds = []; let n = 0; while (BT.mode === 'anim' && n++ < 600) { if (BT.anim && BT.anim.ev && !kinds.includes(BT.anim.ev.type)) kinds.push(BT.anim.ev.type); g.battleUpdate(1 / 60); g.battleDraw(); }
     assert.strictEqual(kinds.includes('recall'), recalled, u.name + (recalled ? ' is recalled to the Box' : ' is not recalled') + ': ' + kinds.join(',')); }
+});
+test('commander powers: each Power and Super Power does what it says, plays its cast and sweep through the queue and marks the field', T0 => {
+  const cases = [['brock', 4], ['misty', 4], ['surge', 4], ['erika', 4], ['koga', 4], ['sabrina', 4], ['blaine', 4], ['blue', 4], ['giovanni', 4], ['rocket', 4], ['you', 4], ['you', 7], ['you', 1]];
+  for (const [co, cap] of cases) for (const sup of [false, true]) for (const [w, h] of sup ? [[195, 422], [640, 360]] : [[422, 195]]) {
+    const T = loadGame(), { g, G } = T, tag = co + (co === 'you' ? cap : '') + (sup ? ' super ' : ' power ') + w + 'x' + h + ': '; G(`VIEW.w = ${w}; VIEW.h = ${h}; rnd = () => .5`);
+    g.launchVersus({ seed: 5, level: 30, wild: false, mode: 'elim', arena: 'm', fog: false, turns: 30, co0: co, co1: co === 'you' ? 'brock' : co, cap0: cap, cap1: 7, teams: [[25, 6, 9, 3], [7, 133, 1, 4]], order: [0, 1, 1, 0, 0, 1, 1, 0], size: 4, cur: 0 });
+    G("B.phase = 0; BT.mode = 'idle'; for (const u of B.units) u.hp = Math.max(1, Math.round(u.maxHp * .6)); const s = powerState(0); s.charge = 100; s.superUnlocked = true;");
+    const hp = () => G('JSON.stringify(B.units.filter(u => u.team <= 1).map(u => [u.team, u.hp]))'), before = JSON.parse(hp()), ev = G(`activatePower(0, ${sup})`); assert(ev && ev.length && ev[0].type === 'power', tag + 'activates');
+    const after = JSON.parse(hp()), fx = co === 'you' ? null : G(`COS['${co}'].${sup ? 'super' : 'power'}`), sum = (a, t) => a.filter(x => x[0] === t).reduce((n, x) => n + x[1], 0);
+    // what it promises
+    if (fx && fx.heal || co === 'you' && cap === 1) assert(sum(after, 0) > sum(before, 0), tag + 'the side heals');
+    if (fx && fx.enemyDmg) assert(sum(after, 1) < sum(before, 1), tag + 'the foes are hurt');
+    if (fx && fx.weather) assert.strictEqual(G('weatherKind()'), fx.weather[0], tag + 'the weather turns');
+    if (fx && fx.future) assert.strictEqual(G('powerState(0).future'), fx.future, tag + 'Future Sight is planted');
+    const ally = 'alive(0).find(u => !u.leader) || alive(0)[0]', foe = 'alive(1)[0]';
+    if (fx && fx.def && !fx.types) assert(Math.abs(G(`coDefMult(${ally})`) - (1 - fx.def)) < 1e-9, tag + 'allies take less');
+    if (fx && fx.atk && !fx.atkTypes) assert(G(`coAtkMult(${ally}, (${ally}).moves[0])`) >= 1 + fx.atk - 1e-9, tag + 'allies hit harder');
+    if (fx && fx.move) assert(G(`coMove(${ally})`) >= fx.move, tag + 'allies move further');
+    if (fx && fx.eva) assert.strictEqual(G(`coEva(${ally})`), fx.eva, tag + 'allies dodge more');
+    if (fx && fx.enemyMove) { G('B.phase = 1'); assert(G(`coMove(${foe})`) <= fx.enemyMove, tag + 'foes move less on their turn'); G('B.phase = 0'); }
+    if (co === 'you' && cap === 4) assert(G(`powerDamageMultiplier(${ally}, ${foe}, (${ally}).moves[0])`) >= (sup ? 1.5 : 1.25) - 1e-9, tag + 'the next attack is stronger');
+    if (co === 'you' && cap === 7) assert(G(`powerDamageMultiplier(${foe}, ${ally}, (${foe}).moves[0])`) <= (sup ? .6 : .8) + 1e-9, tag + 'allies take less');
+    // the show: the cast and the sweep play through the queue; text stays on screen; the chips say what it does
+    assert(G(`copEffects(${JSON.stringify({ co, root: cap, superPower: sup })}).length`) > 0, tag + 'chips');
+    g.__ev = ev; G("BT.queue = __ev.map(e => ({ kind: 'event', ev: e })); playQueue(() => { BT.mode = 'idle'; });");
+    const boxes = textHook(T); let n = 0, maxT = 0; while (G("BT.mode === 'anim'") && n++ < 1200) { g.battleUpdate(1 / 30); if (G("BT.anim && BT.anim.ev && BT.anim.ev.type === 'power'")) maxT = Math.max(maxT, G('BT.anim.t')); if (n % 6 === 0 && !G("BT.anim && BT.anim.ev && BT.anim.ev.type === 'power' && BT.anim.t > copTimes(BT.anim.ev.superPower).cast - .3 && BT.anim.t < copTimes(BT.anim.ev.superPower).cast")) { g.battleDraw(); boxes(); g.drawHUD(); const bad = boxes().filter(b => b.x < -1 || b.x + b.w > w + 1 || b.y < -1 || b.y + 7 > h + 1); assert(!bad.length, tag + 'text off screen at ' + n + ': ' + JSON.stringify(bad.slice(0, 2))); } }
+    assert.strictEqual(G('BT.mode'), 'idle', tag + 'the queue completes'); assert(maxT <= (sup ? 4.2 : 2.6), tag + 'brisk: ' + maxT.toFixed(2) + 's');
+    // while it lasts: boosted allies (and hindered foes) are marked on the field
+    const aura = G('JSON.stringify(copAura(0))'); if (fx && (fx.def || fx.atk || fx.eva || fx.move || fx.crit || fx.spAtk) || co === 'you' && (cap !== 1 || sup)) assert(aura !== 'null' && JSON.parse(aura).ally, tag + 'allies wear the aura: ' + aura);
+    if (fx && (fx.future || fx.enemyMove)) assert(JSON.parse(aura).foe, tag + 'foes wear the mark');
+    g.battleDraw();
+  }
 });
 test('dialogue: every line of the story fits its box on phones and desktop, in English and Spanish', T0 => {
   for (const lang of ['en', 'es']) for (const [w, h] of [[180, 390], [195, 422], [422, 195], [640, 360]]) {

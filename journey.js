@@ -181,7 +181,8 @@ function powerInput(ev) {
 }
 // The power cut-in, Advance Wars style: the screen darkens, a band in the captain's colour tears across on a slant with
 // speed lines, the captain slides in large on the left, and the power's name slams down beside it with what it does.
-function drawPowerBurst(q) {
+function drawPowerBurst(q) { drawCoPower(q); } // the commander's cast lives in cofx.js
+function drawPowerBurstClassic(q) {
   const e = q.ev, cs = { co: e.co, root: e.root }, c = coOf(cs), W = VIEW.w, H = VIEW.h, t = q.t, dur = q.dur, out = t > dur - .25 ? easeIn((t - (dur - .25)) / .25) : 0;
   const col = c.col, dark = shade(col, -.5), grow = REDUCED ? 1 : easeOutBack(clamp(t / .25, 0, 1), 1.6), bh = Math.round(Math.min(H * .46, 110) * clamp(grow, 0, 1.1) * (1 - out)), cy = Math.round(H / 2);
   ctx.globalAlpha = .6 * (1 - out); rect(0, 0, W, H, '#05041a'); ctx.globalAlpha = 1;

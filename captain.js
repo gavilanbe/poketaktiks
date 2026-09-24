@@ -21,7 +21,7 @@ const COS = {
     passive: { text: 'Partner bond: allies near your partner deal 10% more, take 10% less', atk: .1, def: .1 } },
   brock: { name: 'Brock', tr: 'brock', col: '#c89858', ace: 95, blurb: 'Rock-solid defence',
     passive: { text: 'Rock and Ground allies take 15% less', def: .15, types: ['Rock', 'Ground'] },
-    power: { name: 'Rock Tomb', text: 'Enemies lose 1 move next turn and take 10%', enemyMove: -1, enemyDmg: .1, quake: true },
+    power: { name: 'Rock Tomb', text: 'Enemies lose 1 move next turn and take 10%', enemyMove: -1, enemyDmg: .1, rocks: true },
     super: { name: 'Sandstorm Fort', text: 'Allies take 30% less; 2 days of sandstorm', def: .3, weather: ['sand', 2] } },
   misty: { name: 'Misty', tr: 'misty', col: '#5aa8f0', ace: 121, blurb: 'The tide is hers',
     passive: { text: 'Water moves +10%, +1 move on water', atk: .1, atkTypes: ['Water'], waterMove: 1 },
@@ -46,7 +46,7 @@ const COS = {
   blaine: { name: 'Blaine', tr: 'blaine', col: '#ff7040', ace: 59, blurb: 'Hot-headed fire',
     passive: { text: 'Fire moves +10%', atk: .1, atkTypes: ['Fire'] },
     power: { name: 'Sunny Day', text: '2 days of sun: Fire ×1.5, Water ×0.5', weather: ['sun', 2] },
-    super: { name: 'Eruption', text: 'Every enemy takes 20% and burns; 2 days of sun', enemyDmg: .2, enemyStatus: ['brn', 99], weather: ['sun', 2], quake: true } },
+    super: { name: 'Eruption', text: 'Every enemy takes 20% and burns; 2 days of sun', enemyDmg: .2, enemyStatus: ['brn', 99], weather: ['sun', 2], fire: true } },
   blue: { name: 'Blue', tr: 'blue', col: '#5a8af0', ace: 18, blurb: 'Always one step ahead',
     passive: { text: '+10% damage', atk: .1 },
     power: { name: 'Smell Ya Later', text: 'Allies +1 move', move: 1 },
@@ -215,7 +215,7 @@ function activatePower(team, superPower = false) {
 function coApply(team, fx, events) {
   const foes = B.units.filter(u => u.hp > 0 && u.team <= 1 && u.team !== team), grassy = u => ['plain', 'flower', 'tall', 'forest'].includes(terrAt(u.x, u.y).id), open = u => ['plain', 'flower', 'road', 'sand', 'snow', 'ice', 'cave', 'floor'].includes(terrAt(u.x, u.y).id);
   if (fx.heal) for (const u of alive(team)) { const amount = Math.min(u.maxHp - u.hp, Math.max(1, Math.floor(u.maxHp * fx.heal))); if (amount > 0) { u.hp += amount; events.push({ type: 'heal', unit: u, amount }); } if (u.status || u.root) { u.status = null; u.statusTurns = 0; u.root = 0; events.push({ type: 'cure', unit: u, kind: 'power' }); } }
-  if (fx.enemyDmg) for (const u of foes) { if (fx.grounded && u.fly) continue; if (fx.onGrass && !grassy(u)) continue; const d = Math.min(u.hp - 1, Math.max(1, Math.floor(u.maxHp * fx.enemyDmg))); if (d > 0) { u.hp -= d; events.push({ type: 'powerHit', unit: u, amount: d, kind: fx.bolt ? 'bolt' : fx.quake ? 'quake' : fx.petals ? 'petals' : 'hit' }); } }
+  if (fx.enemyDmg) for (const u of foes) { if (fx.grounded && u.fly) continue; if (fx.onGrass && !grassy(u)) continue; const d = Math.min(u.hp - 1, Math.max(1, Math.floor(u.maxHp * fx.enemyDmg))); if (d > 0) { u.hp -= d; events.push({ type: 'powerHit', unit: u, amount: d, kind: fx.bolt ? 'bolt' : fx.fire ? 'fire' : fx.rocks ? 'rocks' : fx.quake ? 'quake' : fx.petals ? 'petals' : 'hit' }); } }
   if (fx.enemyStatus) { const [st, n] = fx.enemyStatus, immune = u => (st === 'brn' && u.types.includes('Fire')) || (st === 'psn' && (u.types.includes('Poison') || u.types.includes('Steel'))) || (st === 'par' && u.types.includes('Electric')) || (st === 'frz' && u.types.includes('Ice'));
     foes.filter(u => u.hp > 0 && !u.status && !immune(u) && !powerBlocksStatus(u) && (!fx.openGround || open(u))).sort((a, b) => b.level - a.level || b.hp - a.hp).slice(0, n).forEach(u => { u.status = st; u.statusTurns = 0; events.push({ type: 'status', unit: u, status: st }); }); }
   if (fx.steal && B.war) { const other = 1 - team, amount = Math.min(fx.steal, B.war.funds[other] || 0); if (amount > 0) { B.war.funds[other] -= amount; B.war.funds[team] += amount; events.push({ type: 'steal', team, amount, unit: powerCaptain(team) }); } }

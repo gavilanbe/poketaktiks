@@ -209,6 +209,13 @@ async function main() {
       out.push('render: ' + await ev('fxLabRender(' + spec + ')'));
       const sz = JSON.parse(out[out.length - 1].slice(8) || '{}'); if (sz.w) { const r = await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: sz.w, height: sz.h, scale: 1 }, captureBeyondViewport: true }); fs.writeFileSync(path.join(ROOT, 'artifacts', 'fx-' + (process.env.PK_NAME || 'lab') + (mobile ? '-m' : '') + '.png'), Buffer.from(r.result.data, 'base64')); }
     }
+    if (script === 'cofx' || script === 'cofx-m') {
+      // commander powers, moment by moment (tools/cofx-lab.js): PK_COFX='{"rows":[["brock",4,true]]}' paints a row per power
+      await nav('silent&nosave'); await sleep(400); const spec = process.env.PK_COFX || '{"rows":[["brock",4,true]]}';
+      out.push('prepare: ' + await ev(fs.readFileSync(path.join(__dirname, 'cofx-lab.js'), 'utf8') + '; cofxLabPrepare(' + spec + ')')); await sleep(3000);
+      out.push('render: ' + await ev('cofxLabRender(' + spec + ')'));
+      const sz = JSON.parse(out[out.length - 1].slice(8) || '{}'); if (sz.w) { const r = await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: sz.w, height: sz.h, scale: 1 }, captureBeyondViewport: true }); fs.writeFileSync(path.join(ROOT, 'artifacts', 'cofx-' + (process.env.PK_NAME || 'sheet') + '.png'), Buffer.from(r.result.data, 'base64')); }
+    }
     if (script === 'vs' || script === 'vs-m') {
       // the versus setup with its match rules, then a capture-the-flag arena with fog and a king-of-the-hill arena
       await nav('versus=5&silent&nosave'); await sleep(500); await shot('vs-setup');

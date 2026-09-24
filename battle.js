@@ -159,7 +159,7 @@ function setupEvent(q) {
   const ux = u => u.x * TILE + TILE / 2, uy = u => u.y * TILE + 4;
   switch (e.type) {
     case 'bossAlert': q.dur = REDUCED || BT.fast ? .8 : 1.7; Audio.sfx('boss'); Audio.playMusic('boss'); if (!REDUCED) { flashScreen('#ff3040', .3); shake(5); } break;
-    case 'power': q.dur = REDUCED || BT.fast ? .7 : 1.65; Audio.sfx(e.superPower ? 'evolve' : 'phase'); if (!REDUCED) flashScreen(coOf({ co: e.co, root: e.root }).col, .22); break;
+    case 'power': q.dur = copDur(e); if (e.unit) centerCam(e.unit.x, e.unit.y); if (!REDUCED) flashScreen(coOf({ co: e.co, root: e.root }).col, .22); break; // cofx.js plays the cast and the sweep
     case 'ko': queueRecalls([e]); q.dur = e.recalled ? (BT.fast ? .25 : .45) : BT.fast ? .45 : .8; Audio.sfx('ko'); shake(4); spawnParts(ux(e.unit), uy(e.unit) + 8, 18, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 90, life: .7, grav: 60 }); noteKo(e); fadeFloatTexts(.12); floatText(ux(e.unit), uy(e.unit) - 14, e.unit.team === 0 ? 'FAINTED!' : 'KO!', e.unit.team === 0 ? UI.red : UI.gold, { huge: 2, life: 1.3, vy: -14, outline: e.unit.team === 0 ? '#2a0008' : '#3a2000' }); break;
     case 'xp': q.dur = BT.fast ? .35 : .6; q.from = e.unit.xp - e.amount; break;
     case 'levelup': q.dur = BT.fast ? .8 : 1.6; Audio.sfx('levelup'); spawnParts(ux(e.unit), uy(e.unit), 24, ['#ffd24a', '#ffffff', '#5ee06a'], { speed: 70, life: .9, grav: -30, shape: 'ring' }); break;
@@ -185,6 +185,8 @@ function setupEvent(q) {
       else if (e.kind === 'quake') { Audio.sfx('thud'); shake(5); for (let i = 0; i < 6; i++) spawnSprite('debris', x + (vrnd() - .5) * 16, y + 8, { vx: (vrnd() - .5) * 80, vy: -70 - vrnd() * 60, grav: 380, floor: y + 12, life: .7, size: 3, col: '#8a6a48', col2: '#c8a878', rot: i, spin: 10 }); }
       else if (e.kind === 'petals') { Audio.sfx('grass'); for (let i = 0; i < 8; i++) spawnSprite('leaf', x + (vrnd() - .5) * 20, y - 10, { size: 3, life: .6, col: '#ff8ac0', col2: '#ffd0e4', vx: (vrnd() - .5) * 60, vy: -30, grav: 40, rot: i, spin: 12 }); }
       else if (e.kind === 'psy') { Audio.sfx('psy'); spawnSprite('psy', x, y, { size: 22, life: .35, col: '#ff70b0', col2: '#ffd0e4' }); }
+      else if (e.kind === 'fire') { Audio.sfx('fire'); Audio.sfx('boom'); shake(4); spawnSprite('blast', x, y, { size: 20, life: .45, col: '#ff4a20', col2: '#ffc03a' }); spawnSprite('flash', x, y - 4, { size: 12, life: .2, col: '#fff6b0' }); spawnParts(x, y, 16, ['#ff6a18', '#ffc03a', '#fff6b0'], { speed: 80, life: .6, grav: -40 }); }
+      else if (e.kind === 'rocks') { Audio.sfx('thud'); shake(4); for (let i = 0; i < 5; i++) spawnSprite('debris', x + (i - 2) * 6, y - 4, { vx: (i - 2) * 30, vy: -90 - i * 12, grav: 380, floor: y + 12, life: .8, size: 4, col: '#6a5a44', col2: '#b8a080', rot: i, spin: 8 }); spawnParts(x, y + 8, 12, ['#b8a080', '#8a7658', '#e8dcc0'], { speed: 50, life: .5, grav: 60 }); }
       else { Audio.sfx('hit'); spawnSprite('impact', x, y, { size: 14, life: .25, col: '#ffffff' }); }
       floatText(x, y - 14, '-' + e.amount, '#ff9a9a', { big: true, outline: '#000', life: .9 }); break; }
     case 'steal': q.dur = BT.fast ? .4 : .8; Audio.sfx('item'); if (e.unit) floatText(ux(e.unit), uy(e.unit) - 14, '+' + money(e.amount), UI.gold, { big: true, outline: '#3a2000', life: 1.3 }); break;
@@ -561,7 +563,7 @@ function battleInput(ev) {
   if (ev.type === 'key' && (ev.key === 'zoomin' || ev.key === 'zoomout')) { if (setZoom(ev.key === 'zoomin' ? 1 : .5)) Audio.sfx('menu'); return; }
   if (BT.mode === 'banner') { if (ev.type === 'down' || (ev.type === 'key' && ev.key === 'ok')) { if (BT.banner.vs && BT.banner.vs.t < COVS_DUR) BT.banner.vs.t = Math.max(BT.banner.vs.t, COVS_DUR - .3); else BT.banner.t = Math.max(BT.banner.t, 1.1); } return; }
   if (BT.mode === 'handoff') { if (BT.handoff.t > .4 && (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok'))) { BT.mode = 'banner'; BT.banner.t = 0; Audio.sfx('phase'); } return; }
-  if (BT.mode === 'anim') { if (ev.type === 'down' || ev.type === 'key') { BT.fastTap = .4; } return; }
+  if (BT.mode === 'anim') { if (ev.type === 'down' || ev.type === 'key') { const q = BT.anim; if (q && q.kind === 'event' && q.ev.type === 'power' && q.t > .5) { const T = copTimes(q.ev.superPower); if (q.t < T.cast - .3) q.t = T.cast - .3; } BT.fastTap = .4; } return; }
   if (BT.mode === 'end') { if (BT.endTimer > 1.2 && (ev.type === 'down' || (ev.type === 'key' && ev.key === 'ok'))) { BT.endTimer = 99; } return; }
   if (BT.mode === 'help') { if (ev.type === 'down' || (ev.type === 'key')) { if (ev.type === 'key' && (ev.key === 'right' || ev.key === 'ok') || ev.type === 'down') { const r = helpRect(); if (r.next != null) BT.helpOffset = r.next; else { BT.helpOffset = 0; BT.helpPage++; if (BT.helpPage >= HELP_PAGES.length) { BT.helpPage = 0; BT.mode = 'idle'; } } } else if (ev.key === 'left') { if (BT.helpOffset) BT.helpOffset = Math.max(0, BT.helpOffset - helpRect().limit); else BT.helpPage = Math.max(0, BT.helpPage - 1); } else if (ev.key === 'back' || ev.key === 'help') { BT.mode = 'idle'; BT.helpPage = 0; BT.helpOffset = 0; } } return; }
   if (BT.mode === 'unitinfo') { if (ev.type === 'down' || ev.type === 'key') { if (ev.type === 'key' && (ev.key === 'left' || ev.key === 'right' || ev.key === 'prev' || ev.key === 'next')) { const list = B.units.filter(u => u.hp > 0 && !fogHides(u, HT())); let i = list.indexOf(BT.info); i = (i + (ev.key === 'left' || ev.key === 'prev' ? -1 : 1) + list.length) % list.length; BT.info = list[i]; BT.cx = BT.info.x; BT.cy = BT.info.y; keepCursorVisible(); Audio.sfx('cursor'); } else { BT.mode = 'idle'; Audio.sfx('cancel'); } } return; }
@@ -753,7 +755,9 @@ function drawBoardLayer() {
   // a unit whose KO the duel scene has not shown yet stays on the board (its HP bar is held at the pre-exchange value)
   const held = u => { const h = BT.hpShow.get(u.id); return h && h.hold; };
   const units = B.units.filter(u => u.hp > 0 || (BT.anim && BT.anim.kind === 'event' && (BT.anim.ev.unit === u)) || held(u)).sort((a, b) => (a.y + a.fx.dy / TILE) - (b.y + b.fx.dy / TILE));
+  drawPowerAuras(units, 'under');
   for (const u of units) { if (fogHides(u, HT())) continue; drawUnit(u); const fl = B.flags && flagCarriedBy(u); if (fl) drawFlag(tileX(u.x) + u.fx.dx + TILE - 9, tileY(u.y) + u.fx.dy - 10 + Math.round(Math.sin(BT.time * 5) * 1), fl.team, Math.floor(BT.time * 6) % 2); }
+  drawPowerAuras(units, 'over');
   // fog of war: unseen tiles fall into darkness
   if (B.fog && B.vis) { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (!B.vis.has(key(x, y))) { ctx.globalAlpha = .55; rect(tileX(x), tileY(y), TILE, TILE, '#060a16'); ctx.globalAlpha = .35; dither(tileX(x), tileY(y), TILE, TILE, '#0b1020', (x + y) & 1); } ctx.globalAlpha = 1; }
   if (BT.mode === 'target') drawAimLock();
@@ -914,7 +918,9 @@ function drawWeatherChip(L) {
   const wb = BT.weatherBanner; if (!wb) return; const a = BT.time - wb.t0; if (a > 1.8) { BT.weatherBanner = null; return; }
   const W = VIEW.w, H = VIEW.h, k2 = REDUCED ? 1 : Math.min(1, a / .18) * Math.min(1, (1.8 - a) / .25), bh = Math.round(30 * k2), cy = Math.round(H * .38); if (bh < 2) return;
   const col = wb.kind === 'sun' ? '#c87820' : wb.kind === 'rain' ? '#2a5aa8' : wb.kind === 'sand' ? '#a07838' : '#6a86b8'; ctx.globalAlpha = .88; rect(0, cy - (bh >> 1), W, bh, shade(col, -.35)); ctx.globalAlpha = 1; hline(0, cy - (bh >> 1), W, shade(col, .4)); hline(0, cy + (bh >> 1) - 1, W, shade(col, -.6));
-  if (bh > 20) { const txt = wb.text.toUpperCase(), tw = textWidth(txt, BIG), x0 = Math.round(W / 2 - (tw + 22) / 2) + (REDUCED ? 0 : Math.round((1 - Math.min(1, a / .25)) * 40)); ctx.save(); ctx.translate(x0, cy - 7); ctx.scale(2, 2); weatherIcon(wb.kind, 0, 0); ctx.restore(); bigText(txt, x0 + 20, cy - 4, '#ffffff', { outline: '#000' }); }
+  // the line in the big face when it fits; on a narrow phone the small one, over two rows if need be
+  if (bh > 20) { const txt = String(TRX(wb.text)).toUpperCase(), big = rawTextWidth(txt, BIG) + 22 <= W - 8, lines = big || rawTextWidth(txt) + 22 <= W - 8 ? [txt] : wrap(txt, W - 32).slice(0, 2), tw = Math.max(...lines.map(l => rawTextWidth(l, big ? BIG : FONT))), x0 = Math.min(W - 4 - (tw + 20), Math.round(W / 2 - (tw + 22) / 2) + (REDUCED ? 0 : Math.round((1 - Math.min(1, a / .25)) * 40))); // it slides in, never off the edge
+    ctx.save(); ctx.translate(x0, cy - 7); ctx.scale(2, 2); weatherIcon(wb.kind, 0, 0); ctx.restore(); if (big) bigText(txt, x0 + 20, cy - 4, '#ffffff', { outline: '#000' }); else lines.forEach((l, i) => text(l, x0 + 20, cy - 3 - (lines.length - 1) * 5 + i * 10, '#ffffff', { outline: '#000', raw: true })); }
 }
 function drawHUD() {
   HUD.hits = []; HUD.panels = []; const W = VIEW.w, H = VIEW.h; const L = hudLayout();
@@ -1266,7 +1272,7 @@ function drawDuelCard(q) {
 }
 function drawEventCard(q) {
   const e = q.ev, W = VIEW.w, H = VIEW.h;
-  if (e.type === 'power') { drawPowerBurst(q); return; }
+  if (e.type === 'power') { drawCoPower(q); return; }
   if (e.type === 'bossAlert') { drawBossAlert(q); return; }
   if (e.type === 'aceDown') { drawAceDown(q); return; }
   if (e.type === 'property') { drawCaptureCard(q); return; }

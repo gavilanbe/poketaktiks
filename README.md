@@ -262,6 +262,20 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
   Power and Super as cards; the Tower's floors, the Safari's rarities, Conquest's
   Aces and the Versus draft (slots that fill as each player picks, a roster tinted
   by type) follow the same kit.
+- **Commander powers**, Advance Wars style (`cofx.js`): calling a Power stops the war
+  for a moment. The board darkens and a band tears open onto the commander's world
+  — Brock's canyon wall with boulders tumbling past, Misty's tide, Surge's storm,
+  Erika's garden, Koga's smoke and shuriken, Sabrina's psychic rings, Blaine's
+  erupting volcano, Blue's champion sunburst, Giovanni's red R on Rocket gold, the
+  grunt's alley, or the Tactician's partner (flames, a water shield, vines in
+  bloom). The commander slides in large with their Ace looming behind (roaring on a
+  Super Power), the name slams down, their line types out and chips say what it
+  does. Then the power sweeps the field — a wall of sand, a breaking wave, a storm
+  striking the foes, a petal storm, rolling smoke, a psychic shockwave, a meteor
+  shower, gold wind, cracks racing from the Ace — and while it lasts the Pokémon it
+  helps glow at their feet under a badge (a sword, a shield, wings, boots, a star),
+  and the ones it hinders wear a mark (an eye for Future Sight, a cross for lost
+  movement). A press skips the rest of the cast; reduced motion keeps it short.
 - **Dialogues**: trainer portraits slide in on their side and darken while they
   listen, voices blip per letter, *emphasis* glows in gold, cinematic bars close.
 - **Battle screen**: each half is a painted panorama of the terrain its Pokémon
@@ -337,7 +351,9 @@ tools/cdp.cjs page` for a one-off capture. `PK_FX='{"moves":["Surf","Thunder"]}'
 PK_NAME=… node tools/cdp.cjs fx` plays moves through the real exchange with a
 fixed clock and paints the same beats of each (wind-up, travel, impact,
 aftermath) into one sheet, `artifacts/fx-….png` (`"view":"board"` for the map;
-`"crit":true` or `"miss":true` to force either).
+`"crit":true` or `"miss":true` to force either). `PK_COFX='{"rows":[["brock",4,true],["you",7,false]]}'
+PK_NAME=… node tools/cdp.cjs cofx` does the same for commander powers (commander, the
+Tactician's partner, Super Power?): the cast, the sweep and the board afterwards.
 
 **Languages.** The code is written in English; `i18n.js` translates at the text
 layer, so whatever is drawn or measured goes through `TRX()` and a layout
