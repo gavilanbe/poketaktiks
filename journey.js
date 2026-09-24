@@ -240,9 +240,9 @@ function territorySetupDraw() {
     if (sel) drawCrown(xx + 3, yy + 3);
     hit(xx, cy0, cw, chh, () => { S.captain = n; SC.i = i; Audio.sfx('catch'); }, 'ACE ' + DEX[n].name.toUpperCase()); });
   let y = cy0 + chh + 6; const c = CAPTAINS[S.captain];
-  if (tall) { // wide and tall: the power and the super power in full, each on its card-like line
+  if (tall || (!wide && H >= 380)) { // room to spare (a wide and tall screen, or a tall phone): the power and the super power in full
     for (const [lb, s2, col] of [['POWER', c.name + ': ' + TRX(c.normal), UI.ink], ['SUPER', TR('Super {0}: {1}', c.superName, c.super).replace(/^[^:]*?(?=[A-ZÁÉÍÓÚÑ])/, ''), c.col]]) { const ls = wrap(s2, colW - 12).slice(0, 2); if (y + ls.length * 9 > by - 4) break; iconAt(lb === 'POWER' ? 'skill' : 'star', x0, y - 1, col); ls.forEach((l, k) => text(l, x0 + 12, y + k * 9, col, { outline: UI.inset })); y += ls.length * 9 + 4; }
-    const ls = wrap('Both sides lead with the same Ace: the battle is won on the map.', colW - 12).slice(0, 2); if (y + 6 + ls.length * 9 <= by - 4) { y += 6; iconAt('info', x0, y - 1, MK_THEME.conquest.glow); ls.forEach((l, k) => text(l, x0 + 12, y + k * 9, UI.muted)); y += ls.length * 9; } }
+    const ls = wrap('Both sides lead with the same Ace: the battle is won on the map.', colW - 12).slice(0, 2); if (tall && y + 6 + ls.length * 9 <= by - 4) { y += 6; iconAt('info', x0, y - 1, MK_THEME.conquest.glow); ls.forEach((l, k) => text(l, x0 + 12, y + k * 9, UI.muted)); y += ls.length * 9; } }
   else { if (y + 9 < by - 4) { textC(fitLabel(c.normal, colW), x0 + colW / 2, y, UI.ink, { outline: UI.inset }); y += 10; }
     if (y + 9 < by - 4 && H >= 260) { textC(fitLabel(TR('Super {0}: {1}', c.superName, c.super), colW), x0 + colW / 2, y, c.col, { outline: UI.inset }); y += 12; } else y += 2; }
   // the six: who starts, who waits and what each costs
