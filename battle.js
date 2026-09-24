@@ -1026,7 +1026,9 @@ function drawButtons(L) {
 }
 // First-battle coach marks: during the opening turns of the first lesson a bouncing arrow points at the next Pokémon to
 // move and a bubble says what to do; in move mode the bubble explains the tiles. Nothing here changes the rules.
-function coachBubble(s, x, y) { const w = textWidth(s) + 10, bx = clamp(Math.round(x - w / 2), 4, VIEW.w - w - 4), by = clamp(Math.round(y), 4, VIEW.h - 16); rrect(bx + 1, by + 2, w, 12, UI.shadow, 2); rrect(bx, by, w, 12, UI.gold, 2); rrect(bx + 1, by + 1, w - 2, 10, '#fff6d0', 1); text(s, bx + 5, by + 3, '#3a2400'); }
+// A hint bubble; too wide for the screen (a long Spanish line on a phone), it wraps onto more lines instead.
+function coachBubble(s, x, y) { const ls = textWidth(s) + 10 <= VIEW.w - 8 ? [TRX(s)] : wrap(s, VIEW.w - 18), w = Math.max(...ls.map(l => rawTextWidth(l))) + 10, h = ls.length * 9 + 3, bx = clamp(Math.round(x - w / 2), 4, VIEW.w - w - 4), by = clamp(Math.round(y), 4, VIEW.h - h - 4);
+  rrect(bx + 1, by + 2, w, h, UI.shadow, 2); rrect(bx, by, w, h, UI.gold, 2); rrect(bx + 1, by + 1, w - 2, h - 2, '#fff6d0', 1); ls.forEach((l, i) => text(l, bx + 5, by + 3 + i * 9, '#3a2400', { raw: true })); }
 function drawCoach(L) {
   // chapters 2 and 4 teach the power: the first time the bar can buy one, a bubble points at the meter until it is used
   const ps = B && !B.versus && !B.territory && powerState(HT()); if (ps && (B.chapter === 1 || B.chapter === 3) && BT.mode === 'idle' && isHuman(B.phase) && !ps.active && !ps.uses && ps.unlocked && ps.charge >= (B.chapter === 3 && ps.superUnlocked ? 100 : 50) && powerCaptain(HT())) {
