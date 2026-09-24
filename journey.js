@@ -125,11 +125,14 @@ function confirmPower() {
 function powerMenuLayout() {
   const W = VIEW.w, H = VIEW.h, side = W >= 380, w = Math.min(side ? 400 : 300, W - 12), x = Math.round((W - w) / 2), s = powerState(HT()), c = coOf(s);
   const cw = side ? Math.floor((w - 22) / 2) : w - 16, desc = [c.power.text, c.super.text].map(t => wrap(t, cw - 14));
-  const lines = Math.min(side ? 3 : 2, Math.max(...desc.map(d => d.length))), ch = 44 + lines * 9, head = 30;
+  const pas = c.passive ? wrap(powerPassiveText(s, c), w - 16).slice(0, 2) : [];
+  const lines = Math.min(side ? 3 : 2, Math.max(...desc.map(d => d.length))), ch = 44 + lines * 9, head = 30 + (pas.length ? pas.length * 9 + 4 : 0);
   const h = head + (side ? ch : ch * 2 + 5) + 32, y = Math.max(2, Math.round((H - h) / 2));
   const cards = [0, 1].map(i => side ? { x: x + 8 + i * (cw + 6), y: y + head, w: cw, h: ch } : { x: x + 8, y: y + head + i * (ch + 5), w: cw, h: ch });
-  return { x, y, w, h, cards, desc, lines, side };
+  return { x, y, w, h, cards, desc, lines, side, pas };
 }
+// The passive, with whose aura carries it: "Ace Onix: Rock and Ground allies take 15% less".
+function powerPassiveText(s, c) { const u = powerCaptain(HT()); return (coTrainer(s) ? 'Ace ' + (u ? u.name : DEX[COS[s.co].ace].name) + ': ' : '') + c.passive.text; }
 function drawPowerMenu() {
   const team = HT(), s = powerState(team); if (!s) { BT.mode = 'idle'; return; }
   const c = coOf(s), u = powerCaptain(team), r = powerMenuLayout(), { x, y, w, h } = r, t = BT.time;
@@ -137,8 +140,10 @@ function drawPowerMenu() {
   hudPanel(x, y, w, h, { light: false, fill: '#161a44', border: c.col });
   // the captain, its style and the charge
   const pnum = u ? (u.fx.showNum || u.num) : s.root, portrait = coTrainer(s) ? trainerFace(c.tr) : null; requestAnim(pnum); ctx.save(); ctx.beginPath(); ctx.rect(x + 6, y + 5, 26, 22); ctx.clip(); portraitBg(x + 6, y + 5, 26, 22, team); if (portrait) ctx.drawImage(portrait, x + 10, y + 6, 18, 18); else drawMon(pnum, x + 19, y + 27, { outline: c.col }); ctx.restore(); drawCrown(x + 7, y + 6);
-  bigText(coTrainer(s) ? c.name.toUpperCase() : 'TEAM POWER', x + 38, y + 7, c.col, { shadow: UI.inset }); text(fitLabel(c.passive ? (coTrainer(s) ? 'Ace ' + (u ? u.name : DEX[COS[s.co].ace].name) + ': ' : '') + c.passive.text : (u ? u.name : DEX[s.root].name) + ' · ' + c.style, w - 120), x + 38, y + 18, UI.muted);
   const mw = Math.min(90, w - 150), mx = x + w - 8 - mw; textR(s.charge + '/100', x + w - 8, y + 7, UI.gold); bar(mx, y + 18, mw, 5, s.charge / 100, c.col);
+  bigText(fitBig(coTrainer(s) ? c.name.toUpperCase() : 'TEAM POWER', x + w - 8 - textWidth(s.charge + '/100') - 6 - (x + 38)), x + 38, y + 7, c.col, { shadow: UI.inset }); text(fitLabel(coTrainer(s) ? c.style : (u ? u.name : DEX[s.root].name) + ' · ' + c.style, mx - x - 44), x + 38, y + 18, UI.muted);
+  // the passive runs full width under the portrait, wrapped rather than cut
+  if (r.pas.length) { hline(x + 6, y + 29, w - 12, UI.inset); r.pas.forEach((l, j) => text(l, x + 8, y + 32 + j * 9, '#c8d0ff')); }
   for (let i = 0; i < 2; i++) {
     const card = r.cards[i], why = powerBlock(team, i === 1), hot = BT.powerIndex === i, lift = hot && !REDUCED ? -2 : 0, cx = card.x, cy = card.y + lift, ready = !why;
     rrect(cx + 1, card.y + 3, card.w, card.h, UI.shadow, 2); rrect(cx, cy, card.w, card.h, hot ? UI.gold : UI.inset, 2); rrect(cx + 1, cy + 1, card.w - 2, card.h - 2, hot ? '#2c2f78' : '#1e2050', 1); hline(cx + 2, cy + 1, card.w - 4, hot ? '#4a50a8' : '#2e3066');

@@ -84,7 +84,7 @@ test('spent/empty player phases stay open for reserves; move cancel preserves ca
   const T = fresh(), { g, G } = T, B = T.B(), BT = G('BT'); ownTick(T, 0); BT.mode = 'idle';
   for (const u of g.alive(0)) u.acted = true;
   for (let i = 0; i < 90; i++) g.battleUpdate(1 / 60); assert.equal(B.phase, 0); assert(!BT.autoEnd);
-  g.openDeployMenu(prop(T, 'WEST HQ')); BT.menu.i = 3; g.activateMenu(); assert.equal(B.war.box[0][3].state, 'field', 'the PC deploys the chosen Pokémon');
+  g.openDeployMenu(prop(T, 'WEST HQ')); BT.menu.i = BT.menu.items.findIndex(it => it.id === 'deploy:3'); g.activateMenu(); // the PC lists ready Pokémon first: pick by id assert.equal(B.war.box[0][3].state, 'field', 'the PC deploys the chosen Pokémon');
   const u = g.alive(0)[0], p = prop(T, 'NORTH'); u.x = p.x; u.y = p.y; u.acted = false; g.warCapture(u); u.acted = false;
   g.selectUnit(u); BT.undo = { unit: u, x: u.x, y: u.y }; u.x--; g.openActionMenu(u); g.cancel(); assert.equal(u.x, p.x); assert.equal(p.progress, 10);
 });

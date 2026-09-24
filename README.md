@@ -59,12 +59,14 @@ Each Pokémon moves through the blue tiles, then **Attacks**, **Captures** a
 property, uses its role **Skill**, **Catches** an adjacent weakened wild Pokémon
 or **Waits**. One objective per map sits top-left with its progress: rout the
 foe or take their HQ, defeat a boss, seize a Gym, survive, or out-catch Blue.
+Every front has two bases, yours and theirs (Joey's and Timmy's camps, then the
+Rocket HQ bunkers): taking theirs wins on any front, losing yours loses it.
 
 ## Properties, the Box and catching
 
 | Tile | Property | Pays | Heals its owner | Deploys | Notes |
 | --- | --- | --- | --- | --- | --- |
-| HQ | Headquarters | ₽1,000 | yes | yes | Captured by the enemy: that side loses. |
+| HQ | Headquarters (a camp, or a Rocket bunker) | ₽1,000 | yes | yes | Captured by the enemy: that side loses. |
 | Poké Center | the PC terminal | ₽1,000 | yes | yes | Rocket-held ones deploy the enemy's army. |
 | Field Center | caves and bases | ₽1,000 | yes | yes | |
 | Gym, outposts | objectives | – | outposts yes | – | Seize to win where the map says so. |
@@ -72,6 +74,9 @@ foe or take their HQ, defeat a boss, seize a Gym, survive, or out-catch Blue.
 - **Capture**: stand on it and choose Capture; each action adds
   `ceil(10 × HP / max HP)`, 20 completes it (a full-HP Pokémon takes two).
   Leaving or fainting resets the progress; a completed capture charges 20 power.
+  Each capture plays as a scene: the building in its owner's colours, its points
+  ticking down as the Pokémon hops on it, the banner changing hands, CAPTURED!
+  (or BASE TAKEN! on an HQ).
 - **The PC Box**: the Pokémon a side can deploy. In the campaign it is your
   collection; in Skirmish your collection topped up with loaners; in the Tower
   the rental army; in Versus a shared catalog plus the draft. Deploying costs
@@ -212,6 +217,15 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
   shakes, GOTCHA! and the flight to the PC.
 - **Board**: every tile is pixel art drawn in code; units wear team outlines,
   ranges flood out, phase banners tilt in, powers play a commander cut-in.
+- **Menus**: a Pokémon's commands open beside it with its portrait and HP, and
+  each says what it would come to (targets in reach, KO!, the capture meter and
+  WIN when it would take a base, the catch odds, why a skill is not ready). The
+  day menu (X) groups End Turn, the PC Box and the Power, what you see, how
+  battles play, and Retreat; toggles show a lamp, a highlight glides between
+  rows and the footer explains the chosen one. The PC lists the Box ready first,
+  with icons, prices and a preview of the Pokémon; with one base it opens
+  straight on it. Ending a turn with Pokémon still to act, retreating and
+  forfeiting ask first, with the safe answer chosen.
 - **Scene changes** close and reopen a Poké Ball over the screen. Everything
   respects reduced motion.
 
@@ -256,7 +270,8 @@ protects persistence during tests; `&nostory` skips dialogues.
 Source modules: `core.js` (canvas, input, motion helpers, design system,
 audio), `font.js`, `dex.js`, `data.js`, `animmeta.js` (generated), `art.js`
 (tiles, effects, weather), `scenery.js` (battle-screen panoramas), `model.js`,
-`captain.js` (commanders and powers), `battle.js`, `duel.js`, `campaign.js`
+`captain.js` (commanders and powers), `battle.js`, `menus.js` (the battle's
+command menus, the PC and the confirmations), `duel.js`, `campaign.js`
 (fronts, battlefield generator and biomes), `war.js` (properties, funds, the
 Box, deployment, wild spawns, weather rules, the war AI), `territory.js`,
 `scenes.js`, `title.js`, `route.js`, `journey.js` (prologue, briefings,

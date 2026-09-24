@@ -41,6 +41,7 @@ Then you act: move and act with each unit, **deploy** at free properties, use a 
 | Tile | Property | Income | Heals | Deploys | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Q | HQ | ₽1000 | 20% | yes | Captured by the enemy: you lose. |
+| J | HQ (bunker) | ₽1000 | 20% | yes | The Rocket HQ on caves and bases; same rules as Q. |
 | C | Poké Center | ₽1000 | 20% | yes | The PC terminal. |
 | K | Field Center | ₽1000 | 20% | yes | The center of caves and bases. |
 | G | Gym | – | – | – | Objective building (seize to win where the map says so). |
@@ -164,5 +165,6 @@ All five are built (2026-09-23):
   the odds and points are worth it, and fights your team when the trade is good.
 - **Campaign**: from Mt. Moon each front has an enemy commander (Brock, Misty, Giovanni, Lt. Surge,
   Blaine, Giovanni), their Ace on the map and a Rocket center that deploys their army (five Pokémon at
-  the front's level) until you capture it. Fronts 1-2 keep local trainers. Gym Leaders unlock after
+  the front's level) until you capture it. Fronts 1-2 keep local trainers. Every front has both HQs
+  (Joey's and Timmy's camps, then Rocket bunkers): the chapter's goal or their HQ wins it. Gym Leaders unlock after
   their front (`CO_UNLOCK`) and lead your side from the briefing from front 4 on.

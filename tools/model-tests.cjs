@@ -6,7 +6,7 @@
 'use strict';
 const vm = require('vm'), fs = require('fs'), path = require('path'), assert = require('assert');
 const ROOT = path.join(__dirname, '..');
-const FILES = ['core.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'scenery.js', 'model.js', 'captain.js', 'battle.js', 'duel.js', 'campaign.js', 'war.js', 'territory.js', 'scenes.js', 'title.js', 'route.js', 'journey.js', 'modes.js', 'main.js'];
+const FILES = ['core.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'scenery.js', 'model.js', 'captain.js', 'battle.js', 'menus.js', 'duel.js', 'campaign.js', 'war.js', 'territory.js', 'scenes.js', 'title.js', 'route.js', 'journey.js', 'modes.js', 'main.js'];
 
 // ---------------------------------------------------------------- harness
 function loadGame() {
@@ -861,6 +861,22 @@ test('versus rules: capture the flag, king of the hill, fog of war vision and am
   p2.x = 12; g.refreshVision(0); const seen = g.reachable(p1, p1.x, p1.y, 40, { through: o => g.fogHides(o, 0) }), plain = g.reachable(p1, p1.x, p1.y, 40); assert(seen.has('12,5') && !plain.has('12,5'), 'a hidden foe does not block planning, a seen one does');
   const path = [{ x: 8, y: 5 }, { x: 9, y: 5 }, { x: 10, y: 5 }, { x: 11, y: 5 }, { x: 12, y: 5 }, { x: 13, y: 5 }]; const fp = g.fogPath(p1, path); assert.strictEqual(fp.ambush, p2, 'the hidden foe on the path springs an ambush'); assert.strictEqual(fp.path.length, 4, 'the move stops on the tile before it');
   assert.strictEqual(g.fogPath(p1, path.slice(0, 3)).ambush, null, 'a clear path is unchanged');
+});
+test('battle menus: the day menu, toggles in place, END TURN and RETREAT ask first, the PC opens on a lone base, the wheel walks rows', T => {
+  const { g, G, C } = T; G('SAVE = { chapter: 0, party: [], bag: {}, stars: {}, beaten: false, co: "you" }');
+  g.startBattle(C.CHAPTERS[0].map, [g.partyUnit(4, 6), g.partyUnit(16, 5)], { pokeball: 1 }, Object.assign(g.chapterOpts(0, [g.partyUnit(25, 5), g.partyUnit(7, 5)], 7), { lesson: false }));
+  const BT = G('BT'), B = T.B(); B.phase = 0; BT.mode = 'idle'; B.war.funds[0] = 3000;
+  g.openEndMenu(); const ids = BT.menu.items.map(it => it.id);
+  assert(ids[0] === 'endturn' && ids.includes('pc') && ids.includes('danger') && ids.includes('help') && ids.includes('scene') && ids.includes('mute') && ids[ids.length - 1] === 'retreat', 'day menu: ' + ids.join(','));
+  BT.menu.i = ids.indexOf('danger'); const was = !!BT.showDanger; g.activateMenu(); assert.strictEqual(!!BT.showDanger, !was, 'the danger toggle switches'); assert(BT.mode === 'endmenu' && BT.menu.items[BT.menu.i].id === 'danger', 'and the menu stays on its row');
+  BT.menu.i = 0; g.activateMenu(); assert.strictEqual(BT.mode, 'confirm', 'END TURN with Pokémon ready asks'); assert.strictEqual(G('BT.confirm.i'), 0, 'KEEP PLAYING is chosen first');
+  g.confirmInput({ type: 'key', key: 'back' }); assert(BT.mode === 'idle' && B.phase === 0, 'X keeps playing');
+  g.openEndMenu(); BT.menu.i = BT.menu.items.findIndex(it => it.id === 'retreat'); g.activateMenu(); assert.strictEqual(BT.mode, 'confirm', 'RETREAT asks'); g.confirmChoose(0); assert(BT.mode === 'endmenu' && !B.result, 'STAY goes back to the day menu');
+  BT.menu.i = 0; g.menuWheel(-120); assert.strictEqual(BT.menu.i, 0, 'the wheel does not wrap'); g.menuWheel(60); assert.strictEqual(BT.menu.i, 1, 'a notch moves a row'); g.menuWheel(15); g.menuWheel(15); assert.strictEqual(BT.menu.i, 1, 'small deltas add up'); g.menuWheel(15); assert.strictEqual(BT.menu.i, 2, 'to a notch');
+  assert.strictEqual(g.warDeploySites(0).length, 1, 'one base on front 1');
+  BT.menu.i = BT.menu.items.findIndex(it => it.id === 'pc'); g.activateMenu(); assert.strictEqual(BT.menu.kind, 'pc', 'with one base the PC opens on it'); assert(!BT.menu.items[BT.menu.i].off, 'a ready Pokémon is chosen first');
+  g.cancel(); assert(BT.mode === 'endmenu' && BT.menu.kind === 'main' && BT.menu.items[BT.menu.i].id === 'pc', 'back returns to the day menu on the PC row');
+  for (const u of B.units.filter(u => u.team === 0)) u.acted = true; BT.menu.i = 0; g.activateMenu(); assert.notStrictEqual(BT.mode, 'confirm', 'with everyone done END TURN does not ask');
 });
 function run() {
   let failed = 0;

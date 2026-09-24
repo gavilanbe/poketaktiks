@@ -311,13 +311,21 @@ function coRoomDraw() {
   const p = panel(px0, py0, pw, ph, { header: open ? (id === 'you' ? 'THE TACTICIAN' : c.name.toUpperCase()) : '???', headerRight: open ? c.blurb || c.style : 'LOCKED', headerRightCol: open ? UI.muted : UI.dim, headerFill: open ? shade(c.col, -.55) : UI.panelDark });
   let y = p.cy; const ace = id === 'you' ? S.root : COS[id].ace;
   if (!open) { const co = COS[id], aw = Math.min(90, pw - 16), ah = narrow ? 40 : 56; rect(px0 + 8, y, aw, ah, '#12102a'); outline(px0 + 7, y - 1, aw + 2, ah + 2, UI.border2); bigC('?', px0 + 8 + aw / 2, y + ah / 2 - 5, UI.dim);
-    const tx = px0 + 16 + aw, tw = pw - (tx - px0) - 8; text(id === 'blue' ? 'YOUR RIVAL' : id === 'giovanni' ? 'THE BOSS' : 'A GYM LEADER', tx, y + 2, UI.muted); wrap('Team Rocket holds them. ' + coUnlockText(id) + '.', tw).slice(0, 3).forEach((l, k) => text(l, tx, y + 13 + k * 9, UI.gold)); y += ah + 8;
+    const tx = px0 + 16 + aw, tw = pw - (tx - px0) - 8; text(id === 'blue' ? 'YOUR RIVAL' : id === 'giovanni' ? 'THE BOSS' : 'A GYM LEADER', tx, y + 2, UI.muted); const ls = wrap('Team Rocket holds them. ' + coUnlockText(id) + '.', tw).slice(0, 5); ls.forEach((l, k) => text(l, tx, y + 13 + k * 9, UI.gold)); y += Math.max(ah, 13 + ls.length * 9) + 8;
     sectionLabel('WORD IS', px0 + 8, y, pw - 16, UI.muted); y += 10; text(fitLabel('"' + co.blurb + '"', pw - 16), px0 + 8, y, UI.ink); }
   else {
     const aw = Math.min(90, pw - 16), ah = narrow ? 40 : 56; portraitBg(px0 + 8, y, aw, ah, 0); ctx.save(); ctx.beginPath(); ctx.rect(px0 + 8, y, aw, ah); ctx.clip(); requestAnim(ace); if (animReady(ace)) drawAnim(ace, px0 + 8 + aw / 2, y + ah - 3, t); else drawMon(ace, px0 + 8 + aw / 2, y + ah - 2, {}); ctx.restore(); outline(px0 + 7, y - 1, aw + 2, ah + 2, c.col); drawCrown(px0 + 10, y + 2);
     const tx = px0 + 16 + aw, tw = pw - (tx - px0) - 8; text('ACE', tx, y + 2, UI.muted); text(fitLabel(id === 'you' ? 'Your partner (' + DEX[ace].name + ' line)' : DEX[ace].name, tw), tx, y + 12, UI.ink); text(fitLabel(coUnlockText(id), tw), tx, y + 24, UI.green); y += ah + 6;
     const rows = [['PASSIVE', c.passive ? c.passive.text + ' (within 2 of the Ace)' : '-', UI.ink], ['POWER · 50', c.power.name + ': ' + c.power.text, c.col], ['SUPER · 100', c.super.name + ': ' + c.super.text, UI.gold]];
     for (const [k, v, col] of rows) { if (y + 18 > py0 + ph - 4) break; sectionLabel(k, px0 + 8, y, pw - 16, col); y += 10; const ls = wrap(v, pw - 16); ls.slice(0, 2).forEach(l => { text(l, px0 + 8, y, UI.ink); y += 9; }); y += 3; }
+    // the Tactician's powers follow the partner; a trainer's army hops in a row
+    if (id === 'you') { const full = y + 11 + 3 * 20 <= py0 + ph - 4; if (full || y + 11 + 20 <= py0 + ph - 4) { sectionLabel('BY PARTNER', px0 + 8, y, pw - 16, UI.muted); y += 11;
+      [4, 7, 1].forEach((r, k) => { const C = CAPTAINS[r], on = r === S.root, cw3 = Math.floor((pw - 16) / 3), rx = full ? px0 + 8 : px0 + 8 + k * cw3, ry = full ? y + k * 20 : y;
+        if (full) { if (on) rrect(px0 + 6, ry - 1, pw - 12, 19, '#2a2c68', 1); ctx.drawImage(monIcon(r), rx, ry, 24, 18); text(DEX[r].name + ' line', rx + 28, ry + 1, on ? UI.ink : UI.muted); text(fitLabel(C.name + ' · ' + C.superName + ' · ' + C.style.toLowerCase(), pw - 46), rx + 28, ry + 10, on ? C.col : shade(C.col, -.35)); }
+        else { if (on) rrect(rx - 2, ry - 1, cw3 - 2, 19, '#2a2c68', 1); ctx.drawImage(monIcon(r), rx, ry, 24, 18); text(fitLabel(C.name, cw3 - 30), rx + 26, ry + 5, on ? C.col : shade(C.col, -.35)); } }); y += full ? 60 : 20; } }
+    else if (CO_TEAMS[id] && y + 34 <= py0 + ph - 4) { sectionLabel('ARMY', px0 + 8, y, pw - 16, UI.muted); y += 11; const n = Math.min(CO_TEAMS[id].length, Math.floor((pw - 16) / 26));
+      CO_TEAMS[id].slice(0, n).forEach((num, k) => { const hop = REDUCED ? 0 : Math.round(Math.max(0, Math.sin(t * 5 - k * .6)) * -2); ctx.drawImage(monIcon(num), px0 + 8 + k * 26, y + hop, 24, 18); }); y += 22;
+      if (y + 9 <= py0 + ph - 4) text(fitLabel('They evolve with the level; the Ace ' + DEX[ace].name + ' wears the crown', pw - 16), px0 + 8, y, UI.dim); }
   }
   const fy = foot + 6; bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
   if (!narrow) hintLine([['◂▸▲▼', 'commander'], ['X', 'back']], W / 2, fy + (bh - 7) / 2, { pill: false });

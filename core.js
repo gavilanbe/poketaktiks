@@ -165,7 +165,7 @@ function panel(x, y, w, h, opt = {}) {
   rect(x + 3, y + 3, w - 6, h - 6, UI.inset);                                              // inner line
   if (opt.flat) rect(x + 4, y + 4, w - 8, h - 8, fill); else { bodyFill(x + 4, y + 4, w - 8, h - 8, fill); hline(x + 4, y + 4, w - 8, shade(fill, .22)); hline(x + 4, y + h - 5, w - 8, shade(fill, -.3)); }
   let cy = y + 6;
-  if (opt.header) { const bh = 12, hf = opt.headerFill || UI.panelDark; rect(x + 4, y + 4, w - 8, bh, hf); hline(x + 4, y + 4, w - 8, shade(hf, .25)); hline(x + 4, y + 4 + bh, w - 8, UI.border2); hline(x + 4, y + 5 + bh, w - 8, shade(fill, -.3)); text(opt.header, x + 8, y + 7, opt.headerCol || UI.gold, { shadow: shade(hf, -.55) }); if (opt.headerRight) textR(opt.headerRight, x + w - 8, y + 7, opt.headerRightCol || UI.muted, { shadow: shade(hf, -.55) }); cy = y + 4 + bh + 5; }
+  if (opt.header) { const bh = 12, hf = opt.headerFill || UI.panelDark; rect(x + 4, y + 4, w - 8, bh, hf); hline(x + 4, y + 4, w - 8, shade(hf, .25)); hline(x + 4, y + 4 + bh, w - 8, UI.border2); hline(x + 4, y + 5 + bh, w - 8, shade(fill, -.3)); text(opt.header, x + 8, y + 7, opt.headerCol || UI.gold, { shadow: shade(hf, -.55) }); if (opt.headerRight) { const room = w - 16 - textWidth(opt.header) - 8, hr = textWidth(opt.headerRight) <= room ? opt.headerRight : room >= 40 ? fitLabel(opt.headerRight, room) : null; if (hr) textR(hr, x + w - 8, y + 7, opt.headerRightCol || UI.muted, { shadow: shade(hf, -.55) }); } cy = y + 4 + bh + 5; }
   if (opt.title) ribbonTab(opt.title, x + 5, y - 9, opt.titleCol);
   return { x, y, w, h, cx: x + 6, cy, cw: w - 12 };
 }
@@ -233,6 +233,11 @@ function hintLine(items, cx, y, opt = {}) {
   return tot;
 }
 // Width a hint line would take (same measuring as hintLine), for callers that trim hints to a card.
+// Items joined with " · " into at most `max` lines of `w` pixels, the first led by `head`; items that do not fit are
+// dropped from the end, and an item wider than a line is cut with an ellipsis.
+function packItems(items, head, w, max) { const out = []; let line = null; const start = it => { const t = (out.length ? '  ' : head) + it; return textWidth(t) <= w ? t : fitLabel(t, w); };
+  for (const it of items) { if (line == null) { line = start(it); continue; } const t = line + ' · ' + it; if (textWidth(t) <= w) { line = t; continue; } out.push(line); if (out.length >= max) return out; line = start(it); }
+  if (line != null && out.length < max) out.push(line); return out; }
 function hintWidth(items) { const parts = items.filter(Boolean).map(it => Array.isArray(it) ? { k: it[0], t: it[1] } : { t: it }); const kw = p => (p.k && !VIEW.touch ? textWidth(p.k) + 6 + 3 : 0) + textWidth(p.t); return parts.reduce((s, p) => s + kw(p), 0) + 9 * (parts.length - 1) + 10; }
 // Small-caps section label with a rule running to the right edge.
 function sectionLabel(s, x, y, w, col = UI.muted) { const t = String(s).toUpperCase(); text(t, x, y, col); const rx = x + textWidth(t) + 5; if (w && rx < x + w) { hline(rx, y + 4, x + w - rx, UI.border2); hline(rx, y + 5, x + w - rx, UI.inset); } }
