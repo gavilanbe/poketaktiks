@@ -132,6 +132,8 @@ function powerMenuLayout() {
   return { x, y, w, h, cards, desc, lines, side, pas };
 }
 // The passive, with whose aura carries it: "Ace Onix: Rock and Ground allies take 15% less".
+// The sites a front's enemy deploys from (their HQ and the centers they hold), counted by kind for the briefing.
+function briefSites(ch) { const w = ch.map.war, own = w && w.owners || {}; let hq = 0, centers = 0; for (const k in own) if (own[k] === 1) { const [x, y] = k.split(',').map(Number), kind = PROP_KIND[(ch.map.rows[y] || '')[x]]; if (kind === 'hq') hq++; else if (kind === 'center') centers++; } return hq + centers ? { hq, centers } : null; }
 function powerPassiveText(s, c) { const u = powerCaptain(HT()); return (coTrainer(s) ? 'Ace ' + (u ? u.name : DEX[COS[s.co].ace].name) + ': ' : '') + c.passive.text; }
 function drawPowerMenu() {
   const team = HT(), s = powerState(team); if (!s) { BT.mode = 'idle'; return; }
@@ -253,22 +255,24 @@ function briefDraw() {
   const co = ch.co ? COS[ch.co] : null, sp = ch.foe ? SPEAKERS[ch.foe] : null, as = co ? null : { tr: sp ? sp.tr : 'rocketgrunt', name: ch.foe || 'Rocket', col: sp ? sp.col : UI.red };
   const lw = narrow ? W - 12 : Math.min(250, Math.floor(W * .42)), lx = 6, ly = top + 2, cardW = narrow ? 70 : 84, cardH = narrow ? 60 : 76;
   // the enemy commander and their words
-  const fp = panel(lx, ly, lw, narrow ? cardH + 18 : Math.min(foot - 6 - ly, cardH + (co ? 110 : 44)), { header: co ? 'ENEMY COMMANDER' : 'ENEMY TRAINER', headerFill: shade(co ? co.col : as.col, -.55) });
+  const note = co || narrow ? [] : wrap('A local trainer paid by Team Rocket. No commander powers yet: those start at Mt. Moon.', lw - 16); // sized in, so it never spills
+  const fp = panel(lx, ly, lw, narrow ? cardH + 18 : Math.min(foot - 6 - ly, cardH + (co ? 110 : 34 + note.length * 9)), { header: co ? 'ENEMY COMMANDER' : 'ENEMY TRAINER', headerFill: shade(co ? co.col : as.col, -.55) });
   coCard(lx + 6, fp.cy, cardW, cardH, co ? ch.co : 'you', 1, null, { as, tag: 'FOE', pop: t });
   const qx = lx + 12 + cardW, qw = lw - (qx - lx) - 8, ql = wrap('"' + (ch.brief || '') + '"', qw - 8).slice(0, Math.floor((cardH - 6) / 9)); rrect(qx, fp.cy + 2, qw, ql.length * 9 + 8, '#fff6d8', 2); outline(qx, fp.cy + 2, qw, ql.length * 9 + 8, UI.inset); for (let k = 0; k < 3; k++) px(qx - 1 - k, fp.cy + 10 + k, '#fff6d8');
   ql.forEach((l, k) => { const a = REDUCED ? 1 : clamp((t - .3 - k * .25) / .2, 0, 1); ctx.globalAlpha = a; text(l, qx + 4, fp.cy + 6 + k * 9, '#3a2a18'); ctx.globalAlpha = 1; });
   const foes0 = ch.map.units.filter(u => u.team == null || u.team === 1), lead = co && (foes0.find(u => u.mon === co.ace) || foes0.find(u => u.boss) || foes0[0]); // who wears their crown on this front
   if (!narrow && co) { let y = fp.cy + cardH + 8; const c = coOf({ co: ch.co }); sectionLabel('HOW THEY FIGHT', lx + 8, y, lw - 16, co.col); y += 11;
     for (const [k, v] of [['Ace', DEX[lead ? lead.mon : co.ace].name], ['Passive', c.passive.text], ['Power', c.power.name + ': ' + c.power.text], ['Super', c.super.name + ': ' + c.super.text]]) { if (y + 9 > fp.y + fp.h - 4) break; text(k, lx + 8, y, UI.muted); const ls = wrap(v, lw - 62); ls.slice(0, 2).forEach((l, i) => text(l, lx + 52, y + i * 9, k === 'Super' ? UI.gold : UI.ink)); y += Math.min(2, ls.length) * 9 + 3; } }
-  else if (!narrow) { const y = fp.cy + cardH + 10; wrap('A local trainer paid by Team Rocket. No commander powers yet: those start at Mt. Moon.', lw - 16).forEach((l, i) => text(l, lx + 8, y + i * 9, UI.muted)); }
+  else if (!narrow) { const y = fp.cy + cardH + 8; note.forEach((l, i) => text(l, lx + 8, y + i * 9, UI.muted)); }
   // the mission
   const mx = narrow ? 6 : lx + lw + 6, my = narrow ? ly + cardH + 24 : ly, mw = narrow ? W - 12 : W - mx - 6, mh = foot - 6 - my;
   const mp = panel(mx, my, mw, mh, { header: 'MISSION', headerRight: 'Lv ' + ch.level + ' · par ' + ch.par + ' days', headerRightCol: UI.gold }); let y = mp.cy;
   const goal = objectiveTextFor(ch.map.objective, ch.map).replace('Objective: ', ''); iconAt('flag', mx + 6, y - 1, UI.gold); text(fitLabel(goal[0].toUpperCase() + goal.slice(1), mw - 22), mx + 17, y, UI.ink); y += 12;
-  const foes = ch.map.units.filter(u => u.team == null || u.team === 1), wild = ch.map.units.filter(u => u.team === 2), rocket = ch.map.war && ch.map.war.owners ? Object.keys(ch.map.war.owners).length : 0, per = Math.max(1, Math.floor((mw - 12) / 20));
+  const foes = ch.map.units.filter(u => u.team == null || u.team === 1), wild = ch.map.units.filter(u => u.team === 2), rocket = briefSites(ch), per = Math.max(1, Math.floor((mw - 12) / 20));
   const row = (label, list, col, flip) => { if (!list.length || y + 26 > my + mh - 4) return; sectionLabel(label, mx + 8, y, mw - 16, col); y += 10; list.slice(0, per).forEach((n, k) => { const bob = !REDUCED && k === Math.floor(t * 3) % Math.min(per, list.length) ? -1 : 0; ctx.drawImage(monIcon(n, flip), mx + 4 + k * 20, y + bob, 24, 18); if (k === 0 && label.startsWith('ENEMY') && co) drawCrown(mx + 17 + k * 20, y); }); y += 20; };
   row('ENEMY FORCES · ' + foes.length, (lead ? [lead.mon] : []).concat(foes.filter(u => u !== lead).map(u => u.mon)), '#ff9a9a', true); // their Ace first
-  if (rocket && y + 9 <= my + mh - 4) { text(fitLabel((rocket > 1 ? rocket + ' Rocket centers send ' : 'A Rocket center sends ') + (co ? co.name + '\'s' : 'their') + ' reinforcements: take ' + (rocket > 1 ? 'them' : 'it') + '!', mw - 16), mx + 8, y, UI.red); y += 12; }
+  if (rocket && co && y + 9 <= my + mh - 4) { const n = rocket.hq + rocket.centers, who = rocket.hq && rocket.centers ? 'The Rocket HQ and ' + (rocket.centers > 1 ? rocket.centers + ' centers' : 'a Rocket center') : rocket.hq ? 'The Rocket HQ' : rocket.centers > 1 ? rocket.centers + ' Rocket centers' : 'A Rocket center';
+    for (const l of wrap(who + (n > 1 ? ' send ' : ' sends ') + co.name + '\'s reinforcements: take ' + (n > 1 ? 'them' : 'it') + '!', mw - 16).slice(0, 2)) { text(l, mx + 8, y, UI.red); y += 9; } y += 3; }
   const allies = ch.map.units.filter(u => u.team === 3); row('ALLIES · FIGHTING WITH YOU', allies.map(u => u.mon), '#a0f0b0', false);
   row('WILD POKéMON', wild.map(u => u.mon), '#fff0a0', true);
   if (SAVE && y + 9 <= my + mh - 4) { text(fitLabel('Your collection: ' + SAVE.party.length + ' · ' + ch.slots + ' open the battle, the rest wait in the PC Box', mw - 16), mx + 8, y, UI.muted); y += 12; }

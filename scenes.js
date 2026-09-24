@@ -364,7 +364,7 @@ function resultsDraw() {
   }
   if (win) { const tv = countUp('res:turns', R.turns, .5, .2), kv = countUp('res:kos', R.kills, .5, .35); text('Turns ' + tv + (R.par ? ' / par ' + R.par : ''), x + 8, y, R.par && R.turns <= R.par ? UI.green : UI.ink); textR('KOs ' + kv, x + w - 8, y, UI.ink); y += 12; }
   if (R.war) { text(fitLabel('Captured ' + R.war.captures + ' · deployed ' + R.war.deployments + ' · left ' + money(R.war.funds) + (R.war.reason ? ' · ' + R.war.reason : ''), w - 16), x + 8, y, UI.info); y += 11; }
-  else { lose.forEach(l => { text(l, x + 8, y, UI.ink); y += 9; }); y += 3; }
+  else if (!win) { lose.forEach(l => { text(l, x + 8, y, UI.ink); y += 9; }); y += 3; }
   if (nRew) { sectionLabel('Rewards', x + 8, y, w - 16, UI.gold); y += 10; let i = 0; for (const k in R.rewards) { const cx = x + 10 + (i % rc) * 96; const cy = y + Math.floor(i / rc) * 10; drawBall(cx + 4, cy + 4, (ITEMS[k] || ITEMS.pokeball).col, 3); text((ITEMS[k] || ITEMS.pokeball).name + ' ×' + countUp('res:rew' + k, R.rewards[k], .4, .6), cx + 12, cy + 1, UI.ink); i++; } y += Math.ceil(i / rc) * 10 + 4; }
   else if (win && !R.skirmish) { text('Replay: rewards come with the first clear', x + 8, y, UI.dim); y += 12; }
   if (nC) { sectionLabel('New team members', x + 8, y, w - 16, UI.gold); y += 10; R.caught.forEach((c, i) => { const cx = x + 10 + (i % cc) * 70; const cy = y + Math.floor(i / cc) * 26; drawMon(c.num, cx + 16, cy + 22 + Math.round(Math.abs(Math.sin(SC.t * 6 + i)) * -3), { outline: teamColor(0) }); text(DEX[c.num].name, cx + 32, cy + 6, UI.ink); text('Lv' + c.level, cx + 32, cy + 14, UI.gold); }); y += Math.ceil(R.caught.length / cc) * 26 + 4; }
