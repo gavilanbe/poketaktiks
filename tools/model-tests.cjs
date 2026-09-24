@@ -934,6 +934,14 @@ test('deploys play as a send-out: the Pokémon stays hidden until its ball opens
     const kinds = []; let n = 0; while (BT.mode === 'anim' && n++ < 600) { if (BT.anim && BT.anim.ev && !kinds.includes(BT.anim.ev.type)) kinds.push(BT.anim.ev.type); g.battleUpdate(1 / 60); g.battleDraw(); }
     assert.strictEqual(kinds.includes('recall'), recalled, u.name + (recalled ? ' is recalled to the Box' : ' is not recalled') + ': ' + kinds.join(',')); }
 });
+test('dialogue: every line of the story fits its box on phones and desktop, in English and Spanish', T0 => {
+  for (const lang of ['en', 'es']) for (const [w, h] of [[180, 390], [195, 422], [422, 195], [640, 360]]) {
+    const T = loadGame(), { g, G } = T; G(`setLang('${lang}'); VIEW.w = ${w}; VIEW.h = ${h};`); const boxes = textHook(T);
+    const lines = G('PROLOGUE.concat(...CHAPTERS.map(c => (c.intro || []).concat(c.outro || [])))'), wide = w >= 480 && h >= 280, bottom = h - (wide ? 14 : 8) - 4 - 2;
+    lines.forEach((line, k) => { G('startDialog([' + JSON.stringify(line) + '], () => {}, { stage: prologueStage }); SC.dialog.chars = 1e9; SC.dialog.t = 5; SC.dialog.T = 5;'); boxes(); g.storyDraw();
+      const low = boxes().filter(b => b.y > h * .35 && !/^\d+ ?\/ ?\d+$/.test(b.text)); for (const b of low) assert(b.y + 7 <= bottom && b.x >= 0 && b.x + b.w <= w, `${lang} ${w}x${h} line ${k} (${line.who}): "${b.text}" leaves its box`); });
+  }
+});
 test('touch: dialogs offer a SKIP pill that ends the scene; help and the unit sheet speak in taps', T => {
   const { g, G } = T; G('VIEW.w = 195; VIEW.h = 422; VIEW.touch = true'); g.startNewGame(); for (let i = 0; i < 20; i++) { g.storyUpdate(1 / 30); g.storyDraw(); }
   const k = G('SC.dialog.skipHit'); assert(k && k.x + k.w <= 195 && k.y >= 0, 'a SKIP pill on screen'); g.storyInput({ type: 'up', x: k.x + 2, y: k.y + 2 }); assert.strictEqual(G('SC.dialog'), null, 'tapping SKIP ends the dialog');

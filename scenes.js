@@ -230,15 +230,16 @@ function storyDraw() {
   const d = SC.dialog; if (d && d.stage) d.stage(d); else battleDraw(); if (!d) return; const W = VIEW.w, H = VIEW.h, line = d.lines[d.i], t = d.t, R = richLine(line), S = speakerOf(line), wide = W >= 480 && H >= 280, sc = wide ? 2 : 1;
   // cinematic: the board dims and black bars close in from the top and the bottom
   const intro = REDUCED ? 1 : easeOut(clamp(d.T / .3, 0, 1)); ctx.globalAlpha = .3 * intro; rect(0, 0, W, H, '#05041a'); ctx.globalAlpha = 1; const bar = Math.round((wide ? 14 : 8) * intro); rect(0, 0, W, bar, '#000000'); rect(0, H - bar, W, bar, '#000000');
-  const bh = wide ? 64 : 62, rise = REDUCED ? 0 : Math.round((1 - easeOutBack(clamp(appear('story') / .3, 0, 1), 2)) * 30), box = { x: 6, y: H - bar - bh - 4 + rise, w: W - 12, h: bh };
+  // the box grows with its text (a long Spanish line on a phone needs five or six rows), up to half the screen
+  const lh = wide ? 12 : 11, lines = wrap(R.plain, W - 12 - 26), bh = Math.min(Math.round(H * .5), Math.max(wide ? 64 : 62, 12 + lines.length * lh + 10)), rise = REDUCED ? 0 : Math.round((1 - easeOutBack(clamp(appear('story') / .3, 0, 1), 2)) * 30), box = { x: 6, y: H - bar - bh - 4 + rise, w: W - 12, h: bh };
   for (const side of [0, 1]) if (d.cast[side]) drawSpeaker(d.cast[side], side, d.cast[side] === line.who, d.T - d.since[side], d, line, sc, box);
   panel(box.x, box.y, box.w, box.h, { fill: '#1a1f4e' }); rect(box.x + 3, box.y + box.h - 14, box.w - 6, 11, '#171b44');
   const bandX = S.side === 0 ? box.x + 3 : box.x + box.w - 6; rect(bandX, box.y + 3, 3, box.h - 6, S.col); rect(S.side === 0 ? bandX + 3 : bandX - 1, box.y + 3, 1, box.h - 6, shade(S.col, -.45)); // the speaker's colour down their side
   // the name on a ribbon in the speaker's colour, beside their portrait
   const size = 80 * sc, nameW = textWidth(line.who || '') + 12, nx = S.side === 0 ? box.x + Math.min(size + 2, box.w * .4) : box.x + box.w - Math.min(size + 2, box.w * .4) - nameW; if (line.who) ribbonTab(line.who, nx, box.y - 9, S.col);
   // the text, typed out, with *emphasis* in gold riding a little wave
-  const tx = box.x + 12, tw = box.w - 26, lines = wrap(R.plain, tw); let shown = Math.floor(d.chars), gi = 0;
-  lines.forEach((l, li) => { let cx = tx; const y = box.y + 12 + li * 12; for (let i = 0; i < l.length; i++, gi++) { if (gi >= shown) return; const c = l[i], em = R.em[gi], fresh = !REDUCED && shown - gi <= 2 && shown < R.plain.length ? -1 : 0; if (c !== ' ') text(c, cx, y + fresh + (em && !REDUCED ? Math.round(Math.sin(t * 7 + gi * .6)) : 0), em ? UI.gold : UI.ink, em ? { outline: '#3a2000' } : { shadow: '#0a0c26' }); cx += c === ' ' ? 3 : glyph(c, FONT).w + 1; } gi++; });
+  const tx = box.x + 12; let shown = Math.floor(d.chars), gi = 0;
+  lines.forEach((l, li) => { let cx = tx; const y = box.y + 12 + li * lh; for (let i = 0; i < l.length; i++, gi++) { if (gi >= shown) return; const c = l[i], em = R.em[gi], fresh = !REDUCED && shown - gi <= 2 && shown < R.plain.length ? -1 : 0; if (c !== ' ') text(c, cx, y + fresh + (em && !REDUCED ? Math.round(Math.sin(t * 7 + gi * .6)) : 0), em ? UI.gold : UI.ink, em ? { outline: '#3a2000' } : { shadow: '#0a0c26' }); cx += c === ' ' ? 3 : glyph(c, FONT).w + 1; } gi++; });
   if (d.chars >= R.plain.length) { const ax = box.x + box.w - 12, ay = box.y + box.h - 11 + (REDUCED ? 0 : Math.round(Math.abs(Math.sin(t * 6)) * 2)); if (d.i < d.lines.length - 1) { rect(ax - 3, ay, 7, 1, UI.gold); rect(ax - 2, ay + 1, 5, 1, UI.gold); rect(ax - 1, ay + 2, 3, 1, UI.gold); px(ax, ay + 3, UI.gold); } else { rect(ax - 2, ay, 5, 5, UI.gold); rect(ax - 1, ay + 1, 3, 3, '#fff2b0'); } }
   // phones have no X key: a SKIP pill in the corner ends the scene instead
   d.skipHit = null; if (VIEW.touch) { const sw = textWidth('SKIP ▸▸') + 12, sx = W - sw - 6, sy = bar + 5; uiButton(sx, sy, sw, 16, 'SKIP ▸▸', { variant: 'ghost' }); d.skipHit = { x: sx, y: sy, w: sw, h: 16 }; }
