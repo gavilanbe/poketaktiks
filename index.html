@@ -2547,15 +2547,17 @@ function drawArrow(path, sx, sy, t = performance.now()) {
 }
 
 // ---------------------------------------------------------------- particles, sprites & floaters
-const FX = { parts: [], texts: [], sprites: [], shake: 0, shakeX: 0, shakeY: 0, flash: 0, flashCol: '#ffffff', zoom: 0, hitstop: 0, slow: 0 };
+const FX = { parts: [], texts: [], sprites: [], shake: 0, shakeX: 0, shakeY: 0, flash: 0, flashCol: '#ffffff', zoom: 0, hitstop: 0, slow: 0, pixel: 1 };
+// Small pixel-art sprites spawned while FX.pixel > 1 (the duel scene's attacks) are drawn at that whole-pixel zoom.
+const FX_ZOOMABLE = new Set(['leaf', 'shard', 'drop', 'spark', 'heart', 'wind', 'aLeaf', 'aFlake']);
 function spawnParts(x, y, n, col, opt = {}) {
-  if (REDUCED) n = Math.min(n, 4);
+  if (REDUCED) n = Math.min(n, 4); n = Math.min(n, 700 - FX.parts.length); // a hard cap keeps a busy exchange at 60 fps
   for (let i = 0; i < n; i++) { const a = vrnd() * Math.PI * 2, sp = (opt.speed || 60) * (0.4 + vrnd()); FX.parts.push({ x, y, vx: Math.cos(a) * sp + (opt.vx || 0), vy: Math.sin(a) * sp * (opt.flat ? .4 : 1) + (opt.vy || 0), life: (opt.life || .5) * (0.6 + vrnd() * .6), t: -(opt.delay || 0), col: Array.isArray(col) ? vpick(col) : col, size: opt.size || 2, grav: opt.grav == null ? 120 : opt.grav, shape: opt.shape || 'sq' }); }
 }
 // Shaped effect sprite. kinds: burst flash slash flame drop bolt leaf bubble shard rock wisp psy poof spark heart wind star
 function spawnSprite(kind, x, y, o = {}) {
-  if (REDUCED && FX.sprites.length > 12) return null;
-  const s = { floor: o.floor == null ? null : o.floor, kind, x, y, vx: o.vx || 0, vy: o.vy || 0, t: -(o.delay || 0), life: o.life || .5, col: o.col || '#ffffff', col2: o.col2 || '#ffffff', size: o.size || 6, grav: o.grav || 0, rot: o.rot || 0, spin: o.spin || 0, seed: Math.floor(vrnd() * 1e6), arc: o.arc || 0, x0: x, y0: y, tx: o.tx, ty: o.ty, trail: o.trail || null, len: o.len || 0, orbit: o.orbit || null, dir: o.dir || 1 };
+  if ((REDUCED && FX.sprites.length > 12) || FX.sprites.length > 360) return null;
+  const s = { z: o.z || (FX.pixel > 1 && FX_ZOOMABLE.has(kind) ? FX.pixel : 1), floor: o.floor == null ? null : o.floor, kind, x, y, vx: o.vx || 0, vy: o.vy || 0, t: -(o.delay || 0), life: o.life || .5, col: o.col || '#ffffff', col2: o.col2 || '#ffffff', size: o.size || 6, grav: o.grav || 0, rot: o.rot || 0, spin: o.spin || 0, seed: Math.floor(vrnd() * 1e6), arc: o.arc || 0, x0: x, y0: y, tx: o.tx, ty: o.ty, trail: o.trail || null, len: o.len || 0, orbit: o.orbit || null, dir: o.dir || 1 };
   FX.sprites.push(s); return s;
 }
 // Hurry the texts on screen off within `t` seconds (a KO stamp should not land on top of the damage numbers).
@@ -2576,6 +2578,7 @@ function updateFX(dt) {
 function pline(x0, y0, x1, y1, c, w = 1) { ctx.fillStyle = c; x0 |= 0; y0 |= 0; x1 |= 0; y1 |= 0; const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1; let err = dx + dy; for (let n = 0; n < 400; n++) { ctx.fillRect(x0 - (w >> 1), y0 - (w >> 1), w, w); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 >= dy) { err += dy; x0 += sx; } if (e2 <= dx) { err += dx; y0 += sy; } } }
 function drawSprite(s, ox, oy) {
   const k = Math.max(0, s.t / s.life), x = Math.round(s.x + ox), y = Math.round(s.y + oy); const fade = k > .6 ? 1 - (k - .6) / .4 : 1; const R = mulberry32(s.seed);
+  if (s.z > 1) { ctx.save(); ctx.translate(x, y); ctx.scale(s.z, s.z); ctx.translate(-x, -y); } // a whole-pixel zoom round its own position
   ctx.globalAlpha = fade;
   switch (s.kind) {
     case 'burst': { const L = Math.round(s.size * easeOut(k)); for (let d = 0; d < 8; d++) { const a = d * Math.PI / 4; const dx = Math.round(Math.cos(a)), dy = Math.round(Math.sin(a)); const l0 = Math.round(L * .35 * k); for (let i = l0; i < L; i++) { ctx.fillStyle = i < l0 + 2 ? '#ffffff' : s.col; ctx.fillRect(x + dx * i, y + dy * i, 1, 1); } } break; }
@@ -2626,9 +2629,10 @@ function drawSprite(s, ox, oy) {
     // crystal: an ice shard that grows out of the ground and shatters
     case 'crystal': { const h = Math.round(s.size * (k < .4 ? easeOut(k / .4) : 1)); if (k > .75 && (Math.floor(s.t * 30) + s.seed) % 2) break; for (let j = 0; j < h; j++) { const w = Math.max(1, Math.round((1 - j / h) * s.size * .4)); ctx.fillStyle = s.col; ctx.fillRect(x - (w >> 1), y - j, w, 1); ctx.fillStyle = s.col2; ctx.fillRect(x - (w >> 1), y - j, Math.max(1, w >> 2), 1); } ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y - h + 1, 1, 2); break; }
     // horizontal beam of signed length `len` from (x,y): grows out fast, holds, then thins away
+    default: drawAtkSprite(s, x, y, k, fade, ox, oy); break; // the attack choreographies' own kinds (attackfx.js)
     case 'beam': { const len = Math.round(s.len * Math.min(1, k * 2.5)); const th = Math.max(1, Math.round(s.size * (k < .25 ? k / .25 : k > .7 ? (1 - k) / .3 : 1))); const x0 = Math.min(x, x + len), w = Math.abs(len); const fl = (Math.floor(s.t * 40) + s.seed) % 2; ctx.fillStyle = s.col; ctx.fillRect(x0, y - th - fl, w, 2 * th + 1 + fl); ctx.fillStyle = s.col2; ctx.fillRect(x0, y - (th >> 1), w, (th >> 1) * 2 + 1); break; }
   }
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = 1; if (s.z > 1) ctx.restore();
 }
 // Particles and effect sprites in world space (offset by ox, oy). Floating texts are drawn separately by
 // drawFXTexts so the board can draw them unscaled when it is zoomed out.
@@ -2672,20 +2676,6 @@ function weatherIcon(kind, x, y) {
   const rows = { rain: ['...B...', '..BBB..', '.BBBBB.', 'BBBWBBB', 'BBBBBBB', '.BBBBB.', '..BBB..'], sun: ['Y..Y..Y', '.YYYYY.', '.YWWYY.', 'YYWYYYY', '.YYYYY.', '.YYYYY.', 'Y..Y..Y'], sand: ['.SSSS..', 'S....S.', '..SSS.S', '.S...S.', '.S.SS..', '..S....', '...SSS.'], snow: ['...W...', '.W.W.W.', '..WWW..', 'WWW.WWW', '..WWW..', '.W.W.W.', '...W...'] }[kind];
   if (rows) stampAt(x, y, rows, { B: '#5aa8f0', W: '#ffffff', Y: '#ffd24a', S: '#d8b070' });
 }
-// ---------------------------------------------------------------- type-flavoured battle effects
-const TYPE_FX = {
-  Normal: { proj: 'star', parts: ['#ffffff', '#ffe9a0'] }, Fighting: { proj: null, parts: ['#ffb07a', '#ffffff'] },
-  Fire: { proj: 'flame', parts: ['#ff8a2c', '#ffd25a', '#ff4a20'] }, Water: { proj: 'drop', parts: ['#62acf0', '#edf9ff'] },
-  Electric: { proj: 'spark', parts: ['#ffe94a', '#ffffff'] }, Grass: { proj: 'leaf', parts: ['#7ecf5e', '#a3e07c'] },
-  Ice: { proj: 'shard', parts: ['#bde4f8', '#ffffff'] }, Poison: { proj: 'bubble', parts: ['#b060d0', '#e0a0ff'] },
-  Ground: { proj: 'rock', parts: ['#c0a060', '#8a6a3a'] }, Rock: { proj: 'rock', parts: ['#ada090', '#665858'] },
-  Flying: { proj: 'wind', parts: ['#ffffff', '#c8e0ff'] }, Psychic: { proj: 'psy', parts: ['#ff80c0', '#ffffff'] },
-  Bug: { proj: 'leaf', parts: ['#a8b820', '#e0e860'] }, Ghost: { proj: 'wisp', parts: ['#a070e0', '#6040a0'] },
-  Dragon: { proj: 'flame', parts: ['#7060ff', '#a0c0ff'] }, Dark: { proj: 'wisp', parts: ['#504060', '#a080c0'] },
-  Steel: { proj: 'star', parts: ['#c0c0d0', '#ffffff'] }, Fairy: { proj: 'heart', parts: ['#ffb0e0', '#ffffff'] },
-};
-function fxFor(type) { return TYPE_FX[type] || TYPE_FX.Normal; }
-// Hit effect at (x,y) in world pixels.
 // Cottages on a parsed map with the x of their chimney inside the tile (it swaps sides with the variant, see drawTile 'H').
 function mapHouses(m) { if (!m.houses) { m.houses = []; for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) if (m.tiles[y][x].id === 'house') m.houses.push({ x, y, cx: (m.variants[y][x] % 2 === 1 ? 8 : 20) + 2 }); } return m.houses; }
 // Smoke from a chimney top at (x, y): three puffs rise, drift east, swell and fade.
@@ -2697,36 +2687,6 @@ function drawPickup(x, y, t, seed = 0) {
   ctx.globalAlpha = .3; ellipse(x, y + 7, Math.max(3, 6 - (hop >> 1)), 2, '#000000'); ctx.globalAlpha = 1;
   drawBall(x, y - hop, ITEMS.pokeball.col, 5);
   const tw = (t * .45 + seed * .137 + .5) % 1; if (!REDUCED && tw < .14) { const k = Math.sin(tw / .14 * Math.PI), L = Math.round(k * 3), sx = x - 4, sy = y - 5 - hop; ctx.fillStyle = '#ffffff'; ctx.fillRect(sx - L, sy, 2 * L + 1, 1); ctx.fillRect(sx, sy - L, 1, 2 * L + 1); if (L > 1) { ctx.fillStyle = '#fff4b0'; ctx.fillRect(sx - 1, sy - 1, 3, 3); ctx.fillStyle = '#ffffff'; ctx.fillRect(sx, sy, 1, 1); } }
-}
-function hitEffect(type, x, y, crit, eff) {
-  const F = fxFor(type), col = TYPE_COL[type] || '#ffffff', c1 = F.parts[0], c2 = F.parts[1]; const big = crit ? 1.5 : 1;
-  spawnSprite('flash', x, y, { size: Math.round(7 * big), life: crit ? .18 : .12, col: crit ? '#ffd24a' : '#ffffff' });
-  switch (type) {
-    case 'Fire': case 'Dragon': for (let i = 0; i < 5 * big; i++) spawnSprite('flame', x + (vrnd() - .5) * 22, y + 8 + (vrnd() - .5) * 10, { size: 2 + Math.round(vrnd() * 3), life: .4 + vrnd() * .3, col: c1, col2: type === 'Fire' ? '#ff4a20' : '#4a3ad0', vy: -30 - vrnd() * 30, vx: (vrnd() - .5) * 16, delay: vrnd() * .16 }); break;
-    case 'Water': for (let i = 0; i < 10 * big; i++) { const a = vrnd() * Math.PI * 2, sp = 50 + vrnd() * 60; spawnSprite('drop', x, y + 2, { life: .45 + vrnd() * .2, col: c1, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40, grav: 260 }); } spawnSprite('psy', x, y + 8, { size: 12, life: .35, col: c2, col2: c1 }); break;
-    case 'Electric': for (let i = 0; i < 3 * big; i++) spawnSprite('bolt', x + (vrnd() - .5) * 14, y - 4, { size: 12, life: .28, col: c1, delay: i * .05 }); for (let i = 0; i < 6 * big; i++) spawnSprite('spark', x + (vrnd() - .5) * 24, y + (vrnd() - .5) * 20, { life: .3 + vrnd() * .2, col: c1, delay: vrnd() * .15 }); break;
-    case 'Grass': case 'Bug': for (let i = 0; i < 9 * big; i++) { const a = vrnd() * Math.PI * 2, sp = 40 + vrnd() * 50; spawnSprite('leaf', x, y, { life: .55 + vrnd() * .3, col: type === 'Grass' ? '#2a6b38' : '#6a7a10', col2: type === 'Grass' ? '#c8f0a0' : '#f0f080', vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 30, grav: 90, rot: vrnd() * 4, spin: 10 + vrnd() * 10 }); } spawnSprite('burst', x, y, { size: 12 * big, life: .25, col: '#e8ffd0' }); break;
-    case 'Ice': for (let i = 0; i < 7 * big; i++) { const a = vrnd() * Math.PI * 2, sp = 50 + vrnd() * 40; spawnSprite('shard', x, y, { life: .5, col: c1, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 20, grav: 160, rot: vrnd() * 2, spin: 6 }); } spawnSprite('psy', x, y, { size: 12, life: .3, col: '#ffffff', col2: c1 }); break;
-    case 'Poison': for (let i = 0; i < 7 * big; i++) spawnSprite('bubble', x + (vrnd() - .5) * 18, y + (vrnd() - .5) * 10, { size: 2 + Math.round(vrnd() * 2), life: .5 + vrnd() * .3, col: c1, col2: c2, vy: -20 - vrnd() * 20, vx: (vrnd() - .5) * 10, delay: vrnd() * .15 }); break;
-    case 'Ground': case 'Rock': for (let i = 0; i < 8 * big; i++) { const a = -Math.PI * (0.15 + vrnd() * .7), sp = 60 + vrnd() * 70; spawnSprite('rock', x, y + 6, { size: 2 + Math.round(vrnd() * 2), life: .55, col: c1, col2: c2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, grav: 300 }); } for (let i = 0; i < 3; i++) spawnSprite('poof', x + (i - 1) * 8, y + 10, { size: 4, life: .45, col: '#d8c8a0', col2: '#f0e6c8', vy: -10, delay: i * .04 }); break;
-    case 'Flying': for (let i = 0; i < 5 * big; i++) spawnSprite('wind', x + (vrnd() - .5) * 10, y + (vrnd() - .5) * 20, { size: 10 + Math.round(vrnd() * 6), life: .3 + vrnd() * .2, col: c2, vx: 120 + vrnd() * 60, delay: vrnd() * .1 }); spawnSprite('slash', x, y, { size: 9, life: .22, col: '#ffffff' }); break;
-    case 'Psychic': for (let i = 0; i < 3; i++) spawnSprite('psy', x, y, { size: 14 + i * 3, life: .5, col: c1, col2: c2, delay: i * .1 }); break;
-    case 'Ghost': case 'Dark': for (let i = 0; i < 6 * big; i++) { const a = vrnd() * Math.PI * 2; spawnSprite('wisp', x, y, { size: 3 + Math.round(vrnd() * 2), life: .6, col: c1, col2: c2, vx: Math.cos(a) * 40, vy: Math.sin(a) * 30 - 20, delay: vrnd() * .12 }); } break;
-    case 'Fairy': for (let i = 0; i < 6 * big; i++) spawnSprite('heart', x + (vrnd() - .5) * 20, y + (vrnd() - .5) * 10, { life: .6, col: c1, vy: -30 - vrnd() * 20, delay: vrnd() * .15 }); spawnSprite('psy', x, y, { size: 12, life: .4, col: c1, col2: '#ffffff' }); break;
-    case 'Fighting': spawnSprite('slash', x, y, { size: 10, life: .22, col: c1 }); spawnSprite('burst', x, y, { size: 14 * big, life: .3, col: '#ffffff' }); break;
-    default: spawnSprite('burst', x, y, { size: 13 * big, life: .3, col: c1 }); for (let i = 0; i < 4; i++) spawnSprite('star', x + (vrnd() - .5) * 22, y + (vrnd() - .5) * 18, { size: 3, life: .3, col: c2, delay: vrnd() * .15 });
-  }
-  if (eff > 1) spawnSprite('burst', x, y, { size: 18 * big, life: .35, col: '#ffd24a', delay: .04 });
-  spawnParts(x, y, crit ? 18 : 10, [col, c1, c2, '#ffffff'], { speed: crit ? 110 : 70, life: .5, grav: 80 });
-}
-// Projectile from (ax,ay) to (bx,by); returns the sprite so callers can time the impact.
-function projectileFX(type, ax, ay, bx, by, dur) {
-  const F = fxFor(type); const col = TYPE_COL[type] || '#ffffff'; const kind = F.proj || 'star'; const c1 = F.parts[0], c2 = F.parts[1];
-  const o = { tx: bx, ty: by, life: dur, arc: kind === 'rock' || kind === 'drop' ? 14 : 6, col: c1, col2: c2, size: kind === 'flame' ? 4 : kind === 'psy' ? 6 : kind === 'wind' ? 12 : 3, spin: 14, trail: kind === 'spark' ? ['#ffe94a', '#ffffff'] : kind === 'flame' ? [c1, c2] : kind === 'wisp' ? [c1] : kind === 'drop' ? [c1] : null };
-  if (kind === 'wind') o.vx = 0;
-  if (kind === 'spark') { for (let i = 0; i < 4; i++) spawnSprite('bolt', ax + (bx - ax) * (i + 1) / 5, ay + (by - ay) * (i + 1) / 5 - 10, { size: 10, life: .16, col: c1, delay: i * dur / 4 }); return null; }
-  if (kind === 'flame' || kind === 'drop' || kind === 'leaf' || kind === 'star' || kind === 'rock' || kind === 'shard' || kind === 'bubble') { for (let i = 0; i < 3; i++) spawnSprite(kind, ax, ay, { tx: bx + (vrnd() - .5) * 6, ty: by + (vrnd() - .5) * 6, life: dur, arc: o.arc + i * 3, col: c1, col2: c2, size: o.size, spin: 12, rot: i, trail: o.trail, delay: i * .03 }); return null; }
-  return spawnSprite(kind, ax, ay, o);
 }
 
 // ---------------------------------------------------------------- icons
@@ -3990,7 +3950,7 @@ function nextAnim() {
   if (q.kind === 'event') { setupEvent(q); }
   if (q.kind === 'duel') { startDuel(q); queueRecalls(q.events); }
   if (q.kind === 'move') { q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.unit.fx.walk = true; q.i = 0; q.dur = (BT.fast ? .05 : .11); if (q.path.length > 1) { const l = q.path[q.path.length - 1]; if (!unitVisible(q.unit) || !unitVisible(l)) centerCam((q.path[0].x + l.x) / 2, (q.path[0].y + l.y) / 2); } }
-  if (q.kind === 'strike') { q.dur = BT.fast ? .3 : .5; centerCamBetween(q.att, q.def); }
+  if (q.kind === 'strike') { q.style = atkStyle(q.move); q.dur = (BT.fast ? .3 : .5) * (q.style.board || 1); centerCamBetween(q.att, q.def); } // big moves take a little longer
   if (q.kind === 'msg') { q.dur = BT.fast ? .4 : .9; }
   if (q.kind === 'wait') { q.dur = BT.fast ? q.t2 * .3 : q.t2; }
   if (q.kind === 'fn') { q.fn(); nextAnim(); }
@@ -4066,9 +4026,14 @@ function updateAnim(dt) {
     let off = 0; if (k < .3) off = -easeOut(k / .3) * 4; else if (k < .45) off = lerp(-4, 14, easeIn((k - .3) / .15)); else off = lerp(14, 0, easeOut((k - .45) / .55));
     if (q.ranged) off = k < .3 ? -easeOut(k / .3) * 3 : k < .45 ? lerp(-3, 6, (k - .3) / .15) : lerp(6, 0, easeOut((k - .45) / .55));
     A.fx.dx = dx * off; A.fx.dy = dy * off; A.fx.sx = k < .3 ? 1 - k * .3 : 1; A.fx.sy = k < .3 ? 1 + k * .3 : 1;
+    // the move's own look (attackfx.js): its charge from the start, its travel from .3, its impact at .45
+    const pose = q.style && q.style.pose; if (pose === 'leap' && k >= .3 && k < .45) A.fx.dy -= Math.round(Math.sin((k - .3) / .15 * Math.PI) * 12); // Body Slam hops on
+    if (pose === 'burrow') { const b = k < .3 ? k / .3 : k < .5 ? 1 : Math.max(0, 1 - (k - .5) / .3); A.fx.alpha = 1 - .75 * b; A.fx.dy += Math.round(b * 6); } // Dig goes under
+    if (!q.charged) { q.charged = true; atkWindup(boardAtkCtx(q)); }
     if (!q.hitDone && k >= .45) { q.hitDone = true; impact(q); }
-    if (q.ranged && k >= .3 && k < .45 && !q.projDone) { q.projDone = true; spawnProjectile(A, D, q.move); }
-    if (k >= 1) { A.fx.dx = A.fx.dy = 0; A.fx.sx = A.fx.sy = 1; D.fx.dx = D.fx.dy = 0; nextAnim(); }
+    if (k >= .3 && !q.projDone) { q.projDone = true; atkLaunch(boardAtkCtx(q)); }
+    if (q.react && q.hitDone && k < .92) { const hk = (k - .45) * q.dur; D.fx.tint = q.react === 'shock' ? (Math.floor(hk * 22) % 2 ? '#fff7a0' : '#3a3200') : q.react === 'chill' ? '#bde4f8' : Math.floor(hk * 16) % 2 ? '#ff8a40' : null; }
+    if (k >= 1) { A.fx.dx = A.fx.dy = 0; A.fx.sx = A.fx.sy = 1; D.fx.dx = D.fx.dy = 0; if (pose === 'burrow') A.fx.alpha = 1; if (q.react) D.fx.tint = null; nextAnim(); }
     return;
   }
   if (q.kind === 'event') {
@@ -4098,24 +4063,31 @@ function stepFx(u, x, y, land) {
   else spawnParts(cx, fy, 3, col, { speed: 20, life: .35, grav: -10, flat: true });
   if (id === 'tall' && !REDUCED) for (let i = 0; i < (land ? 3 : 2); i++) spawnSprite('leaf', cx + (i - 1) * 6, fy - 8, { size: 3, life: .6, col: '#3d8a3c', col2: '#a6dc7c', vx: (i - 1) * 20 + (vrnd() - .5) * 10, vy: -34 - vrnd() * 16, grav: 90, rot: i, spin: 10 });
 }
-function spawnProjectile(A, D, move) { const ax = A.x * TILE + TILE / 2, ay = A.y * TILE + 12, bx = D.x * TILE + TILE / 2, by = D.y * TILE + 12; projectileFX(move.type, ax, ay, bx, by, (BT.fast ? .5 : 1) * .15 * .9); }
+// The strike context for attackfx.js on the board (world pixels, a third of the scene's size): the attack leaves the
+// attacker's front, lands on the defender's chest; wind-up is the first .3 of the strike, travel .3 → .45.
+function boardAtkCtx(q) {
+  const A = q.att, D = q.def, ax0 = A.x * TILE + TILE / 2, ay0 = A.y * TILE + 12, tx = D.x * TILE + TILE / 2, ty = D.y * TILE + 12, dx = tx - ax0, dy = ty - ay0, n = Math.hypot(dx, dy) || 1, ux = dx / n, uy = dy / n, miss = q.ev.type === 'miss';
+  return { S: .36, board: true, A: { x: ax0, y: A.y * TILE + TILE - 4 }, D: { x: tx, y: D.y * TILE + TILE - 4 }, dir: ux > .2 ? 1 : ux < -.2 ? -1 : (A.fx.facing || 1), ax: ax0 + ux * 8, ay: ay0 + uy * 8, tx: tx - ux * 2, ty, ex: miss ? tx + ux * 18 : tx, ey: miss ? ty + uy * 18 : ty, ux, uy,
+    gy: D.y * TILE + TILE - 5, gyA: A.y * TILE + TILE - 5, top: D.y * TILE - 54, H: 26, wt: .3 * q.dur, dur: .15 * q.dur, rate: 1, move: q.move, type: q.move.type, pal: atkPal(q.move.type), e: q.ev, miss, q, att: A, def: D, fol: u => () => [u.fx.dx || 0, u.fx.dy || 0] };
+}
 function impact(q) {
   const A = q.att, D = q.def, e = q.ev; const cx = D.x * TILE + TILE / 2, cy = D.y * TILE + 10; const col = TYPE_COL[q.move.type];
   if (e.type === 'miss') { Audio.sfx('miss'); floatText(cx, cy - 10, 'MISS', '#c0c0c0', { big: true }); D.fx.dx = (D.x - A.x) * 6; D.fx.dodge = .25; return; }
   const kb = e.crit ? 8 : e.eff > 1 ? 6 : 5; D.fx.flash = 1; D.fx.dx = Math.sign(D.x - A.x) * kb; D.fx.dy = Math.sign(D.y - A.y) * kb - 2; D.fx.hit = .3; D.fx.sx = 1.18; D.fx.sy = .84;
   Audio.sfx(e.crit ? 'crit' : e.eff > 1 ? 'hit2' : 'hit'); if (e.crit || e.hpAfter <= 0) Audio.sfx('thud'); shake(e.crit ? 7 : e.eff > 1 ? 5 : 3); if (!BT.fast) FX.hitstop = e.crit ? .12 : e.eff > 1 ? .07 : .05;
-  hitEffect(q.move.type, cx, cy, e.crit, e.eff);
-  // an ink star under the type effect, a ring when it is super effective, dust kicked back from the defender's feet
-  if (e.dmg > 0) { spawnSprite('impact', cx, cy, { size: e.crit ? 20 : 14, life: .26, col: col || '#ffffff', rot: vrnd() * 3 }); spawnSprite('impact', cx, cy, { size: e.crit ? 11 : 8, life: .18, col: '#ffffff', rot: vrnd() * 3, delay: .02 }); const fx = Math.sign(D.x - A.x), fy = Math.sign(D.y - A.y); for (let i = 0; i < 3; i++) spawnSprite('poof', cx - fx * (4 + i * 4), D.y * TILE + TILE - 5, { size: 3, life: .32, col: '#e8e0d0', col2: '#ffffff', vx: fx * (20 + i * 8), vy: -6 + fy * 10, delay: i * .03 }); }
+  const ac = boardAtkCtx(q); atkImpact(ac); if (e.dmg > 0 && q.style && ['shock', 'chill', 'burn'].includes(q.style.react)) q.react = q.style.react; // the move's own impact (attackfx.js)
+  // dust kicked back from the defender's feet
+  if (e.dmg > 0) { const fx = Math.sign(D.x - A.x), fy = Math.sign(D.y - A.y); for (let i = 0; i < 3; i++) spawnSprite('poof', cx - fx * (4 + i * 4), D.y * TILE + TILE - 5, { size: 3, life: .32, col: '#e8e0d0', col2: '#ffffff', vx: fx * (20 + i * 8), vy: -6 + fy * 10, delay: i * .03 }); }
   if (e.eff > 1) { spawnSprite('ring', cx, cy, { size: 22, life: .4, col: '#ffd24a', delay: .04 }); flashScreen(shade(col || '#ffffff', .5), .25); }
   if (e.crit) { flashScreen('#fff2c0', .5); FX.zoom = 1; spawnSprite('burst', cx, cy, { size: 26, life: .42, col: UI.gold, delay: .05 }); }
-  floatText(cx, cy - 12, String(e.dmg), e.crit ? UI.gold : e.eff > 1 ? '#ffb040' : '#ffffff', e.crit || e.dmg >= 20 ? { huge: 2, life: 1.1, vy: -16, outline: '#1a0a14' } : { big: true, life: 1.1 });
-  if (e.crit) floatText(cx, cy - 34, 'CRITICAL!', UI.gold, { big: true, life: .9, delay: .04, outline: '#3a2000', vy: -12 }); else floatText(cx + 14, cy - 26, MOVE_POP[q.move.type], col, { life: .9, delay: .05, outline: '#000', vy: -14 });
+  // the number rises from above the target's head a beat after the hit, so the move's own impact reads first
+  floatText(cx, cy - 22, String(e.dmg), e.crit ? UI.gold : e.eff > 1 ? '#ffb040' : '#ffffff', e.crit || e.dmg >= 40 ? { huge: 2, life: 1.15, vy: -18, delay: .1, outline: '#1a0a14' } : { big: true, life: 1.1, vy: -18, delay: .1 });
+  if (e.crit) floatText(cx, cy - 46, 'CRITICAL!', UI.gold, { big: true, life: .9, delay: .14, outline: '#3a2000', vy: -12 }); else floatText(cx + 16, cy - 36, MOVE_POP[q.move.type], col, { life: .9, delay: .15, outline: '#000', vy: -14 });
   if (e.eff > 1) floatText(cx, cy + 4, e.eff >= 2 ? 'SUPER EFFECTIVE!!' : 'Super effective!', '#ffd24a', { delay: .25, life: 1.2, outline: '#402000', vy: -10 });
   else if (e.eff === 0) floatText(cx, cy + 4, 'No effect...', '#c0c0c0', { delay: .25, life: 1.2, vy: -10 });
   else if (e.eff < 1) floatText(cx, cy + 4, 'Not very effective', '#a0d0ff', { delay: .25, life: 1.1, vy: -10 });
   if (e.status) { floatText(cx, cy + 14, STATUS[e.status].text.toUpperCase() + '!', STATUS[e.status].col, { delay: .5, life: 1.2, outline: '#000', vy: -10 }); }
-  if (e.drain) floatText(A.x * TILE + TILE / 2, A.y * TILE, '+' + e.drain, UI.green, { delay: .3 });
+  if (e.drain) { floatText(A.x * TILE + TILE / 2, A.y * TILE, '+' + e.drain, UI.green, { delay: .3 }); atkDrain(ac); }
   BT.hpShow.set(D.id, { from: e.hpAfter + e.dmg, to: e.hpAfter, t: 0 }); if (e.drain) BT.hpShow.set(A.id, { from: e.attHpAfter - e.drain, to: e.attHpAfter, t: 0 });
 }
 // The catch, as the games play it: the ball arcs over spinning, pops open above the Pokémon, a red beam pulls it in, the
@@ -5579,7 +5551,8 @@ const DUEL_T = { intro: .72, windup: .26, contact: .16, ranged: .3, hold: .46, d
 const DUEL_FAMILIES = { Fire: 'fire', Water: 'water', Ice: 'water', Electric: 'electric', Grass: 'grass', Psychic: 'psychic', Ghost: 'psychic', Fairy: 'psychic', Poison: 'psychic', Dragon: 'psychic' };
 // Attack family: melee-only moves are contact whatever their type; ranged ones go by type, else a generic projectile or beam.
 function duelFamily(move) { if (move.rng[1] <= 1) return 'contact'; return DUEL_FAMILIES[move.type] || 'neutral'; }
-function duelLaunchTime(fam) { return fam === 'contact' ? DUEL_T.contact : fam === 'electric' ? .2 : DUEL_T.ranged; }
+// How long the travel lasts: the move's own choreography decides (attackfx.js), else its family.
+function duelLaunchTime(fam, move) { return move ? atkTravelTime(move, fam) : fam === 'contact' ? DUEL_T.contact : fam === 'electric' ? .2 : DUEL_T.ranged; }
 
 // ---------------------------------------------------------------- script (pure)
 // events: the hit/miss/ko/thaw events of one exchange, in resolver order. hp0: {unitId: hp before the exchange}.
@@ -5592,8 +5565,9 @@ function duelScript(events, hp0, T = DUEL_T) {
   for (const e of events) {
     if (e.type === 'hit' || e.type === 'miss') {
       if (!first) t += T.gap; first = false; const fam = duelFamily(e.move), follow = lastAtt === e.att; lastAtt = e.att;
-      beats.push({ t, kind: 'windup', att: e.att, def: e.def, move: e.move, counter: !!e.counter, fam, ev: e, follow }); t += T.windup;
-      beats.push({ t, kind: 'launch', att: e.att, def: e.def, move: e.move, fam, ev: e }); t += duelLaunchTime(fam);
+      const wt = T === DUEL_T ? atkWindupTime(e.move) : T.windup, lt = T === DUEL_T ? duelLaunchTime(fam, e.move) : duelLaunchTime(fam); // each move charges and travels at its own pace
+      beats.push({ t, kind: 'windup', att: e.att, def: e.def, move: e.move, counter: !!e.counter, fam, ev: e, follow, dur: wt, travel: lt }); t += wt;
+      beats.push({ t, kind: 'launch', att: e.att, def: e.def, move: e.move, fam, ev: e, dur: lt }); t += lt;
       if (e.type === 'miss') { beats.push({ t, kind: 'miss', att: e.att, def: e.def, move: e.move, ev: e, fam }); t += T.miss; continue; }
       beats.push({ t, kind: 'impact', att: e.att, def: e.def, move: e.move, ev: e, fam, hpFrom: hp[e.def.id], hpTo: e.hpAfter, attFrom: hp[e.att.id], attTo: e.attHpAfter, drop: T.drop });
       hp[e.def.id] = e.hpAfter; hp[e.att.id] = e.attHpAfter; t += T.hold;
@@ -5643,7 +5617,7 @@ function startDuel(q) {
   q.script = duelScript(q.events, q.hp0); q.t = 0; q.i = 0; q.boost = false; q.skipped = false; q.done = false; q.started = true;
   q.view = JSON.parse(JSON.stringify(q.view || duelView([q.att, q.def]))); // a private copy: replaying the item starts from the snapshot again
   q.sides = duelSides(q.att, q.def); q.pose = null; q.hitFx = null; q.missFx = null; q.koFx = null; q.banner = null; q.big = null; q.focus = null; q.entered = {};
-  q.flash = null; q.lines = null; q.victor = null; q.stamp = null; q.shakePanel = {}; q.cues = {};
+  q.flash = null; q.lines = null; q.victor = null; q.stamp = null; q.shakePanel = {}; q.cues = {}; q.lift = null; q.off = {};
   q.terr = { [q.att.id]: terrAt(q.att.x, q.att.y), [q.def.id]: terrAt(q.def.x, q.def.y) }; q.biome = duelBiome(q); q.seed = (q.att.id * 31 + q.def.id * 7 + B.turn * 3) | 0;
   for (const u of [q.att, q.def]) { requestBigSprite(q.view[u.id].num); requestAnim(q.view[u.id].num); BT.hpShow.set(u.id, { from: q.hp0[u.id], to: q.hp0[u.id], t: 0, hold: true }); }
   q.cam = { zoom: 1, x: 0, y: 0, tz: 1, tx: 0, ty: 0 };
@@ -5684,17 +5658,20 @@ function duelBeat(q, b) {
   const L = duelLayout(q), z = L.z, P = id => ({ x: L.pos[id].x / z, y: L.pos[id].y / z, dir: L.pos[id].dir }); duelApplyBeat(q, b);
   switch (b.kind) {
     case 'windup': {
-      const a = P(b.att.id), col = TYPE_COL[b.move.type] || '#ffffff', F = fxFor(b.move.type);
-      q.pose = { unit: b.att, kind: 'windup', t0: q.t, fam: b.fam }; q.banner = { move: b.move, counter: b.counter, follow: b.follow, t0: q.t, until: q.t + DUEL_T.windup + duelLaunchTime(b.fam) + .55 }; q.focus = { t0: q.t, until: q.t + DUEL_T.windup + duelLaunchTime(b.fam) + .45 }; duelCamTo(q, a, 1.12);
-      if (b.fam === 'contact') { Audio.sfx('swing'); for (let i = 0; i < 3; i++) spawnSprite('poof', a.x - a.dir * (6 + i * 6), a.y, { size: 4 + i, life: .35, col: '#d8d0b8', col2: '#f4f0e0', vx: -a.dir * (18 + i * 8), vy: -6, delay: i * .04 }); }
-      else { Audio.sfx('charge'); for (let i = 0; i < 10; i++) { const an = i / 10 * Math.PI * 2 + vrnd(), r = 34 + vrnd() * 18; spawnSprite('spark', a.x + Math.cos(an) * r, a.y - 44 + Math.sin(an) * r * .7, { tx: a.x + a.dir * 8, ty: a.y - 44, life: DUEL_T.windup * .95, col: F.parts[0] || col, delay: i * .015 }); } spawnSprite('ring', a.x, a.y - 44, { size: 26, life: DUEL_T.windup, col: shade(col, .35) }); }
+      const a = P(b.att.id), st = atkStyle(b.move), wt = b.dur || DUEL_T.windup, lt = b.travel || duelLaunchTime(b.fam, b.move);
+      q.pose = { unit: b.att, kind: 'windup', t0: q.t, fam: b.fam, dur: wt, style: st.pose }; q.banner = { move: b.move, counter: b.counter, follow: b.follow, t0: q.t, until: q.t + wt + lt + .55 }; q.focus = { t0: q.t, until: q.t + wt + lt + .45, a: st.focus, col: st.focusCol }; duelCamTo(q, a, 1.12);
+      Audio.sfx(b.fam === 'contact' ? 'swing' : 'charge'); atkWindup(duelAtkCtx(q, b, L, wt, lt)); // the move's own charge (attackfx.js)
       break;
     }
-    case 'launch': { const a = P(b.att.id); q.pose = { unit: b.att, kind: b.fam === 'contact' ? 'lunge' : 'cast', t0: q.t, fam: b.fam, dur: duelLaunchTime(b.fam) }; if (b.fam === 'contact') Audio.sfx('whoosh'); else if (!REDUCED) { spawnSprite('boom', a.x + a.dir * 24, a.y - 44, { size: 7, life: .22, rot: vrnd() * 6 }); shake(2); } duelLaunchFx(b, a, P(b.def.id)); break; }
+    case 'launch': { // the attacker's move (a lunge, a cast, a leap, burrowing, a stomp) and the travel of the attack
+      const st = atkStyle(b.move), dur = b.dur || duelLaunchTime(b.fam, b.move), pose = st.pose || (b.fam === 'contact' ? 'lunge' : 'cast'); q.pose = { unit: b.att, kind: pose, t0: q.t, fam: b.fam, dur, style: pose };
+      if (pose === 'lunge' || pose === 'rush' || pose === 'leap') Audio.sfx('whoosh'); else if (!REDUCED) shake(1);
+      if (st.react === 'lift' && b.ev && b.ev.type !== 'miss') q.lift = { unit: b.def, t0: q.t, dur };
+      atkLaunch(duelAtkCtx(q, b, L, 0, dur)); break; }
     case 'impact': {
       const e = b.ev, d = P(b.def.id), a = P(b.att.id), cx = d.x, cy = d.y - 44, lethal = e.hpAfter <= 0, heavy = e.crit || lethal, col = TYPE_COL[b.move.type] || '#ffffff';
-      q.hitFx = { unit: b.def, t0: q.t, crit: e.crit, lethal }; q.shakePanel[b.def.id] = q.t;
-      duelImpactFx(b.fam, b.move.type, cx, cy, d, e); hitEffect(b.move.type, cx, cy, e.crit, e.eff); duelCamTo(q, d, heavy ? 1.26 : e.eff > 1 ? 1.2 : 1.15);
+      const st = atkStyle(b.move), c = duelAtkCtx(q, b, L, 0, 0); q.hitFx = { unit: b.def, t0: q.t, crit: e.crit, lethal, react: e.dmg > 0 ? st.react : null }; q.shakePanel[b.def.id] = q.t;
+      atkImpact(c); duelCamTo(q, d, heavy ? 1.26 : e.eff > 1 ? 1.2 : 1.15); // the move's own impact (attackfx.js)
       q.jolt = { t0: q.t, dir: -d.dir, n: e.crit ? 7 : lethal ? 6 : e.dmg > 0 ? 4 : 0 };
       Audio.sfx(e.dmg === 0 ? 'miss' : e.crit ? 'crit' : e.eff > 1 ? 'hit2' : 'hit'); if (heavy && e.dmg > 0) Audio.sfx('thud');
       if (e.dmg > 0) {
@@ -5710,7 +5687,7 @@ function duelBeat(q, b) {
       if (e.crit) spawnSprite('burst', cx, cy, { size: 34, life: .45, col: UI.gold, delay: .04 });
       // the number: huge, gold on a critical, orange when super effective; the tags above and below it fade before any KO stamp
       const numCol = e.crit ? UI.gold : e.eff > 1 ? '#ffb040' : e.eff === 0 ? '#c0c0c0' : '#ffffff';
-      floatText(cx, cy - 20, String(e.dmg), numCol, { huge: e.crit || e.dmg >= 20 ? 3 : 2, life: .95, vy: -18, outline: '#1a0a14' });
+      floatText(cx - d.dir * 20, cy - 34, String(e.dmg), numCol, { huge: e.crit || e.dmg >= 20 ? 3 : 2, life: .95, vy: -18, outline: '#1a0a14' }); // up and behind the target, clear of the impact
       // the tags stack under the number: the top of the screen belongs to the panels and the move banner
       let ty = cy + 4;
       if (e.crit) { floatText(cx, ty, 'CRITICAL!', UI.gold, { big: true, life: .75, delay: .03, outline: '#3a2000', vy: -10 }); ty += 13; }
@@ -5719,7 +5696,7 @@ function duelBeat(q, b) {
       else if (e.eff === 0) { floatText(cx, ty + 4, 'No effect...', '#c0c0c0', { delay: .18, life: .8, vy: -8 }); ty += 10; }
       else if (e.eff < 1) { floatText(cx, ty + 4, 'Not very effective', '#a0d0ff', { delay: .18, life: .8, vy: -8 }); ty += 10; }
       if (e.status) { floatText(cx, ty + 6, TR('{0}!', STATUS[e.status].text.toUpperCase()), STATUS[e.status].col, { delay: .38, life: .9, outline: '#000', vy: -8 }); duelStatusFx(e.status, d, q); }
-      if (e.drain) { floatText(a.x, a.y - 70, '+' + e.drain, UI.green, { delay: .45, outline: '#0a3a10', big: true }); for (let i = 0; i < 7; i++) spawnSprite('bubble', cx + (vrnd() - .5) * 16, cy + (vrnd() - .5) * 16, { tx: a.x + (vrnd() - .5) * 10, ty: a.y - 40 + (vrnd() - .5) * 14, life: .45, arc: 14 + i * 3, size: 2 + (i % 2), col: '#7cf0a0', col2: '#ffffff', delay: .1 + i * .04 }); }
+      if (e.drain) { floatText(a.x, a.y - 70, '+' + e.drain, UI.green, { delay: .45, outline: '#0a3a10', big: true }); atkDrain(c); }
       break;
     }
     case 'miss': { const d = P(b.def.id); q.missFx = { unit: b.def, t0: q.t }; duelCamTo(q, d, 1.08); Audio.sfx('miss'); Audio.sfx('whoosh'); floatText(d.x, d.y - 74, 'MISS', '#d8d8e8', { huge: 2, life: .8, outline: '#1a1a2a', vy: -14 }); for (let i = 0; i < 3; i++) spawnSprite('wind', d.x - d.dir * 10, d.y - 30 - i * 10, { size: 14, life: .3, col: '#ffffff', vx: -d.dir * 90, delay: i * .03 }); break; }
@@ -5754,35 +5731,13 @@ function duelStatusFx(st, d, q) {
   else if (st === 'psn') { Audio.sfx('poison'); for (let i = 0; i < 9; i++) spawnSprite('bubble', x + (vrnd() - .5) * 30, y + 16, { size: 2 + (i % 3), life: .7, col: '#b060d0', col2: '#e0a0ff', vy: -30 - vrnd() * 20, delay: .35 + i * .04 }); }
   else if (st === 'frz') { Audio.sfx('water'); for (let i = 0; i < 5; i++) spawnSprite('crystal', x + (i - 2) * 11, d.y, { size: 18 + (i % 2) * 10, life: .8, col: '#bde4f8', col2: '#ffffff', delay: .35 + i * .05 }); }
 }
-// The travelling part of each family, from the attacker's front to the defender's chest (field space).
-function duelLaunchFx(b, a, d) {
-  const type = b.move.type, F = fxFor(type), c1 = F.parts[0], c2 = F.parts[1], dur = duelLaunchTime(b.fam);
-  const ax = a.x + a.dir * 26, ay = a.y - 44, tx = d.x + d.dir * 6, ty = d.y - 44, dir = a.dir, miss = b.ev && b.ev.type === 'miss';
-  const ex = miss ? tx - dir * 40 : tx; // a miss flies past the dodging target
-  switch (b.fam) {
-    case 'contact': for (let i = 0; i < 3; i++) spawnSprite('speed', a.x - dir * 20, ay + 6 - i * 6, { size: 30, life: dur + .12, col: '#ffffff', dir, delay: i * .04 }); spawnSprite('poof', a.x - dir * 10, a.y, { size: 6, life: .35, col: '#d8d0b8', col2: '#f4f0e0', vx: -dir * 30 }); break;
-    case 'fire': Audio.sfx('fire'); spawnSprite('fireball', ax, ay, { tx: ex, ty, life: dur, arc: 6, size: type === 'Fire' ? 8 : 7, col: c1, col2: type === 'Fire' ? '#ff4a20' : '#4a3ad0', dir, trail: [c1, c2] }); for (let i = 0; i < 6; i++) spawnSprite('flame', ax, ay + (vrnd() - .5) * 10, { tx: ex + (vrnd() - .5) * 14, ty: ty + (vrnd() - .5) * 18, life: dur - i * .025, arc: 10 + i * 4, col: c1, col2: type === 'Fire' ? '#ff4a20' : '#4a3ad0', size: 2 + (i % 2), delay: .04 + i * .025 }); spawnSprite('flash', ax - dir * 8, ay, { size: 10, life: .14, col: '#ffe9a0' }); break;
-    case 'water': Audio.sfx('water'); for (let i = 0; i < 3; i++) spawnSprite('wave', ax, ay + 10 + i * 6, { tx: ex, ty: ty + 10 + i * 6, life: dur + .08, size: 18 - i * 3, col: c1, col2: c2, dir, delay: i * .05 }); for (let i = 0; i < 10; i++) spawnSprite(type === 'Ice' ? 'shard' : 'drop', ax, ay + (vrnd() - .5) * 10, { tx: ex + (vrnd() - .5) * 10, ty: ty + (vrnd() - .5) * 18, life: dur - i * .02, arc: 8 + i * 2, col: c1, col2: c2, trail: [c1], rot: i, spin: 8, delay: i * .02 }); break;
-    case 'grass': Audio.sfx('grass'); for (let i = 0; i < 10; i++) spawnSprite('leaf', tx, ty, { orbit: { r: 38, speed: 9 * (i % 2 ? 1 : -1), a0: i * Math.PI / 5, shrink: true }, life: dur + .25, col: '#2a6b38', col2: '#c8f0a0', rot: i, spin: 14, delay: i * .02 }); for (let i = 0; i < 6; i++) spawnSprite('leaf', ax, ay + (vrnd() - .5) * 12, { tx: ex + (vrnd() - .5) * 12, ty: ty + (vrnd() - .5) * 20, life: dur - i * .02, arc: 6 + i * 3, col: '#2a6b38', col2: '#c8f0a0', rot: i, spin: 12, delay: i * .025 }); break;
-    case 'electric': Audio.sfx('elec'); spawnSprite('flash', ax - dir * 10, ay, { size: 12, life: .15, col: '#ffe94a' }); for (let i = 0; i < 4; i++) spawnSprite('bolt', ax + (ex - ax) * (i + 1) / 5, ay - 6, { size: 13, life: .12, col: c1, delay: i * dur / 5 }); spawnSprite('lightning', ex, ty + 30, { size: ty + 30 + 60, life: .34, col: c1, delay: dur * .55 }); spawnSprite('lightning', ex + dir * 6, ty + 30, { size: ty + 30 + 60, life: .24, col: '#fff7b0', delay: dur * .55 + .12 }); break;
-    case 'psychic': Audio.sfx('psy'); for (let i = 0; i < 5; i++) spawnSprite('psy', ex, ty, { size: 16 + i * 6, life: .38, col: c1, col2: c2, delay: dur * .2 + i * .06 }); for (let i = 0; i < 4; i++) spawnSprite('wisp', ax, ay + (i - 1.5) * 8, { tx: ex, ty: ty + (i - 1.5) * 6, life: dur, size: 4, col: c1, col2: c2, delay: i * .035 }); spawnSprite('ring', ex, ty, { size: 32, life: .42, col: c2, delay: dur * .3 }); break;
-    default: if (type === 'Normal' || type === 'Steel') { Audio.sfx('beam'); spawnSprite('beam', ax, ay, { len: ex - ax, life: dur + .1, col: TYPE_COL[type], col2: '#ffffff', size: 7 }); spawnSprite('flash', ax, ay, { size: 10, life: .15, col: '#ffffff' }); } else { Audio.sfx('swing'); projectileFX(type, ax, ay, ex, ty, dur); } if (type === 'Ice' && !miss) for (let i = 0; i < 4; i++) spawnSprite('crystal', tx + (i - 1.5) * 12, d.y, { size: 22 + (i % 2) * 8, life: .55, col: '#bde4f8', col2: '#ffffff', delay: dur * .6 + i * .04 });
-  }
-}
-// The impact: one large, family-flavoured burst on top of the regular hit effect (field space).
-function duelImpactFx(fam, type, cx, cy, d, e) {
-  const F = fxFor(type), c1 = F.parts[0], c2 = F.parts[1], big = e.crit ? 1.5 : e.eff > 1 ? 1.25 : 1;
-  switch (fam) {
-    case 'contact': spawnSprite('impact', cx + d.dir * 6, cy, { size: Math.round(22 * big), life: .32, col: TYPE_COL[type] || '#ffd24a', rot: vrnd() * 3 }); spawnSprite('impact', cx + d.dir * 6, cy, { size: Math.round(12 * big), life: .22, col: '#ffffff', rot: vrnd() * 3, delay: .02 }); break;
-    case 'fire': spawnSprite('blast', cx, cy, { size: Math.round(30 * big), life: .55, col: type === 'Fire' ? '#ff4a20' : '#4a3ad0', col2: c1 }); break;
-    case 'water': spawnSprite('ring', cx, cy + 8, { size: Math.round(32 * big), life: .45, col: c2 }); for (let i = 0; i < 8; i++) spawnSprite('bubble', cx + (vrnd() - .5) * 22, cy + (vrnd() - .5) * 16, { size: 2 + (i % 3), life: .5, col: c2, col2: c1, vy: -20, delay: vrnd() * .1 }); break;
-    case 'electric': spawnSprite('ring', cx, cy, { size: Math.round(28 * big), life: .35, col: c1 }); for (let i = 0; i < 4; i++) spawnSprite('bolt', cx + (vrnd() - .5) * 30, cy + (vrnd() - .5) * 20, { size: 10, life: .2, col: c1, delay: i * .04 }); break;
-    case 'grass': spawnSprite('ring', cx, cy, { size: Math.round(26 * big), life: .35, col: '#c8f0a0' }); break;
-    case 'psychic': spawnSprite('ring', cx, cy, { size: Math.round(38 * big), life: .5, col: c1 }); spawnSprite('ring', cx, cy, { size: Math.round(24 * big), life: .4, col: c2, delay: .06 }); break;
-    default: spawnSprite('impact', cx, cy, { size: Math.round(18 * big), life: .3, col: TYPE_COL[type] || '#ffffff', rot: vrnd() * 3 });
-  }
-  if (e.eff > 1) spawnSprite('ring', cx, cy, { size: Math.round(44 * big), life: .5, col: '#ffd24a', delay: .06 });
-  spawnParts(cx, cy, e.crit ? 26 : 14, [TYPE_COL[type] || '#ffffff', c1, c2, '#ffffff'], { speed: e.crit ? 150 : 100, life: .6, grav: 120 });
+// The strike context for attackfx.js in field space: where the attack leaves the attacker, the defender's chest, the
+// ground lines, the sky above, the timing, and each unit's live offset so an effect can ride a lunge.
+function duelAtkCtx(q, b, L, wt, dur) {
+  const z = L.z, pos = id => ({ x: L.pos[id].x / z, y: L.pos[id].y / z, dir: L.pos[id].dir }), A = pos(b.att.id), D = pos(b.def.id), dir = A.dir;
+  const ax = A.x + dir * 24, ay = A.y - 45, tx = D.x + D.dir * 4, ty = D.y - 42, dx = tx - ax, dy = ty - ay, n = Math.hypot(dx, dy) || 1, ux = dx / n, uy = dy / n, miss = !!(b.ev && b.ev.type === 'miss');
+  return { S: 1.25, board: false, stacked: !!L.f.stacked, A, D, dir, ax, ay, tx, ty, ex: miss ? tx + ux * 46 : tx, ey: miss ? ty + uy * 46 - 8 : ty, ux, uy, gy: D.y, gyA: A.y, top: L.f.top + 4, H: 84, wt, dur, rate: duelRate(q),
+    move: b.move, type: b.move.type, pal: atkPal(b.move.type), e: b.ev, miss, q, att: b.att, def: b.def, fol: u => () => (q.off && q.off[u.id]) || [0, 0] };
 }
 
 // ---------------------------------------------------------------- layout & drawing
@@ -5822,19 +5777,33 @@ function clipPoly(pts) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p
 // then sink into the ground) and the victory hop. `sil` draws it as a flat silhouette for the impact frame.
 function duelDrawUnit(q, u, L, t, sil = null) {
   const f = L.f, p = f.pos[u.id], v = q.view[u.id]; let dx = 0, dy = 0, sx = 1, sy = 1, tint = null, alpha = 1, breath = 0, speed = 1; const flip = p.dir === 1; const soft = REDUCED ? .3 : 1;
-  const pose = q.pose && q.pose.unit === u ? q.pose : null; const ghosts = []; let aura = 0;
+  const pose = q.pose && q.pose.unit === u ? q.pose : null; const ghosts = []; let aura = 0, sink = 0;
   if (pose) {
-    const k = t - pose.t0;
-    if (pose.kind === 'windup') { const e = Math.min(1, k / DUEL_T.windup); dx = -p.dir * 7 * easeOut(e) * soft; speed = 2.6; aura = e; if (pose.fam === 'contact') { sy = 1 - .1 * e; sx = 1 + .08 * e; } else { sy = 1 + .06 * e; sx = 1 - .04 * e; } if (Math.floor(k * 20) % 2 === 0 && e < .85) tint = shade(TYPE_COL[q.banner ? q.banner.move.type : 'Normal'] || '#ffffff', .3); }
-    else if (pose.kind === 'lunge') { const e = Math.min(1, k / pose.dur); const reach = f.stacked ? 28 : 48; if (e < 1) { dx = p.dir * lerp(-7, reach, easeIn(e)) * soft; sx = 1.1; sy = .94; speed = 2; if (e > .2) ghosts.push([dx - p.dir * 8, .35], [dx - p.dir * 17, .2], [dx - p.dir * 27, .1]); } else dx = p.dir * lerp(reach, 0, easeOut(Math.min(1, (k - pose.dur) / .35))) * soft; }
+    const k = t - pose.t0, wd = pose.dur || DUEL_T.windup;
+    if (pose.kind === 'windup') { const e = Math.min(1, k / wd); dx = -p.dir * 7 * easeOut(e) * soft; speed = 2.6; aura = e; if (pose.fam === 'contact') { sy = 1 - .1 * e; sx = 1 + .08 * e; } else { sy = 1 + .06 * e; sx = 1 - .04 * e; } if (Math.floor(k * 20) % 2 === 0 && e < .85) tint = shade(TYPE_COL[q.banner ? q.banner.move.type : 'Normal'] || '#ffffff', .3);
+      if (pose.style === 'stomp') { dy -= Math.round(Math.sin(Math.min(1, e / .85) * Math.PI) * 26 * soft); if (e > .85) { sy = .82; sx = 1.14; } } // a hop, then it stamps the ground
+      else if (pose.style === 'burrow') { sink = Math.round(easeIn(e) * 92); tint = null; } } // Dig: down into the ground
+    else if (pose.kind === 'lunge' || pose.kind === 'rush') { const e = Math.min(1, k / pose.dur), reach = (f.stacked ? 28 : 48) * (pose.kind === 'rush' ? 1.45 : 1); if (e < 1) { dx = p.dir * lerp(-7, reach, easeIn(e)) * soft; sx = 1.1; sy = .94; speed = 2; if (e > .2) ghosts.push([dx - p.dir * 8, .35], [dx - p.dir * 17, .2], [dx - p.dir * 27, .1]); if (pose.kind === 'rush' && e > .2) ghosts.push([dx - p.dir * 38, .08]); } else dx = p.dir * lerp(reach, 0, easeOut(Math.min(1, (k - pose.dur) / .35))) * soft; }
+    else if (pose.kind === 'leap') { const e = Math.min(1, k / pose.dur), reach = f.stacked ? 34 : 86; if (e < 1) { dx = p.dir * lerp(-7, reach, easeInOut(e)) * soft; dy -= Math.round(Math.sin(e * Math.PI) * 48 * soft); sx = .95; sy = 1.07; speed = 2; if (e > .3) ghosts.push([dx - p.dir * 10, .25]); } else { const r = Math.min(1, (k - pose.dur) / .4); dx = p.dir * lerp(reach, 0, easeInOut(r)) * soft; dy -= Math.round(Math.sin(r * Math.PI) * 14 * soft); if (r < .15) { sy = .84; sx = 1.12; } } } // Body Slam: up and onto the target
+    else if (pose.kind === 'burrow') { const r = k < pose.dur + .12 ? 0 : Math.min(1, (k - pose.dur - .12) / .3); sink = Math.round((1 - easeOut(r)) * 92); if (r > 0 && r < 1) dy -= Math.round(Math.sin(r * Math.PI) * 8); } // under the ground, then back up
+    else if (pose.kind === 'stomp') { const e = Math.min(1, k / .2); sy = 1 - .16 * (1 - e); sx = 1 + .12 * (1 - e); }
     else if (pose.kind === 'cast') { const e = Math.min(1, k / pose.dur); dx = p.dir * (e < 1 ? lerp(-7, 9, e) : lerp(9, 0, Math.min(1, (k - pose.dur) / .3))) * soft; if (e < 1) { sy = 1.05; sx = .97; speed = 2; } }
   }
   const hit = q.hitFx && q.hitFx.unit === u ? t - q.hitFx.t0 : -1;
   if (hit >= 0 && hit < .34) { const kb = q.hitFx.crit ? 18 : q.hitFx.lethal ? 16 : 11; dx += -p.dir * kb * (1 - easeOut(hit / .34)) * soft; if (hit < .16 && Math.floor(hit * 30) % 2 === 0) tint = '#ffffff'; speed = 0; sx *= 1 + (1 - hit / .34) * .06; sy *= 1 - (1 - hit / .34) * .05; }
+  // how the move lands on it: jolted by electricity (flashing dark and bright), scorched, frozen still, flattened, rocked
+  const react = hit >= 0 ? q.hitFx.react : null;
+  if (react === 'shock' && hit < .45) { tint = Math.floor(hit * 22) % 2 ? '#fff7a0' : hit < .3 ? '#3a3200' : tint; speed = 0; dx += Math.round(Math.sin(hit * 90)) * soft; }
+  else if (react === 'burn' && hit > .1 && hit < .42 && Math.floor(hit * 16) % 2) tint = '#ff8a40';
+  else if (react === 'chill' && hit > .08 && hit < .55) { tint = hit < .45 || Math.floor(hit * 20) % 2 ? '#bde4f8' : null; speed = 0; }
+  else if (react === 'crush' && hit < .36) { const kk = 1 - hit / .36; sy *= 1 - .16 * kk; sx *= 1 + .12 * kk; }
+  else if (react === 'wobble' && hit < .5) dx += Math.round(Math.sin(hit * 46) * 4 * (1 - hit / .5)) * soft;
+  // Psychic lifts its target while the power travels, and slams it down on the hit
+  if (q.lift && q.lift.unit === u) { const lk = t - q.lift.t0; if (lk >= 0 && lk < q.lift.dur) { dy -= Math.round(easeOut(lk / q.lift.dur) * 22 * soft) + Math.round(Math.sin(lk * 30) * 1.5); speed = .3; if (Math.floor(lk * 20) % 3 === 0) tint = tint || '#ffb4da'; } else if (lk >= q.lift.dur && lk < q.lift.dur + .08) dy -= Math.round((1 - (lk - q.lift.dur) / .08) * 22 * soft); }
   const miss = q.missFx && q.missFx.unit === u ? t - q.missFx.t0 : -1;
   if (miss >= 0 && miss < .42) { const h = Math.sin(miss / .42 * Math.PI); dx += -p.dir * 16 * h * soft; dy -= 12 * h * soft; if (h > .2) ghosts.push([dx + p.dir * 8, .25], [dx + p.dir * 15, .12]); }
   const ko = q.koFx && q.koFx.unit === u ? t - q.koFx.t0 : -1;
-  let sink = 0; if (ko >= 0) { if (ko < .34) { tint = Math.floor(ko * 24) % 2 ? '#ffffff' : null; dx += Math.round(Math.sin(ko * 70) * 2) * soft; speed = 0; } else { const e = Math.min(1, (ko - .34) / .42); sink = Math.round(easeIn(e) * 90); speed = 0; if (e >= 1) return; } }
+  if (ko >= 0) { if (ko < .34) { tint = Math.floor(ko * 24) % 2 ? '#ffffff' : null; dx += Math.round(Math.sin(ko * 70) * 2) * soft; speed = 0; } else { const e = Math.min(1, (ko - .34) / .42); sink = Math.round(easeIn(e) * 90); speed = 0; if (e >= 1) return; } }
   const vic = q.victor && q.victor.unit === u ? t - q.victor.t0 : -1;
   if (vic >= 0 && vic < .7 && !REDUCED) { const h = Math.abs(Math.sin(vic / .35 * Math.PI)); dy -= Math.round(h * 10); sy *= 1 + h * .05; sx *= 1 - h * .04; }
   const idle = !pose && hit < 0 && ko < 0 && vic < 0;
@@ -5844,6 +5813,7 @@ function duelDrawUnit(q, u, L, t, sil = null) {
   if (!sil && wl == null) { const shadowW = Math.round(28 * sx * (1 - Math.max(0, -dy) / 40) * (1 - sink / 90)); ctx.globalAlpha = .32 * alpha * (v.fly ? .7 : 1); ellipse(Math.round(p.x + dx), p.y + 1, Math.max(4, shadowW), 5, '#000000'); ctx.globalAlpha = 1; }
   // the charge aura: a pulsing disc of the move's colour behind a winding-up Pokémon
   if (aura > 0 && !sil && !REDUCED) { const col = TYPE_COL[q.banner ? q.banner.move.type : 'Normal'] || '#ffffff', r = Math.round(18 + aura * 14 + Math.sin(t * 40) * 2); ctx.globalAlpha = .22 * aura; circle(Math.round(p.x + dx), p.y - 36, r, col); ctx.globalAlpha = .35 * aura; circle(Math.round(p.x + dx), p.y - 36, Math.round(r * .55), shade(col, .5)); ctx.globalAlpha = 1; }
+  if (!sil) (q.off || (q.off = {}))[u.id] = [dx, dy + sink]; // where it is drawn now, for effects riding it
   const num = v.num, kind = q.big ? q.big[u.id] : duelSpriteKind(num); const at = BT.time * (speed || 1e-6);
   const draw = (x, o) => { if (kind === 'anim') drawAnim(num, x, p.y + dy + sink, at, o); else if (kind === 'big') drawBig(num, x, p.y + dy + sink, Object.assign({ breath }, o)); else drawMon(num, x, p.y + dy + sink, Object.assign({}, o, { sx: 2 * (o.sx || 1), sy: 2 * (o.sy || 1) })); };
   const clipY = wl != null ? wl + 60 : sink > 0 ? p.y + 64 : null;
@@ -5923,7 +5893,7 @@ function drawDuel(q) {
   const inRegion = (u, fn) => { const [dx, dy] = off(u); ctx.save(); clipPoly(f.region[u.id].map(pt => [pt[0] + dx, pt[1] + dy])); ctx.translate(dx, dy); fn(); ctx.restore(); };
   for (const u of [q.sides.left, q.sides.right]) inRegion(u, () => drawScenery(q, u, L, cam, t)); // each side: its own panorama, sliding in from its edge
   duelSplit(f);
-  if (q.focus && !REDUCED) { const fo = q.focus, kf = t < fo.t0 + .15 ? (t - fo.t0) / .15 : t > fo.until - .25 ? Math.max(0, (fo.until - t) / .25) : 1; if (kf > 0) { ctx.globalAlpha = .34 * kf; rect(-40, -40, W + 80, H + 80, '#050815'); ctx.globalAlpha = 1; } }
+  if (q.focus && !REDUCED) { const fo = q.focus, kf = t < fo.t0 + .15 ? (t - fo.t0) / .15 : t > fo.until - .25 ? Math.max(0, (fo.until - t) / .25) : 1; if (kf > 0) { ctx.globalAlpha = (fo.a || .34) * kf; rect(-40, -40, W + 80, H + 80, fo.col || '#050815'); ctx.globalAlpha = 1; } } // heavy moves darken (or whiten) the field more
   duelFocusLines(q, W, H, t);
   const order = [q.sides.right, q.sides.left]; if (q.pose && q.pose.unit === q.sides.right) order.reverse();
   ctx.save(); ctx.translate(cam.x, cam.y); for (const u of order) { const [dx, dy] = off(u); ctx.save(); ctx.translate(dx, dy); duelDrawUnit(q, u, L, t); ctx.restore(); } ctx.restore();
@@ -5968,6 +5938,618 @@ function drawDuelFrame(q) {
 }
 // Called by the board after a duel: the stripes open over the map again.
 function drawDuelWipeOut() { const k = (BT.time - DUEL_WIPE.t0) / .16; if (k < 0 || k >= 1 || REDUCED) return; duelStripes(1 - k, VIEW.w, VIEW.h); }
+// ============================================================================
+// attackfx.js — how every attack looks. Each move has a choreography in three acts: the wind-up on the attacker (a
+// charge gathering at its mouth, an aura, a crouch, a glint), the travel (a volley, a stream, a beam, a bolt, a wave,
+// boulders from the sky, cracks racing through the ground, or the lunge itself) and an impact that sells the hit
+// (a shaped burst in the type's colours, then embers, splashes, sparks, leaves, chips or wisps that settle and fade).
+// The same choreography plays in the duel scene (field space, full size) and on the board (a third of the size and
+// fewer particles); reduced motion keeps a calm version. Everything is pixel art drawn here at the game's resolution
+// through effect-sprite kinds named 'a…', which art.js's drawSprite hands to drawAtkSprite.
+// ============================================================================
+'use strict';
+// Each type's ramp: ink, dark, mid, light, hot.
+const ATK_PAL = {
+  Normal: ['#2a2622', '#8a8076', '#d8d0c0', '#f4eee0', '#ffffff'], Fire: ['#4a0c04', '#c42a0a', '#ff6a18', '#ffc03a', '#fff6b0'],
+  Water: ['#0a2458', '#1c5cc4', '#3c9cf0', '#a0dcff', '#ffffff'], Grass: ['#0e3412', '#2a7a2a', '#5cbc3c', '#b0e878', '#effff0'],
+  Electric: ['#4a3c00', '#c89c00', '#ffe030', '#fff7a0', '#ffffff'], Ice: ['#12406e', '#3e90d0', '#8ad0f8', '#d8f4ff', '#ffffff'],
+  Fighting: ['#4a1408', '#b83c18', '#f07a38', '#ffc494', '#ffffff'], Poison: ['#260838', '#62248a', '#a24ccc', '#dca2f4', '#fbe8ff'],
+  Ground: ['#302010', '#74502a', '#b8864a', '#e4c48c', '#fff4d4'], Flying: ['#1c2c5c', '#5a7ccc', '#a4c4f8', '#e4f0ff', '#ffffff'],
+  Psychic: ['#50083a', '#c0287a', '#ff5aa8', '#ffb4da', '#ffffff'], Bug: ['#223008', '#5a7c10', '#a2bc22', '#dcea64', '#fbffd8'],
+  Rock: ['#241c14', '#665640', '#a08a68', '#d2c29e', '#f6eed8'], Ghost: ['#120828', '#3a2870', '#6c4cbc', '#aa8ce8', '#ecdeff'],
+  Dragon: ['#0e0e48', '#3226b4', '#6a5cff', '#aaa4ff', '#eceaff'], Dark: ['#08060c', '#241c2e', '#4a3a5c', '#8c74a4', '#d4c4e4'],
+  Steel: ['#22222e', '#62627a', '#a8a8c4', '#dcdcec', '#ffffff'], Fairy: ['#58163e', '#d0569a', '#ff9ad2', '#ffd2ee', '#ffffff'],
+};
+const ATK_RAINBOW = ['#ff5aa8', '#ffd24a', '#6aff9a', '#5ab4ff', '#c85aff'];
+function atkPal(type) { return ATK_PAL[type] || ATK_PAL.Normal; }
+
+// ---------------------------------------------------------------- pixel helpers (whole pixels only: no smoothing)
+const afR = Math.round;
+function afDot(x, y, r, c) { r = afR(r); if (r <= 0) px(afR(x), afR(y), c); else circle(afR(x), afR(y), r, c); }
+function afLine(x0, y0, x1, y1, c, w = 1) { pline(afR(x0), afR(y0), afR(x1), afR(y1), c, Math.max(1, afR(w))); }
+function afDiamond(x, y, r, c) { x = afR(x); y = afR(y); r = afR(r); ctx.fillStyle = c; for (let j = -r; j <= r; j++) { const w = r - Math.abs(j); ctx.fillRect(x - w, y + j, 2 * w + 1, 1); } }
+function afStar(x, y, r, c, core = '#ffffff') { x = afR(x); y = afR(y); r = Math.max(1, afR(r)); ctx.fillStyle = c; ctx.fillRect(x - r, y, 2 * r + 1, 1); ctx.fillRect(x, y - r, 1, 2 * r + 1); if (r > 2) { const d = afR(r * .4); for (let i = 1; i <= d; i++) { ctx.fillRect(x - i, y - i, 1, 1); ctx.fillRect(x + i, y - i, 1, 1); ctx.fillRect(x - i, y + i, 1, 1); ctx.fillRect(x + i, y + i, 1, 1); } } ctx.fillStyle = core; ctx.fillRect(x, y, 1, 1); }
+function afRing(x, y, r, sq, c, th = 1) { x = afR(x); y = afR(y); const n = Math.max(12, afR(r * 5)); ctx.fillStyle = c; for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; ctx.fillRect(afR(x + Math.cos(a) * r) - (th >> 1), afR(y + Math.sin(a) * r * sq) - (th >> 1), th, th); } }
+// A quadratic curve from (x0,y0) through a control point to (x1,y1), up to parameter `e`, as whole-pixel points.
+function afCurve(x0, y0, cx, cy, x1, y1, e, step = 2) { const out = [], L = Math.hypot(x1 - x0, y1 - y0) + Math.abs(cy - (y0 + y1) / 2), n = Math.max(4, Math.ceil(L / step)); for (let i = 0; i <= n * e; i++) { const t = i / n, u = 1 - t; out.push([u * u * x0 + 2 * u * t * cx + t * t * x1, u * u * y0 + 2 * u * t * cy + t * t * y1]); } return out; }
+
+// ---------------------------------------------------------------- sounds (built on Audio's tone and noise)
+function atkSfx(name) {
+  const A = Audio; if (!A.ac || A.muted) return;
+  switch (name) {
+    case 'slash': A.noise(.08, .22, 0, 3500); A.tone('sawtooth', 1400, 500, .08, .06); break;
+    case 'claw': for (let i = 0; i < 3; i++) A.noise(.05, .2, i * .045, 3000); A.tone('sawtooth', 1200, 600, .12, .05); break;
+    case 'snap': A.tone('square', 900, 200, .06, .16); A.noise(.05, .25, .01, 1800); break;
+    case 'crunch': A.noise(.16, .32, 0, 700); A.tone('square', 300, 70, .14, .18); A.noise(.06, .2, .08, 2500); break;
+    case 'chop': A.noise(.07, .3, 0, 1200); A.tone('square', 640, 140, .1, .16); break;
+    case 'crack': A.tone('square', 2400, 1800, .05, .1); A.noise(.12, .2, .02, 4000); A.tone('triangle', 1600, 2600, .15, .06, .05); break;
+    case 'freeze': [2000, 2600, 3200].forEach((f, i) => A.tone('sine', f, f * 1.1, .12, .06, i * .05)); A.noise(.3, .08, 0, 5000); break;
+    case 'rock': A.noise(.22, .32, 0, 250); A.tone('square', 160, 55, .2, .18); break;
+    case 'quake': A.noise(.8, .36, 0, 60); A.tone('sine', 70, 28, .8, .36); A.noise(.4, .16, .3, 200); break;
+    case 'rumble': A.noise(.45, .22, 0, 80); A.tone('sine', 62, 40, .45, .22); break;
+    case 'thunder': A.noise(.7, .46, 0, 140); A.tone('sawtooth', 200, 28, .55, .26); A.noise(.16, .36, 0, 3000); break;
+    case 'zap': for (let i = 0; i < 4; i++) A.tone('square', 2200 - i * 200, 1400, .03, .08, i * .03); A.noise(.1, .1, 0, 5000); break;
+    case 'wind': A.noise(.36, .2, 0, 900); A.tone('sine', 300, 720, .3, .05); break;
+    case 'ghost': A.tone('sine', 520, 170, .5, .12); A.tone('sine', 540, 180, .5, .08, .03); break;
+    case 'sparkle': [1760, 2217, 2637, 3520].forEach((f, i) => A.tone('sine', f, f, .08, .05, i * .045)); break;
+    case 'splash': A.noise(.32, .26, 0, 1500); A.tone('sine', 820, 190, .2, .1); break;
+    case 'sludge': A.tone('sawtooth', 180, 70, .25, .14); A.noise(.2, .12, .05, 600); for (let i = 0; i < 3; i++) A.tone('sine', 300 + i * 90, 600 + i * 90, .05, .05, .1 + i * .05); break;
+    case 'clang': A.tone('square', 1800, 1700, .25, .1); A.tone('triangle', 2700, 2600, .3, .08); A.noise(.05, .2, 0, 3000); break;
+    case 'drill': for (let i = 0; i < 5; i++) A.tone('sawtooth', 700 + i * 60, 900 + i * 60, .04, .06, i * .035); break;
+    case 'whip': A.noise(.06, .3, 0, 4000); A.tone('sine', 1800, 400, .06, .1); break;
+    case 'blast': A.noise(.45, .42, 0, 120); A.tone('sawtooth', 220, 38, .45, .24); break;
+    case 'bubbles': for (let i = 0; i < 5; i++) A.tone('sine', 700 + i * 130, 1200 + i * 130, .05, .06, i * .04); break;
+    case 'psywave': A.tone('sine', 300, 900, .35, .1); A.tone('sine', 310, 920, .35, .08, .02); A.tone('triangle', 1200, 600, .3, .04, .1); break;
+    case 'roar': A.tone('sawtooth', 110, 70, .4, .22); A.noise(.35, .2, 0, 200); break;
+    case 'kiss': A.tone('sine', 900, 1400, .08, .1); A.tone('sine', 1400, 900, .1, .08, .08); break;
+    case 'moon': [880, 1320, 1760].forEach((f, i) => A.tone('triangle', f, f * 1.5, .3, .05, i * .06)); break;
+    case 'beamcharge': A.tone('sine', 150, 1200, .45, .1); A.tone('square', 300, 2400, .45, .03, .05); break;
+    default: A.sfx(name); // the shared cues (fire, water, beam, psy, elec, grass, poison, absorb...)
+  }
+}
+
+// ---------------------------------------------------------------- effect sprites
+// Spawn a sprite and keep the fields spawnSprite does not know (pal, style, ex/ey, w, h...).
+function afS(kind, x, y, o = {}) { const s = spawnSprite(kind, x, y, o); if (s) for (const k in o) if (!(k in s)) s[k] = o[k]; return s; }
+// Every 'a…' kind is drawn here (x, y: the sprite's position on screen; ox, oy: the offset of the space it lives in).
+function drawAtkSprite(s, x, y, k, fade, ox, oy) {
+  const P = s.pal || ATK_PAL.Normal, ft = Math.floor(s.t * 30), Rf = mulberry32(s.seed * 7 + ft * 131), Rs = mulberry32(s.seed);
+  if (s.follow) { const o = s.follow(); x += afR(o[0]); y += afR(o[1]); }
+  switch (s.kind) {
+    // A stream or beam from (x,y) to (ex,ey): its head races out, holds, then its tail catches up. Styles: fire (a
+    // widening cone of flame), water (a jet with a lit side and spray), ice (a thin bright beam growing crystals), psy
+    // (a thread wrapped in travelling rings, rainbow for Psybeam), light (a solid beam with a white-hot core).
+    case 'aStream': {
+      const ex = s.ex + ox, ey = s.ey + oy, dx = ex - x, dy = ey - y, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
+      const g = s.grow || .3, h = s.hold || .72, head = L * easeOut(Math.min(1, k / g)), tail = k < h ? 0 : L * easeIn(Math.min(1, (k - h) / (1 - h)));
+      const W = s.w * (k < .08 ? .45 + k / .08 * .55 : 1) * (k > h ? 1 - .5 * (k - h) / (1 - h) : 1), st = s.style, at = d => [x + ux * d, y + uy * d];
+      ctx.globalAlpha = Math.min(1, fade * 1.4);
+      if (st === 'fire') {
+        const pts = []; for (let d = tail; d <= head; d += 3) { const f = d / L, r = W * (.35 + f * .85) * (.85 + Rf() * .3), wob = Math.sin(d * .13 - s.t * 34) * r * .3, [X, Y] = at(d); pts.push([X + nx * wob, Y + ny * wob - f * f * 3, r, f]); }
+        for (const [X, Y, r] of pts) afDot(X, Y, r + 1, P[1]);
+        for (const [X, Y, r, f] of pts) afDot(X, Y - r * .15, r * .74, f > .8 ? P[1] : P[2]);
+        for (const [X, Y, r, f] of pts) if (f < .82) afDot(X, Y - r * .25, r * .44, P[3]);
+        for (const [X, Y, r, f] of pts) if (f < .42) afDot(X, Y - r * .3, r * .2, P[4]);
+        for (let i = 0; i < 7 && pts.length; i++) { const [X, Y, r] = pts[Math.floor(Rf() * pts.length)]; afLine(X, Y - r * .6, X + (Rf() - .5) * 4, Y - r - 2 - Rf() * 6, i % 2 ? P[2] : P[3], 2); }
+        if (pts.length && k < h) { const [X, Y] = at(head), r = W * 1.25 * (.9 + Rf() * .2); afDot(X, Y, r + 1, P[1]); afDot(X, Y - 1, r * .75, P[2]); afDot(X - ux * 2, Y - 2, r * .42, P[3]); }
+      } else if (st === 'water') {
+        const pts = []; for (let d = tail; d <= head; d += 2) { const r = W * (.82 + .22 * Math.sin(d * .32 - s.t * 44)), [X, Y] = at(d); pts.push([X, Y, r]); }
+        for (const [X, Y, r] of pts) afDot(X, Y, r + 1, P[1]);
+        for (const [X, Y, r] of pts) afDot(X, Y, r, P[2]);
+        for (const [X, Y, r] of pts) afDot(X - nx * r * .32, Y - ny * r * .32, r * .5, P[3]);
+        for (const [X, Y, r] of pts) px(afR(X - nx * r * .5), afR(Y - ny * r * .5), P[4]);
+        for (let i = 0; i < 6 && head > tail; i++) { const d = tail + (head - tail) * Rf(), side = Rf() < .5 ? -1 : 1, off = W + 2 + Rf() * 5, [X, Y] = at(d); afDot(X + nx * side * off, Y + ny * side * off, Rf() < .3 ? 1 : 0, Rf() < .5 ? P[3] : P[4]); }
+        if (head >= L - 1 && k < h) { for (let i = 0; i < 9; i++) { const a = Math.atan2(-uy, -ux) + (i - 4) * .32 + (Rf() - .5) * .2, rr = W * (1.6 + Rf() * 1.4); afLine(ex, ey, ex + Math.cos(a) * rr, ey + Math.sin(a) * rr - rr * .4, i % 2 ? P[4] : P[3], 1); } afDot(ex, ey, W * 1.1, P[3]); afDot(ex, ey, W * .6, P[4]); }
+      } else if (st === 'ice') {
+        const [x0, y0] = at(tail), [x1, y1] = at(head); ctx.globalAlpha = .4 * fade; afLine(x0, y0, x1, y1, P[2], W * 2 + 3); ctx.globalAlpha = Math.min(1, fade * 1.4);
+        afLine(x0, y0, x1, y1, P[3], W + 1); afLine(x0, y0, x1, y1, P[4], Math.max(1, W - 1));
+        for (let d = tail + (s.seed % 5); d < head; d += 8) { const side = ((d / 8) | 0) % 2 ? 1 : -1, cr = 1 + ((d * 7 + s.seed) % 3), [X, Y] = at(d); afDiamond(X + nx * side * (W + 1), Y + ny * side * (W + 1), cr, P[3]); px(afR(X + nx * side * (W + 1)), afR(Y + ny * side * (W + 1)), '#ffffff'); }
+        for (let i = 0; i < 4 && head > tail; i++) { const [X, Y] = at(tail + (head - tail) * Rf()); afStar(X + (Rf() - .5) * W * 3, Y + (Rf() - .5) * W * 3, 2 + Rf() * 2, P[3]); }
+        if (head >= L - 1 && k < h) { afDot(ex, ey, W + 2, P[3]); afStar(ex, ey, W * 2 + 3, P[4]); }
+      } else if (st === 'psy') {
+        const [x0, y0] = at(tail), [x1, y1] = at(head); afLine(x0, y0, x1, y1, P[3], Math.max(1, W * .4)); afLine(x0, y0, x1, y1, P[4], 1);
+        const sp = 9, ph = (s.t * 110) % sp; for (let d = tail + ph, i = 0; d < head; d += sp, i++) { const r = W * (1.1 + .25 * Math.sin(d * .2 - s.t * 10)), [X, Y] = at(d), col = s.rainbow ? ATK_RAINBOW[(i + ft) % 5] : i % 2 ? P[2] : P[3];
+          ctx.fillStyle = col; for (let a = 0; a < 22; a++) { const ca = Math.cos(a / 22 * Math.PI * 2), sa = Math.sin(a / 22 * Math.PI * 2); ctx.fillRect(afR(X + nx * ca * r + ux * sa * r * .32), afR(Y + ny * ca * r + uy * sa * r * .32), 1, 1); } }
+      } else { // light
+        const [x0, y0] = at(tail), [x1, y1] = at(head), fl = ft % 2; ctx.globalAlpha = .3 * fade; afLine(x0, y0, x1, y1, P[2], W * 2 + 5 + fl * 2); ctx.globalAlpha = .65 * fade; afLine(x0, y0, x1, y1, P[2], W * 2 + 1); ctx.globalAlpha = Math.min(1, fade * 1.4);
+        afLine(x0, y0, x1, y1, P[3], W * 1.35); afLine(x0, y0, x1, y1, P[4], Math.max(1, W * .6));
+        for (let i = 0; i < 4; i++) { const d = (s.t * 300 + i * L / 4) % L; if (d < tail || d > head - 8) continue; const [X, Y] = at(d), o = (i % 2 ? 1 : -1) * W * .55; afLine(X + nx * o, Y + ny * o, X + ux * 9 + nx * o, Y + uy * 9 + ny * o, '#ffffff', 1); }
+        if (tail < 2) { afDot(x, y, W * 1.35 + fl, P[3]); afDot(x, y, W * .8, P[4]); }
+        if (head >= L - 1 && k < h) { afDot(ex, ey, W * 1.7 + fl * 2, P[2]); afDot(ex, ey, W * 1.15, P[3]); afDot(ex, ey, W * .6, P[4]); for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2 + s.t * 4, rr = W * (2.2 + Rf()); afLine(ex + Math.cos(a) * W, ey + Math.sin(a) * W, ex + Math.cos(a) * rr, ey + Math.sin(a) * rr, P[3], 1); } }
+      }
+      ctx.globalAlpha = 1; break;
+    }
+    // A jagged bolt from (x,y) to (ex,ey), re-rolled a dozen times a second, with forks; white on its first frames.
+    case 'aBolt': {
+      if (s.flick && k > .3 && (ft + s.seed) % 3 === 2) break;
+      const ex = s.ex + ox, ey = s.ey + oy, dx = ex - x, dy = ey - y, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, n = s.segs || Math.max(4, afR(L / 14)), J = s.jit || 8, W = s.w || 2, Rb = mulberry32(s.seed * 3 + Math.floor(s.t * 14) * 17);
+      const pts = [[x, y]]; for (let i = 1; i < n; i++) { const f = i / n, j = (Rb() - .5) * J * 2; pts.push([x + dx * f + nx * j, y + dy * f + ny * j]); } pts.push([ex, ey]);
+      const white = s.t < .05, layers = white ? [['#ffffff', W + 2]] : [[P[1], W + 4, .5], [P[2], W + 2], [P[3], W], ['#ffffff', Math.max(1, W - 2)]];
+      const forks = []; for (let f = 0; f < (s.forks == null ? 2 : s.forks); f++) { const i = 1 + Math.floor(Rb() * (n - 1)), a = Math.atan2(dy, dx) + (Rb() < .5 ? -1 : 1) * (.5 + Rb() * .5), l = L * (.12 + Rb() * .12); let [fx, fy] = pts[i]; const fp = [[fx, fy]]; for (let m = 1; m <= 3; m++) { fx += Math.cos(a) * l / 3 + (Rb() - .5) * 5; fy += Math.sin(a) * l / 3 + (Rb() - .5) * 5; fp.push([fx, fy]); } forks.push(fp); }
+      for (const [c, w, al] of layers) { ctx.globalAlpha = (al || 1) * fade; for (let i = 0; i < pts.length - 1; i++) afLine(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], c, w); for (const fp of forks) for (let i = 0; i < fp.length - 1; i++) afLine(fp[i][0], fp[i][1], fp[i + 1][0], fp[i + 1][1], c, Math.max(1, w - 2)); }
+      ctx.globalAlpha = 1; break;
+    }
+    // A projectile orb (moving from x0,y0 to tx,ty on an arc), with a trail sampled back along its own path.
+    // Styles: shadow, sludge, moon, fire, mud, energy.
+    case 'aOrb': {
+      const r = afR(s.size * (k < .15 ? .6 + k / .15 * .4 : 1)), st = s.style, pos = kk => [lerp(s.x0, s.tx, kk) + ox, lerp(s.y0, s.ty, kk) - Math.sin(kk * Math.PI) * s.arc + oy];
+      for (let j = 7; j >= 1; j--) { const kk = k - j * .035; if (kk < 0) continue; const [X, Y] = pos(kk), tr = Math.max(0, r * (1 - j / 8)); ctx.globalAlpha = (1 - j / 9) * fade;
+        if (st === 'shadow') afDot(X + (Rf() - .5) * 3, Y + (Rf() - .5) * 3, tr, j % 2 ? P[1] : P[2]);
+        else if (st === 'moon') { if (j % 2) afStar(X + (Rf() - .5) * r, Y + (Rf() - .5) * r, 1 + (j < 4 ? 1 : 0), P[3]); }
+        else if (st === 'fire') afDot(X, Y - j * .5, tr + 1, j < 3 ? P[2] : P[1]);
+        else if (st === 'sludge' || st === 'mud') { if (j % 3 === 0) afDot(X, Y + j, 1, P[2]); }
+        else afDot(X, Y, tr, P[2]); }
+      ctx.globalAlpha = fade;
+      if (st === 'shadow') { ctx.globalAlpha = .45 * fade; afDot(x, y, r + 4, P[2]); ctx.globalAlpha = fade; for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2 + s.t * 9, rr = r + 1 + Rf() * 3; afLine(x + Math.cos(a) * r, y + Math.sin(a) * r, x + Math.cos(a) * rr, y + Math.sin(a) * rr, P[3], 1); } afDot(x, y, r + 1, P[3]); afDot(x, y, r, P[0]); afDot(x + Math.cos(s.t * 11) * r * .3, y + Math.sin(s.t * 11) * r * .3, r * .55, P[1]); px(x - afR(r * .5), y - afR(r * .5), P[4]); }
+      else if (st === 'moon') { ctx.globalAlpha = .35 * fade; afDot(x, y, r + 5, P[2]); ctx.globalAlpha = fade; afDot(x, y, r + 1, P[2]); afDot(x, y, r, P[3]); afDot(x - 1, y - 1, r * .7, P[4]); for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2 + s.t * 6; afStar(x + Math.cos(a) * (r + 4), y + Math.sin(a) * (r + 4), 1, P[4]); } }
+      else if (st === 'fire') { const fl = ft % 2; afDot(x, y, r + 2 + fl, P[1]); afDot(x, y - 1, r + 1, P[2]); afDot(x - 1, y - 2, r * .68, P[3]); afDot(x - 1, y - 2, r * .34, P[4]); for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + (i - 2) * .5 + (Rf() - .5) * .3; afLine(x + Math.cos(a) * r, y + Math.sin(a) * r, x + Math.cos(a) * (r + 3 + Rf() * 4), y + Math.sin(a) * (r + 3 + Rf() * 4), P[2], 2); } }
+      else if (st === 'sludge' || st === 'mud') { afDot(x, y, r + 1, P[0]); afDot(x, y, r, P[1]); afDot(x - 1, y - 1, r * .75, P[2]); afDot(x + afR(r * .4), y + afR(r * .3), afR(r * .45), P[1]); px(x - afR(r * .4), y - afR(r * .5), P[4]); if (st === 'sludge' && ft % 6 < 3) afRing(x + r * .3, y - r * .6, 1.5, 1, P[3]); }
+      else { ctx.globalAlpha = .4 * fade; afDot(x, y, r + 3, P[2]); ctx.globalAlpha = fade; afDot(x, y, r + 1, P[2]); afDot(x, y, r, P[3]); afDot(x - 1, y - 1, r * .5, P[4]); }
+      ctx.globalAlpha = 1; break;
+    }
+    // A slash: a crescent sweeping round (x,y) from angle a0 to a1 (style 'arc'; 'claw' draws three), or a straight
+    // cut from (x+lx0, y+ly0) to (x+lx1, y+ly1) (style 'line'). It sweeps in, holds, thins away from its tail.
+    case 'aSlash': {
+      const sw = easeOut(Math.min(1, k / (s.sweep || .3))), tailK = k < .45 ? 0 : (k - .45) / .55, th = (s.th || 4) * (1 - tailK * .7);
+      if (s.style === 'line') { const x0 = x + s.lx0, y0 = y + s.ly0, x1 = x + s.lx1, y1 = y + s.ly1, X1 = lerp(x0, x1, sw), Y1 = lerp(y0, y1, sw), X0 = lerp(x0, x1, tailK * sw), Y0 = lerp(y0, y1, tailK * sw);
+        ctx.globalAlpha = .45 * fade; afLine(X0, Y0, X1, Y1, P[2], th + 4); ctx.globalAlpha = fade; afLine(X0, Y0, X1, Y1, P[3], th + 2); afLine(X0, Y0, X1, Y1, '#ffffff', Math.max(1, th)); if (sw < 1) afStar(X1, Y1, 3 + th, '#ffffff');
+      } else { const arcs = s.style === 'claw' ? [-5, 0, 5] : [0], r = s.size, sq = s.sq || 1;
+        for (const off of arcs) { const R0 = r + off, span = s.a1 - s.a0, n = Math.max(8, afR(Math.abs(span) * R0)); for (let i = 0; i <= n; i++) { const f = i / n; if (f > sw || f < tailK * sw) continue; const a = s.a0 + span * f, t2 = Math.max(1, afR(th * Math.sin(Math.PI * f))), ca = Math.cos(a), sa = Math.sin(a);
+          for (let d = -1; d <= t2; d++) { ctx.fillStyle = d < 0 ? P[2] : d === 0 ? P[3] : d >= t2 - 1 ? P[3] : '#ffffff'; ctx.fillRect(afR(x + ca * (R0 - d)), afR(y + sa * (R0 - d) * sq), 1, 1); } } }
+        if (sw < 1) { const a = s.a0 + (s.a1 - s.a0) * sw; afStar(x + Math.cos(a) * r, y + Math.sin(a) * r * (s.sq || 1), 4, '#ffffff'); } }
+      ctx.globalAlpha = 1; break;
+    }
+    // Jaws: a row of fangs above and one below, snapping shut on (x,y), shaking as they bite, fading. 'bug' draws
+    // two curved mandibles closing from the sides instead.
+    case 'aJaws': {
+      const S = s.size, close = k < .36 ? easeIn(k / .36) : 1, sh = k > .36 && k < .62 ? afR(Math.sin(k * 90) * 2) : 0, X = x + sh;
+      if (s.style === 'bug') { const g = afR(S * .9 * (1 - close)); for (const side of [-1, 1]) { const pts = afCurve(X + side * (S * 1.25 + g), y + S * .35, X + side * (S * .95 + g), y - S * 1.05, X + side * (g + 1), y - S * .05, 1, 1); for (const [a, b] of pts) rect(afR(a) - 2, afR(b) - 2, 5, 5, P[0]); for (const [a, b] of pts) rect(afR(a) - 1, afR(b) - 1, 3, 3, P[2]); for (const [a, b] of pts) px(afR(a) - side, afR(b) - 1, P[4]); } }
+      else { // fangs: the upper row points down to (x,y), the lower row points up, half a fang along so they interlock
+        const n = s.teeth || 5, tw = Math.max(3, afR(S * 2 / n)), gap = afR(S * .9 * (1 - close)), th = Math.max(3, afR(S * .62)), gum = s.gum || P[1], left = afR(X - n * tw / 2);
+        rect(left - 2, y - gap - th - 4, n * tw + 4, 4, P[0]); rect(left - 1, y - gap - th - 3, n * tw + 2, 2, gum); rect(left - 2, y + gap + th + 1, n * tw + 4, 4, P[0]); rect(left - 1, y + gap + th + 2, n * tw + 2, 2, gum);
+        for (let i = 0; i < n; i++) for (let j = 0; j < th; j++) { const w = Math.max(1, afR((tw - 1) * (1 - j / th))), cu = left + tw / 2 + i * tw, cl = left + tw + i * tw, yu = y - gap - th + j, yl = y + gap + th - j;
+          rect(afR(cu - w / 2) - 1, yu, w + 2, 1, P[0]); rect(afR(cu - w / 2), yu, w, 1, j ? '#ffffff' : '#d8d0dc'); if (i < n - 1) { rect(afR(cl - w / 2) - 1, yl, w + 2, 1, P[0]); rect(afR(cl - w / 2), yl, w, 1, j ? '#ffffff' : '#d8d0dc'); } } }
+      ctx.globalAlpha = 1; break;
+    }
+    // A fissure racing along the ground from (x,y) to (ex, y): a dark crack with a glowing seam and raised chips.
+    case 'aCrack': {
+      const ex = s.ex + ox, reach = easeOut(Math.min(1, k / (s.grow || .45))), n = Math.max(3, afR(Math.abs(ex - x) / 6)), pts = [];
+      for (let i = 0; i <= n; i++) pts.push([lerp(x, ex, i / n), y + (i && i < n ? afR((Rs() - .5) * 5) : 0)]);
+      const m = reach * n; for (let i = 0; i < n && i < m; i++) { const f = Math.min(1, m - i), [a, b] = pts[i], [c2, d2] = pts[i + 1], X1 = lerp(a, c2, f), Y1 = lerp(b, d2, f);
+        afLine(a, b + 1, X1, Y1 + 1, P[0], 3); afLine(a, b, X1, Y1, s.glow || P[3], 1); if (i % 2 === 0) { rect(afR(a) - 1, afR(b) - 3, 3, 2, P[2]); px(afR(a), afR(b) - 3, P[3]); } if (i % 3 === 1) afLine(a, b, a + (Rs() - .5) * 8, b + 3 + Rs() * 3, P[0], 1); }
+      ctx.globalAlpha = 1; break;
+    }
+    // A spike erupting from the ground at (x,y): rock (faceted stone), ice (a clear crystal) or dirt (a geyser).
+    case 'aSpike': {
+      const H = s.h, W = s.w, grow = k < .16 ? easeOutBack(k / .16, 2.2) : 1, crumb = k > .7 ? (k - .7) / .3 : 0, h = afR(H * grow * (1 - crumb * .5)), lean = s.lean || 0;
+      if (s.style === 'dirt') { for (let j = 0; j < h; j += 2) { const f = j / Math.max(1, h), r = W * (.35 + .4 * (1 - f)) * (.8 + Rs() * .4), X = x + lean * j + (Rf() - .5) * 3; afDot(X, y - j, r + 1, P[0]); afDot(X, y - j, r, j % 4 ? P[1] : P[2]); } for (let i = 0; i < 6; i++) afDot(x + (Rf() - .5) * W * 2, y - h - Rf() * 10, 1, P[2]); break; }
+      for (let j = 0; j < h; j++) { const f = j / Math.max(1, h), hw = Math.max(0, afR(W / 2 * Math.pow(1 - f, .85))), X = afR(x + lean * j) + (crumb > 0 && j > h * .5 ? afR(Rs() * 2) : 0), Y = y - j;
+        if (s.style === 'ice') { ctx.globalAlpha = .9 * fade; rect(X - hw - 1, Y, 2 * hw + 3, 1, P[1]); rect(X - hw, Y, 2 * hw + 1, 1, P[2]); rect(X - hw, Y, Math.max(1, hw >> 1), 1, P[4]); rect(X, Y, 1, 1, P[3]); }
+        else { rect(X - hw - 1, Y, 2 * hw + 3, 1, P[0]); rect(X - hw, Y, hw, 1, P[3]); rect(X, Y, hw + 1, 1, P[1]); if ((j + (s.seed & 7)) % 5 === 0) rect(X - hw, Y, 2 * hw + 1, 1, P[2]); } }
+      px(afR(x + lean * h), y - h, P[4]); ctx.globalAlpha = 1; break;
+    }
+    // A boulder falling from (fx0,fy0) to (fx1,fy1) with its shadow growing under it; it breaks when it lands.
+    case 'aBoulder': {
+      const fk = Math.min(1, k / (s.fall || .55)); if (fk >= 1) break; const X = lerp(s.fx0, s.fx1, fk) + ox, Y = lerp(s.fy0, s.fy1, easeIn(fk)) + oy, r = s.size, gy = (s.gy == null ? s.fy1 : s.gy) + oy;
+      ctx.globalAlpha = .35 * fade; ellipse(afR(s.fx1 + ox), afR(gy), Math.max(2, afR(r * (.4 + .8 * fk))), Math.max(1, afR(r * .3)), '#000000'); ctx.globalAlpha = fade;
+      const rot = s.rot + fk * 7, lumps = []; for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2 + rot, d = r * (.35 + Rs() * .2); lumps.push([X + Math.cos(a) * d, Y + Math.sin(a) * d, r * (.55 + Rs() * .2)]); }
+      for (const [a, b, c2] of lumps) afDot(a, b, c2 + 1, P[0]); for (const [a, b, c2] of lumps) afDot(a, b, c2, P[2]); for (const [a, b, c2] of lumps) afDot(a + c2 * .25, b + c2 * .3, c2 * .55, P[1]); afDot(X - r * .3, Y - r * .35, r * .35, P[3]); px(afR(X - r * .4), afR(Y - r * .5), P[4]);
+      ctx.globalAlpha = 1; break;
+    }
+    // A whirlwind travelling from fx0 to fx1 along the ground at gy: rings of dashes spinning, wider at the top.
+    case 'aTornado': {
+      const e = easeInOut(Math.min(1, k / (s.go || .7))), X = lerp(s.fx0, s.fx1, e) + ox, gy = s.gy + oy, H = s.h * (k < .12 ? k / .12 : k > .85 ? 1 - (k - .85) / .15 : 1), n = Math.max(4, afR(H / 5));
+      for (let j = 0; j < n; j++) { const yy = gy - j * H / n, rx = s.w * (.22 + .78 * j / n) + Math.sin(j * .9 + s.t * 7) * 2, cx = X + Math.sin(j * .5 + s.t * 5) * 3; for (let a = 0; a < 26; a++) { if ((a + j + ft) % 3 === 0) continue; const ang = a / 26 * Math.PI * 2 + s.t * 16 + j * .7, sn = Math.sin(ang); ctx.fillStyle = sn > .2 ? P[3] : sn > -.3 ? P[2] : P[1]; ctx.fillRect(afR(cx + Math.cos(ang) * rx), afR(yy + sn * rx * .22), 2, 1); } }
+      for (let i = 0; i < 5; i++) { const ph = (s.t * 1.6 + i / 5) % 1, ang = s.t * 13 + i * 2.1, rr = s.w * (.3 + ph * .7); afDot(X + Math.cos(ang) * rr, gy - ph * H, 1, i % 2 ? P[4] : P[0]); }
+      ctx.globalAlpha = 1; break;
+    }
+    // A breaking wave rolling from fx0 to fx1 over the ground at gy: a tall front with a curling lip of foam.
+    case 'aWave': {
+      const e = easeInOut(Math.min(1, k / (s.go || .78))), dir = s.dir, xf = afR(lerp(s.fx0, s.fx1, e) + ox), gy = afR(s.gy + oy), H = s.h * (k < .12 ? easeOut(k / .12) : k > .82 ? 1 - (k - .82) / .18 : 1), len = s.len;
+      // the profile: a crest just behind the front, the back sloping away; deep water below, a lit band, foam on top
+      const prof = u => u < .08 ? .3 + .7 * (u / .08) : u < .24 ? 1 : 1 - Math.pow((u - .24) / .76, 1.25) * .82;
+      ctx.globalAlpha = .9 * fade;
+      for (let c = 0; c < len; c++) { const u = c / len, X = xf - dir * c, hg = afR(H * prof(u) * (1 + .04 * Math.sin(c * .3 - s.t * 14))); if (hg <= 0) continue;
+        rect(X, gy - hg, 1, hg, P[2]); rect(X, gy - afR(hg * .42), 1, afR(hg * .42), P[1]); rect(X, gy - hg + 2, 1, Math.max(1, afR(hg * .2)), P[3]); rect(X, gy - hg, 1, 2, (c + ft) % 6 < 4 ? P[4] : P[3]);
+        if ((c * 7 + afR(s.t * 30)) % 13 === 0) rect(X, gy - afR(hg * (.45 + .3 * Math.abs(Math.sin(c)))), 2, 1, P[4]); }
+      // the lip: an arc from the crest top curling forward and down over the front, foam falling from its tip
+      const R = Math.max(3, H * .3), xc = xf - dir * afR(len * .16), yc = gy - H + R;
+      for (let i = 0; i <= 16; i++) { const a = -Math.PI / 2 + i / 16 * 2.36, X = xc + dir * Math.cos(a) * R, Y = yc + Math.sin(a) * R; afDot(X, Y, 3, P[3]); px(afR(xc + dir * Math.cos(a) * (R + 3)), afR(yc + Math.sin(a) * (R + 3)), P[4]); }
+      const tx0 = xc + dir * Math.cos(.785) * R, ty0 = yc + Math.sin(.785) * R;
+      for (let i = 0; i < 7; i++) { const f = (s.t * 2.4 + i / 7) % 1; afDot(tx0 + dir * (Rf() * 4 - 1), ty0 + f * (gy - ty0), Rf() < .4 ? 1 : 0, P[4]); }
+      for (let i = 0; i < 9; i++) afDot(xf - dir * Rf() * len * .3, gy - H - 3 - Rf() * 10, Rf() < .4 ? 1 : 0, Rf() < .5 ? P[4] : P[3]);
+      ctx.globalAlpha = 1; break;
+    }
+    // A storm cloud gathering over (x,y): dark lumps, a lit top, lightning flickering inside once it has formed.
+    case 'aCloud': {
+      const g = easeOut(Math.min(1, k / .25)), W = s.w * g; if (W < 2) break; const lumps = []; for (let i = 0; i < 7; i++) lumps.push([x + (Rs() - .5) * W * 1.6, y + (Rs() - .5) * W * .35, W * (.32 + Rs() * .22)]);
+      ctx.globalAlpha = .9 * fade; for (const [a, b, r] of lumps) afDot(a, b + 1, r + 1, P[0]); for (const [a, b, r] of lumps) afDot(a, b, r, s.body || '#3a3a4e'); for (const [a, b, r] of lumps) afDot(a - r * .2, b - r * .35, r * .5, s.top || '#6a6a82');
+      if (k > .35 && (ft + s.seed) % 5 < 2) { const [a, b] = lumps[ft % lumps.length]; afLine(a - 3, b - 2, a + 1, b + 1, P[3], 1); afLine(a + 1, b + 1, a - 1, b + 4, P[4], 1); }
+      ctx.globalAlpha = 1; break;
+    }
+    // The moon rising over the attacker for Moonblast: a halo, the pale disc, soft craters, twinkles round it.
+    case 'aMoon': {
+      const rise = easeOut(Math.min(1, k / .35)), Y = y + afR((1 - rise) * 14), r = s.size; ctx.globalAlpha = .3 * fade * rise; afDot(x, Y, r + 6 + (ft % 2), P[2]); ctx.globalAlpha = fade * rise;
+      afDot(x, Y, r + 1, P[2]); afDot(x, Y, r, P[4]); afDot(x + r * .35, Y + r * .1, r * .7, '#ffe8f4'); afDot(x - r * .3, Y - r * .2, r * .22, P[3]); afDot(x + r * .25, Y + r * .35, r * .15, P[3]); afDot(x - r * .1, Y + r * .45, 1, P[3]);
+      for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2 + s.t * 2, rr = r + 7; if ((ft + i) % 4) afStar(x + Math.cos(a) * rr, Y + Math.sin(a) * rr * .8, 1 + (i % 2), P[4], P[3]); }
+      ctx.globalAlpha = 1; break;
+    }
+    // A big heart (Draining Kiss), pulsing, outlined, with a shine.
+    case 'aHeart': {
+      const r = afR(s.size * (1 + .12 * Math.sin(s.t * 18))); if (r < 2) break; const draw = (rr, c) => { afDot(x - rr * .5, y - rr * .2, rr * .56, c); afDot(x + rr * .5, y - rr * .2, rr * .56, c); ctx.fillStyle = c; for (let j = 0; j <= rr; j++) { const w = afR(rr * 1.02 * (1 - j / rr)); ctx.fillRect(afR(x) - w, afR(y + j * .95), 2 * w + 1, 1); } };
+      draw(r + 1, P[0]); draw(r, P[2]); afDot(x - r * .45, y - r * .35, r * .22, P[4]); ctx.globalAlpha = 1; break;
+    }
+    // A rune on the ground under the target for Hex: two rings turning opposite ways with glyph marks.
+    case 'aRune': {
+      const r = s.size * easeOut(Math.min(1, k / .2)), pulse = .6 + .4 * Math.sin(s.t * 20); ctx.globalAlpha = fade * pulse; afRing(x, y, r, .32, P[3], 2); afRing(x, y, r * .62, .32, P[2], 1);
+      for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + s.t * 3, gx = x + Math.cos(a) * r * .82, gy = y + Math.sin(a) * r * .82 * .32; rect(afR(gx) - 1, afR(gy) - 1, 3, 1, P[4]); px(afR(gx), afR(gy), P[4]); }
+      ctx.globalAlpha = 1; break;
+    }
+    // A needle flying from (x0,y0) to (tx,ty): a bright tip, a shaft and a fading streak behind.
+    case 'aNeedle': {
+      const dx = s.tx - s.x0, dy = s.ty - s.y0, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, len = s.size; ctx.globalAlpha = .35 * fade; afLine(x - ux * len * 3, y - uy * len * 3, x, y, P[3], 1); ctx.globalAlpha = fade;
+      afLine(x - ux * len, y - uy * len, x, y, P[1], 3); afLine(x - ux * len, y - uy * len, x, y, P[3], 1); rect(afR(x) - 1, afR(y) - 1, 2, 2, '#ffffff'); ctx.globalAlpha = 1; break;
+    }
+    // A feather drifting down, rocking as it falls.
+    case 'aFeather': {
+      const sw = Math.sin(s.t * 7 + s.seed) , X = x + afR(sw * 3), a = sw * .6 + (s.rot || 0), ca = Math.cos(a), sa = Math.sin(a), L = s.size;
+      for (let i = -L; i <= L; i++) { const fx = afR(X + ca * i), fy = afR(y + sa * i); px(fx, fy, P[1]); if (Math.abs(i) < L - 1) { px(fx - afR(sa), fy + afR(ca) - 1, P[4]); px(fx + afR(sa), fy - afR(ca) + 1, P[3]); } }
+      ctx.globalAlpha = 1; break;
+    }
+    // A vine whip from (x,y) to (ex,ey): it lashes out on a curve, cracks at the tip, then recoils.
+    case 'aVine': {
+      const ex = s.ex + ox, ey = s.ey + oy, ext = k < .42 ? easeOut(k / .42) : k < .6 ? 1 : 1 - easeIn((k - .6) / .4), cx = (x + ex) / 2, cy = Math.min(y, ey) - (s.bend || 24) * (1 - (k > .4 && k < .5 ? (k - .4) * 5 : 0));
+      const pts = afCurve(x, y, cx, cy, ex, ey, ext, 1), W = s.w || 2; for (const [a, b] of pts) rect(afR(a) - 1, afR(b) - 1, W + 2, W + 2, P[0]); for (const [a, b] of pts) rect(afR(a), afR(b), W, W, P[2]); for (const [a, b] of pts) px(afR(a), afR(b), P[3]);
+      for (let i = 6; i < pts.length; i += 9) { const [a, b] = pts[i], d = (i / 9) % 2 ? 1 : -1; rect(afR(a) + d * 2, afR(b) - 2, 2, 2, P[3]); px(afR(a) + d * 3, afR(b) - 3, P[4]); }
+      if (k > .38 && k < .52 && pts.length) { const [a, b] = pts[pts.length - 1]; afStar(a, b, 5, '#ffffff', '#ffffff'); }
+      ctx.globalAlpha = 1; break;
+    }
+    // A spinning drill cone pointing along `dir` (Drill Peck), riding the attacker's lunge.
+    case 'aDrill': {
+      const L = s.size, w = s.w || 7, dir = s.dir; for (let j = 0; j < L; j++) { const r = afR(w * (1 - j / L)), X = afR(x + dir * j); if (r <= 0) { px(X, y, P[4]); continue; } rect(X, y - r - 1, 1, 2 * r + 3, P[0]); for (let i = -r; i <= r; i++) { const band = (i + j + ft * 2) % 6; px(X, y + i, band < 2 ? P[4] : band < 4 ? P[3] : P[2]); } }
+      ctx.globalAlpha = .5 * fade; for (let i = 0; i < 3; i++) afLine(x - dir * 4, y + (i - 1) * w * .8, x - dir * (14 + i * 4), y + (i - 1) * w, P[3], 1); ctx.globalAlpha = 1; break;
+    }
+    // A shine sweeping across a w×h box standing on (x,y): the steel glint of Metal Claw, Iron Head, Flash Cannon.
+    case 'aGlint': {
+      const w = s.w, h = s.h, p = lerp(-w * .8, w * .8, easeInOut(k)); ctx.save(); ctx.beginPath(); ctx.rect(afR(x - w / 2), afR(y - h), afR(w), afR(h)); ctx.clip();
+      ctx.globalAlpha = .75 * fade; afLine(x + p - h * .35, y, x + p + h * .35, y - h, '#ffffff', 3); ctx.globalAlpha = .45 * fade; afLine(x + p + 6 - h * .35, y, x + p + 6 + h * .35, y - h, '#ffffff', 1); ctx.restore(); ctx.globalAlpha = 1; break;
+    }
+    // Sunlight gathering on (x,y) for Solar Beam: rays reaching down from the top of the field, a sun disc above.
+    case 'aSun': {
+      const top = s.top + oy, reach = easeIn(Math.min(1, k / .8)); ctx.globalAlpha = .55 * fade; for (let i = 0; i < 7; i++) { const sx = x + (i - 3) * s.w, y1 = lerp(top, y, reach); afLine(sx, top, lerp(sx, x, reach), y1, i % 2 ? P[3] : P[4], 2); }
+      ctx.globalAlpha = fade; afDot(x, top + 4, 5 + (ft % 2), P[3]); afDot(x, top + 4, 3, P[4]); ctx.globalAlpha = 1; break;
+    }
+    // Fire Blast's signature: the flame spreads into the five arms of 大 on the target, then burns up and away.
+    case 'aKanji': {
+      const g = easeOutBack(Math.min(1, k / .2), 1.6), rise = k > .6 ? (k - .6) * 30 : 0, S = s.size, arms = [[-Math.PI / 2, .5], [Math.PI, .9], [0, .9], [Math.PI * .72, 1], [Math.PI * .28, 1]];
+      for (let pass = 0; pass < 4; pass++) for (const [a, l] of arms) { const L = S * l * g; for (let d = 0; d <= L; d += 2) { const f = d / Math.max(1, L), r = s.w * (1 - f * .45) * (.8 + Rf() * .4), X = x + Math.cos(a) * d + (Rf() - .5) * 2, Y = y + Math.sin(a) * d - rise * (1 - f * .3);
+        if (pass === 0) afDot(X, Y, r + 1, P[1]); else if (pass === 1) afDot(X, Y - r * .2, r * .72, P[2]); else if (pass === 2) afDot(X, Y - r * .3, r * .42, P[3]); else if (f < .35) afDot(X, Y - r * .3, r * .2, P[4]); } }
+      ctx.globalAlpha = 1; break;
+    }
+    // A twinkle: a four-point star breathing in size.
+    case 'aSparkle': { const r = afR(s.size * (.45 + .55 * Math.abs(Math.sin(s.t * 12 + s.seed)))); afStar(x, y, r, (ft + s.seed) % 4 < 2 ? P[3] : P[4], '#ffffff'); ctx.globalAlpha = 1; break; }
+    // An aura of rising tongues round a w×h box standing on (x,y) (a power-up, Outrage's rage, a Ghost's chill).
+    case 'aAura': {
+      const n = s.n || 9, w = s.w, h = s.h, a0 = k < .15 ? k / .15 : 1; for (let i = 0; i < n; i++) { const ph = (s.t * (s.speed || 2.4) + i * .37 + (s.seed % 10) * .1) % 1, bx = x + ((i + .5) / n - .5) * w + Math.sin(s.t * 6 + i) * 2, base = y - h * .15 * Math.abs(Math.sin(i * 1.7)), top = base - h * (.25 + .75 * ph) * .9, sway = Math.sin(s.t * 9 + i) * 3;
+        ctx.globalAlpha = (1 - ph) * .85 * fade * a0; afLine(bx, base, bx + sway, top, i % 3 ? P[2] : P[3], 2); px(afR(bx + sway), afR(top), P[4]); }
+      ctx.globalAlpha = 1; break;
+    }
+    // Psychic distortion: wavy rings breathing round (x,y).
+    case 'aWarp': {
+      const S = s.size; for (let i = 0; i < 3; i++) { const rr = S * (.3 + ((k * 1.8 + i / 3) % 1) * .7), col = i % 2 ? P[2] : P[3]; ctx.globalAlpha = fade * (1 - ((k * 1.8 + i / 3) % 1) * .6); ctx.fillStyle = col;
+        for (let a = 0; a < 44; a++) { const ang = a / 44 * Math.PI * 2, r2 = rr + Math.sin(ang * 5 + s.t * 26 + i) * 2; ctx.fillRect(afR(x + Math.cos(ang) * r2), afR(y + Math.sin(ang) * r2 * .6), 1, 1); } }
+      ctx.globalAlpha = 1; break;
+    }
+    // Crackling arcs inside a box round (x,y): electricity running over a Pokémon.
+    case 'aShock': {
+      const w = s.w, h = s.h; for (let i = 0; i < (s.n || 3); i++) { let X = x + (Rf() - .5) * w * 2, Y = y + (Rf() - .5) * h * 2; for (let m = 0; m < 3; m++) { const nx = X + (Rf() - .5) * 12, ny = Y + (Rf() - .5) * 12; afLine(X, Y, nx, ny, P[2], 2); afLine(X, Y, nx, ny, P[4], 1); X = nx; Y = ny; } }
+      ctx.globalAlpha = 1; break;
+    }
+    // Lick: a long pink tongue curling out to the target and back.
+    case 'aTongue': {
+      const ex = s.ex + ox, ey = s.ey + oy, ext = k < .4 ? easeOut(k / .4) : k < .58 ? 1 : 1 - easeIn((k - .58) / .42), pts = afCurve(x, y, (x + ex) / 2, Math.max(y, ey) + 10, ex, ey, ext, 1), W = s.w || 3;
+      for (const [a, b] of pts) afDot(a, b, W / 2 + 1, '#5a1030'); for (const [a, b] of pts) afDot(a, b, W / 2, '#ff7aa8'); for (const [a, b] of pts) px(afR(a), afR(b) - 1, '#ffd0e0'); if (pts.length) { const [a, b] = pts[pts.length - 1]; afDot(a, b, W / 2 + 2, '#5a1030'); afDot(a, b, W / 2 + 1, '#ff7aa8'); px(afR(a) - 1, afR(b) - 1, '#ffffff'); }
+      ctx.globalAlpha = 1; break;
+    }
+    // A horn of light at the attacker's front (Megahorn), riding the charge.
+    case 'aHorn': {
+      const L = s.size, w = s.w || 5, dir = s.dir; ctx.globalAlpha = .4 * fade; afDot(x + dir * L, y, 5 + (ft % 2), P[3]); ctx.globalAlpha = fade;
+      for (let j = 0; j < L; j++) { const r = afR(w * (1 - j / L)), X = afR(x + dir * j); rect(X, y - r - 1, 1, 2 * r + 2, P[0]); rect(X, y - r, 1, 2 * r + 1, P[3]); px(X, y - r, P[4]); } ctx.globalAlpha = 1; break;
+    }
+    // A charge: an orb swelling at (x,y) with rays turning round it (Hyper Beam, Solar Beam, Shadow Ball...).
+    case 'aCharge': {
+      const r = afR(s.size * easeOut(Math.min(1, k / .85)) + Math.sin(s.t * 40) * .8); if (r < 1) break; ctx.globalAlpha = .35 * fade; afDot(x, y, r + 4, P[2]); ctx.globalAlpha = fade; afDot(x, y, r + 1, P[2]); afDot(x, y, r, P[3]); afDot(x, y, r * .5, P[4]);
+      for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + s.t * 7, r1 = r + 3, r2 = r + 5 + (Rf() * 4 | 0); afLine(x + Math.cos(a) * r1, y + Math.sin(a) * r1, x + Math.cos(a) * r2, y + Math.sin(a) * r2, P[3], 1); } ctx.globalAlpha = 1; break;
+    }
+    // Bubbles and leaves in flight (on their tx/ty path): a round bubble that pops at the end; a razor leaf spinning.
+    case 'aBubble': { const r = Math.max(1, afR(s.size)), X = x + afR(Math.sin(s.t * 14 + s.seed) * 2); if (k > .93) { for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + .6; afLine(X + Math.cos(a) * r, y + Math.sin(a) * r, X + Math.cos(a) * (r + 3), y + Math.sin(a) * (r + 3), P[4], 1); } break; }
+      ctx.globalAlpha = .3 * fade; afDot(X, y, r, P[3]); ctx.globalAlpha = fade; afRing(X, y, r, 1, P[2]); px(X - afR(r * .45), y - afR(r * .45), P[4]); if (r > 2) px(X - afR(r * .45) + 1, y - afR(r * .45), P[4]); ctx.globalAlpha = 1; break; }
+    // A razor leaf: a pointed lens (|v| <= b(1 - (u/a)²)) spinning at any angle, outlined, its lit half and midrib.
+    case 'aLeaf': {
+      const a = s.size || 5, b = a * .45, th = (s.rot || 0) + s.t * (s.spin || 16), ca = Math.cos(th), sa = Math.sin(th), n = Math.ceil(a + 1);
+      for (let j = -n; j <= n; j++) for (let i = -n; i <= n; i++) { const u = i * ca + j * sa, v = -i * sa + j * ca, au = Math.abs(u), av = Math.abs(v);
+        if (au <= a && av <= b * (1 - (u / a) * (u / a))) { ctx.fillStyle = av < .55 && au < a - 1.2 ? P[4] : v < 0 ? P[3] : P[2]; ctx.fillRect(x + i, y + j, 1, 1); }
+        else if (au <= a + 1 && av <= (b + 1) * (1 - (u / (a + 1)) * (u / (a + 1)))) { ctx.fillStyle = P[0]; ctx.fillRect(x + i, y + j, 1, 1); } }
+      ctx.globalAlpha = 1; break;
+    }
+    // A streak of wind or snow blown along (vx, vy): a line trailing behind the head.
+    case 'aStreak': { const L = s.size, v = Math.hypot(s.vx, s.vy) || 1; ctx.globalAlpha = fade * (s.alpha || .8); afLine(x - s.vx / v * L, y - s.vy / v * L, x, y, P[3], 1); px(afR(x), afR(y), P[4]); ctx.globalAlpha = 1; break; }
+    // A flake of snow tumbling along.
+    case 'aFlake': { const f = (ft + s.seed) % 2; ctx.fillStyle = P[4]; if (s.size > 1) { ctx.fillRect(x - 1, y, 3, 1); ctx.fillRect(x, y - 1, 1, 3); if (f) { ctx.fillStyle = P[3]; ctx.fillRect(x - 1, y - 1, 1, 1); ctx.fillRect(x + 1, y + 1, 1, 1); } } else ctx.fillRect(x, y, 1, 1); ctx.globalAlpha = 1; break; }
+    // A splat of goo or mud left on the ground, spreading and drying.
+    case 'aSplat': { const r = s.size * easeOut(Math.min(1, k / .15)); ctx.globalAlpha = fade * .9; ellipse(x, y, afR(r) + 1, afR(r * .32) + 1, P[0]); ellipse(x, y, afR(r), afR(r * .32), P[1]); ellipse(x - afR(r * .2), y - 1, afR(r * .5), afR(r * .15), P[2]); ctx.globalAlpha = 1; break; }
+  }
+}
+
+// ---------------------------------------------------------------- the strike context
+// c = { S: size factor (1 in the scene, ~.36 on the board), board, ax, ay: where the attack leaves the attacker (its
+// front, chest high), tx, ty: the defender's chest, ex, ey: where the travel ends (past the target on a miss),
+// ux, uy: the unit vector attacker → defender, dir: ±1 its horizontal sense, A/D: feet of both (x, y), gy: the
+// defender's ground line, gyA: the attacker's, top: the sky above the defender, H: sprite height, dur: travel time,
+// wt: wind-up time, rate: how much faster the scene clock runs than the effects (scene sprites divide by it),
+// pal, type, move, e: the hit event, miss, fol(unit): a function giving that unit's live offset (to ride a lunge) }
+function afN(c, n) { return Math.max(1, Math.round(n * (REDUCED ? .35 : 1) * (c.board ? .55 : 1))); }
+function afT(c, t) { return t / (c.rate || 1); }
+function afParts(c, x, y, n, cols, o = {}) { spawnParts(x, y, afN(c, n), cols, Object.assign({}, o, { speed: (o.speed || 60) * c.S ** .7, size: o.size ? Math.max(1, Math.round(o.size * (c.board ? .6 : 1))) : c.board ? 2 : 3 })); }
+// Sparks converging on (x,y): the charge of a special move.
+function afGather(c, x, y, dur, cols, n = 12, r = 42, kind = 'spark') { for (let i = 0; i < afN(c, n); i++) { const a = i / n * Math.PI * 2 + vrnd() * .6, rr = r * c.S * (.75 + vrnd() * .5); afS(kind, x + Math.cos(a) * rr, y + Math.sin(a) * rr * .75, { tx: x, ty: y, life: afT(c, dur * (.75 + vrnd() * .25)), col: cols[i % cols.length], col2: cols[(i + 1) % cols.length], size: kind === 'flame' ? Math.max(1, afR(3 * c.S)) : undefined, delay: afT(c, i * dur * .025), pal: c.pal }); } }
+// The shaped burst every hit gets: a star in the type's colour with a white heart, a flash, a ring.
+function afBurst(c, x, y, size = 20, o = {}) { const S = c.S, P = c.pal; spawnSprite('impact', x, y, { size: Math.round(size * S), life: .3, col: o.col || P[2], rot: vrnd() * 3 }); spawnSprite('impact', x, y, { size: Math.round(size * .55 * S), life: .2, col: '#ffffff', rot: vrnd() * 3, delay: .02 }); if (!o.noFlash) spawnSprite('flash', x, y, { size: Math.round(10 * S) + 2, life: .14, col: '#ffffff' }); if (o.ring !== false) spawnSprite('ring', x, y, { size: Math.round(size * 1.4 * S), life: .4, col: o.ringCol || P[3], delay: .03 }); }
+function afSlashFx(c, x, y, o) { return afS('aSlash', x, y, Object.assign({ life: .42, pal: c.pal, th: Math.max(1, afR((o.th || 4) * (c.board ? .6 : 1))) }, o)); }
+// Dust kicked from the feet at (x,y), thrown away from the attacker.
+function afDust(c, x, y, n = 4, col = '#d8d0b8') { for (let i = 0; i < afN(c, n); i++) spawnSprite('poof', x + c.dir * (4 + i * 6) * c.S, y, { size: Math.max(2, Math.round((3 + (i % 2) * 2) * c.S)), life: .42, col, col2: '#f4f0e0', vx: c.dir * (30 + i * 10) * c.S, vy: -8, delay: i * .03 }); }
+function afShake(c, n) { if (!REDUCED) shake(Math.max(1, Math.round(n * (c.board ? .7 : 1)))); }
+
+// ---------------------------------------------------------------- the choreographies
+// Each style: pose (the attacker's move in the scene: lunge, cast, leap, burrow, stomp, rush), windup (s), travel (s),
+// board (the board strike's length, as a factor), and three acts: charge(c), go(c), hit(c). `react` is how the defender
+// takes it in the scene (lift, shock, burn, chill, crush, wobble).
+const ATK = {};
+// Contact: a crouch and a glint, the lunge's speed lines, and the style's own flourish on the hit.
+function afContactCharge(c, glint = true) { const S = c.S; for (let i = 0; i < afN(c, 3); i++) spawnSprite('poof', c.A.x - c.dir * (6 + i * 6) * S, c.gyA, { size: Math.max(2, Math.round((4 + i) * S)), life: .35, col: '#d8d0b8', col2: '#f4f0e0', vx: -c.dir * (18 + i * 8) * S, vy: -6, delay: i * .04 }); if (glint) afS('aSparkle', c.ax - c.dir * 4 * S, c.ay - 6 * S, { life: afT(c, c.wt * .9), size: Math.max(2, afR(5 * S)), pal: c.pal, delay: afT(c, c.wt * .3), follow: c.fol(c.att) }); }
+function afLunge(c) { if (c.board) return; for (let i = 0; i < afN(c, 3); i++) spawnSprite('speed', c.A.x - c.dir * 20, c.ay + 6 - i * 6, { size: 30, life: afT(c, c.dur + .12), col: '#ffffff', dir: c.dir, delay: i * .04 }); spawnSprite('poof', c.A.x - c.dir * 10, c.gyA, { size: 6, life: .35, col: '#d8d0b8', col2: '#f4f0e0', vx: -c.dir * 30 }); }
+// Special: sparks of the type gather at the mouth while it glows.
+function afSpecialCharge(c, n = 12, orb = 0) { afGather(c, c.ax, c.ay, c.wt, [c.pal[2], c.pal[3], c.pal[4]], n, 44); if (orb) afS('aCharge', c.ax, c.ay, { life: afT(c, c.wt + .06), size: orb * c.S, pal: c.pal, follow: c.fol(c.att) }); }
+
+// ---- Normal
+ATK.tackle = { pose: 'lunge', charge: c => afContactCharge(c, false), go: afLunge, hit: c => { afBurst(c, c.tx, c.ty, 22); spawnSprite('ring', c.D.x, c.gy - 2, { size: Math.round(26 * c.S), life: .45, col: '#f4eee0' }); afDust(c, c.D.x, c.gy, 5); afParts(c, c.tx, c.ty, 12, ['#ffffff', '#f4eee0', '#ffe9a0'], { speed: 110, life: .5, grav: 150 }); afShake(c, 4); }, react: 'crush' };
+// Three claw cuts raking down across the body, a hair apart in time.
+function afClaws(c, th = 3, pal = c.pal) { const S = c.S; for (let i = 0; i < 3; i++) afSlashFx(c, c.tx + (i - 1) * 8 * S * c.dir, c.ty + (i - 1) * 2 * S, { style: 'line', lx0: -c.dir * 15 * S, ly0: -22 * S, lx1: c.dir * 11 * S, ly1: 18 * S, th, sweep: .13, life: .5, delay: i * .035, pal }); }
+ATK.scratch = { pose: 'lunge', charge: c => afContactCharge(c), go: afLunge, sfx: 'claw', hit: c => { afBurst(c, c.tx, c.ty, 14, { ring: false }); afClaws(c, 3); afParts(c, c.tx, c.ty, 10, ['#ffffff', '#f4eee0'], { speed: 90, life: .4, grav: 100 }); afShake(c, 3); } };
+ATK.slam = { pose: 'leap', travel: .26, board: 1.25, charge: c => { afContactCharge(c, false); afShake(c, 1); }, go: c => { if (!c.board) for (let i = 0; i < afN(c, 4); i++) spawnSprite('wind', c.A.x - c.dir * 6, c.gyA - 10 - i * 12, { size: 16, life: .3, col: '#ffffff', vy: -60, delay: i * .03 }); },
+  hit: c => { const S = c.S; afBurst(c, c.tx, c.ty + 10 * S, 26, { ring: false }); for (let i = 0; i < 2; i++) spawnSprite('ring', c.D.x, c.gy - 1, { size: Math.round((34 + i * 16) * S), life: .5 + i * .1, col: i ? '#d8d0b8' : '#ffffff', delay: i * .06 }); for (const d of [-1, 1]) for (let i = 0; i < afN(c, 3); i++) spawnSprite('poof', c.D.x + d * (12 + i * 9) * S, c.gy - 2, { size: Math.max(2, Math.round((6 - i) * S)), life: .6, col: '#d8d0b8', col2: '#f4f0e0', vx: d * (50 + i * 20) * S, vy: -14, delay: .02 + i * .03 }); afShake(c, 7); }, react: 'crush' };
+ATK.hyperbeam = { pose: 'cast', windup: .44, travel: .34, board: 1.35, sfx: 'beam', focus: .5,
+  charge: c => { atkSfx('beamcharge'); afSpecialCharge(c, 18, 7); if (!c.board) afS('aAura', c.A.x, c.gyA, { life: afT(c, c.wt), w: 60, h: 80, pal: ATK_PAL.Fire, n: 10, speed: 3, follow: c.fol(c.att) }); },
+  go: c => { const S = c.S, P = ['#3a1a04', '#ff8a1a', '#ffc040', '#fff4b0', '#ffffff']; afS('aStream', c.ax, c.ay, { ex: c.ex, ey: c.ey, life: afT(c, c.dur + .42), w: Math.max(2, afR(8 * S)), pal: P, style: 'light', grow: .28, hold: .72 }); afShake(c, 4); if (!c.board) flashScreen('#fff4c8', .35); },
+  hit: c => { const S = c.S; for (let i = 0; i < afN(c, 3); i++) spawnSprite('boom', c.tx + (i - 1) * 12 * S, c.ty - (i % 2) * 10 * S, { size: Math.round((14 + i * 3) * S), life: .7, rot: i * 2.1, delay: .05 + i * .07 }); afBurst(c, c.tx, c.ty, 30, { col: '#ffc040' }); afParts(c, c.tx, c.ty, 24, ['#ffffff', '#ffc040', '#ff8a1a'], { speed: 160, life: .7, grav: 90 }); afShake(c, 8); } };
+
+// ---- Fire
+function afFireHit(c, n = 8, spread = 26) { const S = c.S, P = c.pal; for (let i = 0; i < afN(c, n); i++) spawnSprite('flame', c.tx + (vrnd() - .5) * spread * S, c.ty + 10 * S + (vrnd() - .5) * 12 * S, { size: Math.max(1, Math.round((2 + vrnd() * 3) * S * 1.3)), life: .45 + vrnd() * .35, col: P[3], col2: P[1], vy: -40 - vrnd() * 40, vx: (vrnd() - .5) * 20, delay: vrnd() * .18 }); for (let i = 0; i < afN(c, 2); i++) spawnSprite('smoke', c.tx + (i ? 8 : -8) * S, c.ty - 10 * S, { size: Math.max(2, Math.round(5 * S)), life: 1, col: '#5e5866', col2: '#a8a2b0', vy: -20, vx: i ? 6 : -6, delay: .25 + i * .1 }); afParts(c, c.tx, c.ty, 10, [P[3], P[2], P[4]], { speed: 70, life: .7, grav: -60 }); }
+ATK.ember = { pose: 'cast', sfx: 'fire', charge: c => { afSpecialCharge(c, 10); afGather(c, c.ax, c.ay, c.wt, [c.pal[2], c.pal[3]], 5, 30, 'flame'); },
+  go: c => { const S = c.S; for (let i = 0; i < 3; i++) { const sp = (i - 1) * 7 * S; afS('aOrb', c.ax, c.ay + sp * .3, { tx: c.ex + (vrnd() - .5) * 8 * S, ty: c.ey + sp, life: afT(c, c.dur * (.72 + i * .14)), arc: (6 + i * 5) * S, size: Math.max(2, afR(4 * S)), pal: c.pal, style: 'fire', delay: afT(c, c.dur * i * .12) }); } },
+  hit: c => { const S = c.S; for (let i = 0; i < 3; i++) spawnSprite('blast', c.tx + (i - 1) * 9 * S, c.ty + ((i % 2) * 6 - 3) * S, { size: Math.round(12 * S), life: .45, col: c.pal[1], col2: c.pal[3], delay: i * .05 }); afFireHit(c, 7, 22); afShake(c, 3); }, react: 'burn' };
+ATK.flamethrower = { pose: 'cast', travel: .3, sfx: 'fire', charge: c => { afSpecialCharge(c, 14, 4); },
+  go: c => { const S = c.S; afS('aStream', c.ax, c.ay, { ex: c.ex, ey: c.ey, life: afT(c, c.dur + .4), w: Math.max(2, afR(7 * S)), pal: c.pal, style: 'fire', grow: .42, hold: .74 }); for (let i = 0; i < afN(c, 8); i++) spawnSprite('flame', c.ax, c.ay, { tx: c.ex + (vrnd() - .5) * 20 * S, ty: c.ey - 10 * S - vrnd() * 16 * S, life: afT(c, c.dur + vrnd() * .2), arc: 4, size: Math.max(1, afR(2 * S)), col: c.pal[3], col2: c.pal[1], delay: afT(c, i * .04) }); },
+  hit: c => { const S = c.S; spawnSprite('blast', c.tx, c.ty, { size: Math.round(24 * S), life: .55, col: c.pal[1], col2: c.pal[3] }); if (!c.board) afS('aAura', c.D.x, c.gy, { life: .75, w: 46, h: 70, pal: c.pal, n: 11, speed: 2.8 }); afFireHit(c, 12, 34); afShake(c, 5); }, react: 'burn' };
+ATK.fireblast = { pose: 'cast', windup: .34, travel: .32, board: 1.25, sfx: 'fire', focus: .45, charge: c => { afSpecialCharge(c, 16, 6); if (!c.board) flashScreen('#ff9a40', .12); },
+  go: c => { afS('aOrb', c.ax, c.ay, { tx: c.ex, ty: c.ey, life: afT(c, c.dur), arc: 8 * c.S, size: Math.max(3, afR(9 * c.S)), pal: c.pal, style: 'fire' }); },
+  hit: c => { const S = c.S; atkSfx('blast'); afS('aKanji', c.tx, c.ty - 2 * S, { life: .95, size: afR(40 * S), w: Math.max(2, 6 * S), pal: c.pal }); spawnSprite('boom', c.tx, c.ty, { size: Math.round(16 * S), life: .7, rot: 1 }); afFireHit(c, 16, 44); if (!c.board) flashScreen('#ffb060', .4); afShake(c, 8); }, react: 'burn' };
+
+// ---- Water
+function afSplash(c, x, y, n = 14, big = 1) { const S = c.S, P = c.pal; for (let i = 0; i < afN(c, n); i++) { const a = -Math.PI / 2 + (vrnd() - .5) * 2.4, sp = (60 + vrnd() * 90) * S * big; spawnSprite('drop', x, y, { life: .55 + vrnd() * .25, col: vrnd() < .5 ? P[2] : P[3], vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 30 * S, grav: 420 * S + 60 }); } spawnSprite('ring', x, y + 10 * S, { size: Math.round(26 * S * big), life: .45, col: P[4] }); spawnSprite('ring', c.D.x, c.gy - 1, { size: Math.round(30 * S * big), life: .6, col: P[3], delay: .08 }); }
+ATK.watergun = { pose: 'cast', sfx: 'water', charge: c => afGather(c, c.ax, c.ay, c.wt, [c.pal[3], c.pal[4], c.pal[2]], 10, 36, 'drop'),
+  go: c => afS('aStream', c.ax, c.ay, { ex: c.ex, ey: c.ey, life: afT(c, c.dur + .28), w: Math.max(1, afR(3 * c.S)), pal: c.pal, style: 'water', grow: .5, hold: .72 }),
+  hit: c => { afBurst(c, c.tx, c.ty, 14, { ring: false, col: c.pal[3] }); afSplash(c, c.tx, c.ty, 14); afShake(c, 3); } };
+ATK.bubblebeam = { pose: 'cast', sfx: 'bubbles', charge: c => { for (let i = 0; i < afN(c, 5); i++) afS('aBubble', c.ax + (vrnd() - .5) * 20 * c.S, c.ay + (vrnd() - .5) * 20 * c.S, { vx: 0, vy: -10, life: afT(c, c.wt), size: 2 + (i % 3), pal: c.pal, delay: afT(c, i * .04) }); },
+  go: c => { const S = c.S; for (let i = 0; i < afN(c, 16); i++) afS('aBubble', c.ax, c.ay, { tx: c.ex + (vrnd() - .5) * 20 * S, ty: c.ey + (vrnd() - .5) * 24 * S, life: afT(c, c.dur * (.55 + vrnd() * .45)), arc: (vrnd() - .3) * 12 * S, size: Math.max(1, afR((2.5 + vrnd() * 4) * S)), pal: c.pal, delay: afT(c, i * c.dur * .03) }); },
+  hit: c => { const S = c.S; for (let i = 0; i < afN(c, 10); i++) afS('aSparkle', c.tx + (vrnd() - .5) * 30 * S, c.ty + (vrnd() - .5) * 26 * S, { life: .3, size: Math.max(1, afR(3 * S)), pal: c.pal, delay: vrnd() * .15 }); afSplash(c, c.tx, c.ty, 10, .8); afBurst(c, c.tx, c.ty, 14, { col: c.pal[3], ring: false }); afShake(c, 3); } };
+ATK.surf = { pose: 'cast', windup: .3, travel: .42, board: 1.3, sfx: 'splash', charge: c => { const S = c.S; for (let i = 0; i < afN(c, 10); i++) spawnSprite('drop', c.A.x + (vrnd() - .5) * 50 * S, c.gyA - vrnd() * 8, { vy: -60 - vrnd() * 60, vx: 0, grav: 160, life: afT(c, c.wt), col: c.pal[3], delay: afT(c, i * .02) }); },
+  go: c => { const S = c.S; if (c.board) { afS('aStream', c.ax, c.ay, { ex: c.ex, ey: c.ey, life: afT(c, c.dur + .2), w: Math.max(2, afR(9 * S)), pal: c.pal, style: 'water', grow: .6, hold: .7 }); return; } const ph = c.stacked; afS('aWave', 0, 0, { fx0: ph ? c.D.x - c.dir * 150 : c.A.x - c.dir * 30, fx1: c.D.x + c.dir * 8, gy: (ph ? c.gy : Math.max(c.gy, c.gyA)) + 2, h: ph ? 64 : 78, len: ph ? 90 : 110, dir: c.dir, life: afT(c, c.dur + .3), go: c.dur / (c.dur + .3), pal: c.pal }); },
+  hit: c => { afSplash(c, c.tx, c.ty - 6 * c.S, 22, 1.3); afBurst(c, c.tx, c.ty, 20, { col: c.pal[3], ring: false }); afShake(c, 6); }, react: 'crush' };
+ATK.hydropump = { pose: 'cast', windup: .32, travel: .3, sfx: 'splash', charge: c => { for (let i = 0; i < afN(c, 12); i++) spawnSprite('drop', c.ax, c.ay, { orbit: { r: 22 * c.S, speed: 12, a0: i / 12 * Math.PI * 2, shrink: true, squash: .7 }, life: afT(c, c.wt), col: c.pal[3], delay: afT(c, i * .012) }); afSpecialCharge(c, 8, 4); },
+  go: c => { afS('aStream', c.ax, c.ay, { ex: c.ex, ey: c.ey, life: afT(c, c.dur + .42), w: Math.max(2, afR(8 * c.S)), pal: c.pal, style: 'water', grow: .38, hold: .76 }); afShake(c, 2); },
+  hit: c => { afSplash(c, c.tx, c.ty, 26, 1.5); afBurst(c, c.tx, c.ty, 24, { col: c.pal[3] }); afShake(c, 6); }, react: 'crush' };
+
+// ---- Grass
+function afLeafBurst(c, x, y, n = 10) { const S = c.S, P = c.pal; for (let i = 0; i < afN(c, n); i++) { const a = vrnd() * Math.PI * 2, sp = (40 + vrnd() * 60) * S; spawnSprite('leaf', x, y, { life: .6 + vrnd() * .4, col: P[1], col2: P[3], vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 30 * S, grav: 80, rot: vrnd() * 4, spin: 8 + vrnd() * 10 }); } }
+ATK.vinewhip = { pose: 'cast', sfx: 'whip', charge: c => { for (const s2 of [-1, 1]) afS('aVine', c.A.x, c.ay + s2 * 8 * c.S, { ex: c.A.x + c.dir * 18 * c.S, ey: c.ay - 14 * c.S + s2 * 6 * c.S, life: afT(c, c.wt), w: Math.max(1, afR(2 * c.S)), bend: 10 * c.S, pal: c.pal }); },
+  go: c => { for (const s2 of [-1, 1]) afS('aVine', c.ax, c.ay + s2 * 6 * c.S, { ex: c.ex, ey: c.ey + s2 * 8 * c.S, life: afT(c, c.dur / .42), w: Math.max(1, afR(3 * c.S)), bend: (26 + s2 * 8) * c.S, pal: c.pal }); },
+  hit: c => { const S = c.S; afSlashFx(c, c.tx, c.ty, { style: 'line', lx0: -14 * S, ly0: -14 * S, lx1: 14 * S, ly1: 12 * S, th: 3, sweep: .15, pal: c.pal }); afBurst(c, c.tx, c.ty, 14, { col: c.pal[3], ring: false }); afLeafBurst(c, c.tx, c.ty, 8); afShake(c, 3); } };
+ATK.razorleaf = { pose: 'cast', sfx: 'grass', charge: c => { for (let i = 0; i < afN(c, 8); i++) afS('aLeaf', c.A.x, c.ay, { orbit: { r: 30 * c.S, speed: 10, a0: i / 8 * Math.PI * 2, squash: .5 }, life: afT(c, c.wt), pal: c.pal, delay: afT(c, i * .01) }); },
+  go: c => { const S = c.S; for (let i = 0; i < afN(c, 10); i++) afS('aLeaf', c.ax, c.ay + (vrnd() - .5) * 20 * S, { tx: c.ex + (vrnd() - .5) * 16 * S, ty: c.ey + (vrnd() - .5) * 26 * S, life: afT(c, c.dur * (.65 + vrnd() * .35)), arc: (vrnd() - .5) * 26 * S, pal: c.pal, delay: afT(c, i * c.dur * .04) }); },
+  hit: c => { const S = c.S; for (let i = 0; i < afN(c, 4); i++) afSlashFx(c, c.tx + (vrnd() - .5) * 18 * S, c.ty + (vrnd() - .5) * 20 * S, { style: 'line', lx0: -9 * S, ly0: (vrnd() - .5) * 10 * S, lx1: 9 * S, ly1: (vrnd() - .5) * 10 * S, th: 2, sweep: .12, life: .3, delay: i * .04, pal: c.pal }); afLeafBurst(c, c.tx, c.ty, 10); afShake(c, 3); } };
+ATK.gigadrain = { pose: 'cast', sfx: 'absorb', ownDrain: true, charge: c => { afSpecialCharge(c, 12); if (!c.board) afS('aAura', c.A.x, c.gyA, { life: afT(c, c.wt), w: 56, h: 70, pal: c.pal, n: 8, speed: 2, follow: c.fol(c.att) }); },
+  go: c => { afS('aWarp', c.tx, c.ty, { life: afT(c, c.dur + .55), size: 46 * c.S, pal: c.pal }); for (let i = 0; i < 3; i++) spawnSprite('psy', c.tx, c.ty, { size: Math.round((40 - i * 10) * c.S), life: afT(c, c.dur), col: c.pal[2], col2: c.pal[3], delay: afT(c, i * c.dur / 4) }); for (let i = 0; i < afN(c, 14); i++) spawnSprite('spark', c.tx + (vrnd() - .5) * 60 * c.S, c.ty + (vrnd() - .5) * 60 * c.S, { tx: c.tx, ty: c.ty, life: afT(c, c.dur), col: i % 2 ? c.pal[3] : c.pal[4], delay: afT(c, i * .015) }); },
+  hit: c => { afBurst(c, c.tx, c.ty, 18, { col: c.pal[3] }); for (let i = 0; i < afN(c, 8); i++) afS('aSparkle', c.tx + (vrnd() - .5) * 30 * c.S, c.ty + (vrnd() - .5) * 30 * c.S, { life: .4, size: 3, pal: c.pal, delay: vrnd() * .15 }); atkDrainFx(c); afShake(c, 2); }, drainPal: 'Grass' };
+ATK.solarbeam = { pose: 'cast', windup: .46, travel: .32, board: 1.35, sfx: 'beam', focus: .4,
+  charge: c => { atkSfx('beamcharge'); const P = ['#3a3a00', '#c8c020', '#fff060', '#fffcc0', '#ffffff']; if (!c.board) afS('aSun', c.ax, c.ay, { life: afT(c, c.wt + .05), top: c.top, w: 16, pal: P }); afGather(c, c.ax, c.ay, c.wt, ['#fff060', '#ffffff', '#b0e878'], 16, 50); afS('aCharge', c.ax, c.ay, { life: afT(c, c.wt + .06), size: 7 * c.S, pal: P, follow: c.fol(c.att) }); },
+  go: c => { const P = ['#2a4a08', '#a8e040', '#e8ff90', '#fffff0', '#ffffff']; afS('aStream', c.ax, c.ay, { ex: c.ex, ey: c.ey, life: afT(c, c.dur + .42), w: Math.max(2, afR(8 * c.S)), pal: P, style: 'light', grow: .3, hold: .74 }); afShake(c, 3); if (!c.board) flashScreen('#f8ffd0', .3); },
+  hit: c => { const S = c.S; afBurst(c, c.tx, c.ty, 30, { col: '#e8ff90' }); for (let i = 0; i < afN(c, 12); i++) afS('aSparkle', c.tx + (vrnd() - .5) * 44 * S, c.ty + (vrnd() - .5) * 40 * S, { life: .5, size: Math.max(1, afR(4 * S)), pal: ['#2a4a08', '#a8e040', '#fff060', '#fffcc0', '#ffffff'], delay: vrnd() * .2 }); afLeafBurst(c, c.tx, c.ty, 6); afShake(c, 7); } };
+
+// ---- Electric
+function afShockOn(c, x, y, life = .5, n = 3) { afS('aShock', x, y, { life, w: 22 * c.S, h: 26 * c.S, n: afN(c, n), pal: c.pal }); }
+ATK.thundershock = { pose: 'cast', travel: .2, sfx: 'zap', charge: c => { afShockOn(c, c.A.x, c.gyA - c.H * .5, afT(c, c.wt), 2); afGather(c, c.ax, c.ay, c.wt, [c.pal[2], c.pal[4]], 8, 30); },
+  go: c => { for (let i = 0; i < 2; i++) afS('aBolt', c.ax, c.ay, { ex: c.ex, ey: c.ey, life: afT(c, c.dur + .12), w: Math.max(1, afR(2 * c.S)), jit: 7 * c.S, pal: c.pal, flick: true, forks: 1, delay: afT(c, i * .07) }); },
+  hit: c => { afBurst(c, c.tx, c.ty, 16, { col: c.pal[2] }); afShockOn(c, c.tx, c.ty, .55, 3); afParts(c, c.tx, c.ty, 10, [c.pal[2], '#ffffff'], { speed: 110, life: .35, grav: 0 }); afShake(c, 3); }, react: 'shock' };
+ATK.thunderbolt = { pose: 'cast', travel: .22, sfx: 'elec', charge: c => { afShockOn(c, c.A.x, c.gyA - c.H * .5, afT(c, c.wt), 4); afSpecialCharge(c, 12, 4); if (!c.board) spawnSprite('flash', c.ax, c.ay, { size: 14, life: afT(c, .15), col: c.pal[3], delay: afT(c, c.wt * .8) }); },
+  go: c => { afS('aBolt', c.ax, c.ay, { ex: c.ex, ey: c.ey, life: afT(c, c.dur + .2), w: Math.max(2, afR(4 * c.S)), jit: 10 * c.S, pal: c.pal, flick: true, forks: 3 }); for (const s2 of [-1, 1]) afS('aBolt', c.ax, c.ay + s2 * 6 * c.S, { ex: c.ex, ey: c.ey + s2 * 14 * c.S, life: afT(c, c.dur + .1), w: 1, jit: 9 * c.S, pal: c.pal, flick: true, forks: 0, delay: afT(c, .05) }); if (!c.board) flashScreen('#fff7a0', .2); },
+  hit: c => { afBurst(c, c.tx, c.ty, 24, { col: c.pal[2] }); spawnSprite('ring', c.tx, c.ty, { size: Math.round(34 * c.S), life: .35, col: c.pal[2] }); afShockOn(c, c.tx, c.ty, .7, 4); afParts(c, c.tx, c.ty, 16, [c.pal[2], c.pal[3], '#ffffff'], { speed: 150, life: .4, grav: 0 }); afShake(c, 5); }, react: 'shock' };
+ATK.thunder = { pose: 'cast', windup: .36, travel: .24, board: 1.3, sfx: 'thunder', focus: .62, focusCol: '#05081a',
+  charge: c => { atkSfx('rumble'); afS('aCloud', c.tx, c.top + 10 * c.S, { life: afT(c, c.wt + c.dur + .5), w: 34 * c.S, pal: c.pal }); afShockOn(c, c.A.x, c.gyA - c.H * .5, afT(c, c.wt), 2); },
+  go: c => { const S = c.S; afS('aBolt', c.ex + (vrnd() - .5) * 6 * S, c.top + 12 * S, { ex: c.ex, ey: c.gy - 4 * S, life: afT(c, c.dur + .3), w: Math.max(2, afR(6 * S)), jit: 14 * S, pal: c.pal, flick: true, forks: 3, delay: afT(c, c.dur * .5) }); if (!c.board) spawnSprite('flash', c.ex, c.top + 14, { size: 18, life: .2, col: '#ffffff', delay: afT(c, c.dur * .5) }); },
+  hit: c => { const S = c.S; flashScreen('#ffffff', c.board ? .45 : .7); afBurst(c, c.tx, c.ty, 28, { col: c.pal[2] }); spawnSprite('ring', c.D.x, c.gy - 1, { size: Math.round(40 * S), life: .5, col: c.pal[3] }); afS('aSplat', c.D.x, c.gy, { life: 1.1, size: 18 * S, pal: ['#1a1408', '#2a2418', '#4a4030', '#fff7a0', '#fff'] }); afShockOn(c, c.tx, c.ty, .8, 5); afParts(c, c.tx, c.ty, 20, [c.pal[2], '#ffffff', c.pal[3]], { speed: 170, life: .45, grav: 60 }); afShake(c, 8); }, react: 'shock' };
+
+// ---- Ice
+function afIceHit(c, n = 5, big = 1) { const S = c.S, P = c.pal; for (let i = 0; i < afN(c, n); i++) afS('aSpike', c.D.x + (i - (n - 1) / 2) * 10 * S * big, c.gy, { life: .9, h: (24 + ((i * 7) % 3) * 10) * S * big, w: Math.max(3, 8 * S * big), style: 'ice', lean: (i - (n - 1) / 2) * .12, pal: P, delay: .03 * i }); for (let i = 0; i < afN(c, 10); i++) { const a = vrnd() * Math.PI * 2, sp = (50 + vrnd() * 50) * S; spawnSprite('shard', c.tx, c.ty, { life: .55, col: P[3], vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 20, grav: 170, rot: vrnd() * 2, spin: 6, delay: .5 }); } }
+ATK.iceshard = { pose: 'lunge', sfx: 'crack', charge: c => { for (let i = 0; i < afN(c, 4); i++) spawnSprite('shard', c.ax, c.ay, { orbit: { r: 16 * c.S, speed: 14, a0: i * 1.6, shrink: false, squash: .6 }, life: afT(c, c.wt), col: c.pal[3], rot: i, delay: afT(c, i * .02) }); },
+  go: c => { for (let i = 0; i < afN(c, 5); i++) spawnSprite('shard', c.ax, c.ay + (i - 2) * 4 * c.S, { tx: c.ex, ty: c.ey + (i - 2) * 5 * c.S, life: afT(c, c.dur * (.7 + i * .075)), arc: (2 + i) * c.S, col: c.pal[3], rot: i, spin: 10 }); for (let i = 0; i < afN(c, 5); i++) afS('aSparkle', lerp(c.ax, c.ex, (i + 1) / 6), lerp(c.ay, c.ey, (i + 1) / 6) + (vrnd() - .5) * 8 * c.S, { life: afT(c, .3), size: 2, pal: c.pal, delay: afT(c, c.dur * i / 6) }); afLunge(c); },
+  hit: c => { afBurst(c, c.tx, c.ty, 16, { col: c.pal[3] }); for (let i = 0; i < afN(c, 8); i++) afS('aSparkle', c.tx + (vrnd() - .5) * 26 * c.S, c.ty + (vrnd() - .5) * 24 * c.S, { life: .35, size: 3, pal: c.pal, delay: vrnd() * .12 }); afParts(c, c.tx, c.ty, 10, [c.pal[3], '#ffffff'], { speed: 90, life: .45, grav: 120 }); afShake(c, 3); }, react: 'chill' };
+ATK.icebeam = { pose: 'cast', sfx: 'freeze', charge: c => { afSpecialCharge(c, 12, 3); for (let i = 0; i < afN(c, 6); i++) afS('aFlake', c.A.x + (vrnd() - .5) * 50 * c.S, c.gyA - vrnd() * c.H, { vx: 0, vy: -14, life: afT(c, c.wt), size: 2, pal: c.pal, delay: afT(c, i * .03) }); },
+  go: c => afS('aStream', c.ax, c.ay, { ex: c.ex, ey: c.ey, life: afT(c, c.dur + .36), w: Math.max(1, afR(3 * c.S)), pal: c.pal, style: 'ice', grow: .45, hold: .74 }),
+  hit: c => { atkSfx('crack'); afBurst(c, c.tx, c.ty, 18, { col: c.pal[3] }); afIceHit(c, 4, 1); afShake(c, 4); }, react: 'chill' };
+ATK.blizzard = { pose: 'cast', windup: .32, travel: .36, board: 1.25, sfx: 'wind', focus: .3, focusCol: '#dfe8ff',
+  charge: c => { for (let i = 0; i < afN(c, 10); i++) afS('aFlake', c.A.x + (vrnd() - .5) * 60 * c.S, c.gyA - vrnd() * c.H, { vx: c.dir * 20, vy: -10, life: afT(c, c.wt), size: 2, pal: c.pal, delay: afT(c, i * .02) }); },
+  go: c => { const S = c.S, dx = c.ex - c.ax, dy = c.ey - c.ay, L = Math.hypot(dx, dy) || 1, sp = L / c.dur * .9; for (let i = 0; i < afN(c, 70); i++) { const off = (vrnd() - .5) * 70 * S, x0 = c.ax - c.ux * vrnd() * 40 * S - c.uy * off, y0 = c.ay - c.uy * vrnd() * 40 * S + c.ux * off; afS(i % 3 ? 'aFlake' : 'aStreak', x0, y0, { vx: c.ux * sp * (.8 + vrnd() * .4), vy: c.uy * sp + (vrnd() - .5) * 30 * S, life: afT(c, c.dur * (.8 + vrnd() * .5)), size: i % 3 ? (vrnd() < .6 ? 2 : 1) : 14 * S, alpha: .9, pal: c.pal, delay: afT(c, vrnd() * c.dur * .6) }); } },
+  hit: c => { atkSfx('crack'); afBurst(c, c.tx, c.ty, 24, { col: c.pal[3] }); afIceHit(c, 5, 1.2); for (let i = 0; i < afN(c, 16); i++) afS('aFlake', c.tx + (vrnd() - .5) * 60 * c.S, c.ty + (vrnd() - .5) * 50 * c.S, { vx: c.dir * 40, vy: 10, life: .7, size: 2, pal: c.pal, delay: vrnd() * .2 }); if (!c.board) flashScreen('#e8f4ff', .35); afShake(c, 6); }, react: 'chill' };
+
+// ---- Fighting
+function afPowerUp(c) { if (!c.board) afS('aAura', c.A.x, c.gyA, { life: afT(c, c.wt + .08), w: 54, h: 70, pal: c.pal, n: 9, speed: 3.2, follow: c.fol(c.att) }); afContactCharge(c); }
+function afPow(c, x, y, size = 24) { const S = c.S; afBurst(c, x, y, size, { col: c.pal[2] }); if (!c.board) for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2 + .2, r1 = size * .9, r2 = size * 1.5; afS('aSlash', x, y, { style: 'line', lx0: Math.cos(a) * r1, ly0: Math.sin(a) * r1, lx1: Math.cos(a) * r2, ly1: Math.sin(a) * r2, th: 1, life: .28, sweep: .15, pal: c.pal }); } }
+ATK.chop = { pose: 'lunge', sfx: 'chop', charge: afPowerUp, go: afLunge, hit: c => { const S = c.S; afPow(c, c.tx, c.ty, 18); afSlashFx(c, c.tx + c.dir * 2 * S, c.ty, { style: 'line', lx0: c.dir * 6 * S, ly0: -36 * S, lx1: -c.dir * 4 * S, ly1: 24 * S, th: 6, sweep: .12, life: .5 }); afShake(c, 4); } };
+ATK.brickbreak = { pose: 'lunge', sfx: 'chop', charge: afPowerUp, go: afLunge, hit: c => { const S = c.S; afPow(c, c.tx, c.ty, 20); afSlashFx(c, c.tx, c.ty, { style: 'line', lx0: -c.dir * 24 * S, ly0: -28 * S, lx1: c.dir * 20 * S, ly1: 22 * S, th: 6, sweep: .12, life: .5 }); for (let i = 0; i < afN(c, 10); i++) { const a = vrnd() * Math.PI * 2, sp = (60 + vrnd() * 80) * S; spawnSprite('debris', c.tx, c.ty, { vx: Math.cos(a) * sp + c.dir * 40 * S, vy: Math.sin(a) * sp - 50 * S, grav: 400, floor: c.gy, life: 1, size: 3, col: '#c86a3a', col2: '#f0b080', rot: vrnd() * 4, spin: 12 }); } afShake(c, 5); } };
+ATK.crosschop = { pose: 'lunge', sfx: 'chop', charge: afPowerUp, go: afLunge, hit: c => { const S = c.S; afPow(c, c.tx, c.ty, 22); afSlashFx(c, c.tx, c.ty, { style: 'line', lx0: -24 * S, ly0: -26 * S, lx1: 24 * S, ly1: 24 * S, th: 6, sweep: .12, life: .55 }); afSlashFx(c, c.tx, c.ty, { style: 'line', lx0: 24 * S, ly0: -26 * S, lx1: -24 * S, ly1: 24 * S, th: 6, sweep: .12, life: .55, delay: .07 }); spawnSprite('ring', c.D.x, c.gy - 1, { size: Math.round(36 * S), life: .45, col: c.pal[3] }); afShake(c, 6); }, react: 'crush' };
+
+// ---- Poison
+function afGoo(c, x, y, n = 10, big = 1) { const S = c.S, P = c.pal; for (let i = 0; i < afN(c, n); i++) { const a = -Math.PI / 2 + (vrnd() - .5) * 2.8, sp = (50 + vrnd() * 80) * S * big; spawnSprite('bubble', x, y, { size: 1 + (i % 3), life: .6 + vrnd() * .3, col: P[2], col2: P[3], vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 20, grav: 300 * S + 60 }); } afS('aSplat', c.D.x, c.gy, { life: 1.2, size: 20 * S * big, pal: P, delay: .05 }); for (let i = 0; i < afN(c, 6); i++) spawnSprite('bubble', c.D.x + (vrnd() - .5) * 30 * S, c.gy - 4, { size: 1 + (i % 3), life: .7, col: P[3], col2: P[4], vy: -24 - vrnd() * 20, delay: .15 + vrnd() * .3 }); }
+ATK.poisonsting = { pose: 'lunge', sfx: 'poison', charge: c => afContactCharge(c), go: c => { for (let i = 0; i < afN(c, 4); i++) afS('aNeedle', c.ax, c.ay + (i - 1.5) * 5 * c.S, { tx: c.ex, ty: c.ey + (i - 1.5) * 7 * c.S, life: afT(c, c.dur * (.7 + i * .1)), size: Math.max(4, afR(11 * c.S)), pal: c.pal, delay: afT(c, i * .02) }); afLunge(c); },
+  hit: c => { for (let i = 0; i < 3; i++) spawnSprite('burst', c.tx + (i - 1) * 7 * c.S, c.ty + (i - 1) * 6 * c.S, { size: Math.round(9 * c.S), life: .25, col: c.pal[3], delay: i * .04 }); afGoo(c, c.tx, c.ty, 6, .6); afShake(c, 2); } };
+ATK.sludge = { pose: 'cast', sfx: 'sludge', charge: c => { for (let i = 0; i < afN(c, 6); i++) spawnSprite('bubble', c.ax + (vrnd() - .5) * 14 * c.S, c.ay + 6 * c.S, { size: 1 + (i % 3), life: afT(c, c.wt), col: c.pal[2], col2: c.pal[3], vy: -22, delay: afT(c, i * .03) }); },
+  go: c => { for (let i = 0; i < afN(c, 3); i++) afS('aOrb', c.ax, c.ay, { tx: c.ex + (i - 1) * 8 * c.S, ty: c.ey + (i - 1) * 6 * c.S, life: afT(c, c.dur * (.8 + i * .1)), arc: (14 + i * 6) * c.S, size: Math.max(2, afR((4 + (i === 1 ? 2 : 0)) * c.S)), pal: c.pal, style: 'sludge', delay: afT(c, i * .03) }); },
+  hit: c => { afBurst(c, c.tx, c.ty, 16, { col: c.pal[2], ring: false }); afGoo(c, c.tx, c.ty, 12); afShake(c, 3); } };
+ATK.sludgebomb = { pose: 'cast', windup: .3, sfx: 'sludge', charge: c => { afSpecialCharge(c, 10, 5); ATK.sludge.charge(c); },
+  go: c => afS('aOrb', c.ax, c.ay, { tx: c.ex, ty: c.ey, life: afT(c, c.dur), arc: 26 * c.S, size: Math.max(3, afR(9 * c.S)), pal: c.pal, style: 'sludge' }),
+  hit: c => { const S = c.S; spawnSprite('blast', c.tx, c.ty, { size: Math.round(26 * S), life: .6, col: c.pal[2], col2: c.pal[1] }); for (let i = 0; i < afN(c, 3); i++) spawnSprite('smoke', c.tx + (i - 1) * 12 * S, c.ty - 6 * S, { size: Math.max(2, Math.round(7 * S)), life: 1, col: c.pal[1], col2: c.pal[3], vy: -16, delay: i * .06 }); afBurst(c, c.tx, c.ty, 22, { col: c.pal[3] }); afGoo(c, c.tx, c.ty, 18, 1.3); afShake(c, 5); } };
+
+// ---- Ground
+function afRocks(c, x, y, n = 8, big = 1, P = ATK_PAL.Ground) { const S = c.S; for (let i = 0; i < afN(c, n); i++) { const a = -Math.PI * (.15 + vrnd() * .7), sp = (60 + vrnd() * 80) * S * big; spawnSprite('rock', x, y, { size: Math.max(1, Math.round((2 + vrnd() * 2) * S * 1.5 * big)), life: .7, col: P[2], col2: P[1], vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, grav: 380 }); } for (let i = 0; i < afN(c, 3); i++) spawnSprite('poof', x + (i - 1) * 10 * S, c.gy - 2, { size: Math.max(2, Math.round(5 * S)), life: .6, col: P[3], col2: P[4], vy: -12, vx: (i - 1) * 14, delay: i * .04 }); }
+ATK.mudslap = { pose: 'lunge', sfx: 'splash', charge: c => afContactCharge(c, false), go: c => { for (let i = 0; i < afN(c, 5); i++) afS('aOrb', c.A.x + c.dir * 10 * c.S, c.gyA - 10 * c.S, { tx: c.ex + (vrnd() - .5) * 16 * c.S, ty: c.ey + (vrnd() - .5) * 20 * c.S, life: afT(c, c.dur * (.8 + vrnd() * .3)), arc: 10 * c.S, size: Math.max(1, afR((2 + vrnd() * 2) * c.S)), pal: c.pal, style: 'mud' }); afLunge(c); },
+  hit: c => { afGoo(c, c.tx, c.ty, 8, .8); afBurst(c, c.tx, c.ty, 14, { col: c.pal[2], ring: false }); afShake(c, 2); } };
+ATK.dig = { pose: 'burrow', windup: .3, travel: .32, board: 1.3, sfx: 'rumble', charge: c => { afRocks(c, c.A.x, c.gyA - 2, 8, .7); afShake(c, 2); },
+  go: c => { const S = c.S; if (c.board) return; for (let i = 0; i < 6; i++) spawnSprite('poof', lerp(c.A.x, c.D.x, (i + 1) / 7), c.gy - 2, { size: Math.round(5 * S), life: .35, col: '#b8864a', col2: '#e4c48c', vy: -10, delay: afT(c, c.dur * (i + 1) / 7) }); afS('aCrack', c.stacked ? c.D.x - c.dir * 110 : c.A.x, c.stacked ? c.gy : c.gyA, { ex: c.D.x, life: afT(c, c.dur + .5), grow: c.dur / (c.dur + .5), pal: c.pal }); },
+  hit: c => { const S = c.S; atkSfx('rock'); afS('aSpike', c.D.x, c.gy, { life: .75, h: 64 * S, w: 22 * S, style: 'dirt', pal: c.pal }); afRocks(c, c.D.x, c.gy - 10 * S, 12, 1.2); afBurst(c, c.tx, c.ty + 14 * S, 22, { col: c.pal[3], ring: false }); afShake(c, 6); }, react: 'crush' };
+ATK.earthquake = { pose: 'stomp', windup: .32, travel: .3, board: 1.3, sfx: 'quake', focus: .35,
+  charge: c => { atkSfx('rumble'); afRocks(c, c.A.x, c.gyA - 2, 6, .6); },
+  go: c => { const S = c.S; afShake(c, 5); for (let i = 0; i < 3; i++) spawnSprite('ring', c.A.x, c.gyA - 1, { size: Math.round((30 + i * 26) * S), life: afT(c, .5), col: '#e4c48c', delay: afT(c, i * .07) }); afS('aCrack', c.stacked ? c.D.x - c.dir * 120 : c.A.x + c.dir * 8 * S, c.board || c.stacked ? c.gy : c.gyA, { ex: c.D.x + c.dir * 30 * S, life: afT(c, c.dur + .6), grow: c.dur / (c.dur + .6), pal: c.pal, glow: '#ffd08a' }); if (!c.board && !c.stacked) afS('aCrack', c.A.x + c.dir * 8, c.gyA + 5, { ex: c.D.x - c.dir * 10, life: afT(c, c.dur + .5), grow: c.dur / (c.dur + .5), pal: c.pal, glow: '#ffd08a', delay: afT(c, .04) }); },
+  hit: c => { const S = c.S; for (let i = 0; i < afN(c, 3); i++) afS('aSpike', c.D.x + (i - 1) * 16 * S, c.gy + 2, { life: .8, h: (26 + (i % 2) * 14) * S, w: 12 * S, style: 'rock', lean: (i - 1) * .2, pal: ATK_PAL.Rock, delay: i * .04 }); afRocks(c, c.D.x, c.gy - 4, 14, 1.2); afBurst(c, c.tx, c.ty + 16 * S, 26, { col: c.pal[3] }); for (let i = 0; i < afN(c, 4); i++) spawnSprite('smoke', c.D.x + (i - 1.5) * 14 * S, c.gy - 6 * S, { size: Math.max(2, Math.round(7 * S)), life: 1, col: '#9a8468', col2: '#d8c4a0', vy: -20, delay: .1 + i * .05 }); afShake(c, 9); }, react: 'crush' };
+
+// ---- Flying
+function afFeathers(c, x, y, n = 6) { for (let i = 0; i < afN(c, n); i++) afS('aFeather', x + (vrnd() - .5) * 30 * c.S, y + (vrnd() - .5) * 20 * c.S, { vx: (vrnd() - .5) * 40 * c.S, vy: -30 * c.S - vrnd() * 20, grav: 60, life: .9 + vrnd() * .4, size: Math.max(2, afR(4 * c.S)), rot: vrnd() * 3, pal: c.pal, delay: vrnd() * .1 }); }
+ATK.gust = { pose: 'cast', sfx: 'wind', charge: c => { for (let i = 0; i < afN(c, 5); i++) spawnSprite('wind', c.A.x + (vrnd() - .5) * 30 * c.S, c.ay + (i - 2) * 9 * c.S, { size: Math.round(16 * c.S), life: afT(c, c.wt), col: '#ffffff', vx: c.dir * 40 * c.S, delay: afT(c, i * .03) }); },
+  go: c => { const S = c.S; if (c.board) { for (let i = 0; i < afN(c, 5); i++) spawnSprite('wind', c.ax, c.ay + (i - 2) * 4, { tx: c.ex, ty: c.ey + (i - 2) * 4, life: afT(c, c.dur), size: 10, col: '#ffffff', delay: i * .02 }); return; } afS('aTornado', 0, 0, { fx0: c.A.x + c.dir * 30, fx1: c.D.x, gy: c.gy, h: 64, w: 22, life: afT(c, c.dur + .4), go: c.dur / (c.dur + .4), pal: c.pal }); for (let i = 0; i < 6; i++) afS('aStreak', c.ax - c.uy * (i - 3) * 8, c.ay + c.ux * (i - 3) * 8, { vx: c.ux * 420, vy: c.uy * 420, life: afT(c, c.dur * .8), size: 14, pal: c.pal, delay: afT(c, i * .03) }); },
+  hit: c => { afBurst(c, c.tx, c.ty, 16, { col: c.pal[3], ring: false }); for (let i = 0; i < afN(c, 6); i++) spawnSprite('wind', c.tx + (vrnd() - .5) * 16 * c.S, c.ty + (vrnd() - .5) * 30 * c.S, { size: Math.round((12 + vrnd() * 8) * c.S), life: .35, col: '#ffffff', vx: c.dir * 140 * c.S, delay: vrnd() * .1 }); afFeathers(c, c.tx, c.ty, 3); afShake(c, 3); }, react: 'wobble' };
+ATK.wingattack = { pose: 'lunge', sfx: 'wind', charge: c => { afContactCharge(c); if (!c.board) for (let i = 0; i < 3; i++) spawnSprite('wind', c.A.x, c.ay - 20 + i * 14, { size: 18, life: afT(c, c.wt), col: '#ffffff', vx: -c.dir * 30, delay: afT(c, i * .04) }); }, go: afLunge,
+  hit: c => { const S = c.S; afSlashFx(c, c.tx - c.dir * 6 * S, c.ty, { style: 'arc', size: afR(24 * S), a0: c.dir > 0 ? -2.6 : -.5, a1: c.dir > 0 ? -.9 : -2.2, sq: .8, th: 4, sweep: .2 }); afSlashFx(c, c.tx - c.dir * 6 * S, c.ty, { style: 'arc', size: afR(24 * S), a0: c.dir > 0 ? 2.6 : .5, a1: c.dir > 0 ? .9 : 2.2, sq: .8, th: 4, sweep: .2, delay: .04 }); afBurst(c, c.tx, c.ty, 16, { ring: false }); afFeathers(c, c.tx, c.ty, 7); afShake(c, 3); } };
+ATK.drillpeck = { pose: 'lunge', sfx: 'drill', charge: c => { afContactCharge(c); }, go: c => { afLunge(c); afS('aDrill', c.ax, c.ay, { life: afT(c, c.dur + .1), size: afR(22 * c.S), w: Math.max(2, afR(7 * c.S)), dir: c.dir, pal: c.pal, follow: c.fol(c.att) }); },
+  hit: c => { const S = c.S; for (let i = 0; i < 3; i++) spawnSprite('psy', c.tx, c.ty, { size: Math.round((10 + i * 6) * S), life: .35, col: c.pal[3], col2: '#ffffff', delay: i * .05 }); afBurst(c, c.tx, c.ty, 20, { col: c.pal[3] }); afFeathers(c, c.tx, c.ty, 4); afParts(c, c.tx, c.ty, 12, ['#ffffff', c.pal[3]], { speed: 120, life: .4, grav: 60 }); afShake(c, 4); } };
+
+// ---- Psychic
+function afEyes(c) { for (const s2 of [-1, 1]) afS('aSparkle', c.A.x + c.dir * 10 * c.S + s2 * 4 * c.S, c.gyA - c.H * .78, { life: afT(c, c.wt), size: Math.max(2, afR(4 * c.S)), pal: c.pal, delay: afT(c, c.wt * .4), follow: c.fol(c.att) }); }
+ATK.confusion = { pose: 'cast', sfx: 'psy', charge: c => { afEyes(c); if (!c.board) afS('aWarp', c.A.x, c.gyA - c.H * .5, { life: afT(c, c.wt), size: 40, pal: c.pal, follow: c.fol(c.att) }); },
+  go: c => { afS('aWarp', c.tx, c.ty, { life: afT(c, c.dur + .45), size: 40 * c.S, pal: c.pal }); for (let i = 0; i < afN(c, 4); i++) spawnSprite('psy', c.ax + (c.ex - c.ax) * (i + 1) / 5, c.ay + (c.ey - c.ay) * (i + 1) / 5, { size: Math.round(10 * c.S), life: afT(c, .3), col: c.pal[2], col2: c.pal[3], delay: afT(c, i * c.dur / 5) }); },
+  hit: c => { for (let i = 0; i < 4; i++) spawnSprite('psy', c.tx, c.ty, { size: Math.round((12 + i * 7) * c.S), life: .45, col: c.pal[2], col2: c.pal[3], delay: i * .06 }); afBurst(c, c.tx, c.ty, 16, { col: c.pal[3], ring: false }); for (let i = 0; i < afN(c, 6); i++) afS('aSparkle', c.tx + (vrnd() - .5) * 34 * c.S, c.ty + (vrnd() - .5) * 34 * c.S, { life: .4, size: 3, pal: c.pal, delay: vrnd() * .15 }); afShake(c, 3); }, react: 'wobble' };
+ATK.psybeam = { pose: 'cast', sfx: 'psy', charge: c => { afEyes(c); afSpecialCharge(c, 10); },
+  go: c => afS('aStream', c.ax, c.ay, { ex: c.ex, ey: c.ey, life: afT(c, c.dur + .36), w: Math.max(2, afR(7 * c.S)), pal: c.pal, style: 'psy', rainbow: true, grow: .45, hold: .74 }),
+  hit: c => { for (let i = 0; i < 5; i++) spawnSprite('psy', c.tx, c.ty, { size: Math.round((10 + i * 6) * c.S), life: .45, col: ATK_RAINBOW[i], col2: '#ffffff', delay: i * .05 }); afBurst(c, c.tx, c.ty, 16, { col: c.pal[2], ring: false }); afShake(c, 3); }, react: 'wobble' };
+ATK.psychic = { pose: 'cast', windup: .34, travel: .34, board: 1.25, sfx: 'psywave', focus: .5, focusCol: '#2a0a24',
+  charge: c => { afEyes(c); if (!c.board) afS('aAura', c.A.x, c.gyA, { life: afT(c, c.wt + c.dur), w: 56, h: 80, pal: c.pal, n: 10, speed: 2, follow: c.fol(c.att) }); afSpecialCharge(c, 10); },
+  go: c => { afS('aWarp', c.tx, c.ty - 8 * c.S, { life: afT(c, c.dur + .5), size: 52 * c.S, pal: c.pal }); for (let i = 0; i < 3; i++) spawnSprite('psy', c.tx, c.ty, { size: Math.round((22 + i * 10) * c.S), life: afT(c, .4), col: c.pal[2], col2: c.pal[3], delay: afT(c, i * .08) }); },
+  hit: c => { const S = c.S; afBurst(c, c.tx, c.ty + 10 * S, 26, { col: c.pal[2] }); for (let i = 0; i < 2; i++) spawnSprite('ring', c.D.x, c.gy - 1, { size: Math.round((34 + i * 18) * S), life: .5, col: i ? c.pal[3] : c.pal[2], delay: i * .06 }); if (!c.board) flashScreen('#ffb4da', .35); afShake(c, 7); }, react: 'lift' };
+
+// ---- Bug
+ATK.bugbite = { pose: 'lunge', sfx: 'snap', charge: c => afContactCharge(c), go: afLunge, hit: c => { afS('aJaws', c.tx, c.ty, { life: .5, size: Math.max(5, afR(14 * c.S)), style: 'bug', pal: c.pal }); afBurst(c, c.tx, c.ty, 14, { col: c.pal[3], ring: false }); afParts(c, c.tx, c.ty, 10, [c.pal[2], c.pal[3]], { speed: 90, life: .4, grav: 120 }); afShake(c, 3); } };
+ATK.xscissor = { pose: 'lunge', sfx: 'slash', charge: c => afContactCharge(c), go: afLunge, hit: c => { const S = c.S; afSlashFx(c, c.tx, c.ty, { style: 'line', lx0: -20 * S, ly0: -20 * S, lx1: 20 * S, ly1: 20 * S, th: 4, sweep: .12, pal: c.pal }); afSlashFx(c, c.tx, c.ty, { style: 'line', lx0: 20 * S, ly0: -20 * S, lx1: -20 * S, ly1: 20 * S, th: 4, sweep: .12, pal: c.pal, delay: .05 }); afBurst(c, c.tx, c.ty, 18, { col: c.pal[3], ring: false }); afParts(c, c.tx, c.ty, 12, [c.pal[3], '#ffffff'], { speed: 120, life: .4, grav: 60 }); afShake(c, 4); } };
+ATK.megahorn = { pose: 'rush', windup: .32, travel: .2, sfx: 'roar', charge: c => { afContactCharge(c); if (!c.board) afS('aAura', c.A.x, c.gyA, { life: afT(c, c.wt + .1), w: 56, h: 74, pal: c.pal, n: 9, speed: 3, follow: c.fol(c.att) }); },
+  go: c => { afLunge(c); afS('aHorn', c.ax, c.ay - 6 * c.S, { life: afT(c, c.dur + .08), size: afR(20 * c.S), w: Math.max(2, afR(5 * c.S)), dir: c.dir, pal: c.pal, follow: c.fol(c.att) }); },
+  hit: c => { const S = c.S; afBurst(c, c.tx, c.ty, 30, { col: c.pal[3] }); spawnSprite('burst', c.tx, c.ty, { size: Math.round(30 * S), life: .45, col: c.pal[4], delay: .03 }); spawnSprite('ring', c.D.x, c.gy - 1, { size: Math.round(34 * S), life: .45, col: c.pal[3], delay: .05 }); afParts(c, c.tx, c.ty, 16, [c.pal[2], c.pal[3], '#ffffff'], { speed: 140, life: .5, grav: 120 }); afShake(c, 7); }, react: 'crush' };
+
+// ---- Rock
+ATK.rockthrow = { pose: 'cast', sfx: 'rock', charge: c => { for (let i = 0; i < afN(c, 3); i++) spawnSprite('rock', c.A.x + c.dir * (8 + i * 8) * c.S, c.gyA, { size: Math.max(2, Math.round(4 * c.S)), life: afT(c, c.wt), col: c.pal[2], col2: c.pal[1], vy: -60 * c.S, grav: 0, delay: afT(c, i * .05) }); },
+  go: c => { for (let i = 0; i < afN(c, 3); i++) { const b = afS('aBoulder', 0, 0, { fx0: c.ax, fy0: c.ay - 6 * c.S, fx1: c.ex + (i - 1) * 8 * c.S, fy1: c.ey - (i - 1) * 4 * c.S, gy: c.gy, life: afT(c, c.dur * (.8 + i * .1)) / .98, fall: .98, size: Math.max(2, afR((5 + (i === 1 ? 2 : 0)) * c.S)), pal: c.pal, rot: i, delay: afT(c, i * .04) }); } },
+  hit: c => { afBurst(c, c.tx, c.ty, 16, { col: c.pal[3], ring: false }); afRocks(c, c.tx, c.ty, 10, 1, c.pal); afShake(c, 4); } };
+ATK.rockslide = { pose: 'cast', windup: .3, travel: .34, board: 1.25, sfx: 'rumble', charge: c => { afShake(c, 2); for (let i = 0; i < afN(c, 5); i++) spawnSprite('rock', c.A.x + (vrnd() - .5) * 40 * c.S, c.gyA, { size: Math.max(1, Math.round(3 * c.S)), life: afT(c, c.wt), col: c.pal[2], col2: c.pal[1], vy: -40 - vrnd() * 40, grav: 60, delay: afT(c, i * .04) }); },
+  go: c => { const n = afN(c, 5); for (let i = 0; i < n; i++) { const x = c.D.x + (i - (n - 1) / 2) * 14 * c.S + (vrnd() - .5) * 6 * c.S; afS('aBoulder', 0, 0, { fx0: x - c.dir * 10 * c.S, fy0: c.top - 20 * c.S, fx1: x, fy1: c.gy - 8 * c.S - (i % 2) * 10 * c.S, gy: c.gy, life: afT(c, c.dur * .55) / .98, fall: .98, size: Math.max(3, afR((10 + (i % 2) * 4) * c.S)), pal: c.pal, rot: i * 1.3, delay: afT(c, c.dur * .45 * (n > 1 ? i / (n - 1) : 1)) }); } },
+  hit: c => { const S = c.S; atkSfx('rock'); for (let i = 0; i < afN(c, 3); i++) spawnSprite('boom', c.D.x + (i - 1) * 14 * S, c.gy - 10 * S, { size: Math.round(10 * S), life: .7, col: 'dust', rot: i, delay: i * .08 }); afRocks(c, c.D.x, c.gy - 8 * S, 16, 1.3, c.pal); afBurst(c, c.tx, c.ty, 22, { col: c.pal[3], ring: false }); afShake(c, 7); }, react: 'crush' };
+ATK.stoneedge = { pose: 'cast', windup: .3, travel: .26, sfx: 'rock', charge: c => { for (let i = 0; i < afN(c, 6); i++) spawnSprite('rock', c.A.x, c.ay, { orbit: { r: 30 * c.S, speed: 9, a0: i / 6 * Math.PI * 2, squash: .5 }, life: afT(c, c.wt), size: Math.max(2, Math.round(4 * c.S)), col: c.pal[3], col2: c.pal[1], delay: afT(c, i * .01) }); },
+  go: c => { afS('aCrack', c.D.x - 22 * c.S, c.gy + 1, { ex: c.D.x + 22 * c.S, life: afT(c, c.dur + .3), grow: .6, pal: c.pal, glow: '#fff4d4' }); for (let i = 0; i < afN(c, 4); i++) afS('aSparkle', c.D.x + (i - 1.5) * 12 * c.S, c.gy - 2, { life: afT(c, c.dur), size: 3, pal: c.pal, delay: afT(c, i * .03) }); },
+  hit: c => { const S = c.S; for (let i = 0; i < afN(c, 4); i++) afS('aSpike', c.D.x + (i - 1.5) * 13 * S, c.gy + 2, { life: .85, h: (34 + ((i * 5) % 3) * 12) * S, w: 11 * S, style: 'rock', lean: (i - 1.5) * .18, pal: c.pal, delay: i * .03 }); afRocks(c, c.D.x, c.gy - 6, 10, 1, c.pal); afBurst(c, c.tx, c.ty, 22, { col: c.pal[3] }); afShake(c, 7); }, react: 'crush' };
+
+// ---- Ghost
+function afWisps(c, x, y, n = 8) { for (let i = 0; i < afN(c, n); i++) { const a = vrnd() * Math.PI * 2; spawnSprite('wisp', x, y, { size: Math.max(2, Math.round((3 + vrnd() * 2) * c.S)), life: .7, col: c.pal[2], col2: c.pal[3], vx: Math.cos(a) * 40 * c.S, vy: Math.sin(a) * 30 * c.S - 26 * c.S, delay: vrnd() * .12 }); } }
+ATK.lick = { pose: 'lunge', sfx: 'ghost', charge: c => { if (!c.board) afS('aAura', c.A.x, c.gyA, { life: afT(c, c.wt), w: 46, h: 60, pal: c.pal, n: 7, speed: 1.8, follow: c.fol(c.att) }); }, go: c => { afLunge(c); afS('aTongue', c.ax, c.ay + 4 * c.S, { ex: c.ex, ey: c.ey, life: afT(c, c.dur / .4), w: Math.max(2, afR(4 * c.S)), follow: c.fol(c.att) }); },
+  hit: c => { for (let i = 0; i < afN(c, 8); i++) afS('aSparkle', c.tx + (vrnd() - .5) * 26 * c.S, c.ty + (vrnd() - .5) * 26 * c.S, { life: .35, size: 3, pal: c.pal, delay: vrnd() * .15 }); afWisps(c, c.tx, c.ty, 5); afBurst(c, c.tx, c.ty, 12, { col: c.pal[3], ring: false }); afShake(c, 2); }, react: 'wobble' };
+ATK.hex = { pose: 'cast', sfx: 'ghost', charge: c => { afEyes(c); afGather(c, c.ax, c.ay, c.wt, [c.pal[2], c.pal[3]], 8, 30, 'wisp'); },
+  go: c => { afS('aRune', c.D.x, c.gy - 1, { life: afT(c, c.dur + .6), size: 30 * c.S, pal: c.pal }); for (let i = 0; i < afN(c, 8); i++) spawnSprite('flame', c.D.x + (vrnd() - .5) * 44 * c.S, c.gy - 2, { size: Math.max(1, Math.round((2 + vrnd() * 2) * c.S * 1.2)), life: afT(c, c.dur + .3), col: c.pal[3], col2: c.pal[1], vy: -30 - vrnd() * 30, delay: afT(c, vrnd() * c.dur) }); },
+  hit: c => { afBurst(c, c.tx, c.ty, 20, { col: c.pal[2] }); if (!c.board) afS('aAura', c.D.x, c.gy, { life: .6, w: 44, h: 64, pal: c.pal, n: 9, speed: 3 }); afWisps(c, c.tx, c.ty, 8); afShake(c, 4); }, react: 'wobble' };
+ATK.shadowball = { pose: 'cast', windup: .32, sfx: 'ghost', focus: .45, focusCol: '#08040e', charge: c => { afGather(c, c.ax, c.ay, c.wt, [c.pal[1], c.pal[2], c.pal[0]], 14, 46, 'wisp'); afS('aCharge', c.ax, c.ay, { life: afT(c, c.wt + .05), size: 6 * c.S, pal: [c.pal[0], c.pal[2], c.pal[0], c.pal[1], c.pal[3]], follow: c.fol(c.att) }); },
+  go: c => afS('aOrb', c.ax, c.ay, { tx: c.ex, ty: c.ey, life: afT(c, c.dur), arc: 4 * c.S, size: Math.max(3, afR(9 * c.S)), pal: c.pal, style: 'shadow' }),
+  hit: c => { const S = c.S; for (let i = 0; i < 3; i++) spawnSprite('ring', c.tx, c.ty, { size: Math.round((20 + i * 12) * S), life: .45, col: i % 2 ? c.pal[3] : c.pal[1], delay: i * .05 }); afBurst(c, c.tx, c.ty, 24, { col: c.pal[1], ringCol: c.pal[2] }); afWisps(c, c.tx, c.ty, 10); if (!c.board) flashScreen('#3a2870', .35); afShake(c, 5); } };
+
+// ---- Dragon
+ATK.twister = { pose: 'cast', sfx: 'wind', charge: c => { for (let i = 0; i < afN(c, 8); i++) spawnSprite('wind', c.A.x, c.ay, { orbit: { r: 26 * c.S, speed: 12, a0: i * .8, squash: .5 }, size: Math.round(10 * c.S), life: afT(c, c.wt), col: c.pal[3], delay: afT(c, i * .02) }); },
+  go: c => { if (c.board) { spawnSprite('psy', c.ex, c.ey, { size: 14, life: afT(c, c.dur + .2), col: c.pal[2], col2: c.pal[3] }); return; } afS('aTornado', 0, 0, { fx0: c.A.x + c.dir * 30, fx1: c.D.x, gy: c.gy, h: 70, w: 26, life: afT(c, c.dur + .45), go: c.dur / (c.dur + .45), pal: c.pal }); },
+  hit: c => { afBurst(c, c.tx, c.ty, 18, { col: c.pal[2] }); for (let i = 0; i < afN(c, 8); i++) spawnSprite('wind', c.tx + (vrnd() - .5) * 20 * c.S, c.ty + (vrnd() - .5) * 40 * c.S, { size: Math.round(14 * c.S), life: .4, col: c.pal[3], vx: (vrnd() < .5 ? -1 : 1) * 120 * c.S, delay: vrnd() * .12 }); afShake(c, 3); }, react: 'wobble' };
+ATK.dragonclaw = { pose: 'lunge', sfx: 'claw', charge: c => { afContactCharge(c); if (!c.board) afS('aAura', c.A.x, c.gyA, { life: afT(c, c.wt), w: 50, h: 66, pal: c.pal, n: 8, speed: 3, follow: c.fol(c.att) }); }, go: afLunge,
+  hit: c => { const S = c.S; afSlashFx(c, c.tx, c.ty, { style: 'claw', size: afR(24 * S), a0: -2.4, a1: -.5, sq: 1, th: 4, sweep: .2 }); afBurst(c, c.tx, c.ty, 20, { col: c.pal[2] }); afParts(c, c.tx, c.ty, 14, [c.pal[2], c.pal[3], '#ffffff'], { speed: 120, life: .45, grav: 80 }); afShake(c, 5); } };
+ATK.outrage = { pose: 'rush', windup: .34, travel: .2, board: 1.3, sfx: 'roar', focus: .5, focusCol: '#2a0404',
+  charge: c => { const rage = ['#3a0404', '#c42a0a', '#ff4a20', '#ffa060', '#fff0c0']; if (!c.board) afS('aAura', c.A.x, c.gyA, { life: afT(c, c.wt + c.dur + .3), w: 60, h: 84, pal: rage, n: 12, speed: 3.6, follow: c.fol(c.att) }); afContactCharge(c, false); afShake(c, 2); },
+  go: afLunge,
+  hit: c => { const S = c.S; for (let i = 0; i < 3; i++) { const x = c.tx + (i - 1) * 9 * S, y = c.ty + ((i % 2) * 14 - 7) * S; spawnSprite('impact', x, y, { size: Math.round(22 * S), life: .28, col: i === 1 ? '#ff4a20' : c.pal[2], rot: i, delay: i * .08 }); spawnSprite('flash', x, y, { size: Math.round(10 * S) + 2, life: .12, col: '#ffffff', delay: i * .08 }); } spawnSprite('boom', c.tx, c.ty, { size: Math.round(15 * S), life: .7, rot: 1, delay: .16 }); afParts(c, c.tx, c.ty, 18, ['#ff4a20', c.pal[2], '#ffffff'], { speed: 150, life: .55, grav: 90 }); afShake(c, 8); }, react: 'crush' };
+
+// ---- Dark
+ATK.bite = { pose: 'lunge', sfx: 'snap', charge: c => afContactCharge(c), go: afLunge, hit: c => { afS('aJaws', c.tx, c.ty, { life: .5, size: Math.max(5, afR(14 * c.S)), teeth: 5, pal: c.pal }); afBurst(c, c.tx, c.ty, 14, { col: c.pal[3], ring: false }); afParts(c, c.tx, c.ty, 8, [c.pal[3], '#ffffff'], { speed: 90, life: .4, grav: 120 }); afShake(c, 3); } };
+ATK.crunch = { pose: 'lunge', sfx: 'crunch', charge: c => { afContactCharge(c); if (!c.board) afS('aAura', c.A.x, c.gyA, { life: afT(c, c.wt), w: 50, h: 64, pal: c.pal, n: 8, speed: 2.2, follow: c.fol(c.att) }); }, go: afLunge,
+  hit: c => { const S = c.S; afS('aJaws', c.tx, c.ty, { life: .6, size: Math.max(6, afR(19 * S)), teeth: 6, pal: c.pal, gum: c.pal[2] }); afBurst(c, c.tx, c.ty, 22, { col: c.pal[2], ringCol: c.pal[3] }); for (let i = 0; i < afN(c, 10); i++) { const a = vrnd() * Math.PI * 2, sp = (60 + vrnd() * 70) * S; spawnSprite('shard', c.tx, c.ty, { life: .5, col: c.pal[3], vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 20, grav: 200, rot: vrnd() * 2, spin: 8, delay: .1 }); } afShake(c, 5); } };
+
+// ---- Steel
+function afSparksOrange(c, x, y, n = 12) { afParts(c, x, y, n, ['#ffd24a', '#ff9a30', '#ffffff'], { speed: 150, life: .45, grav: 260 }); }
+ATK.metalclaw = { pose: 'lunge', sfx: 'claw', charge: c => { afContactCharge(c, false); if (!c.board) afS('aGlint', c.A.x, c.gyA, { life: afT(c, c.wt), w: 60, h: 80, follow: c.fol(c.att) }); }, go: afLunge,
+  hit: c => { atkSfx('clang'); afBurst(c, c.tx, c.ty, 16, { col: c.pal[3], ring: false }); afClaws(c, 4); afSparksOrange(c, c.tx, c.ty, 14); afShake(c, 4); } };
+ATK.ironhead = { pose: 'rush', travel: .18, sfx: 'clang', charge: c => { afContactCharge(c, false); if (!c.board) afS('aGlint', c.A.x, c.gyA, { life: afT(c, c.wt), w: 60, h: 80, follow: c.fol(c.att) }); }, go: afLunge,
+  hit: c => { const S = c.S; afBurst(c, c.tx, c.ty, 26, { col: c.pal[3], ringCol: '#ffffff' }); for (let i = 0; i < 2; i++) spawnSprite('ring', c.tx, c.ty, { size: Math.round((30 + i * 16) * S), life: .4, col: i ? c.pal[2] : '#ffffff', delay: i * .05 }); afSparksOrange(c, c.tx, c.ty, 18); afShake(c, 6); }, react: 'crush' };
+ATK.flashcannon = { pose: 'cast', windup: .3, sfx: 'beam', charge: c => { if (!c.board) afS('aGlint', c.A.x, c.gyA, { life: afT(c, c.wt), w: 60, h: 80, follow: c.fol(c.att) }); afSpecialCharge(c, 12, 5); },
+  go: c => { afS('aStream', c.ax, c.ay, { ex: c.ex, ey: c.ey, life: afT(c, c.dur + .38), w: Math.max(2, afR(6 * c.S)), pal: c.pal, style: 'light', grow: .35, hold: .74 }); if (!c.board) flashScreen('#ffffff', .25); },
+  hit: c => { afBurst(c, c.tx, c.ty, 24, { col: c.pal[3], ringCol: '#ffffff' }); for (let i = 0; i < afN(c, 10); i++) afS('aSparkle', c.tx + (vrnd() - .5) * 40 * c.S, c.ty + (vrnd() - .5) * 36 * c.S, { life: .45, size: Math.max(1, afR(4 * c.S)), pal: c.pal, delay: vrnd() * .2 }); afShake(c, 5); } };
+
+// ---- Fairy
+function afFairyDust(c, x, y, n = 10, r = 34) { for (let i = 0; i < afN(c, n); i++) afS('aSparkle', x + (vrnd() - .5) * r * c.S, y + (vrnd() - .5) * r * c.S, { life: .4 + vrnd() * .3, size: Math.max(1, afR((2 + vrnd() * 3) * c.S)), pal: c.pal, vy: -20, delay: vrnd() * .2 }); }
+ATK.fairywind = { pose: 'cast', sfx: 'sparkle', charge: c => { afFairyDust(c, c.A.x, c.gyA - c.H * .5, 8, 50); },
+  go: c => { const S = c.S; for (let i = 0; i < afN(c, 12); i++) afS('aStreak', c.ax - c.ux * 10 * S, c.ay + (i - 6) * 5 * S, { vx: c.ux * 380 * S + 60 * c.ux, vy: c.uy * 380 * S + Math.sin(i) * 20, life: afT(c, c.dur * .9), size: 18 * S, alpha: .9, pal: i % 3 ? c.pal : ['#ffffff', '#fff', '#fff', '#ffffff', '#ffd2ee'], delay: afT(c, i * .02) }); for (let i = 0; i < afN(c, 3); i++) spawnSprite('heart', c.ax, c.ay, { tx: c.ex + (vrnd() - .5) * 16 * S, ty: c.ey + (vrnd() - .5) * 20 * S, arc: 10 * S, life: afT(c, c.dur), col: c.pal[2], delay: afT(c, i * .04) }); for (let i = 0; i < afN(c, 10); i++) afS('aSparkle', c.ax, c.ay + (vrnd() - .5) * 30 * S, { tx: c.ex + (vrnd() - .5) * 20 * S, ty: c.ey + (vrnd() - .5) * 30 * S, arc: (vrnd() - .5) * 20 * S, life: afT(c, c.dur * (.7 + vrnd() * .3)), size: Math.max(1, afR(3 * S)), pal: c.pal, delay: afT(c, i * .02) }); },
+  hit: c => { afBurst(c, c.tx, c.ty, 16, { col: c.pal[2] }); afFairyDust(c, c.tx, c.ty, 12); afShake(c, 2); }, react: 'wobble' };
+ATK.drainingkiss = { pose: 'cast', sfx: 'kiss', ownDrain: true, charge: c => { for (let i = 0; i < afN(c, 4); i++) spawnSprite('heart', c.ax + (vrnd() - .5) * 20 * c.S, c.ay, { life: afT(c, c.wt), col: c.pal[2], vy: -30, delay: afT(c, i * .05) }); },
+  go: c => afS('aHeart', c.ax, c.ay, { tx: c.ex, ty: c.ey, life: afT(c, c.dur), arc: 12 * c.S, size: Math.max(3, afR(7 * c.S)), pal: c.pal }),
+  hit: c => { for (let i = 0; i < afN(c, 8); i++) { const a = vrnd() * Math.PI * 2; spawnSprite('heart', c.tx, c.ty, { life: .6, col: c.pal[2], vx: Math.cos(a) * 50 * c.S, vy: Math.sin(a) * 40 * c.S - 20, delay: vrnd() * .1 }); } afBurst(c, c.tx, c.ty, 14, { col: c.pal[2], ring: false }); afFairyDust(c, c.tx, c.ty, 6); atkDrainFx(c); afShake(c, 2); }, drainPal: 'Fairy' };
+ATK.moonblast = { pose: 'cast', windup: .36, sfx: 'moon', focus: .45, focusCol: '#0a0626',
+  charge: c => { atkSfx('moon'); if (!c.board) afS('aMoon', c.A.x - c.dir * 18, c.gyA - c.H - 12, { life: afT(c, c.wt + c.dur + .2), size: 11, pal: c.pal }); afGather(c, c.ax, c.ay, c.wt, [c.pal[3], c.pal[4], c.pal[2]], 14, 48); },
+  go: c => afS('aOrb', c.ax, c.ay, { tx: c.ex, ty: c.ey, life: afT(c, c.dur), arc: 6 * c.S, size: Math.max(3, afR(8 * c.S)), pal: c.pal, style: 'moon' }),
+  hit: c => { const S = c.S; for (let i = 0; i < 3; i++) spawnSprite('ring', c.tx, c.ty, { size: Math.round((22 + i * 12) * S), life: .5, col: i % 2 ? c.pal[3] : c.pal[2], delay: i * .06 }); afBurst(c, c.tx, c.ty, 26, { col: c.pal[3] }); afFairyDust(c, c.tx, c.ty, 16, 50); if (!c.board) flashScreen('#ffd2ee', .4); afShake(c, 5); } };
+
+// ---- fallbacks by type, for any move without its own
+ATK.gcontact = { pose: 'lunge', charge: c => afContactCharge(c), go: afLunge, hit: c => { afBurst(c, c.tx, c.ty, 20); afParts(c, c.tx, c.ty, 12, [c.pal[2], c.pal[3], '#ffffff'], { speed: 100, life: .45, grav: 100 }); afShake(c, 3); } };
+ATK.gshot = { pose: 'cast', charge: c => afSpecialCharge(c, 10), go: c => afS('aOrb', c.ax, c.ay, { tx: c.ex, ty: c.ey, life: afT(c, c.dur), arc: 6 * c.S, size: Math.max(2, afR(5 * c.S)), pal: c.pal, style: 'energy' }), hit: c => { afBurst(c, c.tx, c.ty, 20); afParts(c, c.tx, c.ty, 12, [c.pal[2], c.pal[3], '#ffffff'], { speed: 100, life: .45, grav: 80 }); afShake(c, 3); } };
+
+const ATK_MOVE = {
+  Tackle: 'tackle', Scratch: 'scratch', 'Body Slam': 'slam', 'Hyper Beam': 'hyperbeam', Ember: 'ember', Flamethrower: 'flamethrower', 'Fire Blast': 'fireblast',
+  'Water Gun': 'watergun', 'Bubble Beam': 'bubblebeam', Surf: 'surf', 'Hydro Pump': 'hydropump', 'Vine Whip': 'vinewhip', 'Razor Leaf': 'razorleaf', 'Giga Drain': 'gigadrain', 'Solar Beam': 'solarbeam',
+  'Thunder Shock': 'thundershock', Thunderbolt: 'thunderbolt', Thunder: 'thunder', 'Ice Shard': 'iceshard', 'Ice Beam': 'icebeam', Blizzard: 'blizzard',
+  'Karate Chop': 'chop', 'Brick Break': 'brickbreak', 'Cross Chop': 'crosschop', 'Poison Sting': 'poisonsting', Sludge: 'sludge', 'Sludge Bomb': 'sludgebomb',
+  'Mud-Slap': 'mudslap', Dig: 'dig', Earthquake: 'earthquake', Gust: 'gust', 'Wing Attack': 'wingattack', 'Drill Peck': 'drillpeck',
+  Confusion: 'confusion', Psybeam: 'psybeam', Psychic: 'psychic', 'Bug Bite': 'bugbite', 'X-Scissor': 'xscissor', Megahorn: 'megahorn',
+  'Rock Throw': 'rockthrow', 'Rock Slide': 'rockslide', 'Stone Edge': 'stoneedge', Lick: 'lick', Hex: 'hex', 'Shadow Ball': 'shadowball',
+  Twister: 'twister', 'Dragon Claw': 'dragonclaw', Outrage: 'outrage', Bite: 'bite', Crunch: 'crunch', 'Metal Claw': 'metalclaw', 'Iron Head': 'ironhead', 'Flash Cannon': 'flashcannon',
+  'Fairy Wind': 'fairywind', 'Draining Kiss': 'drainingkiss', Moonblast: 'moonblast',
+};
+// The style a move plays: its own, else its type's for a contact or a ranged move.
+function atkStyleId(move) { return ATK_MOVE[move.name] || (move.rng && move.rng[1] <= 1 ? 'gcontact' : 'gshot'); }
+function atkStyle(move) { return ATK[atkStyleId(move)]; }
+// Scene timing: the wind-up and the travel of this move (a contact move's travel is its lunge).
+function atkWindupTime(move) { const s = atkStyle(move); return s.windup || DUEL_T.windup; }
+function atkTravelTime(move, fam) { const s = atkStyle(move); return s.travel || (fam === 'contact' ? DUEL_T.contact : fam === 'electric' ? .2 : DUEL_T.ranged); }
+
+// ---------------------------------------------------------------- playing a choreography
+// Runs one act; in the scene small pixel sprites spawned by it are drawn at twice their size (FX.pixel).
+function atkSafe(fn, c) { FX.pixel = c.board ? 1 : 2; try { fn(c); } catch (err) { if (typeof console !== 'undefined') console.error('attack fx', c.move && c.move.name, err); } FX.pixel = 1; }
+function atkWindup(c) { const s = atkStyle(c.move); if (s.charge) atkSafe(s.charge, c); }
+function atkLaunch(c) { const s = atkStyle(c.move); if (s.sfx) atkSfx(s.sfx); if (s.go) atkSafe(s.go, c); }
+function atkImpact(c) {
+  const s = atkStyle(c.move), e = c.e || {}; if (e.eff === 0 || e.dmg === 0) { spawnSprite('poof', c.tx, c.ty, { size: Math.round(6 * c.S) + 1, life: .45, col: '#c8c8d0', col2: '#ffffff', vy: -10 }); return; }
+  if (s.hit) atkSafe(s.hit, c);
+  // escalation: super effective adds a gold ring, a critical a gold starburst and a shower of gold
+  if (e.eff > 1) { spawnSprite('ring', c.tx, c.ty, { size: Math.round(46 * c.S), life: .5, col: '#ffd24a', delay: .06 }); spawnSprite('ring', c.tx, c.ty, { size: Math.round(30 * c.S), life: .4, col: '#fff4b0', delay: .12 }); }
+  if (e.crit) { spawnSprite('burst', c.tx, c.ty, { size: Math.round(34 * c.S), life: .45, col: UI.gold, delay: .04 }); afParts(c, c.tx, c.ty, 14, [UI.gold, '#ffffff'], { speed: 160, life: .5, grav: 100 }); }
+}
+// The drain after a draining hit: the type's motes (green for Giga Drain, pink hearts for Draining Kiss) fly back.
+function atkDrain(c) { if (!atkStyle(c.move).ownDrain) atkSafe(atkDrainFx, c); } // Giga Drain and Draining Kiss show their own on every hit
+function atkDrainFx(c) { const s = atkStyle(c.move), P = atkPal(s.drainPal || c.type); for (let i = 0; i < afN(c, 9); i++) { const heart = s.drainPal === 'Fairy' && i % 2; spawnSprite(heart ? 'heart' : 'bubble', c.tx + (vrnd() - .5) * 16 * c.S, c.ty + (vrnd() - .5) * 16 * c.S, { tx: c.A.x + (vrnd() - .5) * 10 * c.S, ty: c.ay + (vrnd() - .5) * 14 * c.S, life: .5, arc: (14 + i * 3) * c.S, size: 2 + (i % 2), col: P[3], col2: '#ffffff', delay: .1 + i * .045 }); } }
 // ============================================================================
 // campaign.js — chapters: maps (ASCII), units, objectives, dialogue, rewards.
 // Legend: . plains , meadow t tall grass T forest M mountain ^ cliff ~ water = bridge # road s sand

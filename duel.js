@@ -13,7 +13,8 @@ const DUEL_T = { intro: .72, windup: .26, contact: .16, ranged: .3, hold: .46, d
 const DUEL_FAMILIES = { Fire: 'fire', Water: 'water', Ice: 'water', Electric: 'electric', Grass: 'grass', Psychic: 'psychic', Ghost: 'psychic', Fairy: 'psychic', Poison: 'psychic', Dragon: 'psychic' };
 // Attack family: melee-only moves are contact whatever their type; ranged ones go by type, else a generic projectile or beam.
 function duelFamily(move) { if (move.rng[1] <= 1) return 'contact'; return DUEL_FAMILIES[move.type] || 'neutral'; }
-function duelLaunchTime(fam) { return fam === 'contact' ? DUEL_T.contact : fam === 'electric' ? .2 : DUEL_T.ranged; }
+// How long the travel lasts: the move's own choreography decides (attackfx.js), else its family.
+function duelLaunchTime(fam, move) { return move ? atkTravelTime(move, fam) : fam === 'contact' ? DUEL_T.contact : fam === 'electric' ? .2 : DUEL_T.ranged; }
 
 // ---------------------------------------------------------------- script (pure)
 // events: the hit/miss/ko/thaw events of one exchange, in resolver order. hp0: {unitId: hp before the exchange}.
@@ -26,8 +27,9 @@ function duelScript(events, hp0, T = DUEL_T) {
   for (const e of events) {
     if (e.type === 'hit' || e.type === 'miss') {
       if (!first) t += T.gap; first = false; const fam = duelFamily(e.move), follow = lastAtt === e.att; lastAtt = e.att;
-      beats.push({ t, kind: 'windup', att: e.att, def: e.def, move: e.move, counter: !!e.counter, fam, ev: e, follow }); t += T.windup;
-      beats.push({ t, kind: 'launch', att: e.att, def: e.def, move: e.move, fam, ev: e }); t += duelLaunchTime(fam);
+      const wt = T === DUEL_T ? atkWindupTime(e.move) : T.windup, lt = T === DUEL_T ? duelLaunchTime(fam, e.move) : duelLaunchTime(fam); // each move charges and travels at its own pace
+      beats.push({ t, kind: 'windup', att: e.att, def: e.def, move: e.move, counter: !!e.counter, fam, ev: e, follow, dur: wt, travel: lt }); t += wt;
+      beats.push({ t, kind: 'launch', att: e.att, def: e.def, move: e.move, fam, ev: e, dur: lt }); t += lt;
       if (e.type === 'miss') { beats.push({ t, kind: 'miss', att: e.att, def: e.def, move: e.move, ev: e, fam }); t += T.miss; continue; }
       beats.push({ t, kind: 'impact', att: e.att, def: e.def, move: e.move, ev: e, fam, hpFrom: hp[e.def.id], hpTo: e.hpAfter, attFrom: hp[e.att.id], attTo: e.attHpAfter, drop: T.drop });
       hp[e.def.id] = e.hpAfter; hp[e.att.id] = e.attHpAfter; t += T.hold;
@@ -77,7 +79,7 @@ function startDuel(q) {
   q.script = duelScript(q.events, q.hp0); q.t = 0; q.i = 0; q.boost = false; q.skipped = false; q.done = false; q.started = true;
   q.view = JSON.parse(JSON.stringify(q.view || duelView([q.att, q.def]))); // a private copy: replaying the item starts from the snapshot again
   q.sides = duelSides(q.att, q.def); q.pose = null; q.hitFx = null; q.missFx = null; q.koFx = null; q.banner = null; q.big = null; q.focus = null; q.entered = {};
-  q.flash = null; q.lines = null; q.victor = null; q.stamp = null; q.shakePanel = {}; q.cues = {};
+  q.flash = null; q.lines = null; q.victor = null; q.stamp = null; q.shakePanel = {}; q.cues = {}; q.lift = null; q.off = {};
   q.terr = { [q.att.id]: terrAt(q.att.x, q.att.y), [q.def.id]: terrAt(q.def.x, q.def.y) }; q.biome = duelBiome(q); q.seed = (q.att.id * 31 + q.def.id * 7 + B.turn * 3) | 0;
   for (const u of [q.att, q.def]) { requestBigSprite(q.view[u.id].num); requestAnim(q.view[u.id].num); BT.hpShow.set(u.id, { from: q.hp0[u.id], to: q.hp0[u.id], t: 0, hold: true }); }
   q.cam = { zoom: 1, x: 0, y: 0, tz: 1, tx: 0, ty: 0 };
@@ -118,17 +120,20 @@ function duelBeat(q, b) {
   const L = duelLayout(q), z = L.z, P = id => ({ x: L.pos[id].x / z, y: L.pos[id].y / z, dir: L.pos[id].dir }); duelApplyBeat(q, b);
   switch (b.kind) {
     case 'windup': {
-      const a = P(b.att.id), col = TYPE_COL[b.move.type] || '#ffffff', F = fxFor(b.move.type);
-      q.pose = { unit: b.att, kind: 'windup', t0: q.t, fam: b.fam }; q.banner = { move: b.move, counter: b.counter, follow: b.follow, t0: q.t, until: q.t + DUEL_T.windup + duelLaunchTime(b.fam) + .55 }; q.focus = { t0: q.t, until: q.t + DUEL_T.windup + duelLaunchTime(b.fam) + .45 }; duelCamTo(q, a, 1.12);
-      if (b.fam === 'contact') { Audio.sfx('swing'); for (let i = 0; i < 3; i++) spawnSprite('poof', a.x - a.dir * (6 + i * 6), a.y, { size: 4 + i, life: .35, col: '#d8d0b8', col2: '#f4f0e0', vx: -a.dir * (18 + i * 8), vy: -6, delay: i * .04 }); }
-      else { Audio.sfx('charge'); for (let i = 0; i < 10; i++) { const an = i / 10 * Math.PI * 2 + vrnd(), r = 34 + vrnd() * 18; spawnSprite('spark', a.x + Math.cos(an) * r, a.y - 44 + Math.sin(an) * r * .7, { tx: a.x + a.dir * 8, ty: a.y - 44, life: DUEL_T.windup * .95, col: F.parts[0] || col, delay: i * .015 }); } spawnSprite('ring', a.x, a.y - 44, { size: 26, life: DUEL_T.windup, col: shade(col, .35) }); }
+      const a = P(b.att.id), st = atkStyle(b.move), wt = b.dur || DUEL_T.windup, lt = b.travel || duelLaunchTime(b.fam, b.move);
+      q.pose = { unit: b.att, kind: 'windup', t0: q.t, fam: b.fam, dur: wt, style: st.pose }; q.banner = { move: b.move, counter: b.counter, follow: b.follow, t0: q.t, until: q.t + wt + lt + .55 }; q.focus = { t0: q.t, until: q.t + wt + lt + .45, a: st.focus, col: st.focusCol }; duelCamTo(q, a, 1.12);
+      Audio.sfx(b.fam === 'contact' ? 'swing' : 'charge'); atkWindup(duelAtkCtx(q, b, L, wt, lt)); // the move's own charge (attackfx.js)
       break;
     }
-    case 'launch': { const a = P(b.att.id); q.pose = { unit: b.att, kind: b.fam === 'contact' ? 'lunge' : 'cast', t0: q.t, fam: b.fam, dur: duelLaunchTime(b.fam) }; if (b.fam === 'contact') Audio.sfx('whoosh'); else if (!REDUCED) { spawnSprite('boom', a.x + a.dir * 24, a.y - 44, { size: 7, life: .22, rot: vrnd() * 6 }); shake(2); } duelLaunchFx(b, a, P(b.def.id)); break; }
+    case 'launch': { // the attacker's move (a lunge, a cast, a leap, burrowing, a stomp) and the travel of the attack
+      const st = atkStyle(b.move), dur = b.dur || duelLaunchTime(b.fam, b.move), pose = st.pose || (b.fam === 'contact' ? 'lunge' : 'cast'); q.pose = { unit: b.att, kind: pose, t0: q.t, fam: b.fam, dur, style: pose };
+      if (pose === 'lunge' || pose === 'rush' || pose === 'leap') Audio.sfx('whoosh'); else if (!REDUCED) shake(1);
+      if (st.react === 'lift' && b.ev && b.ev.type !== 'miss') q.lift = { unit: b.def, t0: q.t, dur };
+      atkLaunch(duelAtkCtx(q, b, L, 0, dur)); break; }
     case 'impact': {
       const e = b.ev, d = P(b.def.id), a = P(b.att.id), cx = d.x, cy = d.y - 44, lethal = e.hpAfter <= 0, heavy = e.crit || lethal, col = TYPE_COL[b.move.type] || '#ffffff';
-      q.hitFx = { unit: b.def, t0: q.t, crit: e.crit, lethal }; q.shakePanel[b.def.id] = q.t;
-      duelImpactFx(b.fam, b.move.type, cx, cy, d, e); hitEffect(b.move.type, cx, cy, e.crit, e.eff); duelCamTo(q, d, heavy ? 1.26 : e.eff > 1 ? 1.2 : 1.15);
+      const st = atkStyle(b.move), c = duelAtkCtx(q, b, L, 0, 0); q.hitFx = { unit: b.def, t0: q.t, crit: e.crit, lethal, react: e.dmg > 0 ? st.react : null }; q.shakePanel[b.def.id] = q.t;
+      atkImpact(c); duelCamTo(q, d, heavy ? 1.26 : e.eff > 1 ? 1.2 : 1.15); // the move's own impact (attackfx.js)
       q.jolt = { t0: q.t, dir: -d.dir, n: e.crit ? 7 : lethal ? 6 : e.dmg > 0 ? 4 : 0 };
       Audio.sfx(e.dmg === 0 ? 'miss' : e.crit ? 'crit' : e.eff > 1 ? 'hit2' : 'hit'); if (heavy && e.dmg > 0) Audio.sfx('thud');
       if (e.dmg > 0) {
@@ -144,7 +149,7 @@ function duelBeat(q, b) {
       if (e.crit) spawnSprite('burst', cx, cy, { size: 34, life: .45, col: UI.gold, delay: .04 });
       // the number: huge, gold on a critical, orange when super effective; the tags above and below it fade before any KO stamp
       const numCol = e.crit ? UI.gold : e.eff > 1 ? '#ffb040' : e.eff === 0 ? '#c0c0c0' : '#ffffff';
-      floatText(cx, cy - 20, String(e.dmg), numCol, { huge: e.crit || e.dmg >= 20 ? 3 : 2, life: .95, vy: -18, outline: '#1a0a14' });
+      floatText(cx - d.dir * 20, cy - 34, String(e.dmg), numCol, { huge: e.crit || e.dmg >= 20 ? 3 : 2, life: .95, vy: -18, outline: '#1a0a14' }); // up and behind the target, clear of the impact
       // the tags stack under the number: the top of the screen belongs to the panels and the move banner
       let ty = cy + 4;
       if (e.crit) { floatText(cx, ty, 'CRITICAL!', UI.gold, { big: true, life: .75, delay: .03, outline: '#3a2000', vy: -10 }); ty += 13; }
@@ -153,7 +158,7 @@ function duelBeat(q, b) {
       else if (e.eff === 0) { floatText(cx, ty + 4, 'No effect...', '#c0c0c0', { delay: .18, life: .8, vy: -8 }); ty += 10; }
       else if (e.eff < 1) { floatText(cx, ty + 4, 'Not very effective', '#a0d0ff', { delay: .18, life: .8, vy: -8 }); ty += 10; }
       if (e.status) { floatText(cx, ty + 6, TR('{0}!', STATUS[e.status].text.toUpperCase()), STATUS[e.status].col, { delay: .38, life: .9, outline: '#000', vy: -8 }); duelStatusFx(e.status, d, q); }
-      if (e.drain) { floatText(a.x, a.y - 70, '+' + e.drain, UI.green, { delay: .45, outline: '#0a3a10', big: true }); for (let i = 0; i < 7; i++) spawnSprite('bubble', cx + (vrnd() - .5) * 16, cy + (vrnd() - .5) * 16, { tx: a.x + (vrnd() - .5) * 10, ty: a.y - 40 + (vrnd() - .5) * 14, life: .45, arc: 14 + i * 3, size: 2 + (i % 2), col: '#7cf0a0', col2: '#ffffff', delay: .1 + i * .04 }); }
+      if (e.drain) { floatText(a.x, a.y - 70, '+' + e.drain, UI.green, { delay: .45, outline: '#0a3a10', big: true }); atkDrain(c); }
       break;
     }
     case 'miss': { const d = P(b.def.id); q.missFx = { unit: b.def, t0: q.t }; duelCamTo(q, d, 1.08); Audio.sfx('miss'); Audio.sfx('whoosh'); floatText(d.x, d.y - 74, 'MISS', '#d8d8e8', { huge: 2, life: .8, outline: '#1a1a2a', vy: -14 }); for (let i = 0; i < 3; i++) spawnSprite('wind', d.x - d.dir * 10, d.y - 30 - i * 10, { size: 14, life: .3, col: '#ffffff', vx: -d.dir * 90, delay: i * .03 }); break; }
@@ -188,35 +193,13 @@ function duelStatusFx(st, d, q) {
   else if (st === 'psn') { Audio.sfx('poison'); for (let i = 0; i < 9; i++) spawnSprite('bubble', x + (vrnd() - .5) * 30, y + 16, { size: 2 + (i % 3), life: .7, col: '#b060d0', col2: '#e0a0ff', vy: -30 - vrnd() * 20, delay: .35 + i * .04 }); }
   else if (st === 'frz') { Audio.sfx('water'); for (let i = 0; i < 5; i++) spawnSprite('crystal', x + (i - 2) * 11, d.y, { size: 18 + (i % 2) * 10, life: .8, col: '#bde4f8', col2: '#ffffff', delay: .35 + i * .05 }); }
 }
-// The travelling part of each family, from the attacker's front to the defender's chest (field space).
-function duelLaunchFx(b, a, d) {
-  const type = b.move.type, F = fxFor(type), c1 = F.parts[0], c2 = F.parts[1], dur = duelLaunchTime(b.fam);
-  const ax = a.x + a.dir * 26, ay = a.y - 44, tx = d.x + d.dir * 6, ty = d.y - 44, dir = a.dir, miss = b.ev && b.ev.type === 'miss';
-  const ex = miss ? tx - dir * 40 : tx; // a miss flies past the dodging target
-  switch (b.fam) {
-    case 'contact': for (let i = 0; i < 3; i++) spawnSprite('speed', a.x - dir * 20, ay + 6 - i * 6, { size: 30, life: dur + .12, col: '#ffffff', dir, delay: i * .04 }); spawnSprite('poof', a.x - dir * 10, a.y, { size: 6, life: .35, col: '#d8d0b8', col2: '#f4f0e0', vx: -dir * 30 }); break;
-    case 'fire': Audio.sfx('fire'); spawnSprite('fireball', ax, ay, { tx: ex, ty, life: dur, arc: 6, size: type === 'Fire' ? 8 : 7, col: c1, col2: type === 'Fire' ? '#ff4a20' : '#4a3ad0', dir, trail: [c1, c2] }); for (let i = 0; i < 6; i++) spawnSprite('flame', ax, ay + (vrnd() - .5) * 10, { tx: ex + (vrnd() - .5) * 14, ty: ty + (vrnd() - .5) * 18, life: dur - i * .025, arc: 10 + i * 4, col: c1, col2: type === 'Fire' ? '#ff4a20' : '#4a3ad0', size: 2 + (i % 2), delay: .04 + i * .025 }); spawnSprite('flash', ax - dir * 8, ay, { size: 10, life: .14, col: '#ffe9a0' }); break;
-    case 'water': Audio.sfx('water'); for (let i = 0; i < 3; i++) spawnSprite('wave', ax, ay + 10 + i * 6, { tx: ex, ty: ty + 10 + i * 6, life: dur + .08, size: 18 - i * 3, col: c1, col2: c2, dir, delay: i * .05 }); for (let i = 0; i < 10; i++) spawnSprite(type === 'Ice' ? 'shard' : 'drop', ax, ay + (vrnd() - .5) * 10, { tx: ex + (vrnd() - .5) * 10, ty: ty + (vrnd() - .5) * 18, life: dur - i * .02, arc: 8 + i * 2, col: c1, col2: c2, trail: [c1], rot: i, spin: 8, delay: i * .02 }); break;
-    case 'grass': Audio.sfx('grass'); for (let i = 0; i < 10; i++) spawnSprite('leaf', tx, ty, { orbit: { r: 38, speed: 9 * (i % 2 ? 1 : -1), a0: i * Math.PI / 5, shrink: true }, life: dur + .25, col: '#2a6b38', col2: '#c8f0a0', rot: i, spin: 14, delay: i * .02 }); for (let i = 0; i < 6; i++) spawnSprite('leaf', ax, ay + (vrnd() - .5) * 12, { tx: ex + (vrnd() - .5) * 12, ty: ty + (vrnd() - .5) * 20, life: dur - i * .02, arc: 6 + i * 3, col: '#2a6b38', col2: '#c8f0a0', rot: i, spin: 12, delay: i * .025 }); break;
-    case 'electric': Audio.sfx('elec'); spawnSprite('flash', ax - dir * 10, ay, { size: 12, life: .15, col: '#ffe94a' }); for (let i = 0; i < 4; i++) spawnSprite('bolt', ax + (ex - ax) * (i + 1) / 5, ay - 6, { size: 13, life: .12, col: c1, delay: i * dur / 5 }); spawnSprite('lightning', ex, ty + 30, { size: ty + 30 + 60, life: .34, col: c1, delay: dur * .55 }); spawnSprite('lightning', ex + dir * 6, ty + 30, { size: ty + 30 + 60, life: .24, col: '#fff7b0', delay: dur * .55 + .12 }); break;
-    case 'psychic': Audio.sfx('psy'); for (let i = 0; i < 5; i++) spawnSprite('psy', ex, ty, { size: 16 + i * 6, life: .38, col: c1, col2: c2, delay: dur * .2 + i * .06 }); for (let i = 0; i < 4; i++) spawnSprite('wisp', ax, ay + (i - 1.5) * 8, { tx: ex, ty: ty + (i - 1.5) * 6, life: dur, size: 4, col: c1, col2: c2, delay: i * .035 }); spawnSprite('ring', ex, ty, { size: 32, life: .42, col: c2, delay: dur * .3 }); break;
-    default: if (type === 'Normal' || type === 'Steel') { Audio.sfx('beam'); spawnSprite('beam', ax, ay, { len: ex - ax, life: dur + .1, col: TYPE_COL[type], col2: '#ffffff', size: 7 }); spawnSprite('flash', ax, ay, { size: 10, life: .15, col: '#ffffff' }); } else { Audio.sfx('swing'); projectileFX(type, ax, ay, ex, ty, dur); } if (type === 'Ice' && !miss) for (let i = 0; i < 4; i++) spawnSprite('crystal', tx + (i - 1.5) * 12, d.y, { size: 22 + (i % 2) * 8, life: .55, col: '#bde4f8', col2: '#ffffff', delay: dur * .6 + i * .04 });
-  }
-}
-// The impact: one large, family-flavoured burst on top of the regular hit effect (field space).
-function duelImpactFx(fam, type, cx, cy, d, e) {
-  const F = fxFor(type), c1 = F.parts[0], c2 = F.parts[1], big = e.crit ? 1.5 : e.eff > 1 ? 1.25 : 1;
-  switch (fam) {
-    case 'contact': spawnSprite('impact', cx + d.dir * 6, cy, { size: Math.round(22 * big), life: .32, col: TYPE_COL[type] || '#ffd24a', rot: vrnd() * 3 }); spawnSprite('impact', cx + d.dir * 6, cy, { size: Math.round(12 * big), life: .22, col: '#ffffff', rot: vrnd() * 3, delay: .02 }); break;
-    case 'fire': spawnSprite('blast', cx, cy, { size: Math.round(30 * big), life: .55, col: type === 'Fire' ? '#ff4a20' : '#4a3ad0', col2: c1 }); break;
-    case 'water': spawnSprite('ring', cx, cy + 8, { size: Math.round(32 * big), life: .45, col: c2 }); for (let i = 0; i < 8; i++) spawnSprite('bubble', cx + (vrnd() - .5) * 22, cy + (vrnd() - .5) * 16, { size: 2 + (i % 3), life: .5, col: c2, col2: c1, vy: -20, delay: vrnd() * .1 }); break;
-    case 'electric': spawnSprite('ring', cx, cy, { size: Math.round(28 * big), life: .35, col: c1 }); for (let i = 0; i < 4; i++) spawnSprite('bolt', cx + (vrnd() - .5) * 30, cy + (vrnd() - .5) * 20, { size: 10, life: .2, col: c1, delay: i * .04 }); break;
-    case 'grass': spawnSprite('ring', cx, cy, { size: Math.round(26 * big), life: .35, col: '#c8f0a0' }); break;
-    case 'psychic': spawnSprite('ring', cx, cy, { size: Math.round(38 * big), life: .5, col: c1 }); spawnSprite('ring', cx, cy, { size: Math.round(24 * big), life: .4, col: c2, delay: .06 }); break;
-    default: spawnSprite('impact', cx, cy, { size: Math.round(18 * big), life: .3, col: TYPE_COL[type] || '#ffffff', rot: vrnd() * 3 });
-  }
-  if (e.eff > 1) spawnSprite('ring', cx, cy, { size: Math.round(44 * big), life: .5, col: '#ffd24a', delay: .06 });
-  spawnParts(cx, cy, e.crit ? 26 : 14, [TYPE_COL[type] || '#ffffff', c1, c2, '#ffffff'], { speed: e.crit ? 150 : 100, life: .6, grav: 120 });
+// The strike context for attackfx.js in field space: where the attack leaves the attacker, the defender's chest, the
+// ground lines, the sky above, the timing, and each unit's live offset so an effect can ride a lunge.
+function duelAtkCtx(q, b, L, wt, dur) {
+  const z = L.z, pos = id => ({ x: L.pos[id].x / z, y: L.pos[id].y / z, dir: L.pos[id].dir }), A = pos(b.att.id), D = pos(b.def.id), dir = A.dir;
+  const ax = A.x + dir * 24, ay = A.y - 45, tx = D.x + D.dir * 4, ty = D.y - 42, dx = tx - ax, dy = ty - ay, n = Math.hypot(dx, dy) || 1, ux = dx / n, uy = dy / n, miss = !!(b.ev && b.ev.type === 'miss');
+  return { S: 1.25, board: false, stacked: !!L.f.stacked, A, D, dir, ax, ay, tx, ty, ex: miss ? tx + ux * 46 : tx, ey: miss ? ty + uy * 46 - 8 : ty, ux, uy, gy: D.y, gyA: A.y, top: L.f.top + 4, H: 84, wt, dur, rate: duelRate(q),
+    move: b.move, type: b.move.type, pal: atkPal(b.move.type), e: b.ev, miss, q, att: b.att, def: b.def, fol: u => () => (q.off && q.off[u.id]) || [0, 0] };
 }
 
 // ---------------------------------------------------------------- layout & drawing
@@ -256,19 +239,33 @@ function clipPoly(pts) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p
 // then sink into the ground) and the victory hop. `sil` draws it as a flat silhouette for the impact frame.
 function duelDrawUnit(q, u, L, t, sil = null) {
   const f = L.f, p = f.pos[u.id], v = q.view[u.id]; let dx = 0, dy = 0, sx = 1, sy = 1, tint = null, alpha = 1, breath = 0, speed = 1; const flip = p.dir === 1; const soft = REDUCED ? .3 : 1;
-  const pose = q.pose && q.pose.unit === u ? q.pose : null; const ghosts = []; let aura = 0;
+  const pose = q.pose && q.pose.unit === u ? q.pose : null; const ghosts = []; let aura = 0, sink = 0;
   if (pose) {
-    const k = t - pose.t0;
-    if (pose.kind === 'windup') { const e = Math.min(1, k / DUEL_T.windup); dx = -p.dir * 7 * easeOut(e) * soft; speed = 2.6; aura = e; if (pose.fam === 'contact') { sy = 1 - .1 * e; sx = 1 + .08 * e; } else { sy = 1 + .06 * e; sx = 1 - .04 * e; } if (Math.floor(k * 20) % 2 === 0 && e < .85) tint = shade(TYPE_COL[q.banner ? q.banner.move.type : 'Normal'] || '#ffffff', .3); }
-    else if (pose.kind === 'lunge') { const e = Math.min(1, k / pose.dur); const reach = f.stacked ? 28 : 48; if (e < 1) { dx = p.dir * lerp(-7, reach, easeIn(e)) * soft; sx = 1.1; sy = .94; speed = 2; if (e > .2) ghosts.push([dx - p.dir * 8, .35], [dx - p.dir * 17, .2], [dx - p.dir * 27, .1]); } else dx = p.dir * lerp(reach, 0, easeOut(Math.min(1, (k - pose.dur) / .35))) * soft; }
+    const k = t - pose.t0, wd = pose.dur || DUEL_T.windup;
+    if (pose.kind === 'windup') { const e = Math.min(1, k / wd); dx = -p.dir * 7 * easeOut(e) * soft; speed = 2.6; aura = e; if (pose.fam === 'contact') { sy = 1 - .1 * e; sx = 1 + .08 * e; } else { sy = 1 + .06 * e; sx = 1 - .04 * e; } if (Math.floor(k * 20) % 2 === 0 && e < .85) tint = shade(TYPE_COL[q.banner ? q.banner.move.type : 'Normal'] || '#ffffff', .3);
+      if (pose.style === 'stomp') { dy -= Math.round(Math.sin(Math.min(1, e / .85) * Math.PI) * 26 * soft); if (e > .85) { sy = .82; sx = 1.14; } } // a hop, then it stamps the ground
+      else if (pose.style === 'burrow') { sink = Math.round(easeIn(e) * 92); tint = null; } } // Dig: down into the ground
+    else if (pose.kind === 'lunge' || pose.kind === 'rush') { const e = Math.min(1, k / pose.dur), reach = (f.stacked ? 28 : 48) * (pose.kind === 'rush' ? 1.45 : 1); if (e < 1) { dx = p.dir * lerp(-7, reach, easeIn(e)) * soft; sx = 1.1; sy = .94; speed = 2; if (e > .2) ghosts.push([dx - p.dir * 8, .35], [dx - p.dir * 17, .2], [dx - p.dir * 27, .1]); if (pose.kind === 'rush' && e > .2) ghosts.push([dx - p.dir * 38, .08]); } else dx = p.dir * lerp(reach, 0, easeOut(Math.min(1, (k - pose.dur) / .35))) * soft; }
+    else if (pose.kind === 'leap') { const e = Math.min(1, k / pose.dur), reach = f.stacked ? 34 : 86; if (e < 1) { dx = p.dir * lerp(-7, reach, easeInOut(e)) * soft; dy -= Math.round(Math.sin(e * Math.PI) * 48 * soft); sx = .95; sy = 1.07; speed = 2; if (e > .3) ghosts.push([dx - p.dir * 10, .25]); } else { const r = Math.min(1, (k - pose.dur) / .4); dx = p.dir * lerp(reach, 0, easeInOut(r)) * soft; dy -= Math.round(Math.sin(r * Math.PI) * 14 * soft); if (r < .15) { sy = .84; sx = 1.12; } } } // Body Slam: up and onto the target
+    else if (pose.kind === 'burrow') { const r = k < pose.dur + .12 ? 0 : Math.min(1, (k - pose.dur - .12) / .3); sink = Math.round((1 - easeOut(r)) * 92); if (r > 0 && r < 1) dy -= Math.round(Math.sin(r * Math.PI) * 8); } // under the ground, then back up
+    else if (pose.kind === 'stomp') { const e = Math.min(1, k / .2); sy = 1 - .16 * (1 - e); sx = 1 + .12 * (1 - e); }
     else if (pose.kind === 'cast') { const e = Math.min(1, k / pose.dur); dx = p.dir * (e < 1 ? lerp(-7, 9, e) : lerp(9, 0, Math.min(1, (k - pose.dur) / .3))) * soft; if (e < 1) { sy = 1.05; sx = .97; speed = 2; } }
   }
   const hit = q.hitFx && q.hitFx.unit === u ? t - q.hitFx.t0 : -1;
   if (hit >= 0 && hit < .34) { const kb = q.hitFx.crit ? 18 : q.hitFx.lethal ? 16 : 11; dx += -p.dir * kb * (1 - easeOut(hit / .34)) * soft; if (hit < .16 && Math.floor(hit * 30) % 2 === 0) tint = '#ffffff'; speed = 0; sx *= 1 + (1 - hit / .34) * .06; sy *= 1 - (1 - hit / .34) * .05; }
+  // how the move lands on it: jolted by electricity (flashing dark and bright), scorched, frozen still, flattened, rocked
+  const react = hit >= 0 ? q.hitFx.react : null;
+  if (react === 'shock' && hit < .45) { tint = Math.floor(hit * 22) % 2 ? '#fff7a0' : hit < .3 ? '#3a3200' : tint; speed = 0; dx += Math.round(Math.sin(hit * 90)) * soft; }
+  else if (react === 'burn' && hit > .1 && hit < .42 && Math.floor(hit * 16) % 2) tint = '#ff8a40';
+  else if (react === 'chill' && hit > .08 && hit < .55) { tint = hit < .45 || Math.floor(hit * 20) % 2 ? '#bde4f8' : null; speed = 0; }
+  else if (react === 'crush' && hit < .36) { const kk = 1 - hit / .36; sy *= 1 - .16 * kk; sx *= 1 + .12 * kk; }
+  else if (react === 'wobble' && hit < .5) dx += Math.round(Math.sin(hit * 46) * 4 * (1 - hit / .5)) * soft;
+  // Psychic lifts its target while the power travels, and slams it down on the hit
+  if (q.lift && q.lift.unit === u) { const lk = t - q.lift.t0; if (lk >= 0 && lk < q.lift.dur) { dy -= Math.round(easeOut(lk / q.lift.dur) * 22 * soft) + Math.round(Math.sin(lk * 30) * 1.5); speed = .3; if (Math.floor(lk * 20) % 3 === 0) tint = tint || '#ffb4da'; } else if (lk >= q.lift.dur && lk < q.lift.dur + .08) dy -= Math.round((1 - (lk - q.lift.dur) / .08) * 22 * soft); }
   const miss = q.missFx && q.missFx.unit === u ? t - q.missFx.t0 : -1;
   if (miss >= 0 && miss < .42) { const h = Math.sin(miss / .42 * Math.PI); dx += -p.dir * 16 * h * soft; dy -= 12 * h * soft; if (h > .2) ghosts.push([dx + p.dir * 8, .25], [dx + p.dir * 15, .12]); }
   const ko = q.koFx && q.koFx.unit === u ? t - q.koFx.t0 : -1;
-  let sink = 0; if (ko >= 0) { if (ko < .34) { tint = Math.floor(ko * 24) % 2 ? '#ffffff' : null; dx += Math.round(Math.sin(ko * 70) * 2) * soft; speed = 0; } else { const e = Math.min(1, (ko - .34) / .42); sink = Math.round(easeIn(e) * 90); speed = 0; if (e >= 1) return; } }
+  if (ko >= 0) { if (ko < .34) { tint = Math.floor(ko * 24) % 2 ? '#ffffff' : null; dx += Math.round(Math.sin(ko * 70) * 2) * soft; speed = 0; } else { const e = Math.min(1, (ko - .34) / .42); sink = Math.round(easeIn(e) * 90); speed = 0; if (e >= 1) return; } }
   const vic = q.victor && q.victor.unit === u ? t - q.victor.t0 : -1;
   if (vic >= 0 && vic < .7 && !REDUCED) { const h = Math.abs(Math.sin(vic / .35 * Math.PI)); dy -= Math.round(h * 10); sy *= 1 + h * .05; sx *= 1 - h * .04; }
   const idle = !pose && hit < 0 && ko < 0 && vic < 0;
@@ -278,6 +275,7 @@ function duelDrawUnit(q, u, L, t, sil = null) {
   if (!sil && wl == null) { const shadowW = Math.round(28 * sx * (1 - Math.max(0, -dy) / 40) * (1 - sink / 90)); ctx.globalAlpha = .32 * alpha * (v.fly ? .7 : 1); ellipse(Math.round(p.x + dx), p.y + 1, Math.max(4, shadowW), 5, '#000000'); ctx.globalAlpha = 1; }
   // the charge aura: a pulsing disc of the move's colour behind a winding-up Pokémon
   if (aura > 0 && !sil && !REDUCED) { const col = TYPE_COL[q.banner ? q.banner.move.type : 'Normal'] || '#ffffff', r = Math.round(18 + aura * 14 + Math.sin(t * 40) * 2); ctx.globalAlpha = .22 * aura; circle(Math.round(p.x + dx), p.y - 36, r, col); ctx.globalAlpha = .35 * aura; circle(Math.round(p.x + dx), p.y - 36, Math.round(r * .55), shade(col, .5)); ctx.globalAlpha = 1; }
+  if (!sil) (q.off || (q.off = {}))[u.id] = [dx, dy + sink]; // where it is drawn now, for effects riding it
   const num = v.num, kind = q.big ? q.big[u.id] : duelSpriteKind(num); const at = BT.time * (speed || 1e-6);
   const draw = (x, o) => { if (kind === 'anim') drawAnim(num, x, p.y + dy + sink, at, o); else if (kind === 'big') drawBig(num, x, p.y + dy + sink, Object.assign({ breath }, o)); else drawMon(num, x, p.y + dy + sink, Object.assign({}, o, { sx: 2 * (o.sx || 1), sy: 2 * (o.sy || 1) })); };
   const clipY = wl != null ? wl + 60 : sink > 0 ? p.y + 64 : null;
@@ -357,7 +355,7 @@ function drawDuel(q) {
   const inRegion = (u, fn) => { const [dx, dy] = off(u); ctx.save(); clipPoly(f.region[u.id].map(pt => [pt[0] + dx, pt[1] + dy])); ctx.translate(dx, dy); fn(); ctx.restore(); };
   for (const u of [q.sides.left, q.sides.right]) inRegion(u, () => drawScenery(q, u, L, cam, t)); // each side: its own panorama, sliding in from its edge
   duelSplit(f);
-  if (q.focus && !REDUCED) { const fo = q.focus, kf = t < fo.t0 + .15 ? (t - fo.t0) / .15 : t > fo.until - .25 ? Math.max(0, (fo.until - t) / .25) : 1; if (kf > 0) { ctx.globalAlpha = .34 * kf; rect(-40, -40, W + 80, H + 80, '#050815'); ctx.globalAlpha = 1; } }
+  if (q.focus && !REDUCED) { const fo = q.focus, kf = t < fo.t0 + .15 ? (t - fo.t0) / .15 : t > fo.until - .25 ? Math.max(0, (fo.until - t) / .25) : 1; if (kf > 0) { ctx.globalAlpha = (fo.a || .34) * kf; rect(-40, -40, W + 80, H + 80, fo.col || '#050815'); ctx.globalAlpha = 1; } } // heavy moves darken (or whiten) the field more
   duelFocusLines(q, W, H, t);
   const order = [q.sides.right, q.sides.left]; if (q.pose && q.pose.unit === q.sides.right) order.reverse();
   ctx.save(); ctx.translate(cam.x, cam.y); for (const u of order) { const [dx, dy] = off(u); ctx.save(); ctx.translate(dx, dy); duelDrawUnit(q, u, L, t); ctx.restore(); } ctx.restore();

@@ -6,7 +6,7 @@
 'use strict';
 const vm = require('vm'), fs = require('fs'), path = require('path'), assert = require('assert');
 const ROOT = path.join(__dirname, '..');
-const FILES = ['core.js', 'i18n.js', 'lang/es.js', 'lang/es-data.js', 'lang/es-story.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'scenery.js', 'model.js', 'captain.js', 'battle.js', 'menus.js', 'duel.js', 'campaign.js', 'war.js', 'territory.js', 'scenes.js', 'menukit.js', 'title.js', 'route.js', 'journey.js', 'modes.js', 'main.js'];
+const FILES = ['core.js', 'i18n.js', 'lang/es.js', 'lang/es-data.js', 'lang/es-story.js', 'font.js', 'dex.js', 'data.js', 'animmeta.js', 'art.js', 'scenery.js', 'model.js', 'captain.js', 'battle.js', 'menus.js', 'duel.js', 'attackfx.js', 'campaign.js', 'war.js', 'territory.js', 'scenes.js', 'menukit.js', 'title.js', 'route.js', 'journey.js', 'modes.js', 'main.js'];
 
 // ---------------------------------------------------------------- harness
 // Tests run in English unless PK_LANG=es, which also records every drawn string that has no Spanish (tools/i18n-misses.txt).
@@ -276,7 +276,7 @@ test('duel script mirrors the resolver: pre-hit HP holds, drops in event order, 
   let last = hp0[def.id]; for (let t = 0; t <= S.total; t += .02) { const v = g.duelHpAt(S, t, def.id); assert(v <= last, 'defender HP never rises'); last = v; }
   assert.strictEqual(g.duelHpAt(S, S.total, def.id), def.hp); assert.strictEqual(g.duelHpAt(S, S.total, att.id), att.hp);
   assert.strictEqual(G('__rolls'), 0, 'building the script rolled dice');
-  assert(S.total >= 2 && S.total <= 4.2, 'a three-strike exchange runs ' + S.total.toFixed(2) + 's');
+  assert(S.total >= 2 && S.total <= 4.5, 'a three-strike exchange runs ' + S.total.toFixed(2) + 's'); // heavy moves (Body Slam's leap) take a little longer
   // playing through, speeding up and skipping all reach the same numbers, and none of them touches the units
   const snap = () => JSON.stringify([g.serializeUnit(att), g.serializeUnit(def)]); const before = snap(); const kills = T.B().kills;
   const mk = () => ({ kind: 'duel', att, def, events: sceneEvents(ev), hp0 });
@@ -329,6 +329,27 @@ test('duel beats for a miss, an immune hit, drain and a lethal counter; sides pu
   const sides = g.duelSides(big, weak); assert.strictEqual(sides.left, weak, 'the player stands on the left even when attacked'); assert.strictEqual(g.duelSides(weak, big).left, weak);
   const wild = place(T, 16, 5, 2, 4, 4); assert.strictEqual(g.duelSides(big, wild).left, wild, 'wild before enemy trainer'); assert.strictEqual(g.duelSides(wild, weak).left, weak);
   assert.strictEqual(g.duelFamily(T.G('MOVES').Tackle), 'contact'); assert.strictEqual(g.duelFamily(T.G('MOVES')['Ice Shard']), 'contact'); assert.strictEqual(g.duelFamily(T.G('MOVES').Ember), 'fire'); assert.strictEqual(g.duelFamily(T.G('MOVES')['Hyper Beam']), 'neutral');
+});
+
+test('attack choreographies: every move plays its own wind-up, travel and impact in the scene and on the board, error-free, rolling no dice, particles bounded; reduced motion stays calm', T => {
+  const { g, G } = T; const MOVES = G('MOVES'), names = Object.keys(MOVES), BT = G('BT'), style = n => G('ATK_MOVE[' + JSON.stringify(n) + ']');
+  for (const n of names) assert(style(n) && G('!!ATK[' + JSON.stringify(style(n)) + ']'), n + ' has a choreography of its own');
+  assert(new Set(names.map(style)).size >= 50, 'the moves look different from each other');
+  assert.strictEqual(G("atkStyleId({ name: 'Unknown', type: 'Fire', rng: [1, 1] })"), 'gcontact'); assert.strictEqual(G("atkStyleId({ name: 'Unknown', type: 'Fire', rng: [1, 2] })"), 'gshot');
+  for (const n of names) { const m = 'MOVES[' + JSON.stringify(n) + ']', w = G('atkWindupTime(' + m + ')'), l = G('atkTravelTime(' + m + ', duelFamily(' + m + '))'); assert(w >= .2 && w <= .5 && l >= .12 && l <= .45, n + ' keeps a brisk pace (' + w + ' + ' + l + ')'); }
+  // play every move through the real queue in both views; a choreography that throws is caught and reported here
+  const errs = [], keepConsole = T.g.console; T.g.console = Object.assign({}, console, { error: (...a) => errs.push(a.map(String).join(' ')) });
+  const play = (n, view) => {
+    arena(T); G("PREF.battle = '" + view + "'"); const mv = MOVES[n], a = place(T, 25, 30, 0, 1, 1), d = place(T, 66, 30, 1, mv.rng[0] >= 2 ? 3 : 2, 1); d.hp = d.maxHp = 999; d.moves = []; a.moves = [mv];
+    fixedRoll(T, .5); BT.queue = g.combatQueue(a, d, mv, a); G('var __r = 0; rnd = () => { __r++; return .5; }'); g.playQueue(() => { BT.mode = 'idle'; });
+    let f = 0, peak = [0, 0]; while (BT.mode === 'anim' && f++ < 3000) { g.battleUpdate(1 / 60); g.battleDraw(); peak = [Math.max(peak[0], G('FX.sprites.length')), Math.max(peak[1], G('FX.parts.length'))]; }
+    assert.strictEqual(BT.mode, 'idle', n + ' (' + view + ') finishes'); assert.strictEqual(G('__r'), 0, n + ' (' + view + ') rolls no dice while it plays'); return peak;
+  };
+  try {
+    for (const view of ['full', 'map']) for (const n of names) { const [ps, pp] = play(n, view); assert(ps <= 360 && pp <= 700, n + ' (' + view + ') keeps its particles bounded: ' + ps + ' sprites, ' + pp + ' particles'); }
+    assert.deepStrictEqual(errs, [], 'no choreography throws');
+    G('REDUCED = true'); for (const n of ['Hyper Beam', 'Blizzard', 'Thunder', 'Surf', 'Earthquake', 'Rock Slide', 'Psychic', 'Outrage']) { const [ps] = play(n, 'full'); assert(ps <= 16, n + ' stays calm with reduced motion (' + ps + ' sprites)'); }
+  } finally { G('REDUCED = false'); G("PREF.battle = 'full'"); T.g.console = keepConsole; }
 });
 
 const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;

@@ -748,15 +748,17 @@ function drawArrow(path, sx, sy, t = performance.now()) {
 }
 
 // ---------------------------------------------------------------- particles, sprites & floaters
-const FX = { parts: [], texts: [], sprites: [], shake: 0, shakeX: 0, shakeY: 0, flash: 0, flashCol: '#ffffff', zoom: 0, hitstop: 0, slow: 0 };
+const FX = { parts: [], texts: [], sprites: [], shake: 0, shakeX: 0, shakeY: 0, flash: 0, flashCol: '#ffffff', zoom: 0, hitstop: 0, slow: 0, pixel: 1 };
+// Small pixel-art sprites spawned while FX.pixel > 1 (the duel scene's attacks) are drawn at that whole-pixel zoom.
+const FX_ZOOMABLE = new Set(['leaf', 'shard', 'drop', 'spark', 'heart', 'wind', 'aLeaf', 'aFlake']);
 function spawnParts(x, y, n, col, opt = {}) {
-  if (REDUCED) n = Math.min(n, 4);
+  if (REDUCED) n = Math.min(n, 4); n = Math.min(n, 700 - FX.parts.length); // a hard cap keeps a busy exchange at 60 fps
   for (let i = 0; i < n; i++) { const a = vrnd() * Math.PI * 2, sp = (opt.speed || 60) * (0.4 + vrnd()); FX.parts.push({ x, y, vx: Math.cos(a) * sp + (opt.vx || 0), vy: Math.sin(a) * sp * (opt.flat ? .4 : 1) + (opt.vy || 0), life: (opt.life || .5) * (0.6 + vrnd() * .6), t: -(opt.delay || 0), col: Array.isArray(col) ? vpick(col) : col, size: opt.size || 2, grav: opt.grav == null ? 120 : opt.grav, shape: opt.shape || 'sq' }); }
 }
 // Shaped effect sprite. kinds: burst flash slash flame drop bolt leaf bubble shard rock wisp psy poof spark heart wind star
 function spawnSprite(kind, x, y, o = {}) {
-  if (REDUCED && FX.sprites.length > 12) return null;
-  const s = { floor: o.floor == null ? null : o.floor, kind, x, y, vx: o.vx || 0, vy: o.vy || 0, t: -(o.delay || 0), life: o.life || .5, col: o.col || '#ffffff', col2: o.col2 || '#ffffff', size: o.size || 6, grav: o.grav || 0, rot: o.rot || 0, spin: o.spin || 0, seed: Math.floor(vrnd() * 1e6), arc: o.arc || 0, x0: x, y0: y, tx: o.tx, ty: o.ty, trail: o.trail || null, len: o.len || 0, orbit: o.orbit || null, dir: o.dir || 1 };
+  if ((REDUCED && FX.sprites.length > 12) || FX.sprites.length > 360) return null;
+  const s = { z: o.z || (FX.pixel > 1 && FX_ZOOMABLE.has(kind) ? FX.pixel : 1), floor: o.floor == null ? null : o.floor, kind, x, y, vx: o.vx || 0, vy: o.vy || 0, t: -(o.delay || 0), life: o.life || .5, col: o.col || '#ffffff', col2: o.col2 || '#ffffff', size: o.size || 6, grav: o.grav || 0, rot: o.rot || 0, spin: o.spin || 0, seed: Math.floor(vrnd() * 1e6), arc: o.arc || 0, x0: x, y0: y, tx: o.tx, ty: o.ty, trail: o.trail || null, len: o.len || 0, orbit: o.orbit || null, dir: o.dir || 1 };
   FX.sprites.push(s); return s;
 }
 // Hurry the texts on screen off within `t` seconds (a KO stamp should not land on top of the damage numbers).
@@ -777,6 +779,7 @@ function updateFX(dt) {
 function pline(x0, y0, x1, y1, c, w = 1) { ctx.fillStyle = c; x0 |= 0; y0 |= 0; x1 |= 0; y1 |= 0; const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1; let err = dx + dy; for (let n = 0; n < 400; n++) { ctx.fillRect(x0 - (w >> 1), y0 - (w >> 1), w, w); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 >= dy) { err += dy; x0 += sx; } if (e2 <= dx) { err += dx; y0 += sy; } } }
 function drawSprite(s, ox, oy) {
   const k = Math.max(0, s.t / s.life), x = Math.round(s.x + ox), y = Math.round(s.y + oy); const fade = k > .6 ? 1 - (k - .6) / .4 : 1; const R = mulberry32(s.seed);
+  if (s.z > 1) { ctx.save(); ctx.translate(x, y); ctx.scale(s.z, s.z); ctx.translate(-x, -y); } // a whole-pixel zoom round its own position
   ctx.globalAlpha = fade;
   switch (s.kind) {
     case 'burst': { const L = Math.round(s.size * easeOut(k)); for (let d = 0; d < 8; d++) { const a = d * Math.PI / 4; const dx = Math.round(Math.cos(a)), dy = Math.round(Math.sin(a)); const l0 = Math.round(L * .35 * k); for (let i = l0; i < L; i++) { ctx.fillStyle = i < l0 + 2 ? '#ffffff' : s.col; ctx.fillRect(x + dx * i, y + dy * i, 1, 1); } } break; }
@@ -827,9 +830,10 @@ function drawSprite(s, ox, oy) {
     // crystal: an ice shard that grows out of the ground and shatters
     case 'crystal': { const h = Math.round(s.size * (k < .4 ? easeOut(k / .4) : 1)); if (k > .75 && (Math.floor(s.t * 30) + s.seed) % 2) break; for (let j = 0; j < h; j++) { const w = Math.max(1, Math.round((1 - j / h) * s.size * .4)); ctx.fillStyle = s.col; ctx.fillRect(x - (w >> 1), y - j, w, 1); ctx.fillStyle = s.col2; ctx.fillRect(x - (w >> 1), y - j, Math.max(1, w >> 2), 1); } ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y - h + 1, 1, 2); break; }
     // horizontal beam of signed length `len` from (x,y): grows out fast, holds, then thins away
+    default: drawAtkSprite(s, x, y, k, fade, ox, oy); break; // the attack choreographies' own kinds (attackfx.js)
     case 'beam': { const len = Math.round(s.len * Math.min(1, k * 2.5)); const th = Math.max(1, Math.round(s.size * (k < .25 ? k / .25 : k > .7 ? (1 - k) / .3 : 1))); const x0 = Math.min(x, x + len), w = Math.abs(len); const fl = (Math.floor(s.t * 40) + s.seed) % 2; ctx.fillStyle = s.col; ctx.fillRect(x0, y - th - fl, w, 2 * th + 1 + fl); ctx.fillStyle = s.col2; ctx.fillRect(x0, y - (th >> 1), w, (th >> 1) * 2 + 1); break; }
   }
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = 1; if (s.z > 1) ctx.restore();
 }
 // Particles and effect sprites in world space (offset by ox, oy). Floating texts are drawn separately by
 // drawFXTexts so the board can draw them unscaled when it is zoomed out.
@@ -873,20 +877,6 @@ function weatherIcon(kind, x, y) {
   const rows = { rain: ['...B...', '..BBB..', '.BBBBB.', 'BBBWBBB', 'BBBBBBB', '.BBBBB.', '..BBB..'], sun: ['Y..Y..Y', '.YYYYY.', '.YWWYY.', 'YYWYYYY', '.YYYYY.', '.YYYYY.', 'Y..Y..Y'], sand: ['.SSSS..', 'S....S.', '..SSS.S', '.S...S.', '.S.SS..', '..S....', '...SSS.'], snow: ['...W...', '.W.W.W.', '..WWW..', 'WWW.WWW', '..WWW..', '.W.W.W.', '...W...'] }[kind];
   if (rows) stampAt(x, y, rows, { B: '#5aa8f0', W: '#ffffff', Y: '#ffd24a', S: '#d8b070' });
 }
-// ---------------------------------------------------------------- type-flavoured battle effects
-const TYPE_FX = {
-  Normal: { proj: 'star', parts: ['#ffffff', '#ffe9a0'] }, Fighting: { proj: null, parts: ['#ffb07a', '#ffffff'] },
-  Fire: { proj: 'flame', parts: ['#ff8a2c', '#ffd25a', '#ff4a20'] }, Water: { proj: 'drop', parts: ['#62acf0', '#edf9ff'] },
-  Electric: { proj: 'spark', parts: ['#ffe94a', '#ffffff'] }, Grass: { proj: 'leaf', parts: ['#7ecf5e', '#a3e07c'] },
-  Ice: { proj: 'shard', parts: ['#bde4f8', '#ffffff'] }, Poison: { proj: 'bubble', parts: ['#b060d0', '#e0a0ff'] },
-  Ground: { proj: 'rock', parts: ['#c0a060', '#8a6a3a'] }, Rock: { proj: 'rock', parts: ['#ada090', '#665858'] },
-  Flying: { proj: 'wind', parts: ['#ffffff', '#c8e0ff'] }, Psychic: { proj: 'psy', parts: ['#ff80c0', '#ffffff'] },
-  Bug: { proj: 'leaf', parts: ['#a8b820', '#e0e860'] }, Ghost: { proj: 'wisp', parts: ['#a070e0', '#6040a0'] },
-  Dragon: { proj: 'flame', parts: ['#7060ff', '#a0c0ff'] }, Dark: { proj: 'wisp', parts: ['#504060', '#a080c0'] },
-  Steel: { proj: 'star', parts: ['#c0c0d0', '#ffffff'] }, Fairy: { proj: 'heart', parts: ['#ffb0e0', '#ffffff'] },
-};
-function fxFor(type) { return TYPE_FX[type] || TYPE_FX.Normal; }
-// Hit effect at (x,y) in world pixels.
 // Cottages on a parsed map with the x of their chimney inside the tile (it swaps sides with the variant, see drawTile 'H').
 function mapHouses(m) { if (!m.houses) { m.houses = []; for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) if (m.tiles[y][x].id === 'house') m.houses.push({ x, y, cx: (m.variants[y][x] % 2 === 1 ? 8 : 20) + 2 }); } return m.houses; }
 // Smoke from a chimney top at (x, y): three puffs rise, drift east, swell and fade.
@@ -898,36 +888,6 @@ function drawPickup(x, y, t, seed = 0) {
   ctx.globalAlpha = .3; ellipse(x, y + 7, Math.max(3, 6 - (hop >> 1)), 2, '#000000'); ctx.globalAlpha = 1;
   drawBall(x, y - hop, ITEMS.pokeball.col, 5);
   const tw = (t * .45 + seed * .137 + .5) % 1; if (!REDUCED && tw < .14) { const k = Math.sin(tw / .14 * Math.PI), L = Math.round(k * 3), sx = x - 4, sy = y - 5 - hop; ctx.fillStyle = '#ffffff'; ctx.fillRect(sx - L, sy, 2 * L + 1, 1); ctx.fillRect(sx, sy - L, 1, 2 * L + 1); if (L > 1) { ctx.fillStyle = '#fff4b0'; ctx.fillRect(sx - 1, sy - 1, 3, 3); ctx.fillStyle = '#ffffff'; ctx.fillRect(sx, sy, 1, 1); } }
-}
-function hitEffect(type, x, y, crit, eff) {
-  const F = fxFor(type), col = TYPE_COL[type] || '#ffffff', c1 = F.parts[0], c2 = F.parts[1]; const big = crit ? 1.5 : 1;
-  spawnSprite('flash', x, y, { size: Math.round(7 * big), life: crit ? .18 : .12, col: crit ? '#ffd24a' : '#ffffff' });
-  switch (type) {
-    case 'Fire': case 'Dragon': for (let i = 0; i < 5 * big; i++) spawnSprite('flame', x + (vrnd() - .5) * 22, y + 8 + (vrnd() - .5) * 10, { size: 2 + Math.round(vrnd() * 3), life: .4 + vrnd() * .3, col: c1, col2: type === 'Fire' ? '#ff4a20' : '#4a3ad0', vy: -30 - vrnd() * 30, vx: (vrnd() - .5) * 16, delay: vrnd() * .16 }); break;
-    case 'Water': for (let i = 0; i < 10 * big; i++) { const a = vrnd() * Math.PI * 2, sp = 50 + vrnd() * 60; spawnSprite('drop', x, y + 2, { life: .45 + vrnd() * .2, col: c1, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40, grav: 260 }); } spawnSprite('psy', x, y + 8, { size: 12, life: .35, col: c2, col2: c1 }); break;
-    case 'Electric': for (let i = 0; i < 3 * big; i++) spawnSprite('bolt', x + (vrnd() - .5) * 14, y - 4, { size: 12, life: .28, col: c1, delay: i * .05 }); for (let i = 0; i < 6 * big; i++) spawnSprite('spark', x + (vrnd() - .5) * 24, y + (vrnd() - .5) * 20, { life: .3 + vrnd() * .2, col: c1, delay: vrnd() * .15 }); break;
-    case 'Grass': case 'Bug': for (let i = 0; i < 9 * big; i++) { const a = vrnd() * Math.PI * 2, sp = 40 + vrnd() * 50; spawnSprite('leaf', x, y, { life: .55 + vrnd() * .3, col: type === 'Grass' ? '#2a6b38' : '#6a7a10', col2: type === 'Grass' ? '#c8f0a0' : '#f0f080', vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 30, grav: 90, rot: vrnd() * 4, spin: 10 + vrnd() * 10 }); } spawnSprite('burst', x, y, { size: 12 * big, life: .25, col: '#e8ffd0' }); break;
-    case 'Ice': for (let i = 0; i < 7 * big; i++) { const a = vrnd() * Math.PI * 2, sp = 50 + vrnd() * 40; spawnSprite('shard', x, y, { life: .5, col: c1, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 20, grav: 160, rot: vrnd() * 2, spin: 6 }); } spawnSprite('psy', x, y, { size: 12, life: .3, col: '#ffffff', col2: c1 }); break;
-    case 'Poison': for (let i = 0; i < 7 * big; i++) spawnSprite('bubble', x + (vrnd() - .5) * 18, y + (vrnd() - .5) * 10, { size: 2 + Math.round(vrnd() * 2), life: .5 + vrnd() * .3, col: c1, col2: c2, vy: -20 - vrnd() * 20, vx: (vrnd() - .5) * 10, delay: vrnd() * .15 }); break;
-    case 'Ground': case 'Rock': for (let i = 0; i < 8 * big; i++) { const a = -Math.PI * (0.15 + vrnd() * .7), sp = 60 + vrnd() * 70; spawnSprite('rock', x, y + 6, { size: 2 + Math.round(vrnd() * 2), life: .55, col: c1, col2: c2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, grav: 300 }); } for (let i = 0; i < 3; i++) spawnSprite('poof', x + (i - 1) * 8, y + 10, { size: 4, life: .45, col: '#d8c8a0', col2: '#f0e6c8', vy: -10, delay: i * .04 }); break;
-    case 'Flying': for (let i = 0; i < 5 * big; i++) spawnSprite('wind', x + (vrnd() - .5) * 10, y + (vrnd() - .5) * 20, { size: 10 + Math.round(vrnd() * 6), life: .3 + vrnd() * .2, col: c2, vx: 120 + vrnd() * 60, delay: vrnd() * .1 }); spawnSprite('slash', x, y, { size: 9, life: .22, col: '#ffffff' }); break;
-    case 'Psychic': for (let i = 0; i < 3; i++) spawnSprite('psy', x, y, { size: 14 + i * 3, life: .5, col: c1, col2: c2, delay: i * .1 }); break;
-    case 'Ghost': case 'Dark': for (let i = 0; i < 6 * big; i++) { const a = vrnd() * Math.PI * 2; spawnSprite('wisp', x, y, { size: 3 + Math.round(vrnd() * 2), life: .6, col: c1, col2: c2, vx: Math.cos(a) * 40, vy: Math.sin(a) * 30 - 20, delay: vrnd() * .12 }); } break;
-    case 'Fairy': for (let i = 0; i < 6 * big; i++) spawnSprite('heart', x + (vrnd() - .5) * 20, y + (vrnd() - .5) * 10, { life: .6, col: c1, vy: -30 - vrnd() * 20, delay: vrnd() * .15 }); spawnSprite('psy', x, y, { size: 12, life: .4, col: c1, col2: '#ffffff' }); break;
-    case 'Fighting': spawnSprite('slash', x, y, { size: 10, life: .22, col: c1 }); spawnSprite('burst', x, y, { size: 14 * big, life: .3, col: '#ffffff' }); break;
-    default: spawnSprite('burst', x, y, { size: 13 * big, life: .3, col: c1 }); for (let i = 0; i < 4; i++) spawnSprite('star', x + (vrnd() - .5) * 22, y + (vrnd() - .5) * 18, { size: 3, life: .3, col: c2, delay: vrnd() * .15 });
-  }
-  if (eff > 1) spawnSprite('burst', x, y, { size: 18 * big, life: .35, col: '#ffd24a', delay: .04 });
-  spawnParts(x, y, crit ? 18 : 10, [col, c1, c2, '#ffffff'], { speed: crit ? 110 : 70, life: .5, grav: 80 });
-}
-// Projectile from (ax,ay) to (bx,by); returns the sprite so callers can time the impact.
-function projectileFX(type, ax, ay, bx, by, dur) {
-  const F = fxFor(type); const col = TYPE_COL[type] || '#ffffff'; const kind = F.proj || 'star'; const c1 = F.parts[0], c2 = F.parts[1];
-  const o = { tx: bx, ty: by, life: dur, arc: kind === 'rock' || kind === 'drop' ? 14 : 6, col: c1, col2: c2, size: kind === 'flame' ? 4 : kind === 'psy' ? 6 : kind === 'wind' ? 12 : 3, spin: 14, trail: kind === 'spark' ? ['#ffe94a', '#ffffff'] : kind === 'flame' ? [c1, c2] : kind === 'wisp' ? [c1] : kind === 'drop' ? [c1] : null };
-  if (kind === 'wind') o.vx = 0;
-  if (kind === 'spark') { for (let i = 0; i < 4; i++) spawnSprite('bolt', ax + (bx - ax) * (i + 1) / 5, ay + (by - ay) * (i + 1) / 5 - 10, { size: 10, life: .16, col: c1, delay: i * dur / 4 }); return null; }
-  if (kind === 'flame' || kind === 'drop' || kind === 'leaf' || kind === 'star' || kind === 'rock' || kind === 'shard' || kind === 'bubble') { for (let i = 0; i < 3; i++) spawnSprite(kind, ax, ay, { tx: bx + (vrnd() - .5) * 6, ty: by + (vrnd() - .5) * 6, life: dur, arc: o.arc + i * 3, col: c1, col2: c2, size: o.size, spin: 12, rot: i, trail: o.trail, delay: i * .03 }); return null; }
-  return spawnSprite(kind, ax, ay, o);
 }
 
 // ---------------------------------------------------------------- icons
