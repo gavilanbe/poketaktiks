@@ -275,7 +275,7 @@ async function main() {
     }
     if (script === 'page' || script === 'page-m') {
       // ad-hoc: PK_Q query string, optional PK_EXPR run after PK_WAIT ms, screenshot as artifacts/PK_NAME.png
-      await send('Page.navigate', { url: 'file://' + ROOT + '/index.html?' + (process.env.PK_Q || 'silent&nosave') + LQ }); await sleep(+(process.env.PK_WAIT || 1500));
+      await send('Page.navigate', { url: process.env.PK_URL || 'file://' + ROOT + '/index.html?' + (process.env.PK_Q || 'silent&nosave') + LQ }); await sleep(+(process.env.PK_WAIT || 1500)); // PK_URL: any page, e.g. the published build
       if (process.env.PK_EXPR) { out.push('expr: ' + await ev(process.env.PK_EXPR)); await sleep(+(process.env.PK_WAIT2 || 600)); }
       // PK_FRAMES=ms: a burst of shots (PK_NAME-00, -01, ...) every PK_STEP ms instead of one, to review an animation
       if (process.env.PK_FRAMES) { const t0 = Date.now(); let i = 0; while (Date.now() - t0 < +process.env.PK_FRAMES) { await shot((process.env.PK_NAME || 'page') + '-' + String(i).padStart(2, '0')); i++; await sleep(+(process.env.PK_STEP || 50)); } }
