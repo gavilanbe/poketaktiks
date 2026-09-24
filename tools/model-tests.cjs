@@ -878,6 +878,25 @@ test('battle menus: the day menu, toggles in place, END TURN and RETREAT ask fir
   g.cancel(); assert(BT.mode === 'endmenu' && BT.menu.kind === 'main' && BT.menu.items[BT.menu.i].id === 'pc', 'back returns to the day menu on the PC row');
   for (const u of B.units.filter(u => u.team === 0)) u.acted = true; BT.menu.i = 0; g.activateMenu(); assert.notStrictEqual(BT.mode, 'confirm', 'with everyone done END TURN does not ask');
 });
+test('deploys play as a send-out: the Pokémon stays hidden until its ball opens and lands whole, the player\'s and the AI\'s', T => {
+  const { g, G, C } = T; G('SAVE = { chapter: 2, party: [partyUnit(4, 10), partyUnit(16, 9), partyUnit(25, 10), partyUnit(74, 9), partyUnit(7, 9), partyUnit(1, 9)], bag: { pokeball: 3 }, stars: {}, captainPid: 0, starter: 4, co: "you", journey: { version: 1, firstCatch: true } }');
+  const party = G('SAVE.party').map((p, pid) => Object.assign({}, p, { pid })); g.startBattle(C.CHAPTERS[2].map, party.slice(0, 4), {}, g.chapterOpts(2, party.slice(4), 5)); const B = T.B(), BT = G('BT');
+  const play = (u, frames = 900) => { let seen = false, n = 0; while (n++ < frames && (BT.mode === 'anim' || BT.mode === 'banner')) { if (BT.anim && BT.anim.ev && BT.anim.ev.unit === u) { seen = true; if (BT.anim.t < .05) assert.strictEqual(u.fx.alpha, 0, u.name + ' hidden while the ball rises'); } else if (seen) break; g.battleUpdate(1 / 60); g.battleDraw(); } return seen; };
+  // the player's PC
+  B.phase = 0; BT.mode = 'idle'; B.war.funds[0] = 9000; const hq = B.war.props.find(p => p.owner === 0 && p.kind === 'hq'); const o = g.unitAt(hq.x, hq.y); if (o) o.x = 0;
+  g.openDeployMenu(hq); g.activateMenu(); const mine = g.unitAt(hq.x, hq.y); assert(mine && mine.team === 0, 'deployed on the HQ'); assert.strictEqual(mine.fx.alpha, 0, 'hidden until its send-out');
+  assert(play(mine), 'its send-out plays'); assert(mine.fx.alpha === 1 && mine.fx.sx === 1 && mine.fx.sy === 1 && !mine.fx.tint, 'it stands whole afterwards');
+  // the AI's reinforcements wait hidden behind the phase banner, then come out one by one
+  g.alive(1).filter(u => !u.leader && !u.boss).slice(0, 4).forEach(u => { u.hp = 0; }); for (const p of B.war.props.filter(p => p.owner === 1)) { const v = g.unitAt(p.x, p.y); if (v) v.hp = 0; }
+  B.war.funds[1] = 20000; g.beginPhase(1, false); const spawns = BT.queue.filter(q => q.kind === 'event' && q.ev.type === 'spawn' && q.ev.deploy).map(q => q.ev.unit);
+  assert(spawns.length >= 1, 'the AI deploys'); assert(spawns.every(u => u.fx.alpha === 0), 'its Pokémon are hidden during the banner');
+  for (const u of spawns) { assert(play(u), u.name + ' comes out'); assert.strictEqual(u.fx.alpha, 1, u.name + ' is visible after its send-out'); }
+  // a fainted Pokémon of a side with a Box is recalled to it; a wild one just faints
+  while (BT.mode === 'anim' || BT.mode === 'banner') { g.battleUpdate(1 / 60); if (G('BT.queue.length') === 0 && !BT.anim) break; } BT.queue.length = 0; BT.anim = null;
+  const wild = g.makeUnit(10, 3, 2, { x: 0, y: 0 }); B.units.push(wild); for (const [u, recalled] of [[mine, true], [wild, false]]) { u.hp = 0; BT.queue.length = 0; G('BT').queue.push({ kind: 'event', ev: { type: 'ko', unit: u } }); g.playQueue(() => { BT.mode = 'idle'; });
+    const kinds = []; let n = 0; while (BT.mode === 'anim' && n++ < 600) { if (BT.anim && BT.anim.ev && !kinds.includes(BT.anim.ev.type)) kinds.push(BT.anim.ev.type); g.battleUpdate(1 / 60); g.battleDraw(); }
+    assert.strictEqual(kinds.includes('recall'), recalled, u.name + (recalled ? ' is recalled to the Box' : ' is not recalled') + ': ' + kinds.join(',')); }
+});
 function run() {
   let failed = 0;
   for (const t of tests) {

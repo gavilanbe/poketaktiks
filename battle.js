@@ -112,7 +112,7 @@ function beginPhase(team, first, resumed = false) {
   const ev = resumed ? [] : upkeep(team);
   if (B.versus && !resumed) { const hv = versusPhaseStart(team); if (hv && B.hill) floatText(B.hill.x * TILE + TILE / 2, B.hill.y * TILE - 8, 'HILL ' + hv.score + '/' + B.hill.need + ' · ' + teamName(team), teamColorL(team), { big: true, life: 1.6, outline: '#000' }); if (checkObjective()) { endBattle(); return; } }
   if (B.fog) refreshVision(team);
-  if (B.war && !resumed) { const before = team <= 1 ? B.war.funds[team] : 0; warUpkeep(team); if (team <= 1 && isHuman(team) && B.war.funds[team] > before) { BT.income = { t: BT.time + .6, amount: B.war.funds[team] - before, team }; BT.fundsShow = before; BT.fundsTeam = team; } if (checkObjective()) { endBattle(); return; } if (!isHuman(team)) for (const u of warAiDeploy(team)) { u.ai = 'war'; ev.push({ type: 'spawn', unit: u, deploy: true }); } }
+  if (B.war && !resumed) { const before = team <= 1 ? B.war.funds[team] : 0; warUpkeep(team); if (team <= 1 && isHuman(team) && B.war.funds[team] > before) { BT.income = { t: BT.time + .6, amount: B.war.funds[team] - before, team }; BT.fundsShow = before; BT.fundsTeam = team; } if (checkObjective()) { endBattle(); return; } if (!isHuman(team)) for (const u of warAiDeploy(team)) { u.ai = 'war'; u.fx.alpha = 0; ev.push({ type: 'spawn', unit: u, deploy: true }); } }
   if (team === 0 && !B.versus && !resumed) { saveSuspend(); }
   const teamsPresent = [0, 1, 2, 3].filter(t => alive(t).length);
   if (!teamsPresent.includes(team) && team !== 0 && !warCanPlay(team)) { nextPhase(); return; }
@@ -145,7 +145,7 @@ function nextAnim() {
   if (!q) { BT.anim = null; const d = BT.queueDone; BT.queueDone = null; if (d) d(); return; }
   BT.anim = q; q.t = 0;
   if (q.kind === 'event') { setupEvent(q); }
-  if (q.kind === 'duel') { startDuel(q); }
+  if (q.kind === 'duel') { startDuel(q); queueRecalls(q.events); }
   if (q.kind === 'move') { q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.unit.fx.walk = true; q.i = 0; q.dur = (BT.fast ? .05 : .11); if (q.path.length > 1) { const l = q.path[q.path.length - 1]; if (!unitVisible(q.unit) || !unitVisible(l)) centerCam((q.path[0].x + l.x) / 2, (q.path[0].y + l.y) / 2); } }
   if (q.kind === 'strike') { q.dur = BT.fast ? .3 : .5; centerCamBetween(q.att, q.def); }
   if (q.kind === 'msg') { q.dur = BT.fast ? .4 : .9; }
@@ -160,7 +160,7 @@ function setupEvent(q) {
   switch (e.type) {
     case 'bossAlert': q.dur = REDUCED || BT.fast ? .8 : 1.7; Audio.sfx('boss'); Audio.playMusic('boss'); if (!REDUCED) { flashScreen('#ff3040', .3); shake(5); } break;
     case 'power': q.dur = REDUCED || BT.fast ? .7 : 1.65; Audio.sfx(e.superPower ? 'evolve' : 'phase'); if (!REDUCED) flashScreen(coOf({ co: e.co, root: e.root }).col, .22); break;
-    case 'ko': q.dur = BT.fast ? .45 : .8; Audio.sfx('ko'); shake(4); spawnParts(ux(e.unit), uy(e.unit) + 8, 18, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 90, life: .7, grav: 60 }); noteKo(e); fadeFloatTexts(.12); floatText(ux(e.unit), uy(e.unit) - 14, e.unit.team === 0 ? 'FAINTED!' : 'KO!', e.unit.team === 0 ? UI.red : UI.gold, { huge: 2, life: 1.3, vy: -14, outline: e.unit.team === 0 ? '#2a0008' : '#3a2000' }); break;
+    case 'ko': queueRecalls([e]); q.dur = e.recalled ? (BT.fast ? .25 : .45) : BT.fast ? .45 : .8; Audio.sfx('ko'); shake(4); spawnParts(ux(e.unit), uy(e.unit) + 8, 18, ['#ffffff', '#ffd24a', '#c0c0c0'], { speed: 90, life: .7, grav: 60 }); noteKo(e); fadeFloatTexts(.12); floatText(ux(e.unit), uy(e.unit) - 14, e.unit.team === 0 ? 'FAINTED!' : 'KO!', e.unit.team === 0 ? UI.red : UI.gold, { huge: 2, life: 1.3, vy: -14, outline: e.unit.team === 0 ? '#2a0008' : '#3a2000' }); break;
     case 'xp': q.dur = BT.fast ? .35 : .6; q.from = e.unit.xp - e.amount; break;
     case 'levelup': q.dur = BT.fast ? .8 : 1.6; Audio.sfx('levelup'); spawnParts(ux(e.unit), uy(e.unit), 24, ['#ffd24a', '#ffffff', '#5ee06a'], { speed: 70, life: .9, grav: -30, shape: 'ring' }); break;
     case 'evolve': q.dur = BT.fast ? 1.4 : 3.2; Audio.sfx('evolve'); requestBigSprite(e.to.num); break;
@@ -169,10 +169,9 @@ function setupEvent(q) {
     case 'thaw': floatText(ux(e.unit), uy(e.unit) - 8, 'Thawed!', '#98d8f8'); break;
     case 'recharge': q.dur = BT.fast ? .3 : .6; if (e.done && !unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); floatText(ux(e.unit), uy(e.unit) - 8, e.done ? 'Recharging...' : 'Must recharge!', RECHARGE_COL, { outline: '#000' }); break;
     case 'dot': Audio.sfx(e.kind === 'brn' ? 'burn' : 'poison'); shake(1); floatText(ux(e.unit), uy(e.unit), '-' + e.amount, e.kind === 'psn' ? '#d080ff' : '#ff9040'); spawnParts(ux(e.unit), uy(e.unit) + 8, 8, e.kind === 'psn' ? ['#b050d0', '#7030a0'] : ['#ff8030', '#ffd040'], { speed: 30, grav: -50, life: .7 }); if (!unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); break;
-    case 'spawn': q.dur = BT.fast ? .3 : e.deploy ? .8 : .6; centerCam(e.unit.x, e.unit.y);
-      if (e.deploy) { // out of the PC: a Poké Ball pops open on the center, a flash in the side's colour, "Go, Pidgey!"
-        const c = teamColorL(e.unit.team); Audio.sfx('caught'); e.unit.fx.sy = .5; e.unit.fx.sx = 1.4; spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 26, life: .5, col: c }); spawnSprite('ring', ux(e.unit), uy(e.unit) + 14, { size: 14, life: .4, col: '#ffffff', delay: .06 }); spawnSprite('flash', ux(e.unit), uy(e.unit) + 6, { size: 12, life: .25, col: '#ffffff' });
-        spawnParts(ux(e.unit), uy(e.unit) + 6, 18, [c, '#ffffff', '#ff5a5a'], { speed: 70, life: .6, grav: 60 }); floatText(ux(e.unit), uy(e.unit) - 12, 'Go, ' + e.unit.name + '!', c, { big: true, outline: '#000', life: 1.2 }); break; }
+    case 'recall': q.dur = BT.fast ? .62 : 1.2; if (!unitVisible(e.unit)) centerCam(e.unit.x, e.unit.y); Object.assign(e.unit.fx, { alpha: 1, flash: 0, tint: null, sx: 1, sy: 1, dx: 0, dy: 0 }); break;
+    case 'spawn': q.dur = BT.fast ? .3 : e.deploy ? (REDUCED ? .6 : 1.15) : .6; centerCam(e.unit.x, e.unit.y);
+      if (e.deploy) { e.unit.fx.alpha = 0; if (BT.fast) q.dur = .5; break; } // out of the PC: sendOutAnim plays it
       Audio.sfx('select'); spawnParts(ux(e.unit), uy(e.unit) + 8, 12, ['#ffffff', '#ff4b4b'], { speed: 50, life: .5, grav: 0 }); floatText(ux(e.unit), uy(e.unit) - 10, 'Reinforcements!', UI.red); break;
     // a wild Pokémon steps out of the tall grass: the blades burst, a "!" pops over it, its name is announced
     case 'aceDown': q.dur = REDUCED || BT.fast ? .7 : 1.5; Audio.sfx('faint'); if (!REDUCED) shake(3); break;
@@ -231,9 +230,12 @@ function updateAnim(dt) {
   }
   if (q.kind === 'event') {
     const e = q.ev;
-    if (e.type === 'ko') { const k = q.t / q.dur; e.unit.fx.flash = k < .4 ? (Math.floor(k * 20) % 2) : 0; e.unit.fx.alpha = k < .4 ? 1 : Math.max(0, 1 - (k - .4) / .5); e.unit.fx.dy = k > .4 ? -(k - .4) * 20 : 0; if (k >= .4 && !q.poofed) { q.poofed = true; const cx = e.unit.x * TILE + TILE / 2, cy = e.unit.y * TILE + TILE - 6; for (let i = 0; i < 4; i++) spawnSprite('poof', cx + (i - 1.5) * 7, cy - 2, { size: 5, life: .55, col: '#e8e0d0', col2: '#ffffff', vy: -14, vx: (i - 1.5) * 10, delay: i * .03 }); } if (k >= 1) { e.unit.fx.alpha = 1; e.unit.fx.flash = 0; e.unit.fx.dy = 0; } }
+    if (e.type === 'ko' && e.recalled) { e.unit.fx.flash = Math.floor(q.t * 20) % 2; e.unit.fx.alpha = 1; if (q.t >= q.dur) e.unit.fx.flash = 0; }
+    else if (e.type === 'ko') { const k = q.t / q.dur; e.unit.fx.flash = k < .4 ? (Math.floor(k * 20) % 2) : 0; e.unit.fx.alpha = k < .4 ? 1 : Math.max(0, 1 - (k - .4) / .5); e.unit.fx.dy = k > .4 ? -(k - .4) * 20 : 0; if (k >= .4 && !q.poofed) { q.poofed = true; const cx = e.unit.x * TILE + TILE / 2, cy = e.unit.y * TILE + TILE - 6; for (let i = 0; i < 4; i++) spawnSprite('poof', cx + (i - 1.5) * 7, cy - 2, { size: 5, life: .55, col: '#e8e0d0', col2: '#ffffff', vy: -14, vx: (i - 1.5) * 10, delay: i * .03 }); } if (k >= 1) { e.unit.fx.alpha = 1; e.unit.fx.flash = 0; e.unit.fx.dy = 0; } }
     if (e.type === 'evolve') { const k = q.t / q.dur; e.unit.fx.flash = k > .15 && k < .8 ? (Math.floor(k * 14) % 2 ? 1 : 0) : 0; e.unit.fx.showNum = k < .5 ? e.from.num : e.to.num; e.unit.fx.sx = e.unit.fx.sy = k > .15 && k < .8 ? 1 + Math.sin(k * 30) * .12 : 1; if (k > .8 && !q.popped) { q.popped = true; spawnParts(e.unit.x * TILE + TILE / 2, e.unit.y * TILE + 8, 40, ['#ffffff', '#ffd24a', '#98d8f8', '#f85888'], { speed: 120, life: 1, grav: 20 }); flashScreen('#ffffff', .8); shake(3); Audio.sfx('caught'); } if (k >= 1) { e.unit.fx.flash = 0; e.unit.fx.showNum = null; e.unit.fx.sx = e.unit.fx.sy = 1; } }
     if (e.type === 'capture') captureAnim(q);
+    if (e.type === 'spawn' && e.deploy) sendOutAnim(q);
+    if (e.type === 'recall') recallAnim(q);
     if (e.type === 'power' && !q.aura && q.t > q.dur * .78) { q.aura = true; const c = coOf({ co: e.co, root: e.root }); flashScreen('#ffffff', .45); Audio.sfx(e.superPower ? 'levelup' : 'heal'); for (const a of alive(e.team)) { spawnParts(a.x * TILE + TILE / 2, a.y * TILE + TILE - 4, 14, [c.col, '#ffffff', shade(c.col, .4)], { speed: 30, grav: -70, life: .9 }); a.fx.sy = .8; a.fx.sx = 1.2; } }
     if (e.type === 'levelup' && !q.shown && q.t > .2) { q.shown = true; }
     if (q.t >= q.dur) nextAnim();
@@ -316,15 +318,58 @@ function captureAnim(q) {
   }
   if (q.t >= q.dur) { T.fx.tint = null; T.fx.sx = T.fx.sy = 1; T.fx.dy = 0; T.fx.alpha = 1; }
 }
+// Out of the PC, the way the games send a Pokémon out: a Poké Ball pops up out of the building spinning, bursts open
+// over it, and a beam in the side's colour draws the Pokémon onto the tile as a white silhouette that grows, colours in
+// and lands with a squash, a puff of dust and "Go, Pidgey!". The ball fades once it has done its work. Times in seconds
+// (fast playback runs it 2.3× quicker); q.cfx is drawn by drawCatchFx.
+const SENDOUT_T = { rise: .3, open: .4, grow: .72, land: .84 };
+function sendOutAnim(q) {
+  const e = q.ev, T = e.unit, t = q.t * (BT.fast ? 2.3 : 1), C = q.cfx || (q.cfx = { send: true }), S = SENDOUT_T;
+  const tx = T.x * TILE + TILE / 2, gy = T.y * TILE + TILE - 8, hy = gy - 34, col = teamColorL(T.team);
+  const land = () => { if (C.landed) return; C.landed = true; C.gone = true; C.beam = 0; T.fx.alpha = 1; T.fx.tint = null; T.fx.dy = 0; T.fx.sx = 1.35; T.fx.sy = .66; Audio.sfx('caught'); if (!REDUCED) shake(1);
+    for (let i = 0; i < 4; i++) spawnSprite('poof', tx + (i - 1.5) * 7, gy + 2, { size: 3, life: .35, col: '#d8d0c0', col2: '#ffffff', vx: (i - 1.5) * 26, vy: -8, grav: 0 });
+    spawnSprite('ring', tx, gy - 2, { size: 22, life: .45, col }); floatText(tx, T.y * TILE - 8, 'Go, ' + T.name + '!', col, { big: true, outline: '#000', life: 1.2 }); };
+  if (REDUCED) { if (!C.popped) { C.popped = true; Audio.sfx('pop'); spawnSprite('flash', tx, gy - 10, { size: 12, life: .25, col: '#ffffff' }); } land(); T.fx.sx = T.fx.sy = 1; return; }
+  if (t < S.rise) { const k = t / S.rise; C.x = tx; C.y = gy - 4 - easeOut(k) * (gy - 4 - hy); C.angle = t * 26; C.open = 0; T.fx.alpha = 0; C.shadow = { x: tx, y: gy + 6, k: 1 - k * .6 };
+    if (!C.up) { C.up = true; Audio.sfx('whoosh'); spawnSprite('ring', tx, gy, { size: 12, life: .3, col: '#ffffff' }); } if (vrnd() < .6) spawnParts(C.x, C.y + 4, 1, ['#ffffff', col], { speed: 6, life: .25, grav: 0 }); }
+  else if (t < S.open) { C.x = tx; C.y = hy - Math.round(Math.sin((t - S.rise) / (S.open - S.rise) * Math.PI) * 3); C.angle = 0; C.open = 1; T.fx.alpha = 0; C.shadow = null;
+    if (!C.popped) { C.popped = true; Audio.sfx('pop'); spawnSprite('flash', tx, hy, { size: 10, life: .22, col: '#ffffff' }); spawnSprite('ring', tx, hy, { size: 18, life: .35, col }); spawnParts(tx, hy, 12, [col, '#ffffff', '#ffd24a'], { speed: 60, life: .5, grav: 40 }); } }
+  else if (t < S.grow) { const k = (t - S.open) / (S.grow - S.open); C.x = tx; C.y = hy; C.open = 1; C.beam = 1; C.beamCol = col; T.fx.alpha = 1; T.fx.tint = '#ffffff'; T.fx.sy = .12 + .88 * easeOut(k); T.fx.sx = .4 + .6 * easeOut(k); T.fx.dy = 0;
+    if (!C.grown) { C.grown = true; Audio.sfx('absorb'); } if (vrnd() < .8) spawnParts(tx + (vrnd() - .5) * 20, gy - vrnd() * 20, 1, ['#ffffff', col], { speed: 8, life: .35, grav: -60 }); }
+  else if (t < S.land) { const k = (t - S.grow) / (S.land - S.grow); C.beam = 1 - k; C.fade = k; T.fx.alpha = 1; T.fx.sx = T.fx.sy = 1; T.fx.tint = k < .5 ? '#ffffff' : null; T.fx.flash = k < .5 ? 1 : 0; }
+  else { T.fx.flash = 0; land(); const k = clamp((t - S.land) / .2, 0, 1); T.fx.sx = lerp(1.35, 1, easeOut(k)); T.fx.sy = lerp(.66, 1, easeOut(k)); }
+  if (q.t >= q.dur) { T.fx.tint = null; T.fx.flash = 0; T.fx.sx = T.fx.sy = 1; T.fx.dy = 0; T.fx.alpha = 1; }
+}
+// A fainted Pokémon of a side with a Box goes back to it the way the games recall one: its ball pops open over it, a red
+// beam pulls it in, the ball snaps shut and flies to the side's nearest PC, where "BOX · 2d" says how long it recovers.
+// Queued after the KO (or after the duel scene that showed it); none under reduced motion or for wild Pokémon.
+function koRecallInfo(u) { const W = B && B.war; if (REDUCED || !W || u.team > 1 || !W.box[u.team].some(en => en.unitId === u.id)) return null; const sites = warDeploySites(u.team); return { site: sites.length ? sites.slice().sort((a, b) => dist(a, u) - dist(b, u))[0] : null }; }
+function queueRecalls(events) { const add = []; for (const e of events) if (e.type === 'ko' && !e.recallQueued) { e.recallQueued = true; const info = koRecallInfo(e.unit); if (info) { e.recalled = true; add.push({ kind: 'event', ev: { type: 'recall', unit: e.unit, site: info.site } }); } } if (add.length) BT.queue.unshift(...add); }
+const RECALL_T = { open: .1, absorb: .42, shut: .5, fly: 1.1 };
+function recallAnim(q) {
+  const e = q.ev, T = e.unit, t = q.t * (BT.fast ? 1.8 : 1), C = q.cfx || (q.cfx = {}), R = RECALL_T, tx = T.x * TILE + TILE / 2, ty = T.y * TILE + 10;
+  if (t < R.open) { C.x = tx; C.y = ty - 14 - Math.round((1 - t / R.open) * 6); C.angle = 0; C.open = 1; T.fx.alpha = 1;
+    if (!C.popped) { C.popped = true; Audio.sfx('pop'); spawnSprite('flash', tx, ty - 14, { size: 8, life: .2, col: '#ffffff' }); } }
+  else if (t < R.absorb) { const k = (t - R.open) / (R.absorb - R.open); C.x = tx; C.y = ty - 14; C.open = 1; C.beam = 1 - Math.max(0, (k - .8) / .2);
+    T.fx.tint = '#ff5a5a'; T.fx.sx = T.fx.sy = Math.max(.1, 1 - easeIn(k) * .9); T.fx.dy = -Math.round(easeIn(k) * 16); T.fx.alpha = 1 - Math.max(0, (k - .7) / .3);
+    if (!C.absorbed) { C.absorbed = true; Audio.sfx('absorb'); } if (vrnd() < .6) spawnParts(tx + (vrnd() - .5) * 16, ty + (vrnd() - .5) * 10, 1, ['#ff8080', '#ffffff'], { speed: 10, life: .3, grav: -70 }); }
+  else if (t < R.shut) { C.beam = 0; C.open = 0; T.fx.alpha = 0; C.y = ty - 14; if (!C.shut) { C.shut = true; Audio.sfx('lock'); spawnSprite('flash', tx, ty - 14, { size: 6, life: .15, col: '#ff9a9a' }); } }
+  else { T.fx.alpha = 0; C.small = true; const k = Math.min(1, (t - R.shut) / (R.fly - R.shut)), site = e.site; if (C.far == null) C.far = !site || !unitVisible(site); // an off-screen PC: the ball heads its way and fades
+    if (!C.far) { const sx = site.x * TILE + TILE / 2, sy = site.y * TILE + 8; C.x = lerp(tx, sx, easeInOut(k)); C.y = lerp(ty - 14, sy, k) - Math.sin(k * Math.PI) * Math.min(40, 14 + dist(site, T) * 3); if (vrnd() < .6) spawnParts(C.x, C.y, 1, ['#ff9a9a', '#ffffff'], { speed: 6, life: .3, grav: 0 });
+      if (k >= 1 && !C.arrived) { C.arrived = true; C.gone = true; Audio.sfx('item'); spawnSprite('ring', sx, sy + 8, { size: 18, life: .4, col: teamColorL(T.team) }); floatText(sx, sy - 6, 'BOX · ' + WAR.recovery + 'd', teamColorL(T.team), { outline: '#000', life: 1.1 }); } }
+    else { const dx = site ? Math.sign(site.x - T.x) : 0, dy = site ? Math.sign(site.y - T.y) : -1; C.x = tx + dx * easeOut(k) * 26; C.y = ty - 14 + dy * easeOut(k) * 14 - Math.sin(k * Math.PI) * 12; C.fade = clamp((k - .35) / .65, 0, 1); if (k >= 1) C.gone = true;
+      if (!C.said) { C.said = true; floatText(tx, ty + 12, 'BOX · ' + WAR.recovery + 'd', teamColorL(T.team), { outline: '#000', life: 1.1 }); } } } // under the KO's own text
+  if (q.t >= q.dur) { T.fx.tint = null; T.fx.sx = T.fx.sy = 1; T.fx.dy = 0; T.fx.alpha = 0; }
+}
 // What the capture shows on the board (board space): a vignette that closes in on the ball while it shakes, the red
 // beam, the ball itself (spinning, open, wobbling) with its shadow, or the small ball on its way to the PC.
 function drawCatchFx(q) {
   const C = q.cfx; if (!C || C.x == null || C.gone && !C.small) return; const ox = -CAM.x + FX.shakeX, oy = -CAM.y + FX.shakeY, bx = Math.round(C.x + ox), by = Math.round(C.y + oy);
   if (C.dim > 0 && !REDUCED) { const r = 26, W = bvW() / BT.zoom + 64, H = bvH() / BT.zoom + 64; ctx.globalAlpha = .5 * C.dim; rect(-32, -32, W, by - r + 32, '#050915'); rect(-32, by + r, W, H, '#050915'); rect(-32, by - r, bx - r + 32, 2 * r, '#050915'); rect(bx + r, by - r, W, 2 * r, '#050915'); ctx.globalAlpha = .25 * C.dim; ellipseRing(bx, by, r + 2, r + 2, 3, '#050915'); ctx.globalAlpha = 1; }
-  if (C.beam > 0) { const T = q.ev.unit, px2 = T.x * TILE + TILE / 2 + ox, py = T.y * TILE + 20 + oy; ctx.globalAlpha = C.beam * (.55 + .45 * Math.sin(BT.time * 44)); pline(bx - 3, by + 3, px2 - 9, py, '#ff5050', 2); pline(bx + 3, by + 3, px2 + 9, py, '#ff5050', 2); pline(bx, by + 3, px2, py - 3, '#ffffff', 1); ctx.globalAlpha = 1; }
+  if (C.beam > 0) { const T = q.ev.unit, px2 = T.x * TILE + TILE / 2 + ox, py = T.y * TILE + 20 + oy, bc = C.beamCol || '#ff5050'; ctx.globalAlpha = C.beam * (.55 + .45 * Math.sin(BT.time * 44)); pline(bx - 3, by + 3, px2 - 9, py, bc, 2); pline(bx + 3, by + 3, px2 + 9, py, bc, 2); pline(bx, by + 3, px2, py - 3, '#ffffff', 1); ctx.globalAlpha = 1; }
   if (C.shadow) { ctx.globalAlpha = .3 * C.shadow.k; ellipse(Math.round(C.shadow.x + ox), Math.round(C.shadow.y + oy), 5, 2, '#000000'); ctx.globalAlpha = 1; }
   if (C.small) { if (C.gone) return; ctx.globalAlpha = C.fade != null ? 1 - C.fade : 1; drawBall(bx, by, ITEMS[q.ev.ball] ? ITEMS[q.ev.ball].col : ITEMS.pokeball.col, 3); ctx.globalAlpha = 1; return; }
-  ctx.drawImage(ballSprite(C.angle || 0, C.open ? 1 : 0, C.glow ? 1 : 0, ITEMS[q.ev.ball] ? ITEMS[q.ev.ball].col : '#e83c3c'), bx - 8, by - 10);
+  if (C.fade != null) ctx.globalAlpha = Math.max(0, 1 - C.fade); ctx.drawImage(ballSprite(C.angle || 0, C.open ? 1 : 0, C.glow ? 1 : 0, ITEMS[q.ev.ball] ? ITEMS[q.ev.ball].col : '#e83c3c'), bx - 8, by - 10); ctx.globalAlpha = 1;
 }
 BT.hpShow = new Map();
 
@@ -702,7 +747,7 @@ function drawBoardLayer() {
   if (BT.mode === 'target') drawAimLock();
   // cursor
   if (['idle', 'move', 'target', 'catchTarget', 'skillTarget', 'unitinfo'].includes(BT.mode)) { const hostileCur = unitAt(BT.cx, BT.cy) && hostile(unitAt(BT.cx, BT.cy).team, HT()); drawCursor(tileX(BT.cx), tileY(BT.cy), BT.time * 1000, '#ffffff', (BT.mode === 'target' || hostileCur) ? '#ff5a5a' : BT.mode === 'skillTarget' ? '#60e070' : '#ffd24a'); }
-  if (BT.anim && BT.anim.kind === 'event' && BT.anim.ev.type === 'capture') drawCatchFx(BT.anim);
+  if (BT.anim && BT.anim.kind === 'event' && (BT.anim.ev.type === 'capture' || BT.anim.ev.type === 'recall' || BT.anim.ev.type === 'spawn' && BT.anim.ev.deploy)) drawCatchFx(BT.anim);
   drawFX(-CAM.x + FX.shakeX, -CAM.y + FX.shakeY, false);
 }
 // Ambient life on outdoor maps: huge soft cloud shadows drifting across the field and a few butterflies. Faint on

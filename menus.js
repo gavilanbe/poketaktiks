@@ -64,7 +64,7 @@ function warMenuAction(it) {
   const from = BT.menu && BT.menu.kind, keep = BT.menu && BT.menu.i;
   if (it.id === 'pc') { Audio.sfx('ok'); openDeployMenu(); if (from === 'main') BT.menu.back = () => openEndMenu(keep); }
   else if (it.id.startsWith('site:')) { Audio.sfx('ok'); const back = BT.menu.back; openDeployMenu(B.war.props[+it.id.slice(5)]); BT.menu.back = () => { openDeployMenu(); BT.menu.back = back; }; }
-  else { const u = warDeploy(HT(), +it.id.slice(7), BT.deploySite); if (!u) { Audio.sfx('error'); return true; } BT.queue = [{ kind: 'event', ev: { type: 'spawn', unit: u, deploy: true } }]; playQueue(() => { BT.mode = 'idle'; }); }
+  else { const u = warDeploy(HT(), +it.id.slice(7), BT.deploySite); if (!u) { Audio.sfx('error'); return true; } u.fx.alpha = 0; BT.menu = null; BT.queue = [{ kind: 'event', ev: { type: 'spawn', unit: u, deploy: true } }]; playQueue(() => { BT.mode = 'idle'; }); }
   return true;
 }
 // The wheel walks a menu one row per notch (a trackpad's stream of small deltas adds up to a notch), without wrapping.

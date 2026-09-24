@@ -215,6 +215,11 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
   muzzle flashes, explosions, smoke and bouncing debris, weather and a KO stamp.
 - **Catching**: a spinning throw, an open ball with a red beam, bounces, glowing
   shakes, GOTCHA! and the flight to the PC.
+- **Sending out and recalling**: a Pokémon deployed from the PC comes out the
+  way the games send one out (the ball pops up out of the building, bursts open,
+  and a beam in the side's colour draws a white silhouette that grows, colours in
+  and lands: "Go, Pikachu!"); one that faints is recalled by a red beam and its
+  ball heads for the nearest PC, "BOX · 2d".
 - **Board**: every tile is pixel art drawn in code; units wear team outlines,
   ranges flood out, phase banners tilt in, powers play a commander cut-in.
 - **Menus**: a Pokémon's commands open beside it with its portrait and HP, and
