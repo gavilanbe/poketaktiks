@@ -9,12 +9,15 @@ const TILE = 32;                      // logical pixels per board tile
 const VIEW = { w: 480, h: 270, scale: 2, dpr: 1, touch: typeof matchMedia === 'function' && !!matchMedia('(hover: none) and (pointer: coarse)').matches };
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d', { alpha: false });
-const REDUCED = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const PREFERS_REDUCED = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+let REDUCED = PREFERS_REDUCED; // the Motion option can force it either way; 'auto' follows the system setting
 // Persisted presentation preferences. battle: 'full' (lateral duel scene), 'quick' (same scene, faster) or 'map' (strikes on the board).
-const PREF = { battle: 'full', territoryGuide: 'show' };
-const PREF_VALUES = { battle: ['full', 'quick', 'map'], territoryGuide: ['show', 'hide'] };
+const PREF = { battle: 'full', territoryGuide: 'show', motion: 'auto' };
+const PREF_VALUES = { battle: ['full', 'quick', 'map'], territoryGuide: ['show', 'hide'], motion: ['auto', 'full', 'reduced'] };
 try { for (const k in PREF) { const v = localStorage.getItem('pk_' + k); if (PREF_VALUES[k].includes(v)) PREF[k] = v; } } catch (_) { }
-function setPref(k, v) { if (!PREF_VALUES[k].includes(v)) return; PREF[k] = v; try { localStorage.setItem('pk_' + k, v); } catch (_) { } }
+function applyMotion() { REDUCED = PREF.motion === 'reduced' || (PREF.motion === 'auto' && PREFERS_REDUCED); }
+applyMotion();
+function setPref(k, v) { if (!PREF_VALUES[k].includes(v)) return; PREF[k] = v; if (k === 'motion') applyMotion(); try { localStorage.setItem('pk_' + k, v); } catch (_) { } }
 function cyclePref(k) { const vs = PREF_VALUES[k]; setPref(k, vs[(vs.indexOf(PREF[k]) + 1) % vs.length]); return PREF[k]; }
 
 // Integer device-pixel scale for a canvas of pw×ph device pixels shown at cw CSS pixels wide.
@@ -257,6 +260,36 @@ function screenTitle(title, sub, y = 6) {
   const yy = y + Math.round((1 - k) * -14); shinyTitle(title, W / 2, yy, UI.gold, UI.goldDark);
   const rw = Math.round((tw + 28) * clamp(k, 0, 1)); rect(W / 2 - rw / 2, y + 12, rw, 1, UI.gold); rect(W / 2 - rw / 2, y + 13, rw, 1, UI.goldDark); if (rw > 8) { px(W / 2 - rw / 2 - 2, y + 12, UI.gold); px(W / 2 + rw / 2 + 1, y + 12, UI.gold); }
   if (sub) textC(sub, W / 2, y + 17, UI.muted, { outline: UI.shadow }); return y + (sub ? 28 : 16);
+}
+// ---------------------------------------------------------------- pre-battle screens
+// Every way into a battle walks the same steps (a front: MISSION › TEAM › BATTLE; a Skirmish: RULES › TEAM › BATTLE...).
+// The header names the screen and shows where the player is on that path, done steps ticked; the footer keeps the way
+// back on the left and the one way forward on the right, named after the step it leads to.
+function stepper(steps, cur, cx, y, onStep) {
+  const gap = 12, parts = steps.map((s, i) => (i < cur ? '✓ ' : '') + s), w = parts.reduce((a, p) => a + textWidth(p), 0) + gap * (parts.length - 1); let x = Math.round(cx - w / 2);
+  parts.forEach((p, i) => { const tw = textWidth(p), done = i < cur, now = i === cur;
+    if (now) { rrect(x - 4, y - 2, tw + 8, 11, '#2a2470', 2); outline(x - 4, y - 2, tw + 8, 11, UI.goldDark); }
+    text(p, x, y, done ? '#8ae89a' : now ? UI.gold : UI.dim, { shadow: UI.inset });
+    if (done && onStep) hit(x - 4, y - 3, tw + 8, 13, () => { Audio.sfx('cancel'); onStep(i); }, 'STEP ' + steps[i]);
+    x += tw; if (i < parts.length - 1) { text('▸', x + Math.round((gap - textWidth('▸')) / 2), y, UI.dim); x += gap; } });
+  return y + 11;
+}
+// The screen's name with the path under it (steps may be null for screens outside a path). Returns the top of the body.
+function setupHeader(title, steps, cur, onStep, y = 4) { const yy = screenTitle(title, null, y); return steps ? stepper(steps, cur, VIEW.w / 2, yy + 1, onStep) + 3 : yy; }
+function setupFootTop() { const bh = btnH(); return VIEW.h - (narrowView() ? 2 * (bh + 4) + 8 : bh + 12); }
+// o = { back: {label, run}, next: {label, run, disabled, variant}, extra: [{label, run, variant, disabled}], hints }
+function setupFooter(o) {
+  const W = VIEW.w, H = VIEW.h, bh = btnH(), back = o.back, next = o.next, extra = o.extra || []; footerBand(H - setupFootTop());
+  const nextOpt = n => n.disabled ? { disabled: true } : { variant: n.variant || 'primary' };
+  if (narrowView()) { const r1 = H - 2 * (bh + 4), r2 = H - bh - 4, n = 1 + extra.length, cw = Math.floor((W - 12 - 4 * (n - 1)) / n);
+    bigButton(6, r1, cw, bh, back.label, back.run, { variant: 'ghost', small: textWidth(back.label, BIG) > cw - 8 });
+    extra.forEach((e, i) => bigButton(6 + (i + 1) * (cw + 4), r1, cw, bh, e.label, e.run, { variant: e.variant, disabled: e.disabled, small: textWidth(e.label, BIG) > cw - 8 }));
+    if (next) bigButton(6, r2, W - 12, bh, next.label, next.run, nextOpt(next)); return; }
+  const fy = H - bh - 6, bw = l => Math.max(64, textWidth(l, BIG) + 16); let x = 6;
+  bigButton(x, fy, bw(back.label), bh, back.label, back.run, { variant: 'ghost' }); x += bw(back.label) + 6;
+  for (const e of extra) { bigButton(x, fy, bw(e.label), bh, e.label, e.run, { variant: e.variant, disabled: e.disabled }); x += bw(e.label) + 6; }
+  let nx = W - 6; if (next) { const nw = Math.max(90, textWidth(next.label, BIG) + 20); nx = W - 6 - nw; bigButton(nx, fy, nw, bh, next.label, next.run, nextOpt(next)); }
+  if (o.hints && o.hints.length) { let items = o.hints.filter(Boolean); while (items.length && hintWidth(items) > nx - x - 12) items = items.slice(0, -1); if (items.length) hintLine(items, Math.round((x + nx) / 2), fy + Math.round((bh - 7) / 2), { pill: false }); }
 }
 function footerBand(h) { const W = VIEW.w, H = VIEW.h; ctx.globalAlpha = .88; rect(0, H - h, W, h, '#08071a'); ctx.globalAlpha = 1; hline(0, H - h, W, UI.gold); hline(0, H - h + 1, W, UI.goldDark); hline(0, H - h + 2, W, UI.inset); return H - h; }
 

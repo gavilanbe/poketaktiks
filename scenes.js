@@ -399,7 +399,7 @@ function creditsDraw() {
   const top = L.horizon * .9, y0 = top - 8 - (t - .3) * 18; lines.forEach(([l, col, big], i) => { const y = y0 + i * 14; if (y < 4 || y > top - 8) return; ctx.globalAlpha = clamp(Math.min(y - 4, top - 8 - y) / 16, 0, 1); if (big) bigC(l, W / 2, y, col, { outline: UI.inset }); else textC(l, W / 2, y, col, { outline: UI.inset }); ctx.globalAlpha = 1; });
   // the wordmark lands once the credits have passed
   const endAt = .3 + (top - 12 + (lines.length - 1) * 14) / 18 + .6; if (t > endAt) { const saved = SC.t; SC.t = t - endAt; const cell = logoCell(W, H, W - 24); drawLogo(W / 2, Math.max(8, Math.round(top * .25)), cell); SC.t = saved; if (t > endAt + 1.6) { ctx.globalAlpha = clamp((t - endAt - 1.6) / .5, 0, 1); bigC('THE END', W / 2, Math.round(top * .25) + logoMetrics(cell).h + 8, UI.ink, { outline: UI.inset }); ctx.globalAlpha = 1; } }
-  if (t > endAt + 2.4 || (t > 4 && SC.skip)) goScene('title');
+  if (t > endAt + 2.4 || (t > 4 && SC.skip)) { if (SC.data && SC.data.back === 'options') { goScene('options', { back: (SC.titleItems || []).findIndex(it => it.label === 'OPTIONS') }); SC.i = 4; } else goScene('title'); }
   else if (t > 3) hintLine(VIEW.touch ? ['tap to skip'] : [['Z', 'skip']], W / 2, H - 14);
 }
 function creditsInput(ev) { if (ev.type === 'up' || ev.type === 'key') SC.skip = true; }

@@ -32,12 +32,15 @@ const TILE = 32;                      // logical pixels per board tile
 const VIEW = { w: 480, h: 270, scale: 2, dpr: 1, touch: typeof matchMedia === 'function' && !!matchMedia('(hover: none) and (pointer: coarse)').matches };
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d', { alpha: false });
-const REDUCED = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const PREFERS_REDUCED = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+let REDUCED = PREFERS_REDUCED; // the Motion option can force it either way; 'auto' follows the system setting
 // Persisted presentation preferences. battle: 'full' (lateral duel scene), 'quick' (same scene, faster) or 'map' (strikes on the board).
-const PREF = { battle: 'full', territoryGuide: 'show' };
-const PREF_VALUES = { battle: ['full', 'quick', 'map'], territoryGuide: ['show', 'hide'] };
+const PREF = { battle: 'full', territoryGuide: 'show', motion: 'auto' };
+const PREF_VALUES = { battle: ['full', 'quick', 'map'], territoryGuide: ['show', 'hide'], motion: ['auto', 'full', 'reduced'] };
 try { for (const k in PREF) { const v = localStorage.getItem('pk_' + k); if (PREF_VALUES[k].includes(v)) PREF[k] = v; } } catch (_) { }
-function setPref(k, v) { if (!PREF_VALUES[k].includes(v)) return; PREF[k] = v; try { localStorage.setItem('pk_' + k, v); } catch (_) { } }
+function applyMotion() { REDUCED = PREF.motion === 'reduced' || (PREF.motion === 'auto' && PREFERS_REDUCED); }
+applyMotion();
+function setPref(k, v) { if (!PREF_VALUES[k].includes(v)) return; PREF[k] = v; if (k === 'motion') applyMotion(); try { localStorage.setItem('pk_' + k, v); } catch (_) { } }
 function cyclePref(k) { const vs = PREF_VALUES[k]; setPref(k, vs[(vs.indexOf(PREF[k]) + 1) % vs.length]); return PREF[k]; }
 
 // Integer device-pixel scale for a canvas of pw×ph device pixels shown at cw CSS pixels wide.
@@ -280,6 +283,36 @@ function screenTitle(title, sub, y = 6) {
   const yy = y + Math.round((1 - k) * -14); shinyTitle(title, W / 2, yy, UI.gold, UI.goldDark);
   const rw = Math.round((tw + 28) * clamp(k, 0, 1)); rect(W / 2 - rw / 2, y + 12, rw, 1, UI.gold); rect(W / 2 - rw / 2, y + 13, rw, 1, UI.goldDark); if (rw > 8) { px(W / 2 - rw / 2 - 2, y + 12, UI.gold); px(W / 2 + rw / 2 + 1, y + 12, UI.gold); }
   if (sub) textC(sub, W / 2, y + 17, UI.muted, { outline: UI.shadow }); return y + (sub ? 28 : 16);
+}
+// ---------------------------------------------------------------- pre-battle screens
+// Every way into a battle walks the same steps (a front: MISSION › TEAM › BATTLE; a Skirmish: RULES › TEAM › BATTLE...).
+// The header names the screen and shows where the player is on that path, done steps ticked; the footer keeps the way
+// back on the left and the one way forward on the right, named after the step it leads to.
+function stepper(steps, cur, cx, y, onStep) {
+  const gap = 12, parts = steps.map((s, i) => (i < cur ? '✓ ' : '') + s), w = parts.reduce((a, p) => a + textWidth(p), 0) + gap * (parts.length - 1); let x = Math.round(cx - w / 2);
+  parts.forEach((p, i) => { const tw = textWidth(p), done = i < cur, now = i === cur;
+    if (now) { rrect(x - 4, y - 2, tw + 8, 11, '#2a2470', 2); outline(x - 4, y - 2, tw + 8, 11, UI.goldDark); }
+    text(p, x, y, done ? '#8ae89a' : now ? UI.gold : UI.dim, { shadow: UI.inset });
+    if (done && onStep) hit(x - 4, y - 3, tw + 8, 13, () => { Audio.sfx('cancel'); onStep(i); }, 'STEP ' + steps[i]);
+    x += tw; if (i < parts.length - 1) { text('▸', x + Math.round((gap - textWidth('▸')) / 2), y, UI.dim); x += gap; } });
+  return y + 11;
+}
+// The screen's name with the path under it (steps may be null for screens outside a path). Returns the top of the body.
+function setupHeader(title, steps, cur, onStep, y = 4) { const yy = screenTitle(title, null, y); return steps ? stepper(steps, cur, VIEW.w / 2, yy + 1, onStep) + 3 : yy; }
+function setupFootTop() { const bh = btnH(); return VIEW.h - (narrowView() ? 2 * (bh + 4) + 8 : bh + 12); }
+// o = { back: {label, run}, next: {label, run, disabled, variant}, extra: [{label, run, variant, disabled}], hints }
+function setupFooter(o) {
+  const W = VIEW.w, H = VIEW.h, bh = btnH(), back = o.back, next = o.next, extra = o.extra || []; footerBand(H - setupFootTop());
+  const nextOpt = n => n.disabled ? { disabled: true } : { variant: n.variant || 'primary' };
+  if (narrowView()) { const r1 = H - 2 * (bh + 4), r2 = H - bh - 4, n = 1 + extra.length, cw = Math.floor((W - 12 - 4 * (n - 1)) / n);
+    bigButton(6, r1, cw, bh, back.label, back.run, { variant: 'ghost', small: textWidth(back.label, BIG) > cw - 8 });
+    extra.forEach((e, i) => bigButton(6 + (i + 1) * (cw + 4), r1, cw, bh, e.label, e.run, { variant: e.variant, disabled: e.disabled, small: textWidth(e.label, BIG) > cw - 8 }));
+    if (next) bigButton(6, r2, W - 12, bh, next.label, next.run, nextOpt(next)); return; }
+  const fy = H - bh - 6, bw = l => Math.max(64, textWidth(l, BIG) + 16); let x = 6;
+  bigButton(x, fy, bw(back.label), bh, back.label, back.run, { variant: 'ghost' }); x += bw(back.label) + 6;
+  for (const e of extra) { bigButton(x, fy, bw(e.label), bh, e.label, e.run, { variant: e.variant, disabled: e.disabled }); x += bw(e.label) + 6; }
+  let nx = W - 6; if (next) { const nw = Math.max(90, textWidth(next.label, BIG) + 20); nx = W - 6 - nw; bigButton(nx, fy, nw, bh, next.label, next.run, nextOpt(next)); }
+  if (o.hints && o.hints.length) { let items = o.hints.filter(Boolean); while (items.length && hintWidth(items) > nx - x - 12) items = items.slice(0, -1); if (items.length) hintLine(items, Math.round((x + nx) / 2), fy + Math.round((bh - 7) / 2), { pill: false }); }
 }
 function footerBand(h) { const W = VIEW.w, H = VIEW.h; ctx.globalAlpha = .88; rect(0, H - h, W, h, '#08071a'); ctx.globalAlpha = 1; hline(0, H - h, W, UI.gold); hline(0, H - h + 1, W, UI.goldDark); hline(0, H - h + 2, W, UI.inset); return H - h; }
 
@@ -573,7 +606,7 @@ const ROTULO_SRC = {
 // A glyph is "offset|rows" — offset is the row where the glyph starts below the cap line (2 = x-height).
 function parseGlyphs(src) { const out = {}; for (const k in src) { let s = src[k], off = 0; const bar = s.indexOf('|'); if (bar >= 0 && bar < 3) { off = parseInt(s.slice(0, bar)); s = s.slice(bar + 1); } const rows = s.split('/'); out[k] = { off, rows, w: rows[0].length, h: rows.length }; } return out; }
 const EXTRA_SRC = { '♪': '00011/00010/00010/00010/01110/11110/01100', '●': '1|01110/11111/11111/11111/01110', '○': '1|01110/10001/10001/10001/01110', '◂': '1|00001/00111/11111/00111/00001', '▸': '1|10000/11100/11111/11100/10000', '▲': '2|00100/01110/11111', '▼': '2|11111/01110/00100', '◆': '1|00100/01110/11111/01110/00100', '₽': '01110/01001/01001/01110/11100/01000/01000' };
-const BIG_EXTRA_SRC = { "'": '11/11/01/10/00/00/00/00/00', '★': '0001000/0001000/0011100/1111111/0111110/0011100/0110110/1100011/0000000', '♥': '0110110/1111111/1111111/1111111/0111110/0011100/0001000/0000000/0000000', '#': '0110110/0110110/1111111/0110110/0110110/1111111/0110110/0110110/0000000', '₽': '0111110/0110011/0110011/0110011/0111110/1111000/0110000/0110000/0000000' };
+const BIG_EXTRA_SRC = { "'": '11/11/01/10/00/00/00/00/00', '★': '0001000/0001000/0011100/1111111/0111110/0011100/0110110/1100011/0000000', '♥': '0110110/1111111/1111111/1111111/0111110/0011100/0001000/0000000/0000000', '#': '0110110/0110110/1111111/0110110/0110110/1111111/0110110/0110110/0000000', '₽': '0111110/0110011/0110011/0110011/0111110/1111000/0110000/0110000/0000000', '▸': '1000/1100/1110/1111/1111/1110/1100/1000/0000', '◂': '0001/0011/0111/1111/1111/0111/0011/0001/0000' };
 const FONT = Object.assign(parseGlyphs(CUADERNO_SRC), parseGlyphs(EXTRA_SRC)), BIG = Object.assign(parseGlyphs(ROTULO_SRC), parseGlyphs(BIG_EXTRA_SRC));
 const DESC = new Set('gjpqy,;¡¿ç');
 function stripAccents(c) { return c.normalize('NFD').replace(/[̀-ͯ]/g, ''); }
@@ -6222,7 +6255,7 @@ function creditsDraw() {
   const top = L.horizon * .9, y0 = top - 8 - (t - .3) * 18; lines.forEach(([l, col, big], i) => { const y = y0 + i * 14; if (y < 4 || y > top - 8) return; ctx.globalAlpha = clamp(Math.min(y - 4, top - 8 - y) / 16, 0, 1); if (big) bigC(l, W / 2, y, col, { outline: UI.inset }); else textC(l, W / 2, y, col, { outline: UI.inset }); ctx.globalAlpha = 1; });
   // the wordmark lands once the credits have passed
   const endAt = .3 + (top - 12 + (lines.length - 1) * 14) / 18 + .6; if (t > endAt) { const saved = SC.t; SC.t = t - endAt; const cell = logoCell(W, H, W - 24); drawLogo(W / 2, Math.max(8, Math.round(top * .25)), cell); SC.t = saved; if (t > endAt + 1.6) { ctx.globalAlpha = clamp((t - endAt - 1.6) / .5, 0, 1); bigC('THE END', W / 2, Math.round(top * .25) + logoMetrics(cell).h + 8, UI.ink, { outline: UI.inset }); ctx.globalAlpha = 1; } }
-  if (t > endAt + 2.4 || (t > 4 && SC.skip)) goScene('title');
+  if (t > endAt + 2.4 || (t > 4 && SC.skip)) { if (SC.data && SC.data.back === 'options') { goScene('options', { back: (SC.titleItems || []).findIndex(it => it.label === 'OPTIONS') }); SC.i = 4; } else goScene('title'); }
   else if (t > 3) hintLine(VIEW.touch ? ['tap to skip'] : [['Z', 'skip']], W / 2, H - 14);
 }
 function creditsInput(ev) { if (ev.type === 'up' || ev.type === 'key') SC.skip = true; }
@@ -6482,8 +6515,24 @@ function titleScene(L) {
   for (let y = hz + 1; y < hz + BG.lakeH; y += 2) { const k = (y - hz) / BG.lakeH, ww = Math.round(BG.sunR * (1.05 - k * .45) * (.7 + .3 * Math.sin(t * 3 + y))), off = Math.round(Math.sin(t * 2 + y * .7) * 2); hline(BG.sunX - ww + off, y, ww * 2, k < .45 ? '#ffd27a' : '#f59a62'); if (y % 4 === 1) hline(BG.sunX - Math.round(ww * .4) - off, y, Math.round(ww * .8), '#fff1c0'); }
   // birds crossing now and then
   if (!REDUCED) { const k = (t % 14) / 14, bx = -20 + k * (W + 40), by = hz * .35 + Math.sin(k * 9) * 6; for (let b = 0; b < 3; b++) { const x = Math.round(bx - b * 9), y = Math.round(by + b * 4), f = Math.floor(t * 6 + b) % 2; if (f) { px(x - 2, y, '#2a1d4a'); px(x - 1, y - 1, '#2a1d4a'); px(x, y, '#2a1d4a'); px(x + 1, y - 1, '#2a1d4a'); px(x + 2, y, '#2a1d4a'); } else { hline(x - 2, y, 5, '#2a1d4a'); px(x, y + 1, '#2a1d4a'); } } }
+  drawRocketBlimp(L, t);
   ctx.drawImage(BG.shore, 0, 0);
   drawTitleMeadow(L, BG);
+}
+// Team Rocket's airship crosses the sky now and then (the PCs are theirs), its searchlight sweeping the lake. The cone is
+// drawn a row at a time so it stays pixel-crisp; nothing flies with reduced motion.
+function drawRocketBlimp(L, t) {
+  if (REDUCED) return; const W = VIEW.w, per = 34, k = (t - 5) % per / 16; if (t < 5 || k > 1) return;
+  const x = Math.round(W + 40 - k * (W + 100)), y = Math.round(L.portrait ? L.horizon * .55 : L.horizon * .52) + Math.round(Math.sin(t * .9) * 2);
+  // the searchlight: from the gondola down to a pool of light on the water, swinging
+  const gx = x - 2, gy = y + 9, tx = Math.round(x - 14 + Math.sin(t * .8) * 34), ty = Math.round(L.shoreY - 3), rows = ty - gy;
+  if (rows > 4) { ctx.globalAlpha = .07; for (let r = 0; r < rows; r += 1) { const f = r / rows, cx = gx + (tx - gx) * f, half = 1 + f * 13; rect(Math.round(cx - half), gy + r, Math.round(half * 2), 1, '#fff4c0'); } ctx.globalAlpha = .2; ellipse(tx, ty, 15, 3, '#fff4c0'); ctx.globalAlpha = .12; ellipse(tx, ty, 22, 4, '#fff4c0'); ctx.globalAlpha = 1; }
+  // the hull: a dark capsule with its fins aft (it flies left), a red band carrying the R, a lit gondola and a blinking light
+  rect(x + 18, y - 9, 5, 5, '#2e2750'); rect(x + 18, y + 4, 5, 5, '#2e2750'); rect(x + 21, y - 2, 6, 4, '#2e2750'); hline(x + 18, y - 9, 5, '#4a4270');
+  rrect(x - 22, y - 6, 44, 12, '#241e3e', 5); hline(x - 17, y - 6, 34, '#4d4575'); hline(x - 20, y - 5, 40, '#35305a'); hline(x - 17, y + 5, 34, '#15122a');
+  rect(x - 5, y - 6, 10, 12, '#b8283a'); hline(x - 5, y - 6, 10, '#e05060'); circle(x, y, 4, '#f2eee6'); stampAt(x - 1, y - 2, ['RR.', 'R.R', 'RR.', 'R.R', 'R.R'], { R: '#c02838' });
+  rect(x - 8, y + 6, 16, 4, '#1a1630'); for (let i = 0; i < 4; i++) px(x - 6 + i * 4, y + 7, Math.floor(t * 3 + i) % 5 ? '#ffe08a' : '#8a7040');
+  if (Math.floor(t * 2) % 2) px(x - 22, y, '#ff4040'); const pr = Math.floor(t * 12) % 2; vline(x + 27, y - 2 + pr, 3, '#8a86a8');
 }
 // The backlit meadow and the knoll: swaying grass on the rim, flowers catching the last light, the team on the knoll,
 // fireflies and drifting petals. The team hops when SC.titleFx.hop says so.
@@ -6492,11 +6541,14 @@ function drawTitleMeadow(L, BG) {
   for (let x = 2; x < W - 1; x += 5) { const e = edge(x), sw = REDUCED ? 0 : Math.round(Math.sin(t * 2.4 + x * .23) * 1.2), tall = 2 + (x * 7) % 3; for (let j = 1; j <= tall; j++) px(x + Math.round(sw * j / tall), e - j, j === tall ? '#f7b066' : '#8a5a5c'); px(x - 2 + sw, e - 1, '#b8704c'); }
   for (let i = 0; i < 14; i++) { const x = (i * 61 + 17) % W, e = edge(x); if (Math.abs(x - L.knollX) < L.knollW * .5 && L.portrait) continue; const y = e + 3 + (i * 5) % Math.max(3, Math.min(14, H - e - 4)); const glow = .6 + .4 * Math.sin(t * 1.7 + i); ctx.globalAlpha = glow; px(x, y, i % 3 ? '#ff9ab8' : '#ffd35a'); px(x, y + 1, '#3f6a4a'); ctx.globalAlpha = 1; }
   const fx = SC.titleFx || {};
+  // the Tactician stands on the crest behind the team, backlit by the sunset
+  if (L.tactician) { const tc = trainerCanvas('red', false, false), rx = Math.round(L.knollX), re = edge(rx); if (tc) { ctx.globalAlpha = .45; ellipse(rx, re + 1, 13, 2, '#07051a'); ctx.globalAlpha = 1; const bob = REDUCED ? 0 : Math.round(Math.max(0, Math.sin(t * 1.3)) * 1); ctx.drawImage(tc, rx - 40, re - 78 - bob); } }
   L.team.forEach((num, i) => {
-    const x = Math.round(L.teamX + i * L.teamGap), e = edge(x), hop = fx.hop && fx.hop[i] ? Math.max(0, fx.hop[i] - t) : 0, dy = hop > 0 ? -Math.round(Math.sin((1 - hop / .45) * Math.PI) * 9) : 0;
+    const x = Math.round(L.teamX + i * L.teamGap + (L.tactician ? (i < L.team.length / 2 ? -1 : 1) * L.split : 0)), e = edge(x), hop = fx.hop && fx.hop[i] ? Math.max(0, fx.hop[i] - t) : 0, dy = hop > 0 ? -Math.round(Math.sin((1 - hop / .45) * Math.PI) * 9) : 0;
     ctx.globalAlpha = .5; ellipse(x, e + 1, 12, 2, '#07051a'); ctx.globalAlpha = 1;
     requestAnim(num); requestBigSprite(num);
     if (animReady(num)) drawAnim(num, x, e + 1 + dy, t + i * .37); else if (bigReady(num)) drawBig(num, x, e + 1 + dy, { sx: .5, sy: .5 }); else drawMon(num, x, e + 2 + dy, {});
+    if (L.aceAt === i) { const mh = typeof ANIM_META !== 'undefined' && ANIM_META[num] ? Math.min(ANIM_META[num].b || 40, 70) : 36; drawCrown(x - 4, e - mh - 8 + dy); }
   });
   if (!REDUCED) {
     for (let i = 0; i < 10; i++) { const k = t * .3 + i * .71, x = Math.round(((i * 53) % W) + Math.sin(k * 2.1) * 8), y = Math.round(edge(clamp(Math.round((i * 53) % W), 0, W - 1)) - 8 - (i * 13) % 30 + Math.sin(k * 1.7) * 5); if (Math.sin(t * 2.5 + i * 1.9) > .1) { px(x, y, '#fff6a0'); ctx.globalAlpha = .35; px(x - 1, y, '#ffe060'); px(x + 1, y, '#ffe060'); px(x, y - 1, '#ffe060'); px(x, y + 1, '#ffe060'); ctx.globalAlpha = 1; } }
@@ -6510,6 +6562,7 @@ const TITLE_ICONS = {
   map: ['.OOOO.OOO.OO.', 'OKWWWOGGGOWWO', 'OKWRWOGgGOWWO', 'OKWWWOGGGOWBO', 'OKWWROGGWOWBO', 'OKWWWRGWROBBO', 'OKGGWOWRWOWWO', 'OKGgWOWWROWWO', 'OKGGWOWWWRWWO', 'OKWWWOBBWOWRO', 'OKWWWOBBWOWWO', '.OOO.OOOO.OO.', '.............'],
   blades: ['OO.........OO', 'OSO.......OSO', '.OSO.....OSO.', '..OSO...OSO..', '...OSO.OSO...', '....OSOSO....', '.....OsO.....', '....OSOsO....', '.OO.OsO.OsO.O', 'OKKOsO...OsOK', '.OKKO.....OKO', 'OKOKKO...OKOK', 'OO..OO...OO.O'],
   duo: ['..OOOO.......', '.ORRRRO......', 'ORRhRRRO.....', 'ORRRRRRO.OOOO', 'OOOWWOOOOBBBBO', 'OWWOOWWOBBhBBBO', 'OWWWWWWOBBBBBBO', '.OWWWWOOOOWWOOO', '..OOOOOOWWOOWWO', '.......OWWWWWWO', '........OWWWWO.', '.........OOOO..', '.............'],
+  gear: ['.....OOO.....', '..OO.OSO.OO..', '.OSSOOSOOSSO.', '.OSSSSSSSSsO.', '..OSSOOOSsO..', 'OOOSO...OsOOO', 'OSSSO...OssSO', 'OOOSO...OsOOO', '..OSsOOOssO..', '.OSSsssssssO.', '.OSsOOsOOssO.', '..OO.OsO.OO..', '.....OOO.....'],
   play: ['...OOOOOOO...', '..OGGGGGGGO..', '.OGGWGGGGGGO.', 'OGGGWWGGGGGGO', 'OGGGWWWGGGGGO', 'OGGGWWWWGGGGO', 'OGGGWWWWWGGGO', 'OGGGWWWWGGGGO', 'OGGGWWWGGGGGO', 'OGGGWWGGGGGGO', '.OgGWGGGGGGgO.', '..OgggggggO..', '...OOOOOOO...'],
 };
 function titleIcon(id, x, y, dim) { const rows = TITLE_ICONS[id]; if (!rows) return; stampAt(Math.round(x), Math.round(y), rows, dim ? { O: '#07051c', Y: '#b9a36a', y: '#8a7640', W: '#c9c6e8', S: '#b8bcd8', s: '#7e84a8', K: '#6a4a3a', G: '#5c8f5c', g: '#3e6a44', R: '#b25860', h: '#e6a0a0', B: '#5a78b8', b: '#3a5288' } : { O: '#07051c', Y: '#ffd049', y: '#e09a1c', W: '#fbf6e8', S: '#e6ecff', s: '#9aa6d6', K: '#b8764a', G: '#62c86a', g: '#2f8a4a', R: '#f04848', h: '#ffb0b0', B: '#4a8cff', b: '#2a5ad0' }); }
@@ -6517,7 +6570,7 @@ function titleIcon(id, x, y, dim) { const rows = TITLE_ICONS[id]; if (!rows) ret
 // ---------------------------------------------------------------- menu
 function titleSelect(i) {
   if (SC.titleFx?.action || i === SC.i || SC.titleConfirm) return;
-  SC.i = i; SC.titleFx.focusAt = SC.t; Audio.sfx('titleFocus'); titleHop(i % 4);
+  SC.i = i; SC.titleFx.focusAt = SC.t; SC.titleFx.cardAt = null; Audio.sfx('titleFocus'); titleHop(i % 4);
   const b = SC.hits[i]; if (b) titleBurst(b.x + 12, b.y + b.h / 2, 6);
 }
 function titleHop(i) { const fx = SC.titleFx; if (!fx || REDUCED) return; fx.hop = fx.hop || []; fx.hop[i] = SC.t + .45; }
@@ -6543,14 +6596,21 @@ function titleUpdate(dt) {
 function initTitle() {
   // Save state is a scene snapshot, not a localStorage read on every animation frame.
   const save = loadSave(), suspended = loadSuspend(); const items = [];
-  if (suspended) items.push({ label: 'RESUME BATTLE', sub: 'Back to your last turn', icon: 'play', run: resumeSuspend });
-  if (save) { const chapter = CHAPTERS[clamp(save.chapter || 0, 0, CHAPTERS.length - 1)]; items.push({ label: 'CONTINUE', sub: save.beaten ? 'Kanto is free · replay for stars' : 'Front ' + chapter.num + ' · ' + chapter.title, icon: 'map', run: continueCampaign }); }
-  items.push({ label: 'NEW GAME', sub: 'Free Kanto from Team Rocket', icon: 'star', run: () => { if (save) openTitleConfirm(); else startNewGame(); } });
-  items.push({ label: 'QUICK BATTLE', sub: 'Skirmish · Tower · Safari · Conquest', icon: 'blades', run: () => goScene('quick') });
-  items.push({ label: 'VERSUS', sub: 'Two players, one screen', icon: 'duo', run: startVersusSetup });
-  items.push({ label: 'COMMANDERS', sub: 'Gym Leaders, their Aces and powers', icon: 'crown', run: openCoRoom });
+  if (suspended) items.push({ label: 'RESUME BATTLE', sub: 'Back to your last turn', icon: 'play', col: '#5ee06a', run: resumeSuspend });
+  if (save) { const chapter = CHAPTERS[clamp(save.chapter || 0, 0, CHAPTERS.length - 1)]; items.push({ label: 'CONTINUE', sub: save.beaten ? 'Kanto is free · replay for stars' : 'Front ' + chapter.num + ' · ' + chapter.title, icon: 'map', col: '#5ec8ff', run: continueCampaign }); }
+  items.push({ label: 'NEW GAME', sub: 'Free Kanto from Team Rocket', icon: 'star', col: '#ffd049', run: () => { if (save) openTitleConfirm(); else startNewGame(); } });
+  items.push({ label: 'QUICK BATTLE', sub: 'Skirmish · Tower · Safari · Conquest', icon: 'blades', col: '#ff6a5a', run: () => goScene('quick') });
+  items.push({ label: 'VERSUS', sub: 'Two players, one screen', icon: 'duo', col: '#8ab4ff', run: startVersusSetup });
+  items.push({ label: 'COMMANDERS', sub: 'Gym Leaders, their Aces and powers', icon: 'crown', col: '#e0b030', run: openCoRoom });
+  items.push({ label: 'OPTIONS', sub: 'Sound, battle scenes, motion, data', icon: 'gear', col: '#aab0d8', run: () => openOptions() });
   items.forEach((item, i) => { item.hover = i === 0 ? 1 : 0; });
   SC.titleItems = items; SC.menuLen = items.length; SC.titleConfirm = null;
+  // the knoll shows your own party once a journey has begun: the Ace beside the Tactician, crowned
+  const party = save && save.party && save.party.length ? save.party : null;
+  if (party) { const ace = party[clamp(save.captainPid || 0, 0, party.length - 1)], others = party.filter(p => p !== ace).map(p => p.num), n = Math.min(4, party.length), rs = n === 1 ? 0 : Math.ceil(n / 2);
+    SC.titleTeam = others.slice(0, rs).concat([ace.num], others.slice(rs, n - 1)); SC.titleAce = rs; }
+  else { SC.titleTeam = null; SC.titleAce = null; }
+  SC.titleSave = save || null;
   SC.titleFx = { particles: [], focusAt: -10, logoAt: -10, down: null, action: null, hop: [], landed: {}, shake: 0 };
 }
 // In-game confirmation for replacing a campaign save (never a browser dialog).
@@ -6573,16 +6633,19 @@ function titleLayout(count) {
   if (portrait) { rowH = clamp(Math.floor((H * .42 - (rows - 1) * gap) / rows), 20, 30); menuY = endY - rows * rowH - (rows - 1) * gap; }
   else { menuY = logoY + M.h + (compact ? 4 : 20); rowH = clamp(Math.floor((endY - menuY - (rows - 1) * gap) / rows), 18, 32); }
   // the landscape: horizon, sun, lake, the shore and the knoll with the team, placed around the logo and the menu
-  const team = [1, 25, 4, 7];
-  let horizon, shoreY, cliffY, knollX, knollW, teamGap, teamX, sunX;
+  const team = SC.titleTeam && SC.titleTeam.length ? SC.titleTeam : [1, 25, 4, 7];
+  let horizon, shoreY, cliffY, knollX, knollW, teamGap, sunX;
   if (portrait) {
     shoreY = menuY - 12; cliffY = shoreY - 12; horizon = Math.round(clamp(cliffY - 34, logoY + M.h + 40, H * .62));
-    knollX = Math.round(W / 2); knollW = Math.round(W * .62); teamGap = Math.min(42, (W - 44) / 3.3); teamX = Math.round(W / 2 - teamGap * 1.5); sunX = Math.round(W * .68);
+    knollX = Math.round(W / 2); knollW = Math.round(W * .62); teamGap = Math.min(42, (W - 44) / 3.3); sunX = Math.round(W * .68);
   } else {
     horizon = Math.round(H * .58); shoreY = Math.round(H * .8); cliffY = Math.round(H * .72);
-    knollX = Math.round(W * .76); knollW = Math.round(W * .3); teamGap = Math.min(52, W * .1); teamX = Math.round(knollX - teamGap * 1.5); sunX = Math.round(W * .74);
+    knollX = Math.round(W * .76); knollW = Math.round(W * .3); teamGap = Math.min(52, W * .1); sunX = Math.round(W * .74);
   }
-  return { portrait, compact, cols, x, w, cell, logoY, logoCx, logoH: M.h, menuY, rowH, gap, horizon, shoreY, cliffY, knollX, knollW, sunX, sunR: Math.round(clamp(Math.min(W, H) * .12, 14, 40)), team, teamGap, teamX };
+  // the Tactician takes the middle of the crest when the team leaves room for them (the team parts around them)
+  const tactician = !compact && H >= 200 && (portrait ? W >= 180 : W >= 300), split = tactician ? Math.round(clamp(teamGap * .35, 8, 16)) : 0;
+  const teamX = Math.round(knollX - teamGap * (team.length - 1) / 2);
+  return { portrait, compact, cols, x, w, cell, logoY, logoCx, logoH: M.h, menuY, rowH, gap, horizon, shoreY, cliffY, knollX, knollW, sunX, sunR: Math.round(clamp(Math.min(W, H) * .12, 14, 40)), team, teamGap, teamX, tactician, split, aceAt: SC.titleAce != null ? SC.titleAce : -1 };
 }
 // One menu entry: a dark slab that slides right when focused, with a Poké Ball cursor, an icon, the label in the display
 // face and a one-line description. Pressing sinks it; confirming flashes it.
@@ -6593,7 +6656,8 @@ function titleCard(x, y, w, h, item, selected, run, index) {
   ctx.globalAlpha = u * .55; rrect(x + 2, y + 3, w, h, '#05031a', 2); ctx.globalAlpha = u;
   const face = selected ? '#2c2f78' : '#17143d'; rrect(x, y, w, h, selected ? UI.gold : '#060420', 2); rrect(x + 1, y + 1, w - 2, h - 2, face, 1);
   hline(x + 2, y + 1, w - 4, shade(face, .35)); hline(x + 2, y + h - 2, w - 4, shade(face, -.45));
-  if (selected) { rect(x + 1, y + 2, 2, h - 4, UI.gold); if (!REDUCED) { const k = (SC.t - fx.focusAt) / .45; if (k >= 0 && k < 1) { ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2, w - 4, h - 4); ctx.clip(); ctx.globalAlpha = u * .25 * Math.sin(k * Math.PI); for (let q = 0; q < 6; q++) vline(x + Math.round(k * (w + 24)) - 12 + q, y + 2, h - 4, '#fff6c9'); ctx.restore(); } } }
+  rect(x + 1, y + 2, 3, h - 4, selected ? (item.col || UI.gold) : shade(item.col || '#6a6a90', -.55)); if (selected) hline(x + 1, y + 2, 3, '#ffffff');
+  if (selected) { if (!REDUCED) { const k = (SC.t - fx.focusAt) / .45; if (k >= 0 && k < 1) { ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2, w - 4, h - 4); ctx.clip(); ctx.globalAlpha = u * .25 * Math.sin(k * Math.PI); for (let q = 0; q < 6; q++) vline(x + Math.round(k * (w + 24)) - 12 + q, y + 2, h - 4, '#fff6c9'); ctx.restore(); } } }
   if (confirming) { ctx.globalAlpha = u * clamp(1 - fx.action.t / .2, 0, 1) * .6; rrect(x + 1, y + 1, w - 2, h - 2, '#ffffff', 1); ctx.globalAlpha = u; }
   titleIcon(item.icon, x + 7, y + Math.round((h - 13) / 2) - (selected && !REDUCED ? Math.round(Math.abs(Math.sin(SC.t * 4)) * 1) : 0), !selected);
   const sub = h >= 26, ty = sub ? y + Math.round((h - 18) / 2) : y + Math.round((h - 9) / 2);
@@ -6625,9 +6689,32 @@ function titleDraw() {
   iconAt('note', 9, H - 19, Audio.muted ? '#8d8fbe' : UI.gold); text(sound, 21, H - 17, soundHot ? UI.ink : '#b9bce0', { shadow: '#07051c' });
   if (!L.portrait) { hintLine(VIEW.touch ? ['tap to begin'] : [['↑↓', 'select'], ['Z', 'confirm']], W / 2, H - 17, { pill: false, col: '#b9bce0' }); textR('GEN I · FAN GAME', W - 10, H - 17, '#8d8fbe', { shadow: '#07051c' }); }
   else textR('GEN I · FAN GAME', W - 8, H - 17, '#8d8fbe', { shadow: '#07051c' });
+  if (SC.titleSave && items[SC.i] && items[SC.i].label === 'CONTINUE' && !SC.titleConfirm) drawTrainerCard(L, SC.titleSave);
   for (const p of SC.titleFx.particles) { const k = 1 - p.age / p.life; if (p.kind === 'dust') { ctx.globalAlpha = k * .8; rect(Math.round(p.x) - 1, Math.round(p.y) - 1, 2, 2, '#e8d6c0'); } else if (p.kind === 'star') { ctx.globalAlpha = k; sparkle(p.x, p.y, k > .5 ? 2 : 1, '#fff2a8'); } else { ctx.globalAlpha = k; px(Math.round(p.x), Math.round(p.y), '#ffffff'); } }
   ctx.globalAlpha = 1;
   if (SC.titleConfirm) drawTitleConfirm();
+}
+// With CONTINUE in focus, the journey so far as a trainer card: the front reached (a pip per front), the stars, the Gym
+// Leaders freed (their faces, like badges) and the party with its Ace crowned. It floats in the sky on wide screens and
+// sits under the logo on phones, in a compact form.
+function drawTrainerCard(L, save) {
+  const W = VIEW.w, t = SC.t, wide = !L.portrait, n = CHAPTERS.length, reached = clamp(save.chapter || 0, 0, n), ch = CHAPTERS[Math.min(reached, n - 1)], party = save.party || [], ace = party[save.captainPid || 0];
+  const stars = CHAPTERS.reduce((a, c) => a + ((save.rating && save.rating[c.id]) || 0), 0), leaders = coUnlocked(save).filter(c => c !== 'you');
+  const where = save.beaten ? 'KANTO IS FREE' : 'FRONT ' + ch.num + ' · ' + ch.title.toUpperCase(), fx = SC.titleFx, pop = REDUCED ? 1 : easeOutBack(clamp((t - (fx.cardAt == null ? (fx.cardAt = t) : fx.cardAt)) / .3, 0, 1), 1.8);
+  const icons = (x, y, max) => party.slice(0, max).forEach((p, i) => { const bob = !REDUCED && i === Math.floor(t * 2) % Math.min(max, party.length) ? -1 : 0; ctx.drawImage(monIcon(p.num), x + i * 22, y + bob, 24, 18); if (p === ace) drawCrown(x + i * 22 + 13, y - 2 + bob); });
+  if (!wide) { const w = W - 20, h = 38, x = 10, y = L.logoY + L.logoH + 12; if (y + h > L.menuY - 30) return; ctx.save(); ctx.globalAlpha = clamp(pop, 0, 1);
+    panel(x, y, w, h, { fill: '#1a1e4a' }); text(fitLabel(where, w - 60), x + 7, y + 6, UI.gold); textR('★ ' + stars + '/' + n * 3, x + w - 7, y + 6, '#ffe070'); icons(x + 5, y + 16, Math.min(6, Math.floor((w - 10) / 22))); ctx.restore(); return; }
+  const w = Math.min(190, Math.round(W * .31)), h = 100, x = W - w - 10, y = 22 + Math.round((1 - pop) * -10); ctx.save(); ctx.globalAlpha = clamp(pop, 0, 1);
+  const p = panel(x, y, w, h, { header: 'TRAINER CARD', headerRight: 'TACTICIAN', headerRightCol: UI.gold, headerFill: '#2a2470' });
+  const bust = trainerBust('red', false); portraitBg(x + 6, p.cy, 34, 34, 0); if (bust) { ctx.save(); ctx.beginPath(); ctx.rect(x + 6, p.cy, 34, 34); ctx.clip(); ctx.drawImage(bust, x + 6 - 7, p.cy - 4); ctx.restore(); } outline(x + 5, p.cy - 1, 36, 36, UI.border2);
+  const tx = x + 46, tw = w - 52; text(fitLabel(save.beaten ? 'KANTO IS FREE' : ch.title.toUpperCase(), tw), tx, p.cy + 1, UI.gold);
+  for (let i = 0; i < n; i++) { const on = i < reached, cur = i === reached && !save.beaten; rect(tx + i * 9, p.cy + 12, 7, 5, UI.inset); rect(tx + 1 + i * 9, p.cy + 13, 5, 3, on ? UI.gold : cur ? (Math.floor(t * 3) % 2 ? '#8ab4ff' : '#3d5aa0') : '#2a2d5a'); }
+  text('★ ' + stars + ' / ' + n * 3 + ' stars', tx, p.cy + 22, '#ffe070');
+  let yy = p.cy + 38; text('LEADERS', x + 7, yy + 5, UI.muted); const lx = x + 7 + textWidth('LEADERS') + 5;
+  if (leaders.length) leaders.slice(0, Math.floor((x + w - 6 - lx) / 19)).forEach((id, i) => { const f = trainerFace(COS[id].tr); rect(lx + i * 19, yy, 17, 17, shade(COS[id].col, -.45)); if (f) { ctx.save(); ctx.beginPath(); ctx.rect(lx + i * 19, yy, 17, 17); ctx.clip(); ctx.drawImage(f, lx + i * 19, yy); ctx.restore(); } outline(lx + i * 19 - 1, yy - 1, 19, 19, COS[id].col); });
+  else text('none freed yet', lx, yy + 5, UI.dim);
+  yy += 22; icons(x + 4, yy, Math.min(6, Math.floor((w - 8) / 22)));
+  ctx.restore();
 }
 function drawTitleConfirm() {
   const r = titleConfirmRect(), c = SC.titleConfirm; dimScreen(.62); const tok = unfold('titleConfirm', r.x, r.y, r.w, r.h);
@@ -6662,6 +6749,66 @@ function titleInput(ev) {
     if (i >= 0 && (from == null || from === i)) { titleActivate(i); return; }
     if (SC.titleLetters?.some(l => ev.x >= l.x && ev.x <= l.x + l.w && ev.y >= l.y && ev.y <= l.y + l.h)) { fx.logoAt = SC.t; titleBurst(ev.x, ev.y, 12); Audio.sfx('titleFocus'); for (let k = 0; k < 4; k++) titleHop(k); }
   }
+}
+
+// ---------------------------------------------------------------- options
+// Everything that shapes how the game plays out on screen, in one place, over the title's landscape: rows like the
+// battle's day menu (a chip, the label, the value or a lamp; ◂ ▸ change it), the focused row explained underneath, and
+// ERASE ALL DATA behind a confirmation. Changes apply at once and are kept.
+const MOTION_LABEL = { auto: 'Auto', full: 'Full', reduced: 'Reduced' };
+function optionRows() {
+  const cycle = (k, d) => { const vs = PREF_VALUES[k]; setPref(k, vs[(vs.indexOf(PREF[k]) + d + vs.length) % vs.length]); };
+  return [
+    { id: 'sound', label: 'Sound', icon: 'note', col: '#3aa870', lamp: !Audio.muted, change: () => Audio.toggle(), sub: VIEW.touch ? 'Music and sound effects' : 'Music and sound effects (M in any screen)' },
+    { id: 'battle', label: 'Battle scene', icon: 'vs', col: '#d8a030', value: BATTLE_PREF_LABEL[PREF.battle], change: d => cycle('battle', d), sub: PREF.battle === 'full' ? 'Every attack plays in the side view, blow by blow' : PREF.battle === 'quick' ? 'The side view, faster' : 'Attacks play on the board itself' },
+    { id: 'motion', label: 'Motion', icon: 'wing', col: '#3a8ad8', value: MOTION_LABEL[PREF.motion] + (PREF.motion === 'auto' ? (PREFERS_REDUCED ? ' · reduced' : ' · full') : ''), change: d => cycle('motion', d), sub: 'Reduced drops screen shakes, flashes and most animation; Auto follows your system' },
+    { id: 'guide', label: 'Conquest guide', icon: 'help', col: '#3a8ad8', lamp: PREF.territoryGuide === 'show', change: d => cycle('territoryGuide', d), sub: 'Show the three rules before each Conquest battle' },
+    { id: 'credits', label: 'Credits', icon: 'book', col: '#7a7a8a', more: true, run: () => { Audio.sfx('ok'); const s = loadSave(); goScene('credits', { party: s ? s.party : [], back: 'options' }); }, sub: 'Who made the game, and the sprites it uses' },
+    { id: 'erase', label: 'Erase all data', icon: 'skull', col: '#d23c3c', danger: true, run: () => { Audio.sfx('menu'); SC.data.confirm = { i: 0, t: SC.t }; }, sub: 'Your journey, records and settings, gone for good (asks first)' },
+  ];
+}
+function openOptions() { goScene('options', { back: SC.name === 'title' ? SC.i : 0 }); }
+function optionsLayout() { const W = VIEW.w, H = VIEW.h, rows = optionRows(), rh = VIEW.touch || narrowView() ? 20 : 17, w = Math.min(290, W - 16), foot = setupFootTop(), top = narrowView() ? 30 : 34, h = 20 + rows.length * rh + 6 + 26; return { W, H, rows, rh, w, h, x: Math.round((W - w) / 2), y: Math.max(top, Math.round(top + (foot - top - h) / 2)), foot }; }
+function optionsDraw() {
+  const S = SC.data || (SC.data = {}); if (!SC.titleItems) initTitle(); const L0 = titleLayout(SC.titleItems.length); titleScene(L0); dimScreen(.55); SC.hits = [];
+  const O = optionsLayout(), { x, y, w, h, rh, rows } = O; SC.i = clamp(SC.i, 0, rows.length - 1);
+  setupHeader('OPTIONS', null, 0, null, 6);
+  const tok = unfold('options', x, y, w, h, .18); const p = panel(x, y, w, h, { fill: '#1a1e4a', header: 'HOW THE GAME PLAYS', headerRight: w >= 260 ? 'KEPT ON THIS DEVICE' : null, headerRightCol: UI.dim });
+  rows.forEach((r, i) => { const ry = p.cy - 1 + i * rh, hot = SC.i === i, cy = ry + Math.round(rh / 2);
+    if (hot) { rrect(x + 4, ry, w - 8, rh - 1, r.danger ? '#4a1a2a' : '#34408e', 1); rect(x + 4, ry + 1, 2, rh - 3, r.danger ? UI.red : UI.gold); }
+    rrect(x + 9, cy - 6, 13, 13, UI.inset, 2); rrect(x + 10, cy - 5, 11, 11, r.col, 1); iconAt(r.icon, x + 11, cy - 4, '#ffffff');
+    text(r.label, x + 27, cy - 3, r.danger ? (hot ? '#ffb0b0' : '#e87878') : hot ? '#ffffff' : UI.ink);
+    let rx = x + w - 10;
+    if (r.lamp != null) { circle(rx - 4, cy, 4, UI.inset); circle(rx - 4, cy, 3, r.lamp ? '#5ee06a' : '#3a3a50'); if (r.lamp) px(rx - 5, cy - 1, '#d8ffe0'); textR(r.lamp ? 'ON' : 'OFF', rx - 11, cy - 3, r.lamp ? '#8ae89a' : UI.dim); }
+    else if (r.value != null) { const aw = 10; text('▸', rx - 5, cy - 3, hot ? UI.gold : UI.dim); textR(r.value, rx - aw, cy - 3, hot ? UI.gold : '#e8d8a0'); text('◂', rx - aw - textWidth(r.value) - 8, cy - 3, hot ? UI.gold : UI.dim);
+      hit(rx - aw - textWidth(r.value) - 10, ry, 12, rh, () => { SC.i = i; r.change(-1); Audio.sfx('menu'); }, r.label.toUpperCase() + '-'); hit(rx - 8, ry, 12, rh, () => { SC.i = i; r.change(1); Audio.sfx('menu'); }, r.label.toUpperCase() + '+'); }
+    else if (r.more) { for (let k = 0; k < 3; k++) vline(rx - 2 - k, cy - k, 2 * k + 1, hot ? UI.gold : UI.muted); }
+    hit(x + 4, ry, w - (r.value != null ? 70 : 8), rh, () => { if (SC.i !== i) { SC.i = i; Audio.sfx('cursor'); } optionActivate(r, 1); }, r.label.toUpperCase()); });
+  const fy = p.cy - 1 + rows.length * rh + 4, it = rows[SC.i]; hline(x + 5, fy, w - 10, UI.inset); wrap(it.sub, w - 16).slice(0, 2).forEach((l, k) => text(l, x + 8, fy + 4 + k * 9, it.danger ? '#e8a0a0' : UI.muted));
+  unfoldEnd(tok);
+  setupFooter({ back: { label: '◂ TITLE', run: () => optionsBack() }, hints: VIEW.touch ? ['tap a row to change it'] : [['▲▼', 'choose'], ['◂▸', 'change'], ['X', 'back']] });
+  if (S.confirm) drawOptionsConfirm(S.confirm);
+}
+function optionActivate(r, d) { if (r.run) r.run(); else if (r.change) { r.change(d); Audio.sfx(r.lamp === false ? 'ok' : 'menu'); } }
+function optionsBack() { Audio.sfx('cancel'); const back = SC.data && SC.data.back; goScene('title'); SC.i = back || 0; if (SC.titleItems) SC.titleItems.forEach((it, k) => { it.hover = k === SC.i ? 1 : 0; }); }
+function drawOptionsConfirm(c) {
+  const W = VIEW.w, H = VIEW.h, w = Math.min(W - 16, 240), h = 78, x = Math.round((W - w) / 2), y = Math.round((H - h) / 2); dimScreen(.6); SC.hits = [];
+  const p = panel(x, y, w, h, { header: 'ERASE ALL DATA?', headerFill: '#5a1d2e' }); wrap('Your journey, Tower ranks, Safari record and settings will be deleted.', w - 16).slice(0, 2).forEach((l, k) => textC(l, x + w / 2, p.cy + k * 9, UI.ink));
+  const bw = Math.floor((w - 24) / 2), by = y + h - 26; [['KEEP', false, 'ghost'], ['ERASE', true, 'danger']].forEach(([label, yes, variant], i) => { const bx = x + 8 + i * (bw + 8); if (c.i === i && !REDUCED) { ctx.globalAlpha = .35 + .2 * Math.sin(SC.t * 6); rrect(bx - 2, by - 2, bw + 4, 22, UI.gold, 2); ctx.globalAlpha = 1; } uiButton(bx, by, bw, 18, label, { hot: c.i === i, variant, big: true }); hit(bx, by, bw, 18, () => optionsErase(yes), label); });
+}
+function optionsErase(yes) {
+  SC.data.confirm = null; if (!yes) { Audio.sfx('cancel'); return; } Audio.sfx('titleConfirm');
+  if (!PARAMS.has('nosave')) try { const keys = ['pk_save', 'pk_suspend', 'pk_records', 'pk_mute'].concat(Object.keys(PREF).map(k => 'pk_' + k)); for (let i = 0; i < (localStorage.length || 0); i++) { const k = localStorage.key(i); if (k && k.startsWith('pk_') && !keys.includes(k)) keys.push(k); } for (const k of keys) localStorage.removeItem(k); } catch (_) { }
+  SAVE = null; PREF.battle = 'full'; PREF.territoryGuide = 'show'; PREF.motion = 'auto'; applyMotion(); goScene('title');
+}
+function optionsInput(ev) {
+  const S = SC.data || {}, rows = optionRows();
+  if (S.confirm) { const c = S.confirm; if (ev.type === 'key') { if (['left', 'right', 'up', 'down'].includes(ev.key)) { c.i = 1 - c.i; Audio.sfx('cursor'); } else if (ev.key === 'ok') optionsErase(c.i === 1); else if (ev.key === 'back') optionsErase(false); } else if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); } return; }
+  if (ev.type === 'key') { if (ev.key === 'up' || ev.key === 'down') { SC.i = (SC.i + (ev.key === 'up' ? -1 : 1) + rows.length) % rows.length; Audio.sfx('cursor'); }
+    else if (ev.key === 'left' || ev.key === 'right') { const r = rows[SC.i]; if (r.change) { r.change(ev.key === 'left' ? -1 : 1); Audio.sfx('menu'); } }
+    else if (ev.key === 'ok') optionActivate(rows[SC.i], 1); else if (ev.key === 'back') optionsBack(); else if (ev.key === 'mute') Audio.toggle(); return; }
+  if (ev.type === 'move' && !ev.touch) { const O = optionsLayout(), i = Math.floor((ev.y - (O.y + 21)) / O.rh); if (ev.x >= O.x && ev.x < O.x + O.w && i >= 0 && i < rows.length && i !== SC.i) { SC.i = i; Audio.sfx('cursor'); } return; }
+  if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
 // ============================================================================
 // route.js — the campaign route map: an overworld built from the board's own tiles, the eight chapters as stops on
@@ -7659,17 +7806,17 @@ function frame(t) {
     if (ev.type === 'key' && ev.key === 'mute' && SC.name !== 'battle') { Audio.toggle(); continue; }
     switch (SC.name) {
       case 'journey': journeyInput(ev); break; case 'territory': case 'territoryResults': territorySceneInput(ev); break; case 'title': titleInput(ev); break; case 'starter': starterInput(ev); break; case 'card': cardInput(ev); break; case 'story': storyInput(ev); break;
-      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break; case 'route': routeInput(ev); break; case 'tower': towerInput(ev); break; case 'rank': rankInput(ev); break; case 'brief': briefInput(ev); break; case 'cos': coRoomInput(ev); break;
+      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break; case 'route': routeInput(ev); break; case 'tower': towerInput(ev); break; case 'rank': rankInput(ev); break; case 'brief': briefInput(ev); break; case 'cos': coRoomInput(ev); break; case 'options': optionsInput(ev); break;
     }
   }
   // update
-  if (SC.name === 'battle') battleUpdate(dt); else if (SC.name === 'story') storyUpdate(dt); else if (SC.name === 'route') routeUpdate(dt); else { if (SC.name === 'title') titleUpdate(dt); Audio.tick(); }
+  if (SC.name === 'battle') battleUpdate(dt); else if (SC.name === 'story') storyUpdate(dt); else if (SC.name === 'route') routeUpdate(dt); else { if (SC.name === 'title' || SC.name === 'options') titleUpdate(dt); Audio.tick(); }
   // draw
   ctx.setTransform(VIEW.scale, 0, 0, VIEW.scale, 0, 0); ctx.imageSmoothingEnabled = false;
   switch (SC.name) {
     case 'loading': rect(0, 0, VIEW.w, VIEW.h, '#0e0c10'); textC('loading sprites…', VIEW.w / 2, VIEW.h / 2, UI.muted); break;
     case 'journey': journeyDraw(); break; case 'territory': territorySetupDraw(); break; case 'territoryResults': territoryResultsDraw(); break; case 'title': titleDraw(); break; case 'starter': starterDraw(); break; case 'card': cardDraw(); break; case 'story': storyDraw(); break;
-    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break; case 'route': routeDraw(); break; case 'tower': towerDraw(); break; case 'rank': rankDraw(); break; case 'brief': briefDraw(); break; case 'cos': coRoomDraw(); break;
+    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break; case 'route': routeDraw(); break; case 'tower': towerDraw(); break; case 'rank': rankDraw(); break; case 'brief': briefDraw(); break; case 'cos': coRoomDraw(); break; case 'options': optionsDraw(); break;
   }
   // every scene change closes and reopens a Poké Ball over the screen (see captureTransition)
   drawTransition(dt);

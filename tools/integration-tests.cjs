@@ -54,7 +54,7 @@ test('all help lines can be read on short screens and the full title menu fits',
     T.store.set('pk_save', JSON.stringify({ chapter: 0, party: [], stars: {} })); T.store.set('pk_suspend', '{}');
     g.goScene('title'); const boxes = textHook(T); g.titleDraw();
     const bad = boxes().filter(b => b.x < -1 || b.x + b.w > w + 1 || b.y < -1 || b.y + 7 > h + 1); assert(!bad.length, w + 'x' + h + ': ' + JSON.stringify(bad));
-    assert.equal(G('SC.hits.length'), 6); for (const b of G('SC.hits')) assert(b.x >= 0 && b.y >= 0 && b.x + b.w <= w && b.y + b.h <= h);
+    assert.equal(G('SC.hits.length'), 7); for (const b of G('SC.hits')) assert(b.x >= 0 && b.y >= 0 && b.x + b.w <= w && b.y + b.h <= h);
   }
 });
 test('title routes work before artwork loads; sound, pointer and keyboard controls stay independent', () => {
@@ -91,7 +91,7 @@ test('all title save states fit small screens; new-game cancellation preserves t
       if (state >= 1) store.set('pk_save', JSON.stringify({ chapter: 1, party: [], stars: {} }));
       if (state === 2) store.set('pk_suspend', '{}');
       g.goScene('title'); const boxes = textHook(T); g.titleDraw();
-      assert.equal(G('SC.hits.length'), 4 + state); // NEW GAME, QUICK BATTLE, VERSUS, COMMANDERS (+ CONTINUE, + RESUME)
+      assert.equal(G('SC.hits.length'), 5 + state); // NEW GAME, QUICK BATTLE, VERSUS, COMMANDERS, OPTIONS (+ CONTINUE, + RESUME)
       for (const b of boxes()) assert(b.x >= -1 && b.x + b.w <= w + 1 && b.y >= 0 && b.y + 7 <= h, `${w}x${h}: ${JSON.stringify(b)}`);
       const hits = G('SC.hits');
       for (const b of hits) {

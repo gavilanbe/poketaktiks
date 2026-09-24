@@ -903,6 +903,18 @@ test('touch: dialogs offer a SKIP pill that ends the scene; help and the unit sh
   const k = G('SC.dialog.skipHit'); assert(k && k.x + k.w <= 195 && k.y >= 0, 'a SKIP pill on screen'); g.storyInput({ type: 'up', x: k.x + 2, y: k.y + 2 }); assert.strictEqual(G('SC.dialog'), null, 'tapping SKIP ends the dialog');
   G('VIEW.touch = false'); g.startNewGame(); for (let i = 0; i < 5; i++) { g.storyUpdate(1 / 30); g.storyDraw(); } assert.strictEqual(G('SC.dialog.skipHit'), null, 'with a keyboard, X skips and no pill shows');
 });
+test('title and options: your party on the knoll with its Ace, the trainer card, options that change and persist, erase asks first', T => {
+  const { g, G, store } = T; G('VIEW.w = 640; VIEW.h = 360');
+  store.set('pk_save', JSON.stringify({ chapter: 3, party: [G('partyUnit(16, 12)'), G('partyUnit(4, 14)'), G('partyUnit(25, 13)')], captainPid: 1, starter: 4, bag: {}, stars: {}, rating: {}, beaten: false }));
+  g.goScene('title'); g.titleDraw(); const team = G('SC.titleTeam'), ace = G('SC.titleAce'); assert.strictEqual(team.length, 3); assert.strictEqual(G('DEX')[team[ace]].name.startsWith('Char'), true, 'the Ace stands beside the Tactician: ' + team);
+  assert.strictEqual(G('SC.titleItems')[0].label, 'CONTINUE'); assert(G('SC.titleItems').some(it => it.label === 'OPTIONS'), 'OPTIONS is on the menu');
+  const oi = G("SC.titleItems.findIndex(it => it.label === 'OPTIONS')"); g.titleActivate(oi); g.titleUpdate(.21); assert.strictEqual(G('SC.name'), 'options');
+  g.optionsDraw(); const before = G('PREF.battle'); G('SC.i = 1'); g.optionsInput({ type: 'key', key: 'right' }); assert.notStrictEqual(G('PREF.battle'), before, 'right changes the battle scene'); assert.strictEqual(store.get('pk_battle'), G('PREF.battle'), 'and it is kept');
+  G('SC.i = 2'); g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('PREF.motion'), 'full'); g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('PREF.motion'), 'reduced'); assert.strictEqual(G('REDUCED'), true, 'Reduced motion applies at once'); g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('PREF.motion'), 'auto');
+  G('SC.i = 5'); g.optionsInput({ type: 'key', key: 'ok' }); assert(G('SC.data.confirm'), 'erasing asks first'); g.optionsInput({ type: 'key', key: 'back' }); assert(store.get('pk_save'), 'KEEP keeps the journey');
+  g.optionsInput({ type: 'key', key: 'ok' }); g.optionsInput({ type: 'key', key: 'right' }); g.optionsInput({ type: 'key', key: 'ok' }); assert(!store.get('pk_save'), 'ERASE removes the journey'); assert.strictEqual(G('SC.name'), 'title');
+  g.openOptions(); g.optionsInput({ type: 'key', key: 'back' }); assert.strictEqual(G('SC.name'), 'title');
+});
 function run() {
   let failed = 0;
   for (const t of tests) {
