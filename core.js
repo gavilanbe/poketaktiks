@@ -30,8 +30,11 @@ function pickScale(pw, ph, cw) {
   while (s > 1 && pw / s < 176) s--;
   return s;
 }
+// On a notched phone (an installed app draws under the status bar) the canvas keeps to the safe area: body pads by
+// env(safe-area-inset-*) and the canvas takes what is left.
+function safeInsets() { try { const cs = getComputedStyle(document.body); return { x: (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0), y: (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) }; } catch (_) { return { x: 0, y: 0 }; } }
 function resize() {
-  const cw = innerWidth, ch = innerHeight, dpr = Math.min(devicePixelRatio || 1, 3);
+  const I = safeInsets(), cw = Math.max(120, innerWidth - I.x), ch = Math.max(120, innerHeight - I.y), dpr = Math.min(devicePixelRatio || 1, 3);
   const pw = Math.round(cw * dpr), ph = Math.round(ch * dpr);
   const s = pickScale(pw, ph, cw);
   VIEW.scale = s; VIEW.dpr = dpr;

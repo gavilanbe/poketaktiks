@@ -1,14 +1,35 @@
 {
+  "id": "/poketaktiks/index.html",
   "name": "POKÉTAKTIKS",
   "short_name": "Poketaktiks",
-  "description": "Pixel tactics with Gen I Pokémon: grid battles, catching, evolutions, campaign and skirmishes.",
+  "description": "Táctica por turnos con los Pokémon de Kanto, al estilo Advance Wars: libera los Centros Pokémon del Team Rocket, despliega tu Caja del PC, atrapa reclutas y lidera con los Líderes de Gimnasio. Campaña, Escaramuza, Torre Batalla, Zona Safari y Versus.",
+  "lang": "es-ES",
+  "dir": "ltr",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
   "orientation": "any",
   "background_color": "#0e0c10",
   "theme_color": "#0e0c10",
+  "categories": ["games", "entertainment"],
+  "launch_handler": { "client_mode": ["focus-existing", "auto"] },
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Combate rápido", "short_name": "Combate", "description": "Escaramuza, Torre Batalla, Zona Safari y Conquista contra la CPU", "url": "./index.html?scene=quick", "icons": [{ "src": "icons/shortcut-flag.png", "sizes": "96x96", "type": "image/png" }] },
+    { "name": "Versus", "short_name": "Versus", "description": "Dos jugadores, una pantalla", "url": "./index.html?versus=1", "icons": [{ "src": "icons/shortcut-vs.png", "sizes": "96x96", "type": "image/png" }] },
+    { "name": "Comandantes", "short_name": "Comandantes", "description": "Los Líderes de Gimnasio, sus Ases y sus poderes", "url": "./index.html?scene=cos", "icons": [{ "src": "icons/shortcut-crown.png", "sizes": "96x96", "type": "image/png" }] }
+  ],
+  "screenshots": [
+    { "src": "screenshots/wide-duel.png", "sizes": "1280x720", "type": "image/png", "form_factor": "wide", "label": "Cada ataque tiene su propia animación en el combate" },
+    { "src": "screenshots/wide-power.png", "sizes": "1280x720", "type": "image/png", "form_factor": "wide", "label": "Los Superpoderes de cada comandante, al estilo Advance Wars" },
+    { "src": "screenshots/wide-modes.png", "sizes": "1280x720", "type": "image/png", "form_factor": "wide", "label": "Escaramuza, Conquista, Torre Batalla y Zona Safari" },
+    { "src": "screenshots/phone-title.png", "sizes": "390x844", "type": "image/png", "form_factor": "narrow", "label": "Tu equipo en la colina: continúa tu viaje por Kanto" },
+    { "src": "screenshots/phone-modes.png", "sizes": "390x844", "type": "image/png", "form_factor": "narrow", "label": "Cuatro modos contra la CPU" }
   ]
 }

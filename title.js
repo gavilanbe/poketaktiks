@@ -305,6 +305,7 @@ function titleDraw() {
   if (!L.portrait) { hintLine(VIEW.touch ? ['tap to begin'] : [['↑↓', 'select'], ['Z', 'confirm']], W / 2, H - 17, { pill: false, col: '#b9bce0' }); textR(credit, W - 10, H - 17, '#c8b080', { shadow: '#07051c', raw: true }); }
   else if (6 + sw + 6 + langW + 10 + rawTextWidth(credit) <= W - 8) textR(credit, W - 8, H - 17, '#c8b080', { shadow: '#07051c', raw: true });
   else { const menuBottom = L.menuY + Math.ceil(items.length / L.cols) * (L.rowH + L.gap) - L.gap; const cy = Math.max(menuBottom + 3, H - 29); if (cy <= H - 26) textC(credit, W / 2, cy, '#c8b080', { shadow: '#07051c', raw: true }); } // its own line above the foot
+  drawTitleUpdate(L, items);
   if (SC.titleSave && items[SC.i] && items[SC.i].label === 'CONTINUE' && !SC.titleConfirm) drawTrainerCard(L, SC.titleSave);
   drawTitleParticles();
   if (SC.titleConfirm) drawTitleConfirm();
@@ -372,6 +373,20 @@ function titleInput(ev) {
 // battle's day menu (a chip, the label, the value or a lamp; ◂ ▸ change it), the focused row explained underneath, and
 // ERASE ALL DATA behind a confirmation. Changes apply at once and are kept.
 const MOTION_LABEL = { auto: 'Auto', full: 'Full', reduced: 'Reduced' };
+// A new version is ready (sw.js installed it in the background): a gold pill in the corner of the title, breathing,
+// that switches to it on a tap. Just after a switch, the pill says so for a few seconds instead.
+function drawTitleUpdate(L, items) {
+  if (typeof UPDATE === 'undefined') return; const W = VIEW.w, H = VIEW.h, t = SC.t;
+  if (UPDATE.ready) { const lab = TRX('NEW VERSION!'), act = TRX('UPDATE ▸'), narrow = W < 300, w = rawTextWidth(lab) + rawTextWidth(act) + 26, h = narrow ? 16 : 14, pulse = REDUCED ? 0 : .5 + .5 * Math.sin(t * 4);
+    // the corner of a wide title; on a phone it floats over the knoll, just above the menu
+    let x = W - w - 4, y = 4; if (L && L.portrait) { x = Math.round(W / 2 - w / 2); y = L.menuY - h - 6; }
+    ctx.globalAlpha = .25 + .3 * pulse; rrect(x - 2, y - 2, w + 4, h + 4, UI.gold, 3); ctx.globalAlpha = 1; rrect(x, y, w, h, UI.inset, 2); rect(x + 1, y + 1, w - 2, h - 2, '#3a2a08'); hline(x + 2, y + 1, w - 4, '#6a4a10');
+    iconAt('star', x + 3, y + Math.round((h - 9) / 2), UI.gold); text(lab, x + 14, y + Math.round((h - 7) / 2), UI.gold, { raw: true }); text(act, x + 18 + rawTextWidth(lab), y + Math.round((h - 7) / 2), '#ffffff', { raw: true });
+    hit(x, y, w, h, () => applyUpdate(), 'UPDATE'); return; }
+  const f = UPDATE.fresh; if (!f) return; if (f.t0 < 0) f.t0 = t; const a = t - f.t0; if (a > 5) { UPDATE.fresh = null; return; }
+  const k = Math.min(1, a / .3) * Math.min(1, (5 - a) / .5), lab = TR('Updated · version {0}', BUILD), w = rawTextWidth(lab) + 20, x = VIEW.w - w - 4, y = 4 - Math.round((1 - k) * 16);
+  ctx.globalAlpha = k; rrect(x, y, w, 14, UI.inset, 2); rect(x + 1, y + 1, w - 2, 12, '#10301c'); iconAt('star', x + 3, y + 2, UI.green); text(lab, x + 15, y + 4, UI.green, { raw: true }); ctx.globalAlpha = 1;
+}
 function optionRows() {
   const cycle = (k, d) => { const vs = PREF_VALUES[k]; setPref(k, vs[(vs.indexOf(PREF[k]) + d + vs.length) % vs.length]); };
   return [
@@ -381,12 +396,13 @@ function optionRows() {
     { id: 'motion', label: 'Motion', icon: 'wing', col: '#3a8ad8', value: TR(MOTION_LABEL[PREF.motion]) + (PREF.motion === 'auto' ? ' · ' + TR(PREFERS_REDUCED ? 'reduced' : 'full') : ''), change: d => cycle('motion', d), sub: 'Reduced drops screen shakes, flashes and most animation; Auto follows your system' },
     { id: 'guide', label: 'Conquest guide', icon: 'help', col: '#3a8ad8', lamp: PREF.territoryGuide === 'show', change: d => cycle('territoryGuide', d), sub: 'Show the three rules before each Conquest battle' },
     { id: 'opening', label: 'Watch the opening', icon: 'play', col: '#3aa870', more: true, run: () => { Audio.sfx('ok'); startIntro(); }, sub: 'The night the PCs went dark' },
-    { id: 'credits', label: 'Credits', icon: 'book', col: '#7a7a8a', more: true, run: () => { Audio.sfx('ok'); const s = loadSave(); goScene('credits', { party: s ? s.party : [], back: 'options' }); }, sub: 'Who made the game, and the sprites it uses' },
+    ...(typeof APP !== 'undefined' && !APP.installed && (APP.prompt || APP.ios) ? [{ id: 'install', label: 'Install the app', icon: 'star', col: '#d8991f', more: !!APP.prompt, run: () => { if (APP.prompt) installApp(); else Audio.sfx('menu'); }, sub: APP.prompt ? 'Full screen, offline and with its own icon' : 'In Safari: Share ▸ Add to Home Screen' }] : []),
+    { id: 'credits', label: 'Credits', icon: 'book', col: '#7a7a8a', more: true, ver: true, run: () => { Audio.sfx('ok'); const s = loadSave(); goScene('credits', { party: s ? s.party : [], back: 'options' }); }, sub: 'Who made the game, and the sprites it uses' },
     { id: 'erase', label: 'Erase all data', icon: 'skull', col: '#d23c3c', danger: true, run: () => { Audio.sfx('menu'); SC.data.confirm = { i: 0, t: SC.t }; }, sub: 'Your journey, records and settings, gone for good (asks first)' },
   ];
 }
 function openOptions() { goScene('options', { back: SC.name === 'title' ? SC.i : 0 }); }
-function optionsLayout() { const W = VIEW.w, H = VIEW.h, rows = optionRows(), rh = VIEW.touch || narrowView() ? 20 : 17, w = Math.min(290, W - 16), foot = setupFootTop(), top = narrowView() ? 30 : 34, h = 20 + rows.length * rh + 6 + 26; return { W, H, rows, rh, w, h, x: Math.round((W - w) / 2), y: Math.max(top, Math.round(top + (foot - top - h) / 2)), foot }; }
+function optionsLayout() { const W = VIEW.w, H = VIEW.h, rows = optionRows(), foot0 = setupFootTop(), rh = clamp(Math.floor((foot0 - (narrowView() ? 30 : 34) - 58) / rows.length), 13, VIEW.touch || narrowView() ? 20 : 17), w = Math.min(290, W - 16), foot = setupFootTop(), top = narrowView() ? 30 : 34, h = 20 + rows.length * rh + 6 + 26; return { W, H, rows, rh, w, h, x: Math.round((W - w) / 2), y: Math.max(top, Math.round(top + (foot - top - h) / 2)), foot }; }
 function optionsDraw() {
   const S = SC.data || (SC.data = {}); if (!SC.titleItems) initTitle(); const L0 = titleLayout(SC.titleItems.length); titleScene(L0); dimScreen(.55); SC.hits = [];
   const O = optionsLayout(), { x, y, w, h, rh, rows } = O; SC.i = clamp(SC.i, 0, rows.length - 1);
@@ -402,7 +418,7 @@ function optionsDraw() {
       hit(rx - aw - textWidth(r.value) - 10, ry, 12, rh, () => { SC.i = i; r.change(-1); Audio.sfx('menu'); }, r.label.toUpperCase() + '-'); hit(rx - 8, ry, 12, rh, () => { SC.i = i; r.change(1); Audio.sfx('menu'); }, r.label.toUpperCase() + '+'); }
     else if (r.more) { for (let k = 0; k < 3; k++) vline(rx - 2 - k, cy - k, 2 * k + 1, hot ? UI.gold : UI.muted); }
     hit(x + 4, ry, w - (r.value != null ? 70 : 8), rh, () => { if (SC.i !== i) { SC.i = i; Audio.sfx('cursor'); } optionActivate(r, 1); }, r.label.toUpperCase()); });
-  const fy = p.cy - 1 + rows.length * rh + 4, it = rows[SC.i]; hline(x + 5, fy, w - 10, UI.inset); wrap(it.sub, w - 16).slice(0, 2).forEach((l, k) => text(l, x + 8, fy + 4 + k * 9, it.danger ? '#e8a0a0' : UI.muted));
+  const fy = p.cy - 1 + rows.length * rh + 4, it = rows[SC.i]; hline(x + 5, fy, w - 10, UI.inset); wrap(it.ver && typeof BUILD !== 'undefined' ? TRX(it.sub) + ' · ' + TR('version {0}', BUILD) : it.sub, w - 16).slice(0, 2).forEach((l, k) => text(l, x + 8, fy + 4 + k * 9, it.danger ? '#e8a0a0' : UI.muted));
   unfoldEnd(tok);
   setupFooter({ back: { label: '◂ TITLE', run: () => optionsBack() }, hints: VIEW.touch ? ['tap a row to change it'] : [['▲▼', 'choose'], ['◂▸', 'change'], ['X', 'back']] });
   if (S.confirm) drawOptionsConfirm(S.confirm);

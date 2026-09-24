@@ -216,6 +216,36 @@ async function main() {
       out.push('render: ' + await ev('cofxLabRender(' + spec + ')'));
       const sz = JSON.parse(out[out.length - 1].slice(8) || '{}'); if (sz.w) { const r = await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: sz.w, height: sz.h, scale: 1 }, captureBeyondViewport: true }); fs.writeFileSync(path.join(ROOT, 'artifacts', 'cofx-' + (process.env.PK_NAME || 'sheet') + '.png'), Buffer.from(r.result.data, 'base64')); }
     }
+    if (script === 'pwa' || script === 'pwa-m') {
+      // the app over HTTP (a service worker needs it): install, play offline, then a new deploy is offered and applied.
+      // Serves this directory itself; the "new deploy" rewrites the built page's and the worker's build id, and
+      // ./build.sh puts them back at the end.
+      const port = +(process.env.PK_HTTP_PORT || 8766), base = 'http://127.0.0.1:' + port + '/', srv = spawn('python3', ['-m', 'http.server', String(port), '--bind', '127.0.0.1'], { cwd: ROOT, stdio: 'ignore' });
+      try {
+        await sleep(900); await send('Network.enable');
+        const go = async q => { await send('Page.navigate', { url: base + 'index.html?' + q }); await sleep(2500); };
+        const until = async (expr, ms = 15000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await ev(expr) === true) return true; await sleep(250); } return false; };
+        await go('silent&nosave');
+        out.push('build: ' + await ev('BUILD'));
+        out.push('controlled: ' + await until('!!navigator.serviceWorker.controller'));
+        out.push('caches: ' + await ev("caches.keys().then(k => k.join(','))"));
+        // offline: the page, the icons and the trainers come from the worker
+        await send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
+        await go('silent&nosave'); out.push('offline scene: ' + await ev('SC.name') + ' build ' + await ev('BUILD')); await shot('pwa-offline');
+        await go('silent&nosave&versus=1'); out.push('offline deep link: ' + await ev('SC.name'));
+        await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+        // a new deploy: another build id in the page and the worker
+        const idx = path.join(ROOT, 'index.html'), swf = path.join(ROOT, 'sw.js'), NEW = 'deploy2';
+        fs.writeFileSync(idx, fs.readFileSync(idx, 'utf8').replace(/const PK_BUILD = '[^']*';/, "const PK_BUILD = '" + NEW + "';"));
+        fs.writeFileSync(swf, fs.readFileSync(swf, 'utf8').replace(/^const VERSION = .*$/m, "const VERSION = '" + NEW + "';"));
+        await go('silent&nosave'); out.push('still the old build while the new one installs: ' + await ev('BUILD'));
+        await ev('navigator.serviceWorker.getRegistration().then(r => r && r.update()).then(() => 1)');
+        out.push('update offered: ' + await until('UPDATE.ready === true')); await sleep(400); await shot('pwa-update');
+        await ev('applyUpdate(); 1'); await sleep(4000);
+        out.push('after the switch: ' + await ev('BUILD') + ' · fresh toast: ' + await ev('!!UPDATE.fresh')); await sleep(600); await shot('pwa-updated');
+        out.push('caches after: ' + await ev("caches.keys().then(k => k.join(','))"));
+      } finally { srv.kill(); require('child_process').execSync('./build.sh', { cwd: ROOT }); }
+    }
     if (script === 'vs' || script === 'vs-m') {
       // the versus setup with its match rules, then a capture-the-flag arena with fog and a king-of-the-hill arena
       await nav('versus=5&silent&nosave'); await sleep(500); await shot('vs-setup');

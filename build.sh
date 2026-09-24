@@ -4,10 +4,14 @@ cd "$(dirname "$0")"
 FILES="core.js i18n.js lang/es.js lang/es-data.js lang/es-story.js font.js dex.js data.js animmeta.js art.js scenery.js model.js captain.js battle.js menus.js duel.js attackfx.js campaign.js war.js territory.js scenes.js menukit.js cofx.js title.js route.js journey.js modes.js main.js"
 # a syntax error in any module stops the build with its file and line (when node is around)
 if command -v node >/dev/null 2>&1; then for f in $FILES; do node --check "$f" || exit 1; done; fi
+# the build's id comes from its content alone (the same sources, the same id): the page shows it and the service
+# worker carries it, so every real change is a new worker that the game offers to switch to
+SPRITES="$(printf '%08x' "$(cat assets/battle/*.png assets/battle/anim/*.png | cksum | cut -d' ' -f1)")"
+BUILD="$(printf '%08x' "$( (cat $FILES manifest.webmanifest icons/*.png assets/pokemonicons-sheet.png assets/trainers/*.png; echo "$SPRITES"; grep -v '^const VERSION = \|^const TRAINERS = \|^const SPRITE_SET = ' sw.js) | cksum | cut -d' ' -f1)")"
 {
 cat <<'H'
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
@@ -23,6 +27,7 @@ cat <<'H'
 <meta name="description" content="Advance Wars rules with Gen I Pokémon: free Kanto from Team Rocket, earn funds from Poké Centers, deploy your PC Box, catch recruits, command with Gym Leaders. Campaign, Skirmish, Battle Tower, Safari Zone and Versus. Pixel art, keyboard, mouse and touch.">
 <style>
 html,body{margin:0;height:100%;background:#0e0c10;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+body{box-sizing:border-box;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 body{display:flex;align-items:center;justify-content:center}
 canvas{image-rendering:pixelated;image-rendering:crisp-edges;cursor:pointer;display:block}
 </style>
@@ -30,6 +35,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges;cursor:pointer;disp
 <body><canvas id="c"></canvas>
 <script>
 H
+echo "const PK_BUILD = '$BUILD';"
 cat $FILES
 cat <<'H'
 </script>
@@ -37,4 +43,7 @@ cat <<'H'
 </html>
 H
 } > index.html
-echo "index.html: $(wc -c < index.html) bytes"
+# the service worker: this build's id and the trainer sprites it keeps with the shell
+TRAINERS="$(cd assets/trainers && ls *.png | sed "s/.*/'&'/" | paste -sd, -)"
+perl -pi -e "s/^const VERSION = .*/const VERSION = '$BUILD';/; s/^const TRAINERS = .*/const TRAINERS = [$TRAINERS];/; s/^const SPRITE_SET = .*/const SPRITE_SET = '$SPRITES';/" sw.js
+echo "index.html: $(wc -c < index.html) bytes · build $BUILD"

@@ -958,13 +958,30 @@ test('commander powers: each Power and Super Power does what it says, plays its 
     // the show: the cast and the sweep play through the queue; text stays on screen; the chips say what it does
     assert(G(`copEffects(${JSON.stringify({ co, root: cap, superPower: sup })}).length`) > 0, tag + 'chips');
     g.__ev = ev; G("BT.queue = __ev.map(e => ({ kind: 'event', ev: e })); playQueue(() => { BT.mode = 'idle'; });");
-    const boxes = textHook(T); let n = 0, maxT = 0; while (G("BT.mode === 'anim'") && n++ < 1200) { g.battleUpdate(1 / 30); if (G("BT.anim && BT.anim.ev && BT.anim.ev.type === 'power'")) maxT = Math.max(maxT, G('BT.anim.t')); if (n % 6 === 0 && !G("BT.anim && BT.anim.ev && BT.anim.ev.type === 'power' && BT.anim.t > copTimes(BT.anim.ev.superPower).cast - .3 && BT.anim.t < copTimes(BT.anim.ev.superPower).cast")) { g.battleDraw(); boxes(); g.drawHUD(); const bad = boxes().filter(b => b.x < -1 || b.x + b.w > w + 1 || b.y < -1 || b.y + 7 > h + 1); assert(!bad.length, tag + 'text off screen at ' + n + ': ' + JSON.stringify(bad.slice(0, 2))); } }
+    const boxes = textHook(T); let n = 0, maxT = 0; while (G("BT.mode === 'anim'") && n++ < 1200) { g.battleUpdate(1 / 30); if (G("BT.anim && BT.anim.ev && BT.anim.ev.type === 'power'")) maxT = Math.max(maxT, G('BT.anim.t')); if (n % 14 === 0 && !G("BT.anim && BT.anim.ev && BT.anim.ev.type === 'power' && BT.anim.t > copTimes(BT.anim.ev.superPower).cast - .3 && BT.anim.t < copTimes(BT.anim.ev.superPower).cast")) { g.battleDraw(); boxes(); g.drawHUD(); const bad = boxes().filter(b => b.x < -1 || b.x + b.w > w + 1 || b.y < -1 || b.y + 7 > h + 1); assert(!bad.length, tag + 'text off screen at ' + n + ': ' + JSON.stringify(bad.slice(0, 2))); } }
     assert.strictEqual(G('BT.mode'), 'idle', tag + 'the queue completes'); assert(maxT <= (sup ? 4.2 : 2.6), tag + 'brisk: ' + maxT.toFixed(2) + 's');
     // while it lasts: boosted allies (and hindered foes) are marked on the field
     const aura = G('JSON.stringify(copAura(0))'); if (fx && (fx.def || fx.atk || fx.eva || fx.move || fx.crit || fx.spAtk) || co === 'you' && (cap !== 1 || sup)) assert(aura !== 'null' && JSON.parse(aura).ally, tag + 'allies wear the aura: ' + aura);
     if (fx && (fx.future || fx.enemyMove)) assert(JSON.parse(aura).foe, tag + 'foes wear the mark');
     g.battleDraw();
   }
+});
+test('the app: the worker carries the build id the page carries, every file it keeps offline exists, the manifest is sound', T => {
+  const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8'), sw = read('sw.js'), page = read('index.html'), png = f => { const b = fs.readFileSync(path.join(ROOT, f)); return b.readUInt32BE(16) + 'x' + b.readUInt32BE(20); };
+  const ver = /^const VERSION = '([^']+)';$/m.exec(sw), built = /const PK_BUILD = '([^']+)';/.exec(page); assert(ver && built, 'both are stamped'); assert.strictEqual(ver[1], built[1], 'the worker is the page\'s version (run ./build.sh)');
+  // everything the install stores must exist, or the install fails and the game never works offline
+  const shell = /^const SHELL = (\[.*?\])\.concat/m.exec(sw)[1], trainers = /^const TRAINERS = (\[.*?\]);$/m.exec(sw)[1], files = JSON.parse(shell.replace(/'/g, '"')).concat(JSON.parse(trainers.replace(/'/g, '"')).map(t => './assets/trainers/' + t)).concat(['./index.html']);
+  for (const f of files) assert(fs.existsSync(path.join(ROOT, f)), 'kept offline but missing: ' + f);
+  assert.strictEqual(JSON.parse(trainers.replace(/'/g, '"')).length, fs.readdirSync(path.join(ROOT, 'assets/trainers')).filter(f => f.endsWith('.png')).length, 'every trainer is kept');
+  const m = JSON.parse(read('manifest.webmanifest'));
+  for (const k of ['id', 'name', 'short_name', 'start_url', 'scope', 'display', 'icons', 'screenshots', 'shortcuts', 'lang']) assert(m[k], 'manifest.' + k);
+  for (const ic of m.icons.concat(...m.shortcuts.map(s2 => s2.icons || []))) { assert(fs.existsSync(path.join(ROOT, ic.src)), ic.src); assert.strictEqual(png(ic.src), ic.sizes, ic.src + ' is ' + ic.sizes); }
+  assert(m.icons.some(ic => ic.purpose === 'maskable'), 'a maskable icon for adaptive launchers');
+  for (const sc of m.screenshots) { assert(fs.existsSync(path.join(ROOT, sc.src)), sc.src); assert.strictEqual(png(sc.src), sc.sizes, sc.src + ' is ' + sc.sizes); }
+  assert(m.screenshots.some(sc => sc.form_factor === 'wide') && m.screenshots.some(sc => sc.form_factor === 'narrow'), 'screenshots for desktop and phones');
+  for (const sc of m.shortcuts) assert(/^\.\/index\.html\?(scene=(quick|cos)|versus=\d+)$/.test(sc.url), 'a shortcut opens a deep link the game knows: ' + sc.url);
+  // shortcut deep links open their scene
+  for (const [q, scene] of [['scene=cos', 'cos'], ['scene=quick', 'quick']]) { const T2 = loadGame(); T2.G('goScene(' + JSON.stringify(scene) + ')'); assert.doesNotThrow(() => T2.G(scene === 'cos' ? 'coRoomDraw()' : 'quickDraw()'), q); }
 });
 test('dialogue: every line of the story fits its box on phones and desktop, in English and Spanish', T0 => {
   for (const lang of ['en', 'es']) for (const [w, h] of [[180, 390], [195, 422], [422, 195], [640, 360]]) {

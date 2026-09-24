@@ -27,6 +27,7 @@ function TRX(s) {
 // when one English word needs two translations; English shows the part before the '|'.
 function TR(s, ...a) { let out; if (typeof s === 'string' && s.includes('|')) { const base = s.slice(0, s.indexOf('|')); out = LANG === 'en' ? base : (TRMAP.size || trBuild(), TRMAP.has(s) ? TRMAP.get(s) : TRX(base)); } else out = TRX(s); if (a.length) out = String(out).replace(/\{(\d)\}/g, (m, i) => a[+i] != null ? a[+i] : ''); return trNote(out); }
 function setLang(l) { if (!LANGS.includes(l)) return; LANG = l; try { localStorage.setItem('pk_lang', l); } catch (_) { } applyLang(); }
+function pageLang() { try { document.documentElement.lang = LANG; } catch (_) { } } // the page says which language it speaks
 // A multiplier in the language's style: ×1.5 / ×1,5.
 function fmtMult(x) { return '×' + (LANG === 'es' ? String(x).replace('.', ',') : x); }
 // Money in the language's style: ₽1,000 / ₽1.000.
@@ -37,7 +38,7 @@ const I18N_ORIG = new WeakMap();
 function tf(o, k) { if (!o || typeof o[k] !== 'string') return; let m = I18N_ORIG.get(o); if (!m) I18N_ORIG.set(o, m = {}); if (!(k in m)) m[k] = o[k]; o[k] = TRX(m[k]); }
 function applyLang() {
   // runs after every module has loaded (at boot and when the language changes), so the tables below all exist
-  TRMAP.clear(); TRRULE.clear(); const each = (obj, fn) => { for (const k in obj) if (obj[k] && typeof obj[k] === 'object') fn(obj[k], k); }, fields = (o, ...ks) => { for (const k of ks) tf(o, k); };
+  TRMAP.clear(); TRRULE.clear(); pageLang(); const each = (obj, fn) => { for (const k in obj) if (obj[k] && typeof obj[k] === 'object') fn(obj[k], k); }, fields = (o, ...ks) => { for (const k of ks) tf(o, k); };
   each(ROLES, r => fields(r, 'name', 'abbr', 'desc'));
   each(SKILLS, s => fields(s, 'name', 'blurb', 'menu'));
   each(STATUS, s => fields(s, 'name', 'text'));

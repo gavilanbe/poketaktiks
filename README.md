@@ -48,6 +48,34 @@ python3 -m http.server 8765 --bind 127.0.0.1
 Open `http://127.0.0.1:8765/`. The build concatenates the source modules into
 `index.html`; every sprite asset is bundled locally.
 
+## As an app
+
+POKÉTAKTIKS installs as an app (Chrome, Edge and Android offer it, and so does
+OPTIONS ▸ Install the app; on iPhone, Safari's Share ▸ Add to Home Screen) and
+plays offline:
+
+- **Offline.** A service worker (`sw.js`) keeps the page, the icons, the Pokémon
+  icon sheet and every trainer with each version; battle sprites are kept once
+  seen, and an installed game fetches all of them in the background (not on
+  Save-Data or 2G), so every battle plays without a connection.
+- **New versions.** Each build has an id taken from its content (`build.sh`
+  stamps it into the page and the worker), so every deploy is a new worker. It
+  installs in the background while the current version keeps playing, and the
+  title offers it (a gold **NEW VERSION! UPDATE ▸** pill); nothing ever reloads
+  under a battle. After the switch the title says *Updated · version …* once, and
+  OPTIONS ▸ Credits shows the version. An install fetches past the HTTP cache and
+  checks that the page it got belongs to its own version, so a CDN still serving
+  the old page cannot leave an old game behind a new worker.
+- **The app.** A maskable icon for adaptive launchers, screenshots and
+  shortcuts (Quick Battle, Versus, Commanders) for the install sheet and the
+  launcher, `launch_handler` so opening it again returns to the running game,
+  the canvas kept inside the safe area on notched phones, the screen kept awake
+  during a battle (let go after three idle minutes), the sound paused in the
+  background, and persistent storage asked for the save once installed.
+
+`PK_PORT=9390 node tools/cdp.cjs pwa` checks it all over HTTP: install, offline
+(the page and a deep link), and a new deploy offered, applied and announced.
+
 ## The day
 
 A day is one turn for each side. At the start of yours:

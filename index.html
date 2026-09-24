@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
@@ -15,12 +15,14 @@
 <meta name="description" content="Advance Wars rules with Gen I Pokémon: free Kanto from Team Rocket, earn funds from Poké Centers, deploy your PC Box, catch recruits, command with Gym Leaders. Campaign, Skirmish, Battle Tower, Safari Zone and Versus. Pixel art, keyboard, mouse and touch.">
 <style>
 html,body{margin:0;height:100%;background:#0e0c10;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+body{box-sizing:border-box;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 body{display:flex;align-items:center;justify-content:center}
 canvas{image-rendering:pixelated;image-rendering:crisp-edges;cursor:pointer;display:block}
 </style>
 </head>
 <body><canvas id="c"></canvas>
 <script>
+const PK_BUILD = 'd8a47673';
 'use strict';
 // ============================================================================
 // POKÉTAKTIKS — core.js: canvas + integer scaling, input, RNG, drawing helpers,
@@ -53,8 +55,11 @@ function pickScale(pw, ph, cw) {
   while (s > 1 && pw / s < 176) s--;
   return s;
 }
+// On a notched phone (an installed app draws under the status bar) the canvas keeps to the safe area: body pads by
+// env(safe-area-inset-*) and the canvas takes what is left.
+function safeInsets() { try { const cs = getComputedStyle(document.body); return { x: (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0), y: (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) }; } catch (_) { return { x: 0, y: 0 }; } }
 function resize() {
-  const cw = innerWidth, ch = innerHeight, dpr = Math.min(devicePixelRatio || 1, 3);
+  const I = safeInsets(), cw = Math.max(120, innerWidth - I.x), ch = Math.max(120, innerHeight - I.y), dpr = Math.min(devicePixelRatio || 1, 3);
   const pw = Math.round(cw * dpr), ph = Math.round(ch * dpr);
   const s = pickScale(pw, ph, cw);
   VIEW.scale = s; VIEW.dpr = dpr;
@@ -579,6 +584,7 @@ function TRX(s) {
 // when one English word needs two translations; English shows the part before the '|'.
 function TR(s, ...a) { let out; if (typeof s === 'string' && s.includes('|')) { const base = s.slice(0, s.indexOf('|')); out = LANG === 'en' ? base : (TRMAP.size || trBuild(), TRMAP.has(s) ? TRMAP.get(s) : TRX(base)); } else out = TRX(s); if (a.length) out = String(out).replace(/\{(\d)\}/g, (m, i) => a[+i] != null ? a[+i] : ''); return trNote(out); }
 function setLang(l) { if (!LANGS.includes(l)) return; LANG = l; try { localStorage.setItem('pk_lang', l); } catch (_) { } applyLang(); }
+function pageLang() { try { document.documentElement.lang = LANG; } catch (_) { } } // the page says which language it speaks
 // A multiplier in the language's style: ×1.5 / ×1,5.
 function fmtMult(x) { return '×' + (LANG === 'es' ? String(x).replace('.', ',') : x); }
 // Money in the language's style: ₽1,000 / ₽1.000.
@@ -589,7 +595,7 @@ const I18N_ORIG = new WeakMap();
 function tf(o, k) { if (!o || typeof o[k] !== 'string') return; let m = I18N_ORIG.get(o); if (!m) I18N_ORIG.set(o, m = {}); if (!(k in m)) m[k] = o[k]; o[k] = TRX(m[k]); }
 function applyLang() {
   // runs after every module has loaded (at boot and when the language changes), so the tables below all exist
-  TRMAP.clear(); TRRULE.clear(); const each = (obj, fn) => { for (const k in obj) if (obj[k] && typeof obj[k] === 'object') fn(obj[k], k); }, fields = (o, ...ks) => { for (const k of ks) tf(o, k); };
+  TRMAP.clear(); TRRULE.clear(); pageLang(); const each = (obj, fn) => { for (const k in obj) if (obj[k] && typeof obj[k] === 'object') fn(obj[k], k); }, fields = (o, ...ks) => { for (const k of ks) tf(o, k); };
   each(ROLES, r => fields(r, 'name', 'abbr', 'desc'));
   each(SKILLS, s => fields(s, 'name', 'blurb', 'menu'));
   each(STATUS, s => fields(s, 'name', 'text'));
@@ -896,6 +902,9 @@ Object.assign(ES, {
   'Criticals +{0}%': 'Críticos +{0}%', 'Heal {0}%': 'Curan un {0}%', 'Foes take {0}%': 'Rivales: -{0}% de PS', 'Foes: {0}': 'Rivales: {0}', 'Foes {0} move': 'Rivales: {0} de movimiento', '{0} · {1} days': '{0} · {1} días',
   'Foes take {0}% next turn': 'Rivales: -{0}% en tu turno', 'Steal {0}': 'Roba {0}', 'Next attack +{0}%': 'Próximo ataque +{0}%', 'Cures and blocks new status': 'Cura y bloquea estados', 'Cures status': 'Cura los estados',
   'Paralyses foes': 'Paraliza a los rivales', 'Poisons foes': 'Envenena a los rivales', 'Burns foes': 'Quema a los rivales', 'Puts foes to sleep': 'Duerme a los rivales', 'Freezes foes': 'Congela a los rivales', 'Hurts foes': 'Daña a los rivales',
+  // the app: a new version, and after the switch
+  'NEW VERSION!': '¡NUEVA VERSIÓN!', 'UPDATE ▸': 'ACTUALIZAR ▸', 'Updated · version {0}': 'Actualizado · versión {0}', 'version {0}': 'versión {0}',
+  'Install the app': 'Instalar la app', 'Full screen, offline and with its own icon': 'A pantalla completa, sin conexión y con su propio icono', 'In Safari: Share ▸ Add to Home Screen': 'En Safari: Compartir ▸ Añadir a pantalla de inicio',
 });
 // ============================================================================
 // lang/es-data.js — Spanish for the game's data: types, moves (their official Spanish names), roles and skills,
@@ -8226,9 +8235,9 @@ function drawCoCast(q, t, T) {
   const nt = t - (sup ? .62 : .42); if (nt > -.2 && BH > 20) {
     const name = String(TRX(sup ? c.super.name : c.power.name)).toUpperCase() + '!', maxW = portrait ? W - 16 : W * .56, sc = displayWidth(name, 3) <= maxW ? 3 : displayWidth(name, 2) <= maxW ? 2 : 1, slam = REDUCED ? 0 : clamp(1 - nt / .1, 0, 1);
     const nx = portrait ? Math.round(W / 2) : side ? Math.round(W * .31) : Math.round(W * .69), ny = portrait ? top + BH + s + 16 : cy - Math.round(11 * sc / 2) - 8 - (sup ? 6 : 0), ox = Math.round(out * (side ? -1 : 1) * W);
-    if (nt >= 0) { const drawSc = slam > 0 && displayWidth(name, sc + 1) <= W - 8 ? sc + 1 : sc, jig = slam > 0 ? Math.round(Math.sin(nt * 90) * 3) : 0;
+    if (nt >= 0) { const drawSc = slam > 0 && displayWidth(name, sc + 1) <= W - 8 ? sc + 1 : sc, jig = slam > 0 ? Math.round(Math.sin(nt * 90) * 3) : 0, half = Math.ceil(displayWidth(name, drawSc) / 2) + 4, cx = clamp(nx + jig, half, W - half); // the slam never pushes it off the screen
       const lab = sup ? 'SUPER POWER' : 'POWER', lw = textWidth(lab) + 12; ribbonTab(lab, Math.round(nx - lw / 2) + ox, ny - 15, sup ? UI.gold : col);
-      displayC(name, nx + ox + jig, ny + (drawSc > sc ? -Math.round(5.5 * (drawSc - sc)) : 0), { style: sup ? 'gold' : 'silver', scale: drawSc, slant: 1, shine: true, phase: .3 });
+      displayC(name, cx + ox, ny + (drawSc > sc ? -Math.round(5.5 * (drawSc - sc)) : 0), { style: sup ? 'gold' : 'silver', scale: drawSc, slant: 1, shine: true, phase: .3 });
       if (nt < .08 && !REDUCED) { ctx.globalAlpha = .5 * (1 - nt / .08); rect(0, 0, W, H, '#ffffff'); ctx.globalAlpha = 1; } }
     // the commander's line, typed out
     const qt = t - (sup ? .95 : .62), quote = TRX(th.quote[sup ? 1 : 0]);
@@ -8614,6 +8623,7 @@ function titleDraw() {
   if (!L.portrait) { hintLine(VIEW.touch ? ['tap to begin'] : [['↑↓', 'select'], ['Z', 'confirm']], W / 2, H - 17, { pill: false, col: '#b9bce0' }); textR(credit, W - 10, H - 17, '#c8b080', { shadow: '#07051c', raw: true }); }
   else if (6 + sw + 6 + langW + 10 + rawTextWidth(credit) <= W - 8) textR(credit, W - 8, H - 17, '#c8b080', { shadow: '#07051c', raw: true });
   else { const menuBottom = L.menuY + Math.ceil(items.length / L.cols) * (L.rowH + L.gap) - L.gap; const cy = Math.max(menuBottom + 3, H - 29); if (cy <= H - 26) textC(credit, W / 2, cy, '#c8b080', { shadow: '#07051c', raw: true }); } // its own line above the foot
+  drawTitleUpdate(L, items);
   if (SC.titleSave && items[SC.i] && items[SC.i].label === 'CONTINUE' && !SC.titleConfirm) drawTrainerCard(L, SC.titleSave);
   drawTitleParticles();
   if (SC.titleConfirm) drawTitleConfirm();
@@ -8681,6 +8691,20 @@ function titleInput(ev) {
 // battle's day menu (a chip, the label, the value or a lamp; ◂ ▸ change it), the focused row explained underneath, and
 // ERASE ALL DATA behind a confirmation. Changes apply at once and are kept.
 const MOTION_LABEL = { auto: 'Auto', full: 'Full', reduced: 'Reduced' };
+// A new version is ready (sw.js installed it in the background): a gold pill in the corner of the title, breathing,
+// that switches to it on a tap. Just after a switch, the pill says so for a few seconds instead.
+function drawTitleUpdate(L, items) {
+  if (typeof UPDATE === 'undefined') return; const W = VIEW.w, H = VIEW.h, t = SC.t;
+  if (UPDATE.ready) { const lab = TRX('NEW VERSION!'), act = TRX('UPDATE ▸'), narrow = W < 300, w = rawTextWidth(lab) + rawTextWidth(act) + 26, h = narrow ? 16 : 14, pulse = REDUCED ? 0 : .5 + .5 * Math.sin(t * 4);
+    // the corner of a wide title; on a phone it floats over the knoll, just above the menu
+    let x = W - w - 4, y = 4; if (L && L.portrait) { x = Math.round(W / 2 - w / 2); y = L.menuY - h - 6; }
+    ctx.globalAlpha = .25 + .3 * pulse; rrect(x - 2, y - 2, w + 4, h + 4, UI.gold, 3); ctx.globalAlpha = 1; rrect(x, y, w, h, UI.inset, 2); rect(x + 1, y + 1, w - 2, h - 2, '#3a2a08'); hline(x + 2, y + 1, w - 4, '#6a4a10');
+    iconAt('star', x + 3, y + Math.round((h - 9) / 2), UI.gold); text(lab, x + 14, y + Math.round((h - 7) / 2), UI.gold, { raw: true }); text(act, x + 18 + rawTextWidth(lab), y + Math.round((h - 7) / 2), '#ffffff', { raw: true });
+    hit(x, y, w, h, () => applyUpdate(), 'UPDATE'); return; }
+  const f = UPDATE.fresh; if (!f) return; if (f.t0 < 0) f.t0 = t; const a = t - f.t0; if (a > 5) { UPDATE.fresh = null; return; }
+  const k = Math.min(1, a / .3) * Math.min(1, (5 - a) / .5), lab = TR('Updated · version {0}', BUILD), w = rawTextWidth(lab) + 20, x = VIEW.w - w - 4, y = 4 - Math.round((1 - k) * 16);
+  ctx.globalAlpha = k; rrect(x, y, w, 14, UI.inset, 2); rect(x + 1, y + 1, w - 2, 12, '#10301c'); iconAt('star', x + 3, y + 2, UI.green); text(lab, x + 15, y + 4, UI.green, { raw: true }); ctx.globalAlpha = 1;
+}
 function optionRows() {
   const cycle = (k, d) => { const vs = PREF_VALUES[k]; setPref(k, vs[(vs.indexOf(PREF[k]) + d + vs.length) % vs.length]); };
   return [
@@ -8690,12 +8714,13 @@ function optionRows() {
     { id: 'motion', label: 'Motion', icon: 'wing', col: '#3a8ad8', value: TR(MOTION_LABEL[PREF.motion]) + (PREF.motion === 'auto' ? ' · ' + TR(PREFERS_REDUCED ? 'reduced' : 'full') : ''), change: d => cycle('motion', d), sub: 'Reduced drops screen shakes, flashes and most animation; Auto follows your system' },
     { id: 'guide', label: 'Conquest guide', icon: 'help', col: '#3a8ad8', lamp: PREF.territoryGuide === 'show', change: d => cycle('territoryGuide', d), sub: 'Show the three rules before each Conquest battle' },
     { id: 'opening', label: 'Watch the opening', icon: 'play', col: '#3aa870', more: true, run: () => { Audio.sfx('ok'); startIntro(); }, sub: 'The night the PCs went dark' },
-    { id: 'credits', label: 'Credits', icon: 'book', col: '#7a7a8a', more: true, run: () => { Audio.sfx('ok'); const s = loadSave(); goScene('credits', { party: s ? s.party : [], back: 'options' }); }, sub: 'Who made the game, and the sprites it uses' },
+    ...(typeof APP !== 'undefined' && !APP.installed && (APP.prompt || APP.ios) ? [{ id: 'install', label: 'Install the app', icon: 'star', col: '#d8991f', more: !!APP.prompt, run: () => { if (APP.prompt) installApp(); else Audio.sfx('menu'); }, sub: APP.prompt ? 'Full screen, offline and with its own icon' : 'In Safari: Share ▸ Add to Home Screen' }] : []),
+    { id: 'credits', label: 'Credits', icon: 'book', col: '#7a7a8a', more: true, ver: true, run: () => { Audio.sfx('ok'); const s = loadSave(); goScene('credits', { party: s ? s.party : [], back: 'options' }); }, sub: 'Who made the game, and the sprites it uses' },
     { id: 'erase', label: 'Erase all data', icon: 'skull', col: '#d23c3c', danger: true, run: () => { Audio.sfx('menu'); SC.data.confirm = { i: 0, t: SC.t }; }, sub: 'Your journey, records and settings, gone for good (asks first)' },
   ];
 }
 function openOptions() { goScene('options', { back: SC.name === 'title' ? SC.i : 0 }); }
-function optionsLayout() { const W = VIEW.w, H = VIEW.h, rows = optionRows(), rh = VIEW.touch || narrowView() ? 20 : 17, w = Math.min(290, W - 16), foot = setupFootTop(), top = narrowView() ? 30 : 34, h = 20 + rows.length * rh + 6 + 26; return { W, H, rows, rh, w, h, x: Math.round((W - w) / 2), y: Math.max(top, Math.round(top + (foot - top - h) / 2)), foot }; }
+function optionsLayout() { const W = VIEW.w, H = VIEW.h, rows = optionRows(), foot0 = setupFootTop(), rh = clamp(Math.floor((foot0 - (narrowView() ? 30 : 34) - 58) / rows.length), 13, VIEW.touch || narrowView() ? 20 : 17), w = Math.min(290, W - 16), foot = setupFootTop(), top = narrowView() ? 30 : 34, h = 20 + rows.length * rh + 6 + 26; return { W, H, rows, rh, w, h, x: Math.round((W - w) / 2), y: Math.max(top, Math.round(top + (foot - top - h) / 2)), foot }; }
 function optionsDraw() {
   const S = SC.data || (SC.data = {}); if (!SC.titleItems) initTitle(); const L0 = titleLayout(SC.titleItems.length); titleScene(L0); dimScreen(.55); SC.hits = [];
   const O = optionsLayout(), { x, y, w, h, rh, rows } = O; SC.i = clamp(SC.i, 0, rows.length - 1);
@@ -8711,7 +8736,7 @@ function optionsDraw() {
       hit(rx - aw - textWidth(r.value) - 10, ry, 12, rh, () => { SC.i = i; r.change(-1); Audio.sfx('menu'); }, r.label.toUpperCase() + '-'); hit(rx - 8, ry, 12, rh, () => { SC.i = i; r.change(1); Audio.sfx('menu'); }, r.label.toUpperCase() + '+'); }
     else if (r.more) { for (let k = 0; k < 3; k++) vline(rx - 2 - k, cy - k, 2 * k + 1, hot ? UI.gold : UI.muted); }
     hit(x + 4, ry, w - (r.value != null ? 70 : 8), rh, () => { if (SC.i !== i) { SC.i = i; Audio.sfx('cursor'); } optionActivate(r, 1); }, r.label.toUpperCase()); });
-  const fy = p.cy - 1 + rows.length * rh + 4, it = rows[SC.i]; hline(x + 5, fy, w - 10, UI.inset); wrap(it.sub, w - 16).slice(0, 2).forEach((l, k) => text(l, x + 8, fy + 4 + k * 9, it.danger ? '#e8a0a0' : UI.muted));
+  const fy = p.cy - 1 + rows.length * rh + 4, it = rows[SC.i]; hline(x + 5, fy, w - 10, UI.inset); wrap(it.ver && typeof BUILD !== 'undefined' ? TRX(it.sub) + ' · ' + TR('version {0}', BUILD) : it.sub, w - 16).slice(0, 2).forEach((l, k) => text(l, x + 8, fy + 4 + k * 9, it.danger ? '#e8a0a0' : UI.muted));
   unfoldEnd(tok);
   setupFooter({ back: { label: '◂ TITLE', run: () => optionsBack() }, hints: VIEW.touch ? ['tap a row to change it'] : [['▲▼', 'choose'], ['◂▸', 'change'], ['X', 'back']] });
   if (S.confirm) drawOptionsConfirm(S.confirm);
@@ -9909,7 +9934,7 @@ let lastT = 0;
 function frame(t) {
   requestAnimationFrame(frame); const dt = Math.min(.05, (t - lastT) / 1000 || 0); lastT = t; SC.t += dt; CLOCK.t += dt; CLOCK.dt = dt; CLOCK.frame++;
   // input
-  const q = INPUT.queue; INPUT.queue = [];
+  const q = INPUT.queue; INPUT.queue = []; wakeTick(q.length > 0);
   for (const ev of q) {
     if (ev.type === 'key' && ev.key === 'mute' && SC.name !== 'battle') { Audio.toggle(); continue; }
     switch (SC.name) {
@@ -9950,6 +9975,63 @@ function boot() {
   if (PARAMS.has('versus')) { startVersusSetup(parseInt(PARAMS.get('versus')) || 1); if (PARAMS.has('auto')) { const S = SC.data; S.teams = [VS_ROSTER.slice(0, 4), VS_ROSTER.slice(4, 8)]; S.go(); } return; }
   if (PARAMS.get('scene')) goScene(PARAMS.get('scene')); else if (PARAMS.has('intro')) startIntro(); else if (introWanted()) goScene('splash'); else goScene('title');
 }
+// ---------------------------------------------------------------- the offline copy and new versions (sw.js)
+// build.sh stamps the build's id (PK_BUILD). The service worker keeps this version for offline play; a new deploy
+// installs in the background and the title offers the switch (UPDATE.ready) — the game never reloads under a battle.
+// After a switch the title says so once (UPDATE.fresh).
+const BUILD = typeof PK_BUILD !== 'undefined' ? PK_BUILD : 'dev';
+const UPDATE = { ready: false, worker: null, applying: false, fresh: null };
+function registerSW() {
+  try { const prev = localStorage.getItem('pk_build'); if (BUILD !== 'dev') { if (prev && prev !== BUILD) UPDATE.fresh = { t0: -1 }; localStorage.setItem('pk_build', BUILD); } } catch (_) { }
+  if (typeof navigator === 'undefined' || !navigator.serviceWorker || !/^https?:$/.test(location.protocol) || PARAMS.has('nosw')) return;
+  const sw = navigator.serviceWorker;
+  sw.addEventListener('controllerchange', () => { if (UPDATE.applying) location.reload(); }); // only when the player chose to switch
+  sw.register('sw.js').then(reg => {
+    const found = w => { if (w && sw.controller) { UPDATE.ready = true; UPDATE.worker = w; } };
+    if (reg.waiting) found(reg.waiting);
+    reg.addEventListener('updatefound', () => { const w = reg.installing; if (w) w.addEventListener('statechange', () => { if (w.state === 'installed') found(w); }); });
+    const check = () => reg.update().catch(() => { }); setInterval(check, 30 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+  }).catch(() => { });
+}
+function warmList() { const out = []; for (let n = 1; n <= 151; n++) out.push('./assets/battle/' + n + '.png', './assets/battle/anim/' + n + '.png'); return out; }
+// An installed game should play anywhere: every battle sprite is fetched in the background (not on Save-Data or 2G),
+// once per session, and the save is asked to stay put (Safari keeps an installed app's storage; Chrome and Firefox
+// are asked for persistent storage).
+function warmSprites() {
+  if (APP.warmed || typeof navigator === 'undefined' || !navigator.serviceWorker) return; const c = navigator.connection; if (c && (c.saveData || /2g/.test(c.effectiveType || ''))) return;
+  APP.warmed = true; navigator.serviceWorker.ready.then(r => { if (r.active) r.active.postMessage({ type: 'WARM', urls: warmList() }); }).catch(() => { });
+}
+
+// ---------------------------------------------------------------- the game as an app
+// APP.prompt: the browser's install offer (Chrome, Edge, Android), shown as an OPTIONS row; iOS gets the steps instead.
+// While a battle is on the screen stays awake (released after three idle minutes and whenever the game is hidden);
+// in the background the sound stops.
+const APP = { prompt: null, installed: false, warmed: false, active: 0, wake: null, wakePending: false, wakeFailed: false, ios: false };
+function appInstalled() { try { return matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone === true; } catch (_) { return false; } }
+function onInstalled() { APP.installed = true; APP.prompt = null; warmSprites(); try { if (navigator.storage && navigator.storage.persist && !localStorage.getItem('pk_persist')) { localStorage.setItem('pk_persist', '1'); navigator.storage.persist().catch(() => { }); } } catch (_) { } }
+function initApp() {
+  if (typeof document === 'undefined' || typeof document.addEventListener !== 'function' || typeof navigator === 'undefined') return;
+  APP.ios = /iPad|iPhone|iPod/.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  addEventListener('beforeinstallprompt', e => { e.preventDefault(); APP.prompt = e; });
+  addEventListener('appinstalled', () => onInstalled());
+  if (appInstalled()) onInstalled();
+  // with launch_handler focus-existing, a launcher shortcut tapped while the game is open arrives here: it opens its
+  // screen unless a battle or a dialogue is on (the running game is never torn down)
+  if (typeof launchQueue !== 'undefined' && launchQueue.setConsumer) launchQueue.setConsumer(p => { try {
+    const u = new URL(p.targetURL); if (u.search === location.search || ['loading', 'battle', 'story', 'intro', 'splash'].includes(SC.name)) return;
+    const vs = u.searchParams.get('versus'), sc = u.searchParams.get('scene'); if (vs) startVersusSetup(parseInt(vs) || 1); else if (sc === 'cos') openCoRoom(); else if (sc === 'quick') goScene('quick');
+  } catch (_) { } });
+  document.addEventListener('visibilitychange', () => { const ac = Audio.ac; if (document.hidden) { if (ac && ac.state === 'running') ac.suspend().catch(() => { }); if (APP.wake) { APP.wake.release().catch(() => { }); APP.wake = null; } } else { if (ac && !Audio.muted && ac.state === 'suspended') ac.resume().catch(() => { }); APP.wakeFailed = false; } });
+}
+function installApp() { const p = APP.prompt; if (!p) return; Audio.sfx('select'); p.prompt(); (p.userChoice || Promise.resolve({})).then(r => { if (r && r.outcome === 'accepted') onInstalled(); }).catch(() => { }); APP.prompt = null; }
+function wakeTick(hadInput) {
+  if (typeof navigator === 'undefined' || !navigator.wakeLock) return; if (hadInput) APP.active = CLOCK.t;
+  const want = SC.name === 'battle' && !document.hidden && CLOCK.t - APP.active < 180;
+  if (want && !APP.wake && !APP.wakePending && !APP.wakeFailed) { APP.wakePending = true; navigator.wakeLock.request('screen').then(l => { APP.wake = l; APP.wakePending = false; l.addEventListener('release', () => { if (APP.wake === l) APP.wake = null; }); }).catch(() => { APP.wakePending = false; APP.wakeFailed = true; }); }
+  else if (!want && APP.wake) { APP.wake.release().catch(() => { }); APP.wake = null; }
+}
+function applyUpdate() { if (UPDATE.applying) return; Audio.sfx('select'); UPDATE.applying = true; if (UPDATE.worker) UPDATE.worker.postMessage({ type: 'SKIP_WAITING' }); setTimeout(() => location.reload(), UPDATE.worker ? 2500 : 0); } // the reload waits for the switch, with a fallback
+registerSW(); initApp();
 loadSprites(() => { boot(); });
 requestAnimationFrame(frame);
 // Debug: play one player phase with the enemy AI (used by tools/cdp.cjs balance script).

@@ -278,4 +278,7 @@ Object.assign(ES, {
   'Criticals +{0}%': 'Críticos +{0}%', 'Heal {0}%': 'Curan un {0}%', 'Foes take {0}%': 'Rivales: -{0}% de PS', 'Foes: {0}': 'Rivales: {0}', 'Foes {0} move': 'Rivales: {0} de movimiento', '{0} · {1} days': '{0} · {1} días',
   'Foes take {0}% next turn': 'Rivales: -{0}% en tu turno', 'Steal {0}': 'Roba {0}', 'Next attack +{0}%': 'Próximo ataque +{0}%', 'Cures and blocks new status': 'Cura y bloquea estados', 'Cures status': 'Cura los estados',
   'Paralyses foes': 'Paraliza a los rivales', 'Poisons foes': 'Envenena a los rivales', 'Burns foes': 'Quema a los rivales', 'Puts foes to sleep': 'Duerme a los rivales', 'Freezes foes': 'Congela a los rivales', 'Hurts foes': 'Daña a los rivales',
+  // the app: a new version, and after the switch
+  'NEW VERSION!': '¡NUEVA VERSIÓN!', 'UPDATE ▸': 'ACTUALIZAR ▸', 'Updated · version {0}': 'Actualizado · versión {0}', 'version {0}': 'versión {0}',
+  'Install the app': 'Instalar la app', 'Full screen, offline and with its own icon': 'A pantalla completa, sin conexión y con su propio icono', 'In Safari: Share ▸ Add to Home Screen': 'En Safari: Compartir ▸ Añadir a pantalla de inicio',
 });

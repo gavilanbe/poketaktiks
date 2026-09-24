@@ -160,7 +160,7 @@ let lastT = 0;
 function frame(t) {
   requestAnimationFrame(frame); const dt = Math.min(.05, (t - lastT) / 1000 || 0); lastT = t; SC.t += dt; CLOCK.t += dt; CLOCK.dt = dt; CLOCK.frame++;
   // input
-  const q = INPUT.queue; INPUT.queue = [];
+  const q = INPUT.queue; INPUT.queue = []; wakeTick(q.length > 0);
   for (const ev of q) {
     if (ev.type === 'key' && ev.key === 'mute' && SC.name !== 'battle') { Audio.toggle(); continue; }
     switch (SC.name) {
@@ -201,6 +201,63 @@ function boot() {
   if (PARAMS.has('versus')) { startVersusSetup(parseInt(PARAMS.get('versus')) || 1); if (PARAMS.has('auto')) { const S = SC.data; S.teams = [VS_ROSTER.slice(0, 4), VS_ROSTER.slice(4, 8)]; S.go(); } return; }
   if (PARAMS.get('scene')) goScene(PARAMS.get('scene')); else if (PARAMS.has('intro')) startIntro(); else if (introWanted()) goScene('splash'); else goScene('title');
 }
+// ---------------------------------------------------------------- the offline copy and new versions (sw.js)
+// build.sh stamps the build's id (PK_BUILD). The service worker keeps this version for offline play; a new deploy
+// installs in the background and the title offers the switch (UPDATE.ready) — the game never reloads under a battle.
+// After a switch the title says so once (UPDATE.fresh).
+const BUILD = typeof PK_BUILD !== 'undefined' ? PK_BUILD : 'dev';
+const UPDATE = { ready: false, worker: null, applying: false, fresh: null };
+function registerSW() {
+  try { const prev = localStorage.getItem('pk_build'); if (BUILD !== 'dev') { if (prev && prev !== BUILD) UPDATE.fresh = { t0: -1 }; localStorage.setItem('pk_build', BUILD); } } catch (_) { }
+  if (typeof navigator === 'undefined' || !navigator.serviceWorker || !/^https?:$/.test(location.protocol) || PARAMS.has('nosw')) return;
+  const sw = navigator.serviceWorker;
+  sw.addEventListener('controllerchange', () => { if (UPDATE.applying) location.reload(); }); // only when the player chose to switch
+  sw.register('sw.js').then(reg => {
+    const found = w => { if (w && sw.controller) { UPDATE.ready = true; UPDATE.worker = w; } };
+    if (reg.waiting) found(reg.waiting);
+    reg.addEventListener('updatefound', () => { const w = reg.installing; if (w) w.addEventListener('statechange', () => { if (w.state === 'installed') found(w); }); });
+    const check = () => reg.update().catch(() => { }); setInterval(check, 30 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+  }).catch(() => { });
+}
+function warmList() { const out = []; for (let n = 1; n <= 151; n++) out.push('./assets/battle/' + n + '.png', './assets/battle/anim/' + n + '.png'); return out; }
+// An installed game should play anywhere: every battle sprite is fetched in the background (not on Save-Data or 2G),
+// once per session, and the save is asked to stay put (Safari keeps an installed app's storage; Chrome and Firefox
+// are asked for persistent storage).
+function warmSprites() {
+  if (APP.warmed || typeof navigator === 'undefined' || !navigator.serviceWorker) return; const c = navigator.connection; if (c && (c.saveData || /2g/.test(c.effectiveType || ''))) return;
+  APP.warmed = true; navigator.serviceWorker.ready.then(r => { if (r.active) r.active.postMessage({ type: 'WARM', urls: warmList() }); }).catch(() => { });
+}
+
+// ---------------------------------------------------------------- the game as an app
+// APP.prompt: the browser's install offer (Chrome, Edge, Android), shown as an OPTIONS row; iOS gets the steps instead.
+// While a battle is on the screen stays awake (released after three idle minutes and whenever the game is hidden);
+// in the background the sound stops.
+const APP = { prompt: null, installed: false, warmed: false, active: 0, wake: null, wakePending: false, wakeFailed: false, ios: false };
+function appInstalled() { try { return matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone === true; } catch (_) { return false; } }
+function onInstalled() { APP.installed = true; APP.prompt = null; warmSprites(); try { if (navigator.storage && navigator.storage.persist && !localStorage.getItem('pk_persist')) { localStorage.setItem('pk_persist', '1'); navigator.storage.persist().catch(() => { }); } } catch (_) { } }
+function initApp() {
+  if (typeof document === 'undefined' || typeof document.addEventListener !== 'function' || typeof navigator === 'undefined') return;
+  APP.ios = /iPad|iPhone|iPod/.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  addEventListener('beforeinstallprompt', e => { e.preventDefault(); APP.prompt = e; });
+  addEventListener('appinstalled', () => onInstalled());
+  if (appInstalled()) onInstalled();
+  // with launch_handler focus-existing, a launcher shortcut tapped while the game is open arrives here: it opens its
+  // screen unless a battle or a dialogue is on (the running game is never torn down)
+  if (typeof launchQueue !== 'undefined' && launchQueue.setConsumer) launchQueue.setConsumer(p => { try {
+    const u = new URL(p.targetURL); if (u.search === location.search || ['loading', 'battle', 'story', 'intro', 'splash'].includes(SC.name)) return;
+    const vs = u.searchParams.get('versus'), sc = u.searchParams.get('scene'); if (vs) startVersusSetup(parseInt(vs) || 1); else if (sc === 'cos') openCoRoom(); else if (sc === 'quick') goScene('quick');
+  } catch (_) { } });
+  document.addEventListener('visibilitychange', () => { const ac = Audio.ac; if (document.hidden) { if (ac && ac.state === 'running') ac.suspend().catch(() => { }); if (APP.wake) { APP.wake.release().catch(() => { }); APP.wake = null; } } else { if (ac && !Audio.muted && ac.state === 'suspended') ac.resume().catch(() => { }); APP.wakeFailed = false; } });
+}
+function installApp() { const p = APP.prompt; if (!p) return; Audio.sfx('select'); p.prompt(); (p.userChoice || Promise.resolve({})).then(r => { if (r && r.outcome === 'accepted') onInstalled(); }).catch(() => { }); APP.prompt = null; }
+function wakeTick(hadInput) {
+  if (typeof navigator === 'undefined' || !navigator.wakeLock) return; if (hadInput) APP.active = CLOCK.t;
+  const want = SC.name === 'battle' && !document.hidden && CLOCK.t - APP.active < 180;
+  if (want && !APP.wake && !APP.wakePending && !APP.wakeFailed) { APP.wakePending = true; navigator.wakeLock.request('screen').then(l => { APP.wake = l; APP.wakePending = false; l.addEventListener('release', () => { if (APP.wake === l) APP.wake = null; }); }).catch(() => { APP.wakePending = false; APP.wakeFailed = true; }); }
+  else if (!want && APP.wake) { APP.wake.release().catch(() => { }); APP.wake = null; }
+}
+function applyUpdate() { if (UPDATE.applying) return; Audio.sfx('select'); UPDATE.applying = true; if (UPDATE.worker) UPDATE.worker.postMessage({ type: 'SKIP_WAITING' }); setTimeout(() => location.reload(), UPDATE.worker ? 2500 : 0); } // the reload waits for the switch, with a fallback
+registerSW(); initApp();
 loadSprites(() => { boot(); });
 requestAnimationFrame(frame);
 // Debug: play one player phase with the enemy AI (used by tools/cdp.cjs balance script).

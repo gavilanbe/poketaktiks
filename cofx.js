@@ -167,9 +167,9 @@ function drawCoCast(q, t, T) {
   const nt = t - (sup ? .62 : .42); if (nt > -.2 && BH > 20) {
     const name = String(TRX(sup ? c.super.name : c.power.name)).toUpperCase() + '!', maxW = portrait ? W - 16 : W * .56, sc = displayWidth(name, 3) <= maxW ? 3 : displayWidth(name, 2) <= maxW ? 2 : 1, slam = REDUCED ? 0 : clamp(1 - nt / .1, 0, 1);
     const nx = portrait ? Math.round(W / 2) : side ? Math.round(W * .31) : Math.round(W * .69), ny = portrait ? top + BH + s + 16 : cy - Math.round(11 * sc / 2) - 8 - (sup ? 6 : 0), ox = Math.round(out * (side ? -1 : 1) * W);
-    if (nt >= 0) { const drawSc = slam > 0 && displayWidth(name, sc + 1) <= W - 8 ? sc + 1 : sc, jig = slam > 0 ? Math.round(Math.sin(nt * 90) * 3) : 0;
+    if (nt >= 0) { const drawSc = slam > 0 && displayWidth(name, sc + 1) <= W - 8 ? sc + 1 : sc, jig = slam > 0 ? Math.round(Math.sin(nt * 90) * 3) : 0, half = Math.ceil(displayWidth(name, drawSc) / 2) + 4, cx = clamp(nx + jig, half, W - half); // the slam never pushes it off the screen
       const lab = sup ? 'SUPER POWER' : 'POWER', lw = textWidth(lab) + 12; ribbonTab(lab, Math.round(nx - lw / 2) + ox, ny - 15, sup ? UI.gold : col);
-      displayC(name, nx + ox + jig, ny + (drawSc > sc ? -Math.round(5.5 * (drawSc - sc)) : 0), { style: sup ? 'gold' : 'silver', scale: drawSc, slant: 1, shine: true, phase: .3 });
+      displayC(name, cx + ox, ny + (drawSc > sc ? -Math.round(5.5 * (drawSc - sc)) : 0), { style: sup ? 'gold' : 'silver', scale: drawSc, slant: 1, shine: true, phase: .3 });
       if (nt < .08 && !REDUCED) { ctx.globalAlpha = .5 * (1 - nt / .08); rect(0, 0, W, H, '#ffffff'); ctx.globalAlpha = 1; } }
     // the commander's line, typed out
     const qt = t - (sup ? .95 : .62), quote = TRX(th.quote[sup ? 1 : 0]);
