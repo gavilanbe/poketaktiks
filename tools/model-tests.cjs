@@ -410,10 +410,11 @@ test('HUD layout: buttons, cards, menus, forecast, sheet and help stay inside th
   for (const [w, h] of SIZES) {
     G('VIEW.w = ' + w + '; VIEW.h = ' + h); g.startBattle(C.CHAPTERS[0].map, [g.partyUnit(4, 5), g.partyUnit(25, 5)], { pokeball: 1 }, { chapter: 0, seed: 7, defer: true }); const BT = G('BT'), HUD = G('HUD'); const tag = w + 'x' + h + ': '; const narrow = w < 300;
     const me = T.B().units.find(u => u.team === 0), foe = T.B().units.find(u => u.team !== 0); BT.cx = me.x; BT.cy = me.y;
-    const checkHits = mode => { g.battleDraw(); for (const r of HUD.hits) { assert(inside(r, w, h), tag + mode + ': button ' + r.label + ' inside'); if (narrow) assert(r.h >= 18, tag + mode + ': button ' + r.label + ' is ' + r.h + ' tall'); }
+    const checkHits = mode => { g.battleDraw(); for (const r of HUD.hits) { assert(inside(r, w, h), tag + mode + ': button ' + r.label + ' inside'); if (narrow) assert(r.h >= 18, tag + mode + ': button ' + r.label + ' is ' + r.h + ' tall'); if (r.label) assert(g.textWidth(r.label) + (/^(DANGER|♪|FAST)/.test(r.label) ? 13 : 4) <= r.w, tag + mode + ': the label ' + r.label + ' fits its ' + r.w + '-px button'); }
       for (let i = 0; i < HUD.hits.length; i++) for (let j = i + 1; j < HUD.hits.length; j++) assert(!overlaps(HUD.hits[i], HUD.hits[j]), tag + mode + ': buttons ' + HUD.hits[i].label + ' / ' + HUD.hits[j].label + ' overlap');
       for (const p of HUD.panels) assert(inside(p, w, h), tag + mode + ': panel inside'); for (const p of HUD.panels) for (const b of HUD.hits) assert(!overlaps(p, b), tag + mode + ': a panel covers button ' + b.label); return HUD.hits.map(b => b.label); };
-    BT.mode = 'idle'; const idle = checkHits('idle'); assert(idle.includes('END TURN') && idle.some(l => l.startsWith('DANGER')) && idle.includes('HELP'), tag + 'idle buttons present: ' + idle);
+    BT.mode = 'idle'; const idle = checkHits('idle'); assert(idle.includes('END TURN') && idle.some(l => l.startsWith('DANGER')) && (idle.includes('HELP') || g.hudLayout().stack && idle.includes('MENU')), tag + 'idle buttons present: ' + idle);
+    if (g.hudLayout().stack) { G('VIEW.touch = true'); const touch = checkHits('idle, touch'); assert(touch.includes('NEXT') && touch.includes('MENU'), tag + 'a phone gets NEXT and MENU: ' + touch); G('VIEW.touch = false'); }
     if (!g.boardFits(1)) assert(idle.some(l => l.startsWith('ZOOM')), tag + 'zoom offered when the board does not fit'); else assert(!idle.some(l => l.startsWith('ZOOM')), tag + 'no zoom button when the board fits');
     // the turn card carries the ready count and does not collide with the buttons
     const L = g.hudLayout(); assert(inside(L.top, w, h)); for (const b of HUD.hits) assert(!overlaps(L.top, b), tag + 'turn card clear of ' + b.label);

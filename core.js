@@ -4,7 +4,9 @@
 // Showdown icon atlas, WebAudio synth.
 // ============================================================================
 const TILE = 32;                      // logical pixels per board tile
-const VIEW = { w: 480, h: 270, scale: 2, dpr: 1, touch: false };
+// touch: whether to show tap hints instead of keys; a phone starts in it (a coarse pointer that cannot hover), and every
+// pointer press after that says which kind of pointer is in use
+const VIEW = { w: 480, h: 270, scale: 2, dpr: 1, touch: typeof matchMedia === 'function' && !!matchMedia('(hover: none) and (pointer: coarse)').matches };
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d', { alpha: false });
 const REDUCED = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;

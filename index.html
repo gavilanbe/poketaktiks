@@ -27,7 +27,9 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges;cursor:pointer;disp
 // Showdown icon atlas, WebAudio synth.
 // ============================================================================
 const TILE = 32;                      // logical pixels per board tile
-const VIEW = { w: 480, h: 270, scale: 2, dpr: 1, touch: false };
+// touch: whether to show tap hints instead of keys; a phone starts in it (a coarse pointer that cannot hover), and every
+// pointer press after that says which kind of pointer is in use
+const VIEW = { w: 480, h: 270, scale: 2, dpr: 1, touch: typeof matchMedia === 'function' && !!matchMedia('(hover: none) and (pointer: coarse)').matches };
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d', { alpha: false });
 const REDUCED = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -4021,11 +4023,14 @@ function drawButtons(L) {
   if (idle && VIEW.touch && alive(HT()).some(u => !u.acted)) { const nx = { label: 'NEXT', run: () => keyInput('next') }; if (L.stack) items.splice(1, 0, nx); else items.push(nx); }
   if (idle || acting) { if (canZoom()) items.push({ label: BT.zoom === 1 ? 'ZOOM -' : 'ZOOM +', run: () => { toggleZoom(); Audio.sfx('menu'); } }); }
   if (idle && warHasBox(HT())) items.push({ label: BT.boxNew ? 'PC!' : 'PC', run: () => openDeployMenu() });
-  if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; Audio.sfx('menu'); } }, { label: '♪', on: !Audio.muted, half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
-  if (B.territory && L.stack && idle) { const mute = items.findIndex(it => it.label.startsWith('♪')); if (mute >= 0) items.splice(mute, 1); }
+  // phones have no X key or right click: MENU opens the day menu (help, sound, the battle scene, retreat live there)
+  if (idle && L.stack) items.push({ label: 'MENU', run: () => { openEndMenu(); Audio.sfx('menu'); } });
+  else if (idle) items.push({ label: 'HELP', half: true, run: () => { BT.mode = 'help'; BT.helpPage = 0; BT.helpOffset = 0; Audio.sfx('menu'); } }, { label: '♪', on: !Audio.muted, half: true, run: () => { Audio.toggle(); Audio.sfx('menu'); } });
   if (!items.length) return;
   if (L.stack) { // two rows across the bottom: row 1 = the two main actions, row 2 = the rest
-    const b = L.bar; const row1 = items.slice(0, 2), row2 = items.slice(2); const lay = (row, y) => { if (!row.length) return; const gap = 4, w = Math.floor((b.w - gap * (row.length - 1)) / row.length); row.forEach((it, i) => button(b.x + i * (w + gap), y, w, bh, it.label, it.run, { col: it.col, variant: it.variant, on: it.on })); };
+    // equal widths when every label fits; otherwise each button takes its label's width and they share what is left
+    const b = L.bar; const row1 = items.slice(0, 2), row2 = items.slice(2); const lay = (row, y) => { if (!row.length) return; const gap = 4, avail = b.w - gap * (row.length - 1), eq = Math.floor(avail / row.length), nat = row.map(it => textWidth(it.label) + (it.on != null ? 9 : 0) + 8), sum = nat.reduce((a, c) => a + c, 0), fit = nat.every(n => n <= eq), extra = Math.max(0, avail - sum) / row.length;
+      let x = b.x; row.forEach((it, i) => { const w = i === row.length - 1 ? b.x + b.w - x : fit || sum > avail ? eq : Math.floor(nat[i] + extra); button(x, y, w, bh, it.label, it.run, { col: it.col, variant: it.variant, on: it.on }); x += w + gap; }); };
     lay(row1, b.y); lay(row2, b.y + bh + 4);
   } else {
     const bx = L.buttons.x, bw = L.buttons.w; let y = 4; for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.half && items[i + 1] && items[i + 1].half) { button(bx, y, bw / 2 - 1, bh, it.label, it.run, { col: it.col, variant: it.variant, on: it.on }); button(bx + bw / 2 + 1, y, bw / 2 - 1, bh, items[i + 1].label, items[i + 1].run, { col: items[i + 1].col, variant: items[i + 1].variant, on: items[i + 1].on }); i++; } else button(bx, y, bw, bh, it.label, it.run, { col: it.col, variant: it.variant, on: it.on }); y += bh + 2; }
@@ -4086,7 +4091,7 @@ function terrainCardBody(t, ref, x, y, w, tall) {
   const cost = moveCost(t, ref); const extra = t.heal ? healText : t.burn ? ['burns', UI.red] : cost >= 99 ? ['no entry', UI.muted] : null;
   const stars = defStars(terrainDef(t, ref)), eva = terrainEva(t, ref);
   const def = stars === '-' ? ['no cover', UI.muted] : ['DEF ' + stars, UI.gold];
-  if (tall) { let name = t.name; if (textWidth(name) > w - 18) name = name.split(' ').pop(); name = fitLabel(name, w - 18); text(name, x + 17, y + 4, UI.gold); text(def[0], x + 4, y + 13, def[1]); text(extra ? extra[0] : 'MOVE ' + cost + (eva ? ' · EVA ' + eva : ''), x + 4, y + 22, extra ? extra[1] : UI.ink); }
+  if (tall) { let name = t.name; if (textWidth(name) > w - 18) name = name.split(' ').pop(); name = fitLabel(name, w - 18); text(name, x + 17, y + 4, UI.gold); text(def[0], x + 4, y + 12, def[1]); text(extra ? extra[0] : 'MOVE ' + cost + (eva ? ' · EVA ' + eva : ''), x + 4, y + 20, extra ? extra[1] : UI.ink); } // 8-px lines: the third clears the card's border
   else { text(t.name, x + 27, y + 4, UI.gold); text(def[0], x + 27, y + 13, def[1]); if (eva) text('EVADE +' + eva, x + 27 + textWidth(def[0]) + 6, y + 13, UI.info); text(extra ? extra[0] : 'MOVE ' + cost, x + 27, y + 22, extra ? extra[1] : UI.ink); }
 }
 // The forecast sits on the side away from the cursor on wide screens and spans the bottom on portrait phones.

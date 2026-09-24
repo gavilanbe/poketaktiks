@@ -240,7 +240,9 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
 - Q/E: cycle units. C: unit info or switch the forecast move. V: forecast details.
 - P: commander power. F: fast playback. `+` / `-`: zoom. H: help. M: mute.
 - Mouse: point and click; right-click cancels; drag/wheel pans.
-- Touch: tap to select/confirm, drag to pan; NEXT jumps to the next ready Pokémon.
+- Touch: tap to select/confirm, drag to pan; NEXT jumps to the next ready Pokémon
+  and MENU opens the day menu (help, sound, the battle scene, retreat). A phone
+  starts with tap hints.
 
 Campaign progress saves between fronts; Tower ranks and the Safari record are
 kept apart from it. A suspend slot is written at the start of each player turn
