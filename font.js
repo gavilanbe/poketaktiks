@@ -62,7 +62,7 @@ const ROTULO_SRC = {
 };
 // A glyph is "offset|rows" — offset is the row where the glyph starts below the cap line (2 = x-height).
 function parseGlyphs(src) { const out = {}; for (const k in src) { let s = src[k], off = 0; const bar = s.indexOf('|'); if (bar >= 0 && bar < 3) { off = parseInt(s.slice(0, bar)); s = s.slice(bar + 1); } const rows = s.split('/'); out[k] = { off, rows, w: rows[0].length, h: rows.length }; } return out; }
-const EXTRA_SRC = { '♪': '00011/00010/00010/00010/01110/11110/01100', '●': '1|01110/11111/11111/11111/01110', '○': '1|01110/10001/10001/10001/01110', '◂': '1|00001/00111/11111/00111/00001', '▸': '1|10000/11100/11111/11100/10000', '▲': '2|00100/01110/11111', '▼': '2|11111/01110/00100', '◆': '1|00100/01110/11111/01110/00100', '₽': '01110/01001/01001/01110/11100/01000/01000' };
+const EXTRA_SRC = { '©': '0111110/1000001/1001101/1010001/1001101/1000001/0111110', '♪': '00011/00010/00010/00010/01110/11110/01100', '●': '1|01110/11111/11111/11111/01110', '○': '1|01110/10001/10001/10001/01110', '◂': '1|00001/00111/11111/00111/00001', '▸': '1|10000/11100/11111/11100/10000', '▲': '2|00100/01110/11111', '▼': '2|11111/01110/00100', '◆': '1|00100/01110/11111/01110/00100', '₽': '01110/01001/01001/01110/11100/01000/01000' };
 const BIG_EXTRA_SRC = { "'": '11/11/01/10/00/00/00/00/00', '★': '0001000/0001000/0011100/1111111/0111110/0011100/0110110/1100011/0000000', '♥': '0110110/1111111/1111111/1111111/0111110/0011100/0001000/0000000/0000000', '#': '0110110/0110110/1111111/0110110/0110110/1111111/0110110/0110110/0000000', '₽': '0111110/0110011/0110011/0110011/0111110/1111000/0110000/0110000/0000000', '▸': '1000/1100/1110/1111/1111/1110/1100/1000/0000', '◂': '0001/0011/0111/1111/1111/0111/0011/0001/0000' };
 const FONT = Object.assign(parseGlyphs(CUADERNO_SRC), parseGlyphs(EXTRA_SRC)), BIG = Object.assign(parseGlyphs(ROTULO_SRC), parseGlyphs(BIG_EXTRA_SRC));
 const DESC = new Set('gjpqy,;¡¿ç');
@@ -90,3 +90,104 @@ function textR(s, rx, y, col, opt = {}) { return text(s, rx - textWidth(s, opt.f
 function bigText(s, x, y, col = UI.ink, opt = {}) { return text(String(s).toUpperCase(), x, y, col, Object.assign({ font: BIG }, opt)); }
 function bigC(s, cx, y, col, opt = {}) { return bigText(s, cx - textWidth(String(s).toUpperCase(), BIG) / 2, y, col, opt); }
 function wrap(s, width, font = FONT) { const out = []; for (const para of String(s).split('\n')) { let line = ''; for (const w of para.split(' ')) { const t = line ? line + ' ' + w : w; if (textWidth(t, font) > width && line) { out.push(line); line = w; } else line = t; } out.push(line); } return out; }
+
+// ---------------------------------------------------------------- the display face (titles and the logo)
+// The game's own display type: bold square capitals 11 px tall with 3-px stems, 2-px bars and rounded shoulders, drawn
+// here pixel by pixel. displayText() dresses them the way the logo is dressed: a face graded down each letter, a blue
+// inline and a navy outline, a 3-D extrusion down and to the right, an optional slant, and a shine that sweeps through.
+const DISPLAY_SRC = {
+  A: ['..####..', '.######.', '###..###', '###..###', '###..###', '########', '########', '###..###', '###..###', '###..###', '###..###'],
+  B: ['#######.', '########', '###..###', '###..###', '#######.', '#######.', '###..###', '###..###', '###..###', '########', '#######.'],
+  C: ['.#######', '########', '###.....', '###.....', '###.....', '###.....', '###.....', '###.....', '###.....', '########', '.#######'],
+  D: ['######..', '#######.', '###.####', '###..###', '###..###', '###..###', '###..###', '###..###', '###.####', '#######.', '######..'],
+  E: ['#######', '#######', '###....', '###....', '######.', '######.', '###....', '###....', '###....', '#######', '#######'],
+  F: ['#######', '#######', '###....', '###....', '######.', '######.', '###....', '###....', '###....', '###....', '###....'],
+  G: ['.#######', '########', '###.....', '###.....', '###.####', '###.####', '###..###', '###..###', '###..###', '########', '.#######'],
+  H: ['###..###', '###..###', '###..###', '###..###', '########', '########', '###..###', '###..###', '###..###', '###..###', '###..###'],
+  I: ['#####', '#####', '.###.', '.###.', '.###.', '.###.', '.###.', '.###.', '.###.', '#####', '#####'],
+  J: ['...####', '...####', '....###', '....###', '....###', '....###', '....###', '###.###', '###.###', '#######', '.#####.'],
+  K: ['###..###', '###..###', '###.###.', '###.###.', '######..', '#####...', '######..', '###.###.', '###.###.', '###..###', '###..###'],
+  L: ['###....', '###....', '###....', '###....', '###....', '###....', '###....', '###....', '###....', '#######', '#######'],
+  M: ['####...####', '#####.#####', '###########', '###.###.###', '###..#..###', '###.....###', '###.....###', '###.....###', '###.....###', '###.....###', '###.....###'],
+  N: ['####..###', '#####.###', '#########', '###.#####', '###..####', '###...###', '###...###', '###...###', '###...###', '###...###', '###...###'],
+  O: ['.######.', '########', '###..###', '###..###', '###..###', '###..###', '###..###', '###..###', '###..###', '########', '.######.'],
+  P: ['#######.', '########', '###..###', '###..###', '###..###', '########', '#######.', '###.....', '###.....', '###.....', '###.....'],
+  Q: ['.######.', '########', '###..###', '###..###', '###..###', '###..###', '###..###', '###.####', '###.####', '########', '.#######'],
+  R: ['#######.', '########', '###..###', '###..###', '###..###', '#######.', '######..', '###.###.', '###..###', '###..###', '###..###'],
+  S: ['.#######', '########', '###.....', '###.....', '#######.', '.#######', '.....###', '.....###', '.....###', '########', '#######.'],
+  T: ['#########', '#########', '...###...', '...###...', '...###...', '...###...', '...###...', '...###...', '...###...', '...###...', '...###...'],
+  U: ['###..###', '###..###', '###..###', '###..###', '###..###', '###..###', '###..###', '###..###', '###..###', '########', '.######.'],
+  V: ['###..###', '###..###', '###..###', '###..###', '###..###', '###..###', '.######.', '.######.', '..####..', '..####..', '...##...'],
+  W: ['###.....###', '###.....###', '###.....###', '###.....###', '###.....###', '###..#..###', '###.###.###', '###########', '###########', '####...####', '###.....###'],
+  X: ['###..###', '###..###', '###..###', '.######.', '..####..', '..####..', '.######.', '###..###', '###..###', '###..###', '###..###'],
+  Y: ['###...###', '###...###', '###...###', '###...###', '.#######.', '..#####..', '...###...', '...###...', '...###...', '...###...', '...###...'],
+  Z: ['########', '########', '.....###', '....###.', '...###..', '..###...', '.###....', '###.....', '###.....', '########', '########'],
+  0: ['.######.', '########', '###..###', '###..###', '###..###', '###..###', '###..###', '###..###', '###..###', '########', '.######.'],
+  1: ['..###.', '.####.', '#####.', '..###.', '..###.', '..###.', '..###.', '..###.', '..###.', '######', '######'],
+  2: ['.######.', '########', '###..###', '.....###', '....####', '..#####.', '.#####..', '####....', '###.....', '########', '########'],
+  3: ['#######.', '########', '.....###', '.....###', '..#####.', '..######', '.....###', '.....###', '.....###', '########', '#######.'],
+  4: ['###..###', '###..###', '###..###', '###..###', '###..###', '########', '########', '.....###', '.....###', '.....###', '.....###'],
+  5: ['########', '########', '###.....', '###.....', '#######.', '########', '.....###', '.....###', '.....###', '########', '#######.'],
+  6: ['.#######', '########', '###.....', '###.....', '#######.', '########', '###..###', '###..###', '###..###', '########', '.######.'],
+  7: ['########', '########', '.....###', '.....###', '....###.', '...###..', '..###...', '..###...', '..###...', '..###...', '..###...'],
+  8: ['.######.', '########', '###..###', '###..###', '.######.', '.######.', '###..###', '###..###', '###..###', '########', '.######.'],
+  9: ['.######.', '########', '###..###', '###..###', '###..###', '########', '.#######', '.....###', '.....###', '########', '#######.'],
+  '·': ['....', '....', '....', '....', '....', '.##.', '.##.', '....', '....', '....', '....'],
+  '-': ['.....', '.....', '.....', '.....', '.....', '#####', '#####', '.....', '.....', '.....', '.....'],
+  '.': ['...', '...', '...', '...', '...', '...', '...', '...', '...', '###', '###'],
+  "'": ['###', '###', '.##', '.#.', '...', '...', '...', '...', '...', '...', '...'],
+  '!': ['###', '###', '###', '###', '###', '###', '###', '...', '...', '###', '###'],
+  '?': ['.######.', '########', '###..###', '.....###', '....####', '...####.', '...###..', '........', '........', '...###..', '...###..'],
+  ':': ['...', '...', '###', '###', '...', '...', '...', '...', '###', '###', '...'],
+  '/': ['....###', '....###', '...###.', '...###.', '..###..', '..###..', '.###...', '.###...', '###....', '###....', '###....'],
+  '★': ['....#....', '...###...', '...###...', '#########', '.#######.', '..#####..', '..#####..', '.###.###.', '.##...##.', '##.....##', '.........'],
+};
+// Accents ride above the cap line (É in POKÉ): two rows over the letter.
+const DISPLAY_ACCENT = { 'É': ['E', ['....##.', '...##..']] };
+const DISPLAY_STYLES = {
+  gold: { face: ['#fffbe0', '#fff1a0', '#ffe04e', '#ffc823', '#f9a912', '#ee8c0a'], top: '#ffffff', bot: '#c96a08', inline: ['#4a86ea', '#2c58b6'], outline: '#10133e', depth: '#0a0c2e' },
+  red: { face: ['#fff0ea', '#ffb0a0', '#ff6a5a', '#f0403c', '#d42a30', '#b01c28'], top: '#ffffff', bot: '#7a0a18', inline: ['#5a1020', '#3a0814'], outline: '#12040a', depth: '#0a0206' },
+  blue: { face: ['#f0f8ff', '#b8e0ff', '#7ac0ff', '#4a98f0', '#3478d8', '#2a5ab8'], top: '#ffffff', bot: '#1a3a88', inline: ['#0e2a6a', '#0a1c4a'], outline: '#050a20', depth: '#03061a' },
+  silver: { face: ['#ffffff', '#eef0fa', '#d8dcec', '#c0c6dc', '#a8aec8', '#9096b4'], top: '#ffffff', bot: '#5a6080', inline: ['#3a3f68', '#2a2e50'], outline: '#0c0e22', depth: '#070818' },
+};
+const DISPLAY_CACHE = new Map();
+function displayGlyph(c) { const a = DISPLAY_ACCENT[c]; if (a) return { rows: DISPLAY_SRC[a[0]], up: a[1] }; const k = String(c).toUpperCase(); return { rows: DISPLAY_SRC[k] || DISPLAY_SRC[stripAccents(k)] || DISPLAY_SRC['?'], up: null }; }
+function displayWidth(s, scale = 1) { let w = 0, n = 0; for (const c of String(s)) { w += c === ' ' ? 4 : displayGlyph(c).rows[0].length; n++; } return Math.max(0, (w + Math.max(0, n - 1)) * scale); }
+// The whole string as one cached canvas: the glyph mask (slanted, scaled), then outline, inline, face and highlights.
+// box: where the cap-line/left of the letters sits inside the canvas (ox, oy), and the letters' own width and height.
+function displayCanvas(s, style, scale, slant) {
+  const key = s + '|' + style + '|' + scale + '|' + slant; let D = DISPLAY_CACHE.get(key); if (D) return D;
+  const chars = [...String(s)], up = chars.some(c => displayGlyph(c).up) ? 3 : 0, H0 = 11 + up, W0 = displayWidth(s);
+  const m0 = new Uint8Array(W0 * H0); let x = 0;
+  for (const c of chars) { if (c === ' ') { x += 5; continue; } const g = displayGlyph(c), gw = g.rows[0].length;
+    const put = (rr, oy) => rr.forEach((row, r) => { for (let i = 0; i < row.length; i++) if (row[i] === '#') { const yy = r + oy, xx = x + i; if (xx >= 0 && xx < W0) m0[yy * W0 + xx] = 1; } });
+    put(g.rows, up); if (g.up) put(g.up, up - 3 + 1); x += gw + 1; }
+  // the slant is applied to the final pixels, a column at a time, so stems lean smoothly instead of in steps
+  const S = scale, SL = slant * S, W1 = W0 * S + SL, H1 = H0 * S, t1 = Math.max(1, S), t2 = 1, dp = 1 + S, pad = t1 + t2 + dp, CW = W1 + pad * 2, CH = H1 + pad * 2;
+  const M = new Uint8Array(CW * CH); for (let y = 0; y < H1; y++) { const sh = SL ? Math.round((H1 - 1 - y) * SL / (H1 - 1)) : 0; for (let x2 = 0; x2 < W0 * S; x2++) if (m0[Math.floor(y / S) * W0 + Math.floor(x2 / S)]) M[(y + pad) * CW + x2 + sh + pad] = 1; }
+  const grow = (src, r) => { let cur = src; for (let k = 0; k < r; k++) { const o = new Uint8Array(CW * CH); for (let y = 0; y < CH; y++) for (let x2 = 0; x2 < CW; x2++) { const i = y * CW + x2; if (cur[i]) { o[i] = 1; continue; } for (let dy = -1; dy <= 1 && !o[i]; dy++) for (let dx = -1; dx <= 1; dx++) { const X = x2 + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < CW && Y < CH && cur[Y * CW + X]) { o[i] = 1; break; } } } cur = o; } return cur; };
+  const inl = grow(M, t1), out = grow(inl, t2);
+  const mk = () => { const cv = document.createElement('canvas'); cv.width = CW; cv.height = CH; return cv; };
+  // two layers, so letters set side by side never have an outline cut into a neighbour: back (extrusion, outline, inline)
+  // and face (the graded fill with its lit top edge and dark bottom edge); c is both together
+  const back = mk(), face = mk(), bg = back.getContext('2d'), fg = face.getContext('2d'), st = DISPLAY_STYLES[style] || DISPLAY_STYLES.gold, dot = (g, xx, yy, col) => { g.fillStyle = col; g.fillRect(xx, yy, 1, 1); };
+  for (let k = dp; k >= 1; k--) for (let y = 0; y < CH; y++) for (let x2 = 0; x2 < CW; x2++) if (out[y * CW + x2]) { const X = x2 + Math.ceil(k / 2), Y = y + k; if (X < CW && Y < CH && !out[Y * CW + X]) dot(bg, X, Y, st.depth); }
+  const top0 = pad + up * S, capH = 11 * S;
+  for (let y = 0; y < CH; y++) for (let x2 = 0; x2 < CW; x2++) { const i = y * CW + x2; if (!out[i] || M[i]) continue; dot(bg, x2, y, inl[i] ? st.inline[y < top0 + capH / 2 ? 0 : 1] : st.outline); }
+  const at = (xx, yy) => xx >= 0 && yy >= 0 && xx < CW && yy < CH && M[yy * CW + xx];
+  for (let y = 0; y < CH; y++) for (let x2 = 0; x2 < CW; x2++) { if (!M[y * CW + x2]) continue; const v = clamp((y - top0) / capH, 0, .999), f = st.face; let k = Math.floor(v * f.length); if (((x2 + y) & 1) && v * f.length - k > .7 && k < f.length - 1) k++;
+    dot(fg, x2, y, !at(x2, y - 1) ? st.top : !at(x2, y + 1) ? st.bot : f[Math.max(0, k)]); }
+  const c = mk(), cg = c.getContext('2d'); cg.drawImage(back, 0, 0); cg.drawImage(face, 0, 0);
+  const shine = mk(), sg = shine.getContext('2d'); sg.fillStyle = '#ffffff'; for (let y = 0; y < CH; y++) for (let x2 = 0; x2 < CW; x2++) if (M[y * CW + x2]) sg.fillRect(x2, y, 1, 1);
+  D = { c, back, face, shine, ox: pad, oy: pad + up * S, w: displayWidth(s, S) + slant * S, h: capH }; DISPLAY_CACHE.set(key, D); return D;
+}
+function textBoxHook() { } // the layout tests listen here for text that is not drawn through text()
+// Draws a display string with its cap line at y. opt: scale (1-3), style (gold, red, blue, silver), slant (px at the top),
+// shine (a band sweeping through every few seconds). Returns the width.
+function displayText(s, x, y, opt = {}) {
+  s = String(s).toUpperCase(); const scale = opt.scale || 1, D = displayCanvas(s, opt.style || 'gold', scale, opt.slant || 0); x = Math.round(x); y = Math.round(y);
+  ctx.drawImage(D.c, x - D.ox, y - D.oy);
+  if (opt.shine && !REDUCED && CLOCK.frame) { const k = ((CLOCK.t + (opt.phase || 0)) % 3.4) / .8; if (k < 1) { const sx = x - 8 + Math.round((D.w + 16) * k); ctx.save(); ctx.beginPath(); ctx.rect(sx, y - D.oy, 2 * scale + 1, D.c.height); ctx.rect(sx + 3 * scale + 1, y - D.oy, scale, D.c.height); ctx.clip(); ctx.globalAlpha *= .8; ctx.drawImage(D.shine, x - D.ox, y - D.oy); ctx.restore(); } }
+  textBoxHook(s, x, y, D.w, D.h); return D.w;
+}
+function displayC(s, cx, y, opt = {}) { const w = displayWidth(String(s).toUpperCase(), opt.scale || 1) + (opt.slant || 0) * (opt.scale || 1); return displayText(s, cx - w / 2, y, opt); }

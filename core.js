@@ -256,8 +256,10 @@ function shinyTitle(s, cx, y, col = UI.gold, dark = UI.goldDark) {
 }
 // Screen chrome for setup / result scenes: a headline with a gold rule, and a footer band for buttons and hints.
 function screenTitle(title, sub, y = 6) {
-  const W = VIEW.w, k = easeOutBack(clamp(appear('title:' + title) / .35, 0, 1)); const tw = textWidth(String(title).toUpperCase(), BIG);
-  const yy = y + Math.round((1 - k) * -14); shinyTitle(title, W / 2, yy, UI.gold, UI.goldDark);
+  const W = VIEW.w, k = easeOutBack(clamp(appear('title:' + title) / .35, 0, 1)), T = String(title).toUpperCase(), dw = displayWidth(T) + 2, yy = y + Math.round((1 - k) * -14);
+  // the game's display face when the title fits, the plain rotulo face (with its rule) when it does not
+  if (dw <= W - 16) { displayC(T, W / 2, yy - 1, { style: 'gold', slant: 1, shine: true, phase: T.length * .37 }); return y + (sub ? (textC(sub, W / 2, y + 17, UI.muted, { outline: UI.shadow }), 28) : 16); }
+  const tw = textWidth(T, BIG); shinyTitle(title, W / 2, yy, UI.gold, UI.goldDark);
   const rw = Math.round((tw + 28) * clamp(k, 0, 1)); rect(W / 2 - rw / 2, y + 12, rw, 1, UI.gold); rect(W / 2 - rw / 2, y + 13, rw, 1, UI.goldDark); if (rw > 8) { px(W / 2 - rw / 2 - 2, y + 12, UI.gold); px(W / 2 + rw / 2 + 1, y + 12, UI.gold); }
   if (sub) textC(sub, W / 2, y + 17, UI.muted, { outline: UI.shadow }); return y + (sub ? 28 : 16);
 }

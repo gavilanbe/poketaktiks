@@ -5,7 +5,7 @@
 'use strict';
 const SC = { name: 'loading', t: 0, i: 0, hits: [], dialog: null, data: null };
 // Scene changes wipe through a Poké Ball, except between the board and the dialogue drawn over it.
-const NO_WIPE = new Set(['story>battle', 'battle>story', 'loading>title']);
+const NO_WIPE = new Set(['story>battle', 'battle>story', 'loading>title', 'loading>intro', 'loading>splash', 'splash>intro', 'intro>title']);
 function goScene(name, data) { if (!NO_WIPE.has(SC.name + '>' + name) && SC.name !== name) captureTransition(); SC.name = name; SC.t = 0; SC.i = 0; SC.hits = []; SC.data = data || null; SC.scroll = 0; if (name === 'title') { initTitle(); Audio.playMusic('title'); } }
 function hit(x, y, w, h, run, label) { SC.hits.push({ x, y, w, h, run, label }); }
 function hitAt(px2, py) { for (const h of SC.hits) if (px2 >= h.x && py >= h.y && px2 < h.x + h.w && py < h.y + h.h) return h; return null; }
@@ -134,13 +134,13 @@ function cardDraw() {
   const W = VIEW.w, H = VIEW.h, ch = SC.data.chapter, t = SC.t; rect(0, 0, W, H, '#0e0c10');
   if (!SC.data.bd) SC.data.bd = makeBackdrop(ch.map); const bd = SC.data.bd; drawBackdrop(bd, (W - bd.canvas.width) / 2 - t * 8, (H - bd.canvas.height) / 2, .7);
   const bars = Math.round(H * .2 * easeOut(clamp(t / .35, 0, 1))); rect(0, 0, W, bars, '#05040f'); rect(0, H - bars, W, bars, '#05040f'); hline(0, bars, W, UI.goldDark); hline(0, H - bars - 1, W, UI.goldDark);
-  const cy = Math.round(H * .46), label = ch.num ? 'FRONT ' + ch.num : ch.label || 'SKIRMISH';
-  const rib = REDUCED ? 0 : Math.round((1 - easeOut(clamp((t - .15) / .3, 0, 1))) * -W * .6), rw = textWidth(label) + 16; ribbonTab(label, Math.round(W / 2 - rw / 2) + rib, cy - 34);
-  const tw = textWidth(ch.title.toUpperCase(), BIG), scale = W >= tw * 3 + 24 ? 3 : W >= tw * 2 + 16 ? 2 : 1;
-  drawStampWordAt(ch.title, W / 2, cy - Math.round(4.5 * scale) - 4, t - .25, UI.gold, UI.goldDark, scale);
+  // the ribbon sits just over the name and the goal just under it, whatever the name's scale
+  const cy = Math.round(H * .46), label = ch.num ? 'FRONT ' + ch.num : ch.label || 'SKIRMISH', scale = displayStampScale(ch.title, W), ty = cy - Math.round(5.5 * scale) - 4, below = ty + 11 * scale + scale + 7;
+  const rib = REDUCED ? 0 : Math.round((1 - easeOut(clamp((t - .15) / .3, 0, 1))) * -W * .6), rw = textWidth(label) + 16; ribbonTab(label, Math.round(W / 2 - rw / 2) + rib, ty - 17);
+  drawStampDisplay(ch.title, W / 2, ty, t - .25 + END_BEATS.letters, 'gold', scale);
   const landed = [...ch.title].filter((c2, i) => c2 !== ' ' && t - .25 >= i * .06 + .2).length; if (landed > (SC.data.stamped || 0)) { SC.data.stamped = landed; if (!REDUCED) Audio.sfx(landed === [...ch.title].filter(c2 => c2 !== ' ').length ? 'hit' : 'stamp'); }
-  if (t > .9) { ctx.globalAlpha = clamp((t - .9) / .3, 0, 1); const goal = objectiveTextFor(ch.map.objective, ch.map).replace('Objective: ', ''); const gl = goal[0].toUpperCase() + goal.slice(1), gw = textWidth(gl) + 14; iconAt('flag', Math.round(W / 2 - gw / 2), cy + Math.round(4.5 * scale) + 5, UI.gold); text(gl, Math.round(W / 2 - gw / 2) + 14, cy + Math.round(4.5 * scale) + 6, UI.ink, { outline: UI.inset });
-    const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2); if (foes.length) textC(foes.length + ' foes' + (wild.length ? ' · ' + wild.length + ' wild' : '') + ' · Lv ' + Math.min(...foes.map(u => u.level)) + '-' + Math.max(...foes.map(u => u.level)), W / 2, cy + Math.round(4.5 * scale) + 18, UI.muted, { outline: UI.inset }); ctx.globalAlpha = 1; }
+  if (t > .9) { ctx.globalAlpha = clamp((t - .9) / .3, 0, 1); const goal = objectiveTextFor(ch.map.objective, ch.map).replace('Objective: ', ''); const gl = goal[0].toUpperCase() + goal.slice(1), gw = textWidth(gl) + 14; iconAt('flag', Math.round(W / 2 - gw / 2), below - 1, UI.gold); text(gl, Math.round(W / 2 - gw / 2) + 14, below, UI.ink, { outline: UI.inset });
+    const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2); if (foes.length) textC(foes.length + ' foes' + (wild.length ? ' · ' + wild.length + ' wild' : '') + ' · Lv ' + Math.min(...foes.map(u => u.level)) + '-' + Math.max(...foes.map(u => u.level)), W / 2, below + 12, UI.muted, { outline: UI.inset }); ctx.globalAlpha = 1; }
   // the boss slides in from the right on boss maps
   const boss = (ch.map.units || []).find(u => u.boss && (u.team == null || u.team === 1)); if (boss && H >= 200) { requestAnim(boss.mon); const bx = Math.round(W - 44 + (REDUCED ? 0 : (1 - easeOut(clamp((t - .6) / .4, 0, 1))) * 80)), by = H - bars - 6; if (bx < W + 40) { ctx.globalAlpha = .5; ellipse(bx, by, 16, 3, '#000'); ctx.globalAlpha = 1; if (animReady(boss.mon)) drawAnim(boss.mon, bx, by, t); else drawMon(boss.mon, bx, by, { flip: true }); if (t > 1.1) { const mh = typeof ANIM_META !== 'undefined' && ANIM_META[boss.mon] ? ANIM_META[boss.mon].b : 30; textC('BOSS', bx, Math.max(bars + 2, by - mh - 10), UI.red, { outline: UI.inset }); } } }
   if (SC.t > 2.6 || (SC.t > .6 && SC.skip)) { SC.skip = false; SC.data.next(); }

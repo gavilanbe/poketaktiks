@@ -529,7 +529,8 @@ test('drain reports the HP actually restored: nothing at full HP, the missing HP
 // Hooks `text` to record where each string lands (following save/translate/scale), like the supervisor's text-check script.
 function textHook(T) {
   T.G(`var __boxes = [], __m = [1, 0, 0, 1, 0, 0], __st = []; ctx.save = () => __st.push(__m.slice()); ctx.restore = () => { __m = __st.pop() || [1, 0, 0, 1, 0, 0]; }; ctx.translate = (x, y) => { __m[4] += __m[0] * x; __m[5] += __m[3] * y; }; ctx.scale = (x, y) => { __m[0] *= x; __m[3] *= y; };
-    text = (s, x, y, col, opt = {}) => { const w = textWidth(s, opt.font || FONT); __boxes.push({ text: String(s), x: __m[0] * x + __m[4], y: __m[3] * y + __m[5], w: w * __m[0], h: 7 * __m[3] }); return w; };`);
+    text = (s, x, y, col, opt = {}) => { const w = textWidth(s, opt.font || FONT); __boxes.push({ text: String(s), x: __m[0] * x + __m[4], y: __m[3] * y + __m[5], w: w * __m[0], h: 7 * __m[3] }); return w; };
+    textBoxHook = (s, x, y, w, h) => { __boxes.push({ text: String(s), x: __m[0] * x + __m[4], y: __m[3] * y + __m[5], w: w * __m[0], h: 7 * __m[3], display: true }); };`);
   const take = () => { const b = T.G('__boxes'); T.G('__boxes = []'); take.__last = b; return b; }; return take;
 }
 const battleSetup = `const ch = CHAPTERS[5]; startBattle(ch.map, [4, 7, 1, 25, 133, 66].map(n => partyUnit(n, ch.level)), {}, { chapter: 5, defer: true }); goScene('battle'); BT.mode = 'idle'; BT.time = 2;`;
@@ -576,7 +577,9 @@ test('every UI label uses glyphs the pixel font has (no "?" fallbacks)', T => {
   g.startBattle(C.CHAPTERS[5].map, [g.partyUnit(4, 20)], { pokeball: 1 }, { chapter: 5, seed: 7, defer: true }); const BT = G('BT'), HUD = G('HUD');
   for (const mode of ['idle', 'move']) { BT.mode = mode; BT.sel = mode === 'move' ? T.B().units[0] : null; if (mode === 'move') { BT.reach = g.reachable(BT.sel); BT.atk = []; BT.path = [{ x: BT.sel.x, y: BT.sel.y }]; } for (const z of [1, .5]) { BT.zoom = z; g.battleDraw(); for (const b of HUD.hits) check(b.label, mode + ' button'); } }
   BT.mode = 'idle'; g.openEndMenu(); for (const it of BT.menu.items) { check(it.label, 'menu'); check(it.sub, 'menu hint'); }
-  for (const s of ['OK: attack  ·  X: back  ·  C: move', '◂ ▸ browse  ·  X close', 'READY 3/5', 'ZOOM -', 'ZOOM +', '32 →', '×1.5', '×2.25']) check(s, 'label');
+  for (const s of ['OK: attack  ·  X: back  ·  C: move', '◂ ▸ browse  ·  X close', 'READY 3/5', 'ZOOM -', 'ZOOM +', '32 →', '×1.5', '×2.25', 'A fan game · Pokémon © Nintendo / Game Freak / Creatures']) check(s, 'label');
+  for (const s of ['POKÉ', 'TAKTIKS', 'PRESS START', 'THE TACTICIAN', 'GIOVANNI', 'VS', 'VICTORY!', 'DEFEAT', 'RETREAT', 'DRAW', 'ENEMY PHASE', 'PLAYER 1 WINS!']) for (const c of s) if (c !== ' ') assert(G('!!DISPLAY_SRC[' + JSON.stringify(c) + '] || !!DISPLAY_ACCENT[' + JSON.stringify(c) + ']'), 'the display face has ' + c + ' (for ' + s + ')');
+  for (const ch of C.CHAPTERS) for (const c of ch.title.toUpperCase()) if (c !== ' ') assert(G('!!DISPLAY_SRC[' + JSON.stringify(c) + '] || !!DISPLAY_ACCENT[' + JSON.stringify(c) + '] || !!DISPLAY_SRC[stripAccents(' + JSON.stringify(c) + ')]'), 'the display face has ' + c + ' (front ' + ch.title + ')');
 });
 
 // Stage 4: roles, skills, speed rules, AI use, saves and the menu/target flow.
@@ -911,9 +914,23 @@ test('title and options: your party on the knoll with its Ace, the trainer card,
   const oi = G("SC.titleItems.findIndex(it => it.label === 'OPTIONS')"); g.titleActivate(oi); g.titleUpdate(.21); assert.strictEqual(G('SC.name'), 'options');
   g.optionsDraw(); const before = G('PREF.battle'); G('SC.i = 1'); g.optionsInput({ type: 'key', key: 'right' }); assert.notStrictEqual(G('PREF.battle'), before, 'right changes the battle scene'); assert.strictEqual(store.get('pk_battle'), G('PREF.battle'), 'and it is kept');
   G('SC.i = 2'); g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('PREF.motion'), 'full'); g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('PREF.motion'), 'reduced'); assert.strictEqual(G('REDUCED'), true, 'Reduced motion applies at once'); g.optionsInput({ type: 'key', key: 'right' }); assert.strictEqual(G('PREF.motion'), 'auto');
-  G('SC.i = 5'); g.optionsInput({ type: 'key', key: 'ok' }); assert(G('SC.data.confirm'), 'erasing asks first'); g.optionsInput({ type: 'key', key: 'back' }); assert(store.get('pk_save'), 'KEEP keeps the journey');
+  G("SC.i = optionRows().findIndex(r => r.id === 'erase')"); g.optionsInput({ type: 'key', key: 'ok' }); assert(G('SC.data.confirm'), 'erasing asks first'); g.optionsInput({ type: 'key', key: 'back' }); assert(store.get('pk_save'), 'KEEP keeps the journey');
   g.optionsInput({ type: 'key', key: 'ok' }); g.optionsInput({ type: 'key', key: 'right' }); g.optionsInput({ type: 'key', key: 'ok' }); assert(!store.get('pk_save'), 'ERASE removes the journey'); assert.strictEqual(G('SC.name'), 'title');
   g.openOptions(); g.optionsInput({ type: 'key', key: 'back' }); assert.strictEqual(G('SC.name'), 'title');
+});
+test('the opening: PRESS START, then night, the commanders face off and the logo lands; skippable, it ends on the title with the logo in place', T => {
+  const { g, G, store } = T;
+  for (const [w, h] of [[640, 360], [195, 422], [422, 195]]) {
+    G(`VIEW.w = ${w}; VIEW.h = ${h}; CLOCK.frame = 1`); store.delete('pk_intro'); assert.strictEqual(g.introWanted(), true, 'a first visit gets the opening');
+    g.goScene('splash'); g.splashDraw(); G('SC.t = .5'); g.splashInput({ type: 'key', key: 'ok' }); assert.strictEqual(G('SC.name'), 'intro', 'PRESS START opens the opening'); assert.strictEqual(store.get('pk_intro'), '1', 'and it will not play by itself again');
+    // the held moments (the caption typed out, the commanders facing off, the logo in place) fit the screen
+    const T0 = G('INTRO_T'); for (const at of [3.0, T0.night + 1.5, T0.vs + 2.55]) { const boxes = textHook(T); G('SC.t = ' + at); g.introDraw(); for (const b of boxes()) assert(b.x >= -1 && b.x + b.w <= w + 1 && b.y >= -1 && b.y <= h, w + 'x' + h + ' at ' + at + 's: opening text inside the view: ' + JSON.stringify(b)); }
+    G('SC.t = 0'); let n = 0; while (G('SC.name') === 'intro' && n++ < 800) { G('SC.t += 1 / 60'); g.titleUpdate(1 / 60); g.introDraw(); }
+    assert.strictEqual(G('SC.name'), 'title', w + 'x' + h + ': the opening ends on the title'); assert.strictEqual(G('SC.titleFx.logoSettled'), true, 'with the logo already in place');
+    g.startIntro(); G('SC.t = .2'); g.introInput({ type: 'key', key: 'ok' }); assert.strictEqual(G('SC.name'), 'intro', 'not skipped in its first moment'); G('SC.t = 1'); g.introInput({ type: 'key', key: 'ok' }); assert.strictEqual(G('SC.name'), 'title', 'any key skips it');
+  }
+  assert.strictEqual(g.introWanted(), false, 'seen once: later visits open on the title');
+  g.openOptions(); assert(G("optionRows().some(r => r.id === 'opening')"), 'OPTIONS can play it again');
 });
 function run() {
   let failed = 0;

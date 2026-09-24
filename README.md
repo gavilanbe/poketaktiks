@@ -203,9 +203,21 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
 
 ## Presentation
 
+- **Opening**: on the first visit, after PRESS START, a short cinematic: night
+  over Kanto, Team Rocket's airship finds the Poké Center with its searchlight
+  and the town's lights die ("the night the PCs went dark"); the Tactician and
+  Giovanni face off on slanted bands, VS slams down, a white flash, and the logo
+  crashes in letter by letter over the dusk before gliding to the menu. Any key
+  skips it; OPTIONS plays it again; reduced motion leaves it out.
+- **Display face**: the game's own title lettering, drawn pixel by pixel (bold
+  square capitals with rounded shoulders) and dressed like the logo — a graded
+  face, a blue inline, a navy outline, a 3-D extrusion, an optional slant and a
+  sweeping shine — in gold, red, blue and silver. It sets the logo, screen
+  titles, front cards, phase banners and VICTORY! / DEFEAT.
 - **Title**: pixel art drawn at the game's own resolution — a dusk sky, a
-  striped sun, parallax ranges, a mirrored lake, a meadow, and a hand-drawn
-  POKÉ/TAKTIKS wordmark whose letters bounce, breathe and shine. The Tactician
+  striped sun, parallax ranges, a mirrored lake, a meadow, and the POKÉ/TAKTIKS
+  wordmark (a Poké Ball for the O, TAKTIKS slanted, a red ribbon under it)
+  whose letters drop in, bounce, breathe and shine. The Tactician
   stands on the knoll with the starters, or with your own party (the Ace
   crowned) once a journey has begun; Team Rocket's airship crosses the sky with
   its searchlight. CONTINUE shows a trainer card (the front reached, stars, the

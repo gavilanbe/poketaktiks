@@ -165,17 +165,17 @@ function frame(t) {
     if (ev.type === 'key' && ev.key === 'mute' && SC.name !== 'battle') { Audio.toggle(); continue; }
     switch (SC.name) {
       case 'journey': journeyInput(ev); break; case 'territory': case 'territoryResults': territorySceneInput(ev); break; case 'title': titleInput(ev); break; case 'starter': starterInput(ev); break; case 'card': cardInput(ev); break; case 'story': storyInput(ev); break;
-      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break; case 'route': routeInput(ev); break; case 'tower': towerInput(ev); break; case 'rank': rankInput(ev); break; case 'brief': briefInput(ev); break; case 'cos': coRoomInput(ev); break; case 'options': optionsInput(ev); break; case 'safariBrief': safariBriefInput(ev); break;
+      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break; case 'route': routeInput(ev); break; case 'tower': towerInput(ev); break; case 'rank': rankInput(ev); break; case 'brief': briefInput(ev); break; case 'cos': coRoomInput(ev); break; case 'options': optionsInput(ev); break; case 'intro': introInput(ev); break; case 'splash': splashInput(ev); break; case 'safariBrief': safariBriefInput(ev); break;
     }
   }
   // update
-  if (SC.name === 'battle') battleUpdate(dt); else if (SC.name === 'story') storyUpdate(dt); else if (SC.name === 'route') routeUpdate(dt); else { if (SC.name === 'title' || SC.name === 'options') titleUpdate(dt); Audio.tick(); }
+  if (SC.name === 'battle') battleUpdate(dt); else if (SC.name === 'story') storyUpdate(dt); else if (SC.name === 'route') routeUpdate(dt); else { if (SC.name === 'title' || SC.name === 'options' || SC.name === 'intro') titleUpdate(dt); Audio.tick(); }
   // draw
   ctx.setTransform(VIEW.scale, 0, 0, VIEW.scale, 0, 0); ctx.imageSmoothingEnabled = false;
   switch (SC.name) {
     case 'loading': rect(0, 0, VIEW.w, VIEW.h, '#0e0c10'); textC('loading sprites…', VIEW.w / 2, VIEW.h / 2, UI.muted); break;
     case 'journey': journeyDraw(); break; case 'territory': territorySetupDraw(); break; case 'territoryResults': territoryResultsDraw(); break; case 'title': titleDraw(); break; case 'starter': starterDraw(); break; case 'card': cardDraw(); break; case 'story': storyDraw(); break;
-    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break; case 'route': routeDraw(); break; case 'tower': towerDraw(); break; case 'rank': rankDraw(); break; case 'brief': briefDraw(); break; case 'cos': coRoomDraw(); break; case 'options': optionsDraw(); break; case 'safariBrief': safariBriefDraw(); break;
+    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break; case 'route': routeDraw(); break; case 'tower': towerDraw(); break; case 'rank': rankDraw(); break; case 'brief': briefDraw(); break; case 'cos': coRoomDraw(); break; case 'options': optionsDraw(); break; case 'intro': introDraw(); break; case 'splash': splashDraw(); break; case 'safariBrief': safariBriefDraw(); break;
   }
   // every scene change closes and reopens a Poké Ball over the screen (see captureTransition)
   drawTransition(dt);
@@ -199,7 +199,7 @@ function boot() {
   if (PARAMS.has('safari')) { startSafari(); return; }
   if (PARAMS.has('tower')) { startTower(clamp((parseInt(PARAMS.get('tower')) || 1) - 1, 0, TOWER.length - 1)); return; }
   if (PARAMS.has('versus')) { startVersusSetup(parseInt(PARAMS.get('versus')) || 1); if (PARAMS.has('auto')) { const S = SC.data; S.teams = [VS_ROSTER.slice(0, 4), VS_ROSTER.slice(4, 8)]; S.go(); } return; }
-  goScene(PARAMS.get('scene') || 'title');
+  if (PARAMS.get('scene')) goScene(PARAMS.get('scene')); else if (PARAMS.has('intro')) startIntro(); else if (introWanted()) goScene('splash'); else goScene('title');
 }
 loadSprites(() => { boot(); });
 requestAnimationFrame(frame);

@@ -4,7 +4,7 @@ const assert = require('assert');
 const { loadGame, arena, place } = require('./model-tests.cjs');
 const tests = [], test = (name, run) => tests.push([name, run]);
 function textHook(T) {
-  T.G(`var __boxes=[],__m=[1,1,0,0],__stack=[];ctx.save=()=>__stack.push(__m.slice());ctx.restore=()=>{__m=__stack.pop()||[1,1,0,0];};ctx.translate=(x,y)=>{__m[2]+=x*__m[0];__m[3]+=y*__m[1];};ctx.scale=(x,y)=>{__m[0]*=x;__m[1]*=y;};text=(s,x,y,c,o={})=>{const w=textWidth(s,o.font||FONT);__boxes.push({s:String(s),x:x*__m[0]+__m[2],y:y*__m[1]+__m[3],w:w*__m[0]});return w;};`);
+  T.G(`var __boxes=[],__m=[1,1,0,0],__stack=[];ctx.save=()=>__stack.push(__m.slice());ctx.restore=()=>{__m=__stack.pop()||[1,1,0,0];};ctx.translate=(x,y)=>{__m[2]+=x*__m[0];__m[3]+=y*__m[1];};ctx.scale=(x,y)=>{__m[0]*=x;__m[1]*=y;};text=(s,x,y,c,o={})=>{const w=textWidth(s,o.font||FONT);__boxes.push({s:String(s),x:x*__m[0]+__m[2],y:y*__m[1]+__m[3],w:w*__m[0]});return w;};textBoxHook=(s,x,y,w)=>{__boxes.push({s:String(s),x:x*__m[0]+__m[2],y:y*__m[1]+__m[3],w:w*__m[0],display:true});};`);
   return () => T.G('__boxes');
 }
 test('nosave protects campaign and suspend writes/removals; ordinary saving still works', () => {
@@ -131,7 +131,7 @@ test('title confirmation fires once after its press effect; dragging to another 
   assert.equal(G('SC.name'), 'title'); assert.equal(G('SC.titleFx.action'), null); assert(G('SC.titleConfirm'));
   g.titleInput({ type: 'key', key: 'down' }); assert.equal(G('SC.i'), i, 'the menu is frozen while the confirmation is open');
   g.titleInput({ type: 'key', key: 'back' }); assert.equal(G('SC.titleConfirm'), null);
-  g.titleInput({ type: 'key', key: 'down' }); assert.equal(G('SC.i'), i + 1);
+  g.titleInput({ type: 'key', key: 'right' }); assert.equal(G('SC.i'), i + 1); g.titleInput({ type: 'key', key: 'left' });
   g.titleActivate(i); g.titleUpdate(.21); g.titleInput({ type: 'key', key: 'right' }); g.titleInput({ type: 'key', key: 'ok' }); assert.equal(G('SC.name'), 'story'); g.finishDialog(); assert.equal(G('SC.name'), 'starter');
 });
 test('route map: stars for par and faints, first-clear rewards, replays never rewind progress, the reveal opens the next stop', () => {

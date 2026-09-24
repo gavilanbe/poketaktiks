@@ -1372,8 +1372,9 @@ function drawBanner() {
   const cs = b.team <= 1 && powerState(b.team); if (cs && bh >= 30 && W >= 300) { const c = coOf(cs), face = trainerFace(coTrainer(cs) ? c.tr : 'red'), k = W >= 480 && bh >= 40 ? 2 : 1, sz = 18 * k, fx0 = b.team === 0 ? Math.round(W * .1) : Math.round(W * .9) - sz, fx = fx0 + Math.round(out * W * 1.2) + (REDUCED ? 0 : Math.round((1 - clamp(t / .25, 0, 1)) * (b.team === 0 ? -80 : 80))), fy = topAt(fx + sz / 2) + Math.round(bh / 2 - sz / 2);
     if (face) { rect(fx - 3, fy - 3, sz + 6, sz + 6, UI.inset); rect(fx - 2, fy - 2, sz + 4, sz + 4, c.col); rect(fx, fy, sz, sz, shade(c.col, -.5)); ctx.save(); ctx.translate(fx, fy); ctx.scale(k, k); ctx.drawImage(face, 0, 0); ctx.restore(); } }
   // the name: slams from 3x to its size with a white flash, then holds
-  const label = b.text, lw = textWidth(label, BIG), big = W >= lw * 2 + 24 ? 2 : 1, slam = REDUCED ? 0 : clamp(1 - (t - .08) / .14, 0, 1), sc = big + slam * 1.4, tx = W / 2 + Math.round(out * W * 1.2);
-  if (t > .08 || REDUCED) { ctx.save(); ctx.translate(Math.round(tx), cy - Math.round(4.5 * sc) - (b.sub ? 5 : 0)); ctx.scale(sc, sc); bigC(label, 0, 0, '#ffffff', { outline: UI.inset }); if (slam > 0) { ctx.globalAlpha = slam; bigC(label, 0, 0, '#fffbe0'); ctx.globalAlpha = 1; } ctx.restore(); }
+  // the name in the display face, the side's colours (blue for you, red for the foe), slammed down from 3x with a flash
+  const label = String(b.text).toUpperCase(), lw = displayWidth(label) + 1, big = W >= lw * 2 + 30 ? 2 : 1, slam = REDUCED ? 0 : clamp(1 - (t - .08) / .14, 0, 1), sc = big + slam * 1.4, tx = W / 2 + Math.round(out * W * 1.2), dst = b.team === 0 || (B.versus && b.team <= 1 && isHuman(b.team)) ? (b.team === 1 ? 'red' : 'blue') : b.team === 3 ? 'gold' : 'red';
+  if (t > .08 || REDUCED) { ctx.save(); ctx.translate(Math.round(tx), cy - Math.round(5.5 * sc) - (b.sub ? 5 : 0)); ctx.scale(sc, sc); displayC(label, 0, 0, { style: dst, slant: 1 }); if (slam > 0) { const D = displayCanvas(label, dst, 1, 1); ctx.globalAlpha = slam; ctx.drawImage(D.shine, -Math.round(D.w / 2) - D.ox, -D.oy); ctx.globalAlpha = 1; } ctx.restore(); }
   if (b.sub && t > .25) { ctx.globalAlpha = clamp((t - .25) / .15, 0, 1) * (1 - out); textC(b.sub, tx, cy + Math.round(4.5 * big) - 1, UI.gold, { outline: UI.inset }); ctx.globalAlpha = 1; }
   // the team runs across under the band
   const list = alive(b.team).slice(0, 6), dir = b.team === 0 ? 1 : -1, base = cy + Math.round(bh / 2) + 34; list.forEach((u, i) => { const ux = Math.round(W / 2 + dir * ((t - .15) * W * 1.1 - W * .55) - dir * i * 26), hop = Math.round(Math.abs(Math.sin(t * 14 + i)) * 3); if (ux < -30 || ux > W + 30) return; ctx.globalAlpha = 1 - out; drawMon(u.num, ux, base - hop, { flip: dir < 0, outline: teamColor(u.team) }); ctx.globalAlpha = 1; });
@@ -1447,6 +1448,15 @@ function sunburst(r, rays, phase, col) {
   for (let y = 0; y < 2 * r; y++) for (let x = 0; x < 2 * r; x++) { const dx = x - r + .5, dy = y - r + .5, d = Math.hypot(dx, dy); if (d > r || d < 6) continue; const a = (Math.atan2(dy, dx) / (Math.PI * 2) + 1 + phase / (rays * 4)) % 1; if (Math.floor(a * rays * 2) % 2 === 0) { const i = (y * 2 * r + x) * 4; d8[i] = R; d8[i + 1] = G2; d8[i + 2] = B2; d8[i + 3] = 255; } }
   g.putImageData(img, 0, 0); return SUNBURST[key] = c;
 }
+// The display face version: each letter drops, bounces and settles in turn (extrusions first, then faces).
+function drawStampDisplay(word, cx, y, t, style, scale, slant = 2) {
+  const chars = [...String(word).toUpperCase()], widths = chars.map(ch => ch === ' ' ? 5 : displayWidth(ch) + 1), total = (widths.reduce((a, b) => a + b, 0) - 1) * scale + slant * scale; let x = Math.round(cx - total / 2); const put = [];
+  chars.forEach((ch, i) => { const at = END_BEATS.letters + i * .06, u = REDUCED ? 1 : clamp((t - at) / .22, 0, 1); if (u > 0 && ch !== ' ') put.push({ ch, x, u }); x += widths[i] * scale; });
+  for (const layer of ['back', 'face']) for (const p of put) { const D = displayCanvas(p.ch, style, scale, slant), drop = Math.round((1 - easeOutBounce(p.u)) * -34), sc = 1 + (1 - p.u) * .8, w2 = D.w / 2, h2 = D.h / 2;
+    ctx.save(); ctx.globalAlpha = Math.min(1, p.u * 3); ctx.translate(p.x + w2, y + drop + h2); ctx.scale(sc, sc); ctx.drawImage(D[layer], Math.round(-w2 - D.ox), Math.round(-h2 - D.oy)); ctx.restore(); }
+  return total;
+}
+function displayStampScale(word, W) { const w = displayWidth(String(word).toUpperCase()) + 4; return W >= w * 3 + 30 ? 3 : W >= w * 2 + 16 ? 2 : 1; }
 function drawStampWord(word, cx, y, t, col, dark, scale) {
   const chars = [...word.toUpperCase()], widths = chars.map(ch => ch === ' ' ? 4 : textWidth(ch, BIG) + 1), total = (widths.reduce((a, b) => a + b, 0) - 1) * scale; let x = Math.round(cx - total / 2);
   chars.forEach((ch, i) => { const at = END_BEATS.letters + i * .06, u = REDUCED ? 1 : clamp((t - at) / .22, 0, 1); if (u > 0 && ch !== ' ') { const drop = Math.round((1 - easeOutBounce(u)) * -34), sc = scale * (1 + (1 - u) * .8); ctx.save(); ctx.globalAlpha = Math.min(1, u * 3); ctx.translate(x + widths[i] * scale / 2, y + drop + 4.5 * scale); ctx.scale(sc, sc); bigC(ch, 0, -4.5, col, { outline: dark }); ctx.restore(); } x += widths[i] * scale; });
@@ -1458,11 +1468,11 @@ function drawEndScreen() {
   const word = endWord();
   const col = vs ? (vt < 0 ? UI.muted : teamColorL(vt)) : win ? UI.gold : B.result === 'draw' ? UI.ink : '#ff8080', dark = win ? (vs ? UI.inset : UI.goldDark) : '#2a0a14';
   ctx.globalAlpha = .62 * k; rect(0, 0, W, H, win ? '#0a0820' : '#1a0610'); ctx.globalAlpha = 1;
-  const cy = Math.round(H * .4), scale = W >= textWidth(word, BIG) * 3 + 30 ? 3 : W >= textWidth(word, BIG) * 2 + 16 ? 2 : 1;
+  const cy = Math.round(H * .4), scale = displayStampScale(word, W), dstyle = vs ? (vt === 0 ? 'blue' : vt === 1 ? 'red' : 'silver') : win ? 'gold' : B.result === 'draw' || B.result === 'retreat' ? 'silver' : 'red';
   if (win && !REDUCED) { const r = Math.round(Math.min(W, H) * .42), sb = sunburst(r, 12, Math.floor(t * 6) % 4, '#ffffff'); ctx.globalAlpha = .07 * k; ctx.drawImage(sb, Math.round(W / 2 - r), Math.round(cy - r)); ctx.globalAlpha = 1; }
   // the ribbon under the word
-  const rh = 9 * scale + 14, rw = Math.min(W - 8, Math.round(W * .9 * easeOut(k))); if (rw > 8) { rect(W / 2 - rw / 2, cy - rh / 2, rw, rh, win ? (vs ? teamColorD(vt) : '#3a2a8a') : '#4a1020'); hline(W / 2 - rw / 2, cy - rh / 2, rw, win ? UI.gold : '#ff6070'); hline(W / 2 - rw / 2, cy + rh / 2 - 1, rw, win ? UI.goldDark : '#200008'); }
-  drawStampWord(word, W / 2, cy - Math.round(4.5 * scale), t, col, dark, scale);
+  const rh = 11 * scale + 16, rw = Math.min(W - 8, Math.round(W * .9 * easeOut(k))); if (rw > 8) { rect(W / 2 - rw / 2, cy - rh / 2, rw, rh, win ? (vs ? teamColorD(vt) : '#3a2a8a') : '#4a1020'); hline(W / 2 - rw / 2, cy - rh / 2, rw, win ? UI.gold : '#ff6070'); hline(W / 2 - rw / 2, cy + rh / 2 - 1, rw, win ? UI.goldDark : '#200008'); }
+  drawStampDisplay(word, W / 2, cy - Math.round(5.5 * scale), t, dstyle, scale);
   let y = cy + rh / 2 + 8;
   const n = endStars();
   if (n != null) { const ss = W >= 320 && H >= 240 ? 2 : 1; for (let s = 0; s < 3; s++) { const at = END_BEATS.stars + s * END_BEATS.starGap, u = REDUCED ? 1 : clamp((t - at) / .25, 0, 1), sx = Math.round(W / 2 + (s - 1) * (18 * ss + 6)), on = s < n; if (u <= 0) { drawBigStar(sx, y + 7 * ss, ss, false); continue; } const sc = on ? ss + (1 - easeOutBack(u, 3)) * ss : ss; drawBigStar(sx, y + 7 * ss, sc, on); } y += 14 * ss + 4;
