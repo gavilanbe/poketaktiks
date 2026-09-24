@@ -29,6 +29,9 @@ function launchTerritory(seed = 7, defer = false, captains = [7, 7]) {
 }
 function startTerritorySetup(seed = 7) { goScene('territory', { seed, captain: 7, bd: makeBackdrop(TERRITORY_MAP) }); SC.i = 2; }
 function territorySceneInput(ev) {
+  if (SC.name === 'territory' && ev.type === 'key') { const S = SC.data; // the setup: arrows choose the Ace, Z starts, X goes back to the modes
+    if (['left', 'up', 'right', 'down'].includes(ev.key)) { const i = (STARTERS.indexOf(S.captain) + (ev.key === 'left' || ev.key === 'up' ? 2 : 1)) % 3; S.captain = STARTERS[i]; SC.i = i; Audio.sfx('catch'); }
+    else if (ev.key === 'ok' || ev.key === 'next') launchTerritory(S.seed, false, [S.captain, S.captain]); else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick', { i: 1 }); } return; }
   if (ev.type === 'key') {
     if (['left', 'up', 'right', 'down'].includes(ev.key)) { const count = Math.max(1, SC.hits.length); SC.i = (SC.i + (ev.key === 'left' || ev.key === 'up' ? count - 1 : 1)) % count; if (SC.name === 'territory' && SC.i < 3) SC.data.captain = STARTERS[SC.i]; Audio.sfx('cursor'); }
     else if (ev.key === 'ok' && SC.hits[SC.i]) SC.hits[SC.i].run();

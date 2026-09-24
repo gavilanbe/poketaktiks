@@ -99,21 +99,17 @@ function versusDraw() {
     hit(x, y, cw, chh, () => { SC.i = i; vsPick(S, n); }); });
   const d = DEX[VS_ROSTER[SC.i]]; const iy = gy + rows * chh + 5;
   if (d) { const u = makeUnit(d.num, S.level, 0); text(d.name, gx, iy, UI.ink, { outline: UI.shadow }); d.types.forEach((tp, j) => typeBadge(tp, gx + textWidth(d.name) + 6 + j * 26, iy - 1, 24)); const mv = u.moves.slice(0, 3).map(m => m.name).join(' / '); const R = ROLES[u.role]; if (narrow) { let s = mv; const avail = gx + cols * cw - (gx + textWidth(d.name) + 6 + d.types.length * 26 + 4); while (textWidth(s) > avail && s.length > 4) s = s.slice(0, -1); textR(s, gx + cols * cw, iy, UI.info, { outline: UI.shadow }); } else { textR(mv, gx + cols * cw, iy, UI.info, { outline: UI.shadow }); text('HP ' + u.maxHp + '  ATK ' + u.atk + '  DEF ' + u.def + '  SPA ' + u.spa + '  SPE ' + u.spe + '  MOV ' + u.mov, gx, iy + 10, UI.muted, { outline: UI.shadow }); const rx0 = gx + textWidth(d.name) + 6 + d.types.length * 26 + 4; let rs = R.name + ': ' + (u.skill ? u.skill.blurb.replace(/^[^:]+: /, '') : 'plain attacker'); while (textWidth(rs) > gx + cols * cw - textWidth(mv) - 8 - rx0 && rs.length > 8) rs = rs.slice(0, -1); text(rs, rx0, iy, R.col, { outline: UI.shadow }); } }
-  const go = () => { if (!full) { Audio.sfx('error'); return; } Audio.sfx('select'); S.go(); }; const goOpt = full ? { variant: 'danger' } : { disabled: true };
+  const go = () => { if (!full) { Audio.sfx('error'); return; } Audio.sfx('select'); S.go(); }, fy = setupFootTop();
   if (narrow) {
-    const r1 = H - 2 * (bh + 4), r2 = H - bh - 4, cw3 = Math.floor((W - 20) / 3); const rulesY = iy + 12, rows = Math.ceil(VS_RULES.length / 2), rh = clamp(Math.floor((r1 - 6 - rulesY) / rows) - 2, 14, 20);
+    const rulesY = iy + 12, rows = Math.ceil(VS_RULES.length / 2), rh = clamp(Math.floor((fy - 6 - rulesY) / rows) - 2, 14, 20);
     vsRuleGrid(S, 6, rulesY, W - 12, rh, VS_RULES);
-    footerBand(2 * (bh + 4) + 4);
-    bigButton(6, r1, cw3, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' }); bigButton(10 + cw3, r1, cw3, bh, 'RANDOM', () => vsRandom(S)); bigButton(14 + 2 * cw3, r1, cw3, bh, 'CLEAR', () => { S.teams = [[], []]; Audio.sfx('cancel'); }, { variant: 'dark' });
-    bigButton(6, r2, W - 12, bh, 'BATTLE!', go, goOpt);
   } else {
-    const rx = gx + cols * cw + 10, rw = W - 6 - rx, ry = gy; const fy = footerBand(28); const rh = 14, lines = wrap(VS_MODES[S.mode].blurb + (S.fog ? ' Fog of war hides foes beyond your Pokémon\'s sight.' : '') + ' Each commander\'s Ace joins the team.', rw - 16); const nl = Math.min(lines.length, Math.max(0, Math.floor((fy - 6 - ry - 21 - VS_RULES.length * rh - 10) / 9)));
+    const rx = gx + cols * cw + 10, rw = W - 6 - rx, ry = gy; const rh = 14, lines = wrap(VS_MODES[S.mode].blurb + (S.fog ? ' Fog of war hides foes beyond your Pokémon\'s sight.' : '') + ' Each commander\'s Ace joins the team.', rw - 16); const nl = Math.min(lines.length, Math.max(0, Math.floor((fy - 6 - ry - 21 - VS_RULES.length * rh - 10) / 9)));
     const p = panel(rx, ry, rw, Math.min(fy - 6 - ry, 21 + VS_RULES.length * rh + 8 + nl * 9 + 6), { header: 'MATCH RULES', headerRight: VS_MODES[S.mode].short + (S.fog ? ' · FOG' : '') });
     vsRuleRows(S, rx + 4, p.cy - 2, rw - 8, rh, VS_RULES);
     const by0 = p.cy - 2 + VS_RULES.length * rh + 3; if (nl) { hline(rx + 5, by0, rw - 10, UI.inset); lines.slice(0, nl).forEach((l, i) => text(l, rx + 8, by0 + 4 + i * 9, UI.muted)); }
-    const by = fy + 5; bigButton(6, by, 60, 18, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' }); bigButton(72, by, 70, 18, 'RANDOM', () => vsRandom(S)); bigButton(148, by, 60, 18, 'CLEAR', () => { S.teams = [[], []]; Audio.sfx('cancel'); }, { variant: 'dark' });
-    if (W > 470) hintLine(['Snake draft', 'click a picked slot to drop it'], 216, by + 5, { left: true, pill: false }); bigButton(W - 96, by, 90, 18, 'BATTLE!', go, goOpt);
   }
+  setupFooter({ back: { label: '◂ TITLE', run: () => { Audio.sfx('cancel'); goScene('title'); } }, extra: [{ label: 'RANDOM', run: () => vsRandom(S) }, { label: 'CLEAR', run: () => { S.teams = [[], []]; Audio.sfx('cancel'); }, variant: 'dark' }], next: { label: 'BATTLE! ▸', run: go, disabled: !full, variant: 'danger' }, hints: VIEW.touch ? ['tap a picked slot to drop it'] : ['Snake draft', 'click a picked slot to drop it'] });
 }
 function vsCols() { return VIEW.w < 300 ? 4 : VIEW.w < 330 ? 6 : 7; }
 function versusInput(ev) {
@@ -259,21 +255,39 @@ function storyInput(ev) { const d = SC.dialog; if (!d) return; if (ev.type === '
   const k = d.skipHit; if (ev.type === 'up' && k && ev.x >= k.x && ev.y >= k.y && ev.x < k.x + k.w && ev.y < k.y + k.h) { Audio.sfx('cancel'); finishDialog(); return; } if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) { const line = d.lines[d.i]; if (d.chars < richLine(line).plain.length) { d.chars = richLine(line).plain.length; d.pause = 0; return; } d.i++; d.chars = 0; d.t = 0; d.pause = 0; d.focused = false; Audio.sfx('ok'); if (d.i >= d.lines.length) finishDialog(); } }
 function finishDialog() { const d = SC.dialog; SC.dialog = null; if (d && d.done) d.done(); }
 
-// ---------------------------------------------------------------- prep: choose who deploys
-// Layout: the headline, a TEAM bar with one box per slot (captain first, crowned), the collection as cards, and on wide
-// screens a MISSION column (goal, foes, the battlefield with deploy tiles and foes) with the focused Pokémon under it.
+// ---------------------------------------------------------------- prep: the TEAM step
+// The second step of every path into a battle (MISSION › TEAM › BATTLE and its cousins): who starts on the map. The TEAM
+// bar has one box per slot (the Ace first, crowned); the collection sits under it as cards; on wide screens a column says
+// what the team will face (the foes, the types that hit most of them hard, the ones they shrug off) and how the focused
+// Pokémon fares against them. Phones get the advice as one line. BACK returns to the previous step, BATTLE! starts.
+const PREP_STEPS = ['MISSION', 'TEAM', 'BATTLE'];
 function prepLayout(P) {
-  const W = VIEW.w, H = VIEW.h, narrow = narrowView(), bh = btnH(), foot = narrow ? 2 * (bh + 4) + 12 : bh + 12, side = W >= 400 && H >= 200;
-  const top = 4 + (H >= 240 && !narrow ? 28 : 16), sideW = side ? Math.min(170, Math.floor(W * .34)) : 0, lw = W - 12 - (side ? sideW + 6 : 0);
-  const slots = { x: 6, y: top, w: lw, h: narrow ? 30 : 32 };
-  const cols = narrow ? 1 : lw >= 380 ? 3 : 2, gap = 4, cw = Math.floor((lw - gap * (cols - 1)) / cols), ch = 30, gy = slots.y + slots.h + 6;
+  const W = VIEW.w, H = VIEW.h, narrow = narrowView(), bh = btnH(), foot = H - setupFootTop(), side = W >= 400 && H >= 200, steps = H >= 220;
+  const top = steps ? 35 : 20, sideW = side ? Math.min(176, Math.floor(W * .35)) : 0, lw = W - 12 - (side ? sideW + 6 : 0);
+  const slots = { x: 6, y: top, w: lw, h: narrow ? 30 : 32 }, tip = !side && H >= 300 ? 12 : 0;
+  const cols = narrow ? 1 : lw >= 380 ? 3 : 2, gap = 4, cw = Math.floor((lw - gap * (cols - 1)) / cols), ch = 30, gy = slots.y + slots.h + 6 + tip;
   const rowsVisible = Math.max(1, Math.floor((H - foot - gy + 2) / (ch + 3)));
-  return { W, H, narrow, bh, foot, side, top, sideW, lw, slots, cols, gap, cw, ch, gx: 6, gy, rowsVisible, sideX: W - 6 - sideW };
+  return { W, H, narrow, bh, foot, side, top, steps, sideW, lw, slots, tip, cols, gap, cw, ch, gx: 6, gy, rowsVisible, sideX: W - 6 - sideW };
 }
+// What the team will face: the foes' commonest types, the attacking types that hit at least half of them hard (and more
+// than shrug them off), and the ones most of them resist. Pure.
+const GEN1_TYPES = TYPES.filter(t => DEX_LIST.some(d => d.types.includes(t)));
+function enemyAdvice(units) {
+  const foes = (units || []).filter(u => u.team == null || u.team === 1).map(u => DEX[u.mon]).filter(Boolean), n = foes.length; if (!n) return null;
+  const count = {}; for (const d of foes) for (const t of d.types) count[t] = (count[t] || 0) + 1;
+  const common = Object.keys(count).sort((a, b) => count[b] - count[a]).slice(0, 2);
+  const rows = GEN1_TYPES.map(t => ({ t, hard: foes.filter(d => effRaw(t, d.types) > 1).length, soft: foes.filter(d => effRaw(t, d.types) < 1).length }));
+  let strong = rows.filter(r => r.hard * 2 >= n && r.hard > r.soft).sort((a, b) => b.hard - a.hard || a.soft - b.soft).slice(0, 3).map(r => r.t);
+  if (!strong.length) strong = rows.filter(r => r.hard > r.soft).sort((a, b) => (b.hard - b.soft) - (a.hard - a.soft)).slice(0, 2).map(r => r.t);
+  const weak = rows.filter(r => r.soft * 2 >= n && r.hard === 0).sort((a, b) => b.soft - a.soft).slice(0, 3).map(r => r.t);
+  return { n, foes, common, strong, weak };
+}
+// How many of the foes a Pokémon's moves hit hard.
+function hardHits(u, adv) { const types = u.moves.filter(m => m.pow > 0).map(m => m.type); return adv ? adv.foes.filter(d => types.some(t => effRaw(t, d.types) > 1)).length : 0; }
 function prepDraw() {
   const P = SC.data, ch = P.chapter, L = prepLayout(P), W = L.W, H = L.H, t = SC.t; rect(0, 0, W, H, UI.bg); if (!P.bd) P.bd = makeBackdrop(ch.map); drawBackdrop(P.bd, (W - P.bd.canvas.width) / 2 - t * 3, (H - P.bd.canvas.height) / 2, .8);
-  SC.hits = []; const cap = prepCaptain(P);
-  screenTitle((ch.num ? 'FRONT ' + ch.num + ' · ' : '') + ch.title.toUpperCase(), H >= 240 && !L.narrow ? objectiveTextFor(ch.map.objective, ch.map) : null, 4);
+  SC.hits = []; const cap = prepCaptain(P), adv = P.adv !== undefined ? P.adv : (P.adv = enemyAdvice(ch.map.units)), steps = P.steps || PREP_STEPS, back = () => { Audio.sfx('cancel'); if (P.back) P.back(); else goScene('title'); };
+  setupHeader((ch.num ? 'FRONT ' + ch.num + ' · ' : '') + ch.title.toUpperCase(), L.steps ? steps : null, 1, () => back());
   // TEAM bar: one box per slot, filled in deploy order
   const S = L.slots, bw = Math.max(20, Math.min(34, Math.floor((S.w - 60) / ch.slots) - 3));
   panel(S.x, S.y, S.w, S.h, { fill: UI.panelDark, flat: true }); text('TEAM', S.x + 7, S.y + Math.round(S.h / 2) - 4, UI.gold); text(P.deploy.length + '/' + ch.slots, S.x + 7, S.y + Math.round(S.h / 2) + 4, P.deploy.length ? UI.ink : UI.muted);
@@ -284,7 +298,9 @@ function prepDraw() {
     ctx.save(); ctx.beginPath(); ctx.rect(bx + 1, by + 1, bw - 2, bhh - 2); ctx.clip(); const sc = Math.max(.3, pop); drawMon(u.num, bx + bw / 2, by + bhh + 2 - Math.round((1 - Math.min(1, pop)) * 6), { sx: .8 * sc, sy: .8 * sc }); ctx.restore();
     if (pid === cap) drawCrown(bx + 1, by + 1);
   }
-  // the collection: one card per Pokémon, deployed ones lit and numbered, the captain locked in with its crown
+  // phones: the advice as one line under the bar
+  if (L.tip && adv && adv.strong.length) { let x = S.x + 2; const y = S.y + S.h + 3; text('Hit them with', x, y, UI.muted); x += textWidth('Hit them with') + 4; for (const tp of adv.strong) { if (x + 26 > S.x + S.w) break; x += typeBadge(tp, x, y - 1, 24) + 2; } }
+  // the collection: one card per Pokémon, deployed ones lit and numbered, the Ace locked in with its crown
   const party = P.party, total = Math.ceil(party.length / L.cols); SC.scroll = clamp(SC.scroll, 0, Math.max(0, total - L.rowsVisible));
   ctx.save(); ctx.beginPath(); ctx.rect(0, L.gy - 2, L.lw + 12, L.rowsVisible * (L.ch + 3) + 2); ctx.clip();
   party.forEach((p, i) => {
@@ -294,34 +310,34 @@ function prepDraw() {
     ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2 + lift, 30, L.ch - 4); ctx.clip(); rect(x + 2, y + 2 + lift, 30, L.ch - 4, on ? '#17306e' : '#141736'); drawMon(u.num, x + 17, y + L.ch - 2 + lift - (on && !REDUCED ? Math.round(Math.abs(Math.sin(t * 5 + i)) * 1) : 0), { outline: on ? teamColor(0) : null }); ctx.restore();
     const nx = x + 35, lv = 'Lv' + u.level, avail = L.cw - 39 - textWidth(lv) - (on || i === cap ? 14 : 0); text(fitLabel(u.name, avail), nx, y + 4 + lift, UI.ink); textR(lv, x + L.cw - 5 - (on || i === cap ? 14 : 0), y + 4 + lift, UI.gold);
     let bx = nx; for (const tp of u.types) { if (bx + 24 > x + L.cw - 4) break; bx += typeBadge(tp, bx, y + 13 + lift, 24) + 2; } hpBar(nx, y + L.ch - 7 + lift, L.cw - 40, u.hp, u.maxHp);
+    // a green arrow when its moves hit at least half the foes hard
+    if (adv && hardHits(u, adv) * 2 >= adv.n && bx + 8 <= x + L.cw - 4) { const ax = bx + 2, ay = y + 14 + lift; for (let k = 0; k < 3; k++) hline(ax + 2 - k, ay + k, 1 + 2 * k, '#5ee06a'); }
     if (p.loaner && bx + 28 <= x + L.cw - 4) textR('LOAN', x + L.cw - 5, y + 14 + lift, UI.info);
     if (i === cap) { rrect(x + L.cw - 15, y + 3 + lift, 12, 10, UI.gold, 1); drawCrown(x + L.cw - 13, y + 5 + lift); } else if (on) { circle(x + L.cw - 9, y + 8 + lift, 5, UI.inset); circle(x + L.cw - 9, y + 8 + lift, 4, '#6a9aff'); textC(String(slot + 1), x + L.cw - 8, y + 5 + lift, '#ffffff'); }
     hit(x, y, L.cw, L.ch, () => { SC.i = i; toggleDeploy(P, i); });
   });
   ctx.restore();
   if (total > L.rowsVisible) { const sy = L.gy + L.rowsVisible * (L.ch + 3) - 1; textC((SC.scroll > 0 ? '▲ ' : '') + 'more' + (SC.scroll < total - L.rowsVisible ? ' ▼' : ''), L.gx + L.lw / 2, Math.min(sy, H - L.foot - 9), UI.muted); }
-  // MISSION column: goal, foes and the battlefield, then the focused Pokémon
+  // THE ENEMY: who they are, what hits them hard, what they shrug off; then the focused Pokémon against them
   if (L.side) {
-    const x = L.sideX, w = L.sideW; let y = L.slots.y; const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2), lv = foes.map(u => u.level);
-    const goal = objectiveTextFor(ch.map.objective, ch.map).replace('Objective: ', ''), gw = wrap(goal[0].toUpperCase() + goal.slice(1), w - 22), gl = gw.slice(0, 2); if (gw.length > 2) gl[1] = fitLabel(gl[1] + '...', w - 22); // the goal wraps to two lines
-    const bd = P.bd, previewH = Math.max(0, Math.min(Math.round(w * bd.canvas.height / bd.canvas.width), H - L.foot - y - 110 - (gl.length - 1) * 9)), mh = 34 + (gl.length - 1) * 9 + (previewH > 24 ? previewH + 6 : 0);
-    const mp = panel(x, y, w, mh, { header: 'MISSION', headerRight: foes.length + ' foes' + (lv.length ? ' · Lv' + Math.min(...lv) : ''), headerRightCol: UI.red });
-    iconAt('flag', x + 6, mp.cy - 1, UI.gold); gl.forEach((l, i) => text(l, x + 17, mp.cy + i * 9, UI.ink));
-    if (previewH > 24) { const sc = previewH / bd.canvas.height, pw = Math.round(bd.canvas.width * sc), px0 = x + Math.round((w - pw) / 2), py0 = mp.cy + 11 + (gl.length - 1) * 9; rect(px0 - 1, py0 - 1, pw + 2, previewH + 2, UI.inset); ctx.drawImage(bd.canvas, px0, py0, pw, previewH); const cell = TILE * sc;
-      for (const d of bd.map.deploy) { const X = px0 + d.x * cell, Y = py0 + d.y * cell; rect(X, Y, Math.ceil(cell), Math.ceil(cell), '#3d7dff70'); outline(X, Y, Math.ceil(cell), Math.ceil(cell), teamColor(0)); }
-      for (const u of ch.map.units || []) { const team = u.team == null ? 1 : u.team, ux = px0 + (u.x + .5) * cell, uy = py0 + (u.y + 1) * cell; ctx.drawImage(monIcon(u.mon, true), Math.round(ux - 8), Math.round(uy - 12), 16, 12); if (u.boss) drawSkull(Math.round(ux - 2), Math.round(uy - 18)); else { rect(Math.round(ux) - 1, Math.round(uy), 3, 2, teamColor(team)); } } }
-    y += mh + 6;
-    const sel = party[SC.i]; if (sel && y + 60 <= H - L.foot - 4) { const u = restoreUnit(sel), R = ROLES[u.role], hh = Math.min(H - L.foot - 4 - y, 96); const up = panel(x, y, w, hh, { header: fitLabel(u.name, w - 50), headerRight: 'Lv' + u.level, headerRightCol: UI.gold, headerFill: '#1c3a8a' });
-      let yy = up.cy; iconAt(R.icon, x + 6, yy - 1, R.col); text(R.name, x + 17, yy, R.col); textR('MOVE ' + u.mov, x + w - 6, yy, UI.ink); yy += 10;
-      for (const m of u.moves.slice(0, 3)) { if (yy + 9 > y + hh - 4) break; typeBadge(m.type, x + 6, yy - 1, 24); text(fitLabel(m.name + ' ' + m.pow, w - 40), x + 33, yy, UI.ink); yy += 10; }
-      if (yy + 7 <= y + hh - 4) { const ev = u.dex.evos.length ? 'Evolves Lv' + Math.min(...u.dex.evos.map(e => e[1])) : 'Final form'; text(fitLabel(ev, w - 12), x + 6, yy, UI.info); } }
+    const x = L.sideX, w = L.sideW; let y = L.slots.y; const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), lv = foes.map(u => u.level);
+    const icons = Math.min(foes.length, Math.floor((w - 12) / 18)), eh = 20 + (foes.length ? 20 : 0) + (adv ? 11 + (adv.strong.length ? 12 : 0) + (adv.weak.length ? 12 : 0) : 0) + 4;
+    const ep = panel(x, y, w, eh, { header: 'THE ENEMY', headerRight: foes.length ? foes.length + ' foes · Lv' + Math.min(...lv) + (Math.max(...lv) > Math.min(...lv) ? '-' + Math.max(...lv) : '') : null, headerRightCol: UI.red, headerFill: '#5a1d2e' }); let yy = ep.cy;
+    const lead = foes.find(u => u.boss) || null, order = (lead ? [lead] : []).concat(foes.filter(u => u !== lead));
+    order.slice(0, icons).forEach((u, k) => { const bob = !REDUCED && k === Math.floor(t * 3) % Math.max(1, icons) ? -1 : 0; ctx.drawImage(monIcon(u.mon, true), x + 4 + k * 18, yy + bob, 24, 18); if (u.boss) drawSkull(x + 14 + k * 18, yy - 2); }); if (foes.length) yy += 20;
+    if (adv) { let bx = x + 6; text('Mostly', bx, yy, UI.muted); bx += textWidth('Mostly') + 4; for (const tp of adv.common) bx += typeBadge(tp, bx, yy - 1, 24) + 2; yy += 11;
+      const tr = (label, list, col) => { if (!list.length) return; let bx2 = x + 6; text(label, bx2, yy, col); bx2 += textWidth(label) + 4; for (const tp of list) { if (bx2 + 24 > x + w - 4) break; bx2 += typeBadge(tp, bx2, yy - 1, 24) + 2; } yy += 12; };
+      tr('Hit them with', adv.strong, '#8ae89a'); tr('They resist', adv.weak, '#ff9a9a'); }
+    y += eh + 6;
+    const sel = party[SC.i]; if (sel && y + 60 <= H - L.foot - 4) { const u = restoreUnit(sel), R = ROLES[u.role], hh = Math.min(H - L.foot - 4 - y, 100); const up = panel(x, y, w, hh, { header: fitLabel(u.name, w - 50), headerRight: 'Lv' + u.level, headerRightCol: UI.gold, headerFill: '#1c3a8a' });
+      let yy2 = up.cy; iconAt(R.icon, x + 6, yy2 - 1, R.col); text(R.name, x + 17, yy2, R.col); textR('MOVE ' + u.mov, x + w - 6, yy2, UI.ink); yy2 += 10;
+      for (const m of u.moves.slice(0, 3)) { if (yy2 + 9 > y + hh - 14) break; typeBadge(m.type, x + 6, yy2 - 1, 24); const good = adv && m.pow > 0 && adv.strong.includes(m.type); text(fitLabel(m.name + ' ' + m.pow, w - 44), x + 33, yy2, good ? '#8ae89a' : UI.ink); yy2 += 10; }
+      if (adv && yy2 + 7 <= y + hh - 4) { const k = hardHits(u, adv); text(fitLabel(k ? 'Hits ' + k + ' of ' + adv.n + ' foes hard' : 'No super-effective hits here', w - 12), x + 6, yy2, k * 2 >= adv.n ? '#8ae89a' : k ? UI.gold : UI.dim); yy2 += 10; }
+      if (yy2 + 7 <= y + hh - 4) { const ev = u.dex.evos.length ? 'Evolves Lv' + Math.min(...u.dex.evos.map(e => e[1])) : 'Final form'; text(fitLabel(ev, w - 12), x + 6, yy2, UI.info); } }
   }
-  const start = () => { if (!P.deploy.length) { Audio.sfx('error'); return; } Audio.sfx('select'); P.start(); }, auto = () => { Audio.sfx('ok'); autoDeploy(P); }, back = () => { Audio.sfx('cancel'); if (P.back) P.back(); else goScene('title'); };
-  if (L.narrow) { footerBand(L.foot); const r1 = H - 2 * (L.bh + 4), r2 = H - L.bh - 4;
-    bigButton(6, r1, 60, L.bh, 'BACK', back, { variant: 'ghost' }); bigButton(72, r1, W - 78, L.bh, 'AUTO PICK', auto); bigButton(6, r2, W - 12, L.bh, 'START', start, P.deploy.length ? { variant: 'primary' } : { disabled: true }); return; }
-  const by = footerBand(L.foot) + 6; bigButton(W - 96, by, 90, L.bh, 'START', start, P.deploy.length ? { variant: 'primary' } : { disabled: true });
-  bigButton(W - 190, by, 88, L.bh, 'AUTO PICK', auto); bigButton(6, by, 70, L.bh, 'BACK', back, { variant: 'ghost' });
-  if (W - 278 > 60) text(fitLabel(VIEW.touch ? 'Tap a Pokémon to add or remove it' : 'Z add / remove · Tab start', W - 278), 82, by + Math.round((L.bh - 7) / 2), UI.muted);
+  const start = () => { if (!P.deploy.length) { Audio.sfx('error'); return; } Audio.sfx('select'); P.start(); }, auto = () => { Audio.sfx('ok'); autoDeploy(P); };
+  setupFooter({ back: { label: P.backLabel || '◂ BACK', run: back }, extra: [{ label: 'AUTO PICK', run: auto }], next: { label: 'BATTLE! ▸', run: start, disabled: !P.deploy.length, variant: 'danger' },
+    hints: VIEW.touch ? ['tap to add or remove'] : [['Z', 'add / remove'], ['Tab', 'battle']] });
 }
 function toggleDeploy(P, i) { if (i === prepCaptain(P)) { Audio.sfx('error'); return; } const k = P.deploy.indexOf(i); if (k >= 0) { P.deploy.splice(k, 1); Audio.sfx('cancel'); } else if (P.deploy.length < P.chapter.slots) { P.deploy.push(i); Audio.sfx('ok'); } else Audio.sfx('error'); }
 function autoDeploy(P) {
@@ -406,18 +422,18 @@ function creditsInput(ev) { if (ev.type === 'up' || ev.type === 'key') SC.skip =
 
 // ---------------------------------------------------------------- quick battle: pick a mode against the CPU
 const QUICK_MODES = [
-  { id: 'skirmish', label: 'SKIRMISH', tag: 'HQ vs HQ', lines: ['A random battlefield.', 'Earn funds, deploy your Box,', 'catch wild Pokémon mid-war.'], goal: 'Rout them or take their HQ', run: () => startSkirmishSetup() },
-  { id: 'conquest', label: 'CONQUEST', tag: 'CENTERS', lines: ['Three bridges, six teammates.', 'Capture centers to earn points', 'and call reserves.'], goal: 'Take the HQ or hold 2 centers', run: () => startTerritorySetup() },
-  { id: 'tower', label: 'BATTLE TOWER', tag: 'RANKED', lines: ['Ten floors, a commander on each.', 'Rental armies, equal terms:', 'climb for an S rank.'], goal: 'Rank S on every floor', run: () => startTower() },
-  { id: 'safari', label: 'SAFARI ZONE', tag: 'CATCH RACE', lines: ['Eight days, twelve Safari Balls.', 'Weaken, never knock out:', 'rare ones score more.'], goal: 'Out-catch Blue', run: () => startSafari() },
+  { id: 'skirmish', label: 'SKIRMISH', tag: 'HQ vs HQ', lines: ['A random battlefield.', 'Earn funds, deploy your Box,', 'catch wild Pokémon mid-war.'], goal: 'Rout them or take their HQ', next: 'RULES', run: () => startSkirmishSetup() },
+  { id: 'conquest', label: 'CONQUEST', tag: 'CENTERS', lines: ['Three bridges, six teammates.', 'Capture centers to earn points', 'and call reserves.'], goal: 'Take the HQ or hold 2 centers', next: 'SETUP', run: () => startTerritorySetup() },
+  { id: 'tower', label: 'BATTLE TOWER', tag: 'RANKED', lines: ['Ten floors, a commander on each.', 'Rental armies, equal terms:', 'climb for an S rank.'], goal: 'Rank S on every floor', next: 'FLOORS', run: () => startTower() },
+  { id: 'safari', label: 'SAFARI ZONE', tag: 'CATCH RACE', lines: ['Eight days, twelve Safari Balls.', 'Weaken, never knock out:', 'rare ones score more.'], goal: 'Out-catch Blue', next: 'RULES', run: () => startSafari() },
 ];
 function quickPreview(m) { const S = SC.data || (SC.data = {}); if (!S[m.id]) S[m.id] = makeBackdrop(m.id === 'conquest' ? TERRITORY_MAP : m.id === 'tower' ? towerMap(4) : m.id === 'safari' ? safariMap(21, 16) : skirmishMap(412, 16, 11, 12)); return S[m.id]; }
 function quickCols() { return narrowView() || portraitView() ? 1 : 2; }
 function quickDraw() {
-  const W = VIEW.w, H = VIEW.h, narrow = narrowView() || portraitView(), bh = btnH(); rect(0, 0, W, H, UI.bg); SC.hits = [];
+  const W = VIEW.w, H = VIEW.h, narrow = narrowView() || portraitView(), bh = btnH(); rect(0, 0, W, H, UI.bg); SC.hits = []; if (SC.data && SC.data.i != null) { SC.i = SC.data.i; delete SC.data.i; } // back from a mode: that mode keeps the focus
   const bd = quickPreview(QUICK_MODES[SC.i]); drawBackdrop(bd, (W - bd.canvas.width) / 2 - SC.t * 5, (H - bd.canvas.height) / 2, .78);
   const top = screenTitle('QUICK BATTLE', 'Battle the CPU · four ways to play', 5);
-  const foot = footerBand(bh + 12), gap = narrow ? 5 : 8, n = QUICK_MODES.length, cols = quickCols(), rows = Math.ceil(n / cols);
+  const foot = setupFootTop(), gap = narrow ? 5 : 8, n = QUICK_MODES.length, cols = quickCols(), rows = Math.ceil(n / cols);
   const cw = narrow ? W - 16 : Math.min(230, Math.floor((W - 24 - gap) / 2)), ch = Math.min(narrow ? 999 : 150, Math.floor((foot - top - 8 - gap * (rows - 1)) / rows));
   const x0 = narrow ? 8 : Math.round(W / 2 - (cw * 2 + gap) / 2), y0 = top + Math.max(4, Math.round((foot - top - (ch * rows + gap * (rows - 1))) / 2) - 2);
   QUICK_MODES.forEach((m, i) => {
@@ -434,9 +450,7 @@ function quickDraw() {
     if (sel && !REDUCED) { const k = SC.t * 2.2; sparkle(x + cw - 6, y + lift + 3 + Math.round(Math.sin(k) * 1), Math.round(1 + (Math.sin(k * 1.7) + 1)), '#fff2b0'); }
     hit(x, y, cw, ch, () => { if (SC.i === i) quickGo(); else { SC.i = i; Audio.sfx('cursor'); } }, m.label);
   });
-  const fy = foot + 6; bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
-  bigButton(W - 96, fy, 90, bh, 'CHOOSE', quickGo, { variant: 'primary' });
-  if (!narrow && W > 330) hintLine(VIEW.touch ? ['tap a card twice'] : [['◂▸', 'mode'], ['Z', 'choose']], W / 2, fy + (bh - 7) / 2, { pill: false });
+  setupFooter({ back: { label: '◂ TITLE', run: () => { Audio.sfx('cancel'); goScene('title'); } }, next: { label: QUICK_MODES[SC.i].next + ' ▸', run: quickGo }, hints: VIEW.touch ? ['tap a card twice'] : [['◂▸', 'mode'], ['Z', 'choose']] });
 }
 function quickGo() { Audio.sfx('select'); QUICK_MODES[SC.i].run(); }
 function quickInput(ev) {
@@ -473,7 +487,7 @@ function skirmishDraw() {
   const size = SKIRMISH.sizes[S.size] || SKIRMISH.sizes.m, mapKey = [S.seed, S.level, S.foe, S.biome, S.size, S.diff].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = skirmishMap(S.seed, size[0], size[1], S.level + (SK_DIFF[S.diff] || SK_DIFF.normal).level, { foe: S.foe, biome: skirmishBiome(S) }); S.bd = makeBackdrop(S.map); if (S.bdKey && S.bdKey.split('|')[0] !== String(S.seed)) S.rolledAt = SC.t; S.bdKey = mapKey; }
   drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 + 40 - t * 4, (H - S.bd.canvas.height) / 2 + 30, .84); drawCloudShadows(t);
   const narrow = narrowView() || portraitView(), bh = btnH(); SC.hits = []; S.focus = clamp(S.focus || 0, 0, SK_RULES.length - 1);
-  const top = screenTitle('SKIRMISH', narrow ? null : 'Random battlefield · rout the foe or take their HQ', 4), foot = footerBand(bh + 12), fy = foot + 6;
+  const top = setupHeader('SKIRMISH', H >= 220 ? ['RULES', 'TEAM', 'BATTLE'] : null, 0, null, 4), foot = setupFootTop();
   const rh = narrow ? 16 : 14, cardH = narrow ? 58 : clamp(foot - top - 8 - 22 - SK_RULES.length * rh - 40, 50, 66), sideH = 22 + cardH + 14 + SK_RULES.length * rh + 28;
   const sideW = narrow ? W - 12 : Math.min(190, Math.floor(W * .36)), mapW = narrow ? W - 12 : W - 18 - sideW, mapH = narrow ? Math.max(60, foot - 8 - top - sideH) : foot - 10 - top;
   // the map, framed, with a dice to reroll it; it shakes when rolled
@@ -493,13 +507,12 @@ function skirmishDraw() {
   y += cardH + 3; { const a = coOf({ co: S.co, root: skirmishRoot() }), b = coOf({ co: S.foe }); text(fitLabel(a.power.name, cw), sx + 6, y, UI.info); textR(fitLabel(b.power.name, cw), sx + sideW - 6, y, UI.info); } y += 11;
   vsRuleRows(S, sx + 4, y, sideW - 8, rh, SK_RULES, S.focus); y += SK_RULES.length * rh + 4;
   if (y + 18 <= pnl.y + pnl.h) { const box = SKIRMISH.slots, rest = Math.max(SKIRMISH.slots + SKIRMISH.box, S.party.length) - box; text(fitLabel('You: ' + box + ' on the map · ' + rest + ' in the Box', sideW - 12), sx + 6, y, UI.muted); text(fitLabel(COS[S.foe].name + ': squad + Ace · 8 in the Box', sideW - 12), sx + 6, y + 9, UI.muted); }
-  bigButton(W - 96, fy, 90, bh, 'PREPARE', () => { Audio.sfx('select'); S.go(); }, { variant: 'primary' }); bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('quick'); }, { variant: 'ghost' });
-  if (!narrow && W > 360) hintLine([['▲▼', 'rule'], ['◂▸', 'change'], ['Z', 'prepare']], W / 2, fy + (bh - 7) / 2, { pill: false });
+  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 0 }); } }, next: { label: 'TEAM ▸', run: () => { Audio.sfx('select'); S.go(); } }, hints: VIEW.touch ? null : [['▲▼', 'rule'], ['◂▸', 'change'], ['Z', 'team']] });
 }
 function skirmishInput(ev) {
   const S = SC.data; if (ev.type === 'key') { const n = SK_RULES.length; S.focus = S.focus || 0;
     if (ev.key === 'up') { S.focus = (S.focus + n - 1) % n; Audio.sfx('cursor'); } else if (ev.key === 'down') { S.focus = (S.focus + 1) % n; Audio.sfx('cursor'); }
     else if (ev.key === 'left' || ev.key === 'right') { const rule = SK_RULES[S.focus]; vsCycle(S, rule, ev.key === 'left' ? -1 : 1); if (rule.k === 'co') S.coAt = SC.t; if (rule.k === 'foe') S.foeAt = SC.t; }
-    else if (ev.key === 'ok' || ev.key === 'next') { Audio.sfx('select'); S.go(); } else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick'); } else if (ev.key === 'mute') Audio.toggle(); return; }
+    else if (ev.key === 'ok' || ev.key === 'next') { Audio.sfx('select'); S.go(); } else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick', { i: 0 }); } else if (ev.key === 'mute') Audio.toggle(); return; }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }

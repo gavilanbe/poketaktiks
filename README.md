@@ -204,8 +204,20 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
 ## Presentation
 
 - **Title**: pixel art drawn at the game's own resolution — a dusk sky, a
-  striped sun, parallax ranges, a mirrored lake, a meadow with the starters, and
-  a hand-drawn POKÉ/TAKTIKS wordmark whose letters bounce, breathe and shine.
+  striped sun, parallax ranges, a mirrored lake, a meadow, and a hand-drawn
+  POKÉ/TAKTIKS wordmark whose letters bounce, breathe and shine. The Tactician
+  stands on the knoll with the starters, or with your own party (the Ace
+  crowned) once a journey has begun; Team Rocket's airship crosses the sky with
+  its searchlight. CONTINUE shows a trainer card (the front reached, stars, the
+  freed Gym Leaders, the party). OPTIONS holds sound, the battle scene, motion
+  (Auto, Full or Reduced), the Conquest guide, credits and ERASE ALL DATA.
+- **Before a battle** every path walks the same steps, shown under the screen's
+  title: a front is MISSION › TEAM › BATTLE, a Skirmish and the Safari RULES ›
+  TEAM › BATTLE, the Tower FLOOR › TEAM › BATTLE, Conquest SETUP › BATTLE. The
+  way back is always bottom-left (named after the step it returns to) and the
+  way forward bottom-right (named after the next step). The TEAM step says what
+  you will face: the foes' commonest types, the types that hit most of them hard
+  and the ones they resist, and how many foes the focused Pokémon hits hard.
 - **Dialogues**: trainer portraits slide in on their side and darken while they
   listen, voices blip per letter, *emphasis* glows in gold, cinematic bars close.
 - **Battle screen**: each half is a painted panorama of the terrain its Pokémon

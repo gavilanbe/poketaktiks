@@ -48,7 +48,7 @@ function drawLab(st, tableY) {
 function captainChoiceDraw() {
   const W = VIEW.w, H = VIEW.h, t = SC.t, wide = W >= 380 && W > H, bh = btnH(); SC.hits = [];
   rect(0, 0, W, H, '#120f2a');
-  const top = screenTitle('CHOOSE YOUR PARTNER', H >= 240 ? 'Your partner becomes your captain' : null, 5), foot = H - bh - 10;
+  const top = screenTitle('CHOOSE YOUR PARTNER', H >= 240 ? (W >= 300 ? 'It becomes your Ace: it wears the crown and leads your team' : 'It becomes your Ace and leads your team') : null, 5), foot = setupFootTop() - 4;
   const stage = wide ? { x: 6, y: top, w: Math.round(W * .54) - 6, h: foot - top - 4 } : { x: 6, y: top, w: W - 12, h: Math.max(64, Math.round((foot - top) * .48)) };
   const card = wide ? { x: stage.x + stage.w + 6, y: top + 4, w: W - stage.w - 18, h: foot - top - 10 } : { x: 8, y: stage.y + stage.h + 6, w: W - 16, h: foot - stage.y - stage.h - 12 };
   const big = stage.h >= 150 && stage.w >= 240 ? 2 : 1, tableY = stage.y + Math.round(stage.h * .72), gap = Math.min(96, Math.round(stage.w / 3.1));
@@ -68,11 +68,14 @@ function captainChoiceDraw() {
       if (animReady(n)) drawAnim(n, cx, by + 1 - hop, t, { sx: grow, sy: grow }); else drawBig(n, cx, by + 1 - hop, { sx: .45 * grow, sy: .45 * grow });
     } else { const wob = !REDUCED && (t + i) % 3 < .3 ? Math.round(Math.sin((t + i) * 40)) : 0; ctx.globalAlpha = .4; ellipse(cx, by + 1, 7, 2, '#000'); ctx.globalAlpha = 1; drawTitleBall(cx + wob, by - 6, 6, t + i); }
   });
+  // each ball's name on the table's edge, so the three choices read at a glance
+  const allNames = STARTERS.every(n => textWidth(DEX[n].name.toUpperCase()) + 4 <= gap); // on a narrow table only the chosen one is named
+  STARTERS.forEach((n, i) => { const cx = Math.round(stage.x + stage.w / 2 + (i - 1) * gap), sel = SC.i === i; if (sel || allNames) textC(DEX[n].name.toUpperCase(), cx, tableY + 15, sel ? '#ffffff' : '#c8b8a0', { outline: '#2a1a10' }); });
   ctx.restore();
   STARTERS.forEach((n, i) => { const cx = Math.round(stage.x + stage.w / 2 + (i - 1) * gap); hit(cx - Math.round(gap / 2) + 1, stage.y, gap - 2, stage.h, () => { if (SC.i === i) confirmStarter(); else starterFocus(i); }, DEX[n].name.toUpperCase()); });
   // the card for the focused partner
   const n = STARTERS[SC.i], c = CAPTAINS[n], d = DEX[n], tok = unfold('starter' + SC.i, card.x, card.y, card.w, card.h, .18);
-  const p = panel(card.x, card.y, card.w, card.h, { header: c.style, headerFill: shade(c.col, -.45), headerCol: '#ffffff', headerRight: 'CAPTAIN', headerRightCol: shade(c.col, .5), border: c.col });
+  const p = panel(card.x, card.y, card.w, card.h, { header: c.style, headerFill: shade(c.col, -.45), headerCol: '#ffffff', headerRight: 'YOUR ACE', headerRightCol: shade(c.col, .5), border: c.col });
   let y = p.cy; const x = card.x + 8, w = card.w - 16, room = card.y + card.h - 6;
   const line = (str, col, bigText2) => { if (y + (bigText2 ? 9 : 7) > room) return false; if (bigText2) bigText(fitLabel(str.toUpperCase(), w), x, y, col, { shadow: UI.inset }); else text(fitLabel(str, w), x, y, col); y += bigText2 ? 12 : 9; return true; };
   if (y + 9 <= room) { bigText(d.name.toUpperCase(), x, y, c.col, { shadow: UI.inset }); let bx = x + textWidth(d.name.toUpperCase(), BIG) + 6; for (const tp of d.types) { if (bx + 24 > x + w) break; bx += typeBadge(tp, bx, y, 24) + 2; } y += 12; }
@@ -83,8 +86,7 @@ function captainChoiceDraw() {
   const stats = [['HP', d.base.hp], ['ATK', d.base.atk], ['DEF', d.base.def], ['SP.A', d.base.spa], ['SPE', d.base.spe]];
   if (y + 12 + stats.length * 9 <= room) { y += 2; sectionLabel('Strengths', x, y, w, UI.gold); y += 10; for (const [lb, v] of stats) { text(lb, x, y, UI.muted); bar(x + 28, y + 1, w - 28, 5, v / 110, v >= 60 ? c.col : shade(c.col, -.25)); y += 9; } }
   unfoldEnd(tok);
-  const fy = foot + 3; bigButton(6, fy, 64, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
-  const cw = Math.min(150, W - 82); bigButton(W - cw - 6, fy, cw, bh, 'CHOOSE ' + d.name.toUpperCase(), confirmStarter, { variant: 'primary', small: textWidth('CHOOSE ' + d.name.toUpperCase(), BIG) > cw - 8 });
+  setupFooter({ back: { label: '◂ TITLE', run: () => { Audio.sfx('cancel'); goScene('title'); } }, next: { label: 'CHOOSE ' + d.name.toUpperCase() + ' ▸', run: confirmStarter }, hints: VIEW.touch ? ['tap a ball'] : [['◂▸', 'partner'], ['Z', 'choose']] });
 }
 function starterFocus(i) { if (SC.i === i) return; SC.i = i; SC.popAt = SC.t; Audio.sfx('catch'); }
 function confirmStarter() { Audio.sfx('select'); pickStarter(STARTERS[SC.i]); }
@@ -213,7 +215,7 @@ function drawOutposts() {
 function territorySetupDraw() {
   const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t, bh = btnH(); S.captain = CAPTAINS[S.captain] ? S.captain : 7; rect(0, 0, W, H, UI.bg); SC.hits = [];
   drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 - t * 4, (H - S.bd.canvas.height) / 2, .82);
-  const top = screenTitle('CONQUEST', H >= 240 ? (W >= 220 ? 'Three Bridges · centers, points and reserves' : 'Three Bridges') : null, 5), by = H - bh - 6, wide = W >= 420;
+  const top = setupHeader('CONQUEST', H >= 220 ? ['SETUP', 'BATTLE'] : null, 0, null, 5), by = setupFootTop() - 2, wide = W >= 420;
   const colW = wide ? Math.min(250, Math.floor((W - 20) / 2)) : Math.min(W - 12, 300), x0 = wide ? Math.round(W / 2 - colW - 4) : Math.round((W - colW) / 2);
   // captains
   const cw = Math.floor((colW - 8) / 3), chh = H >= 260 ? 50 : 38, cy0 = top + 2;
@@ -239,8 +241,7 @@ function territorySetupDraw() {
   const mapTop = wide ? y + 2 : rY + 4, avail = by - 6 - mapTop;
   if (avail > 50) { const bd = S.bd, sc = Math.min(colW / bd.canvas.width, avail / bd.canvas.height), mw = Math.floor(bd.canvas.width * sc), mh = Math.floor(bd.canvas.height * sc), mx = (wide ? x0 : x0) + Math.floor((colW - mw) / 2), my = mapTop + Math.floor((avail - mh) / 2);
     rect(mx - 2, my - 2, mw + 4, mh + 4, UI.inset); ctx.drawImage(bd.canvas, mx, my, mw, mh); outline(mx - 1, my - 1, mw + 2, mh + 2, UI.border2); }
-  bigButton(x0, by, Math.floor(colW * .3), bh, 'BACK', () => goScene('quick'), { variant: 'ghost', hot: SC.i === 3 });
-  bigButton(x0 + Math.floor(colW * .3) + 4, by, (wide ? colW * 2 + 8 : colW) - Math.floor(colW * .3) - 4, bh, 'START', () => launchTerritory(S.seed, false, [S.captain, S.captain]), { variant: 'primary', hot: SC.i === 4 });
+  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 1 }); } }, next: { label: 'BATTLE! ▸', run: () => launchTerritory(S.seed, false, [S.captain, S.captain]), variant: 'danger' }, hints: VIEW.touch ? ['tap your Ace'] : [['◂▸', 'your Ace'], ['Z', 'battle']] });
 }
 
 // ---------------------------------------------------------------- the briefing before a front
@@ -251,7 +252,7 @@ function briefGo(S) { if (SAVE) { SAVE.co = S.co; writeSave(); } Audio.sfx('sele
 function briefDraw() {
   const S = SC.data, ch = CHAPTERS[S.idx], W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), bh = btnH(); if (!S.bd) S.bd = makeBackdrop(ch.map);
   rect(0, 0, W, H, UI.bg); drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 - t * 3, (H - S.bd.canvas.height) / 2, .8); SC.hits = [];
-  const top = screenTitle('FRONT ' + ch.num + ' · ' + ch.title.toUpperCase(), narrow ? null : objectiveTextFor(ch.map.objective, ch.map), 4), foot = narrow ? H - 2 * (bh + 4) - 8 : footerBand(bh + 12);
+  const top = setupHeader('FRONT ' + ch.num + ' · ' + ch.title.toUpperCase(), H >= 220 ? ['MISSION', 'TEAM', 'BATTLE'] : null, 0, null, 4), foot = setupFootTop();
   const co = ch.co ? COS[ch.co] : null, sp = ch.foe ? SPEAKERS[ch.foe] : null, as = co ? null : { tr: sp ? sp.tr : 'rocketgrunt', name: ch.foe || 'Rocket', col: sp ? sp.col : UI.red };
   const lw = narrow ? W - 12 : Math.min(250, Math.floor(W * .42)), lx = 6, ly = top + 2, cardW = narrow ? 70 : 84, cardH = narrow ? 60 : 76;
   // the enemy commander and their words
@@ -283,9 +284,7 @@ function briefDraw() {
   const room = my + mh - 6 - y; if (room >= 40) { const sc = Math.min((mw - 16) / S.bd.canvas.width, room / S.bd.canvas.height), pw = Math.floor(S.bd.canvas.width * sc), ph = Math.floor(S.bd.canvas.height * sc), px0 = mx + Math.round((mw - pw) / 2), py0 = y + 2;
     rect(px0 - 2, py0 - 2, pw + 4, ph + 4, UI.inset); ctx.drawImage(S.bd.canvas, px0, py0, pw, ph); drawWarPreview(ch.map, S.bd, px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); }
   const back = () => { Audio.sfx('cancel'); openRoute({ sel: S.idx }); };
-  if (narrow) { footerBand(2 * (bh + 4) + 4); bigButton(6, H - 2 * (bh + 4), W - 12, bh, 'PREPARE', () => briefGo(S), { variant: 'primary' }); bigButton(6, H - bh - 4, W - 12, bh, 'ROUTE', back, { variant: 'ghost' }); return; }
-  const fy = foot + 6; bigButton(W - 96, fy, 90, bh, 'PREPARE', () => briefGo(S), { variant: 'primary' }); bigButton(6, fy, 70, bh, 'ROUTE', back, { variant: 'ghost' });
-  if (W > 360) hintLine(S.cos.length > 1 ? [['◂▸', 'commander'], ['Z', 'prepare']] : [['Z', 'prepare'], ['X', 'route']], W / 2, fy + (bh - 7) / 2, { pill: false });
+  setupFooter({ back: { label: '◂ ROUTE', run: back }, next: { label: 'TEAM ▸', run: () => briefGo(S) }, hints: VIEW.touch ? null : S.cos.length > 1 ? [['◂▸', 'commander'], ['Z', 'team']] : [['Z', 'team'], ['X', 'route']] });
 }
 function briefInput(ev) {
   const S = SC.data; if (ev.type === 'key') { if (ev.key === 'left' || ev.key === 'right') { if (S.cos.length > 1) vsCycle(S, { k: 'co', vals: X => X.cos }, ev.key === 'left' ? -1 : 1); } else if (ev.key === 'ok' || ev.key === 'next') briefGo(S); else if (ev.key === 'back') { Audio.sfx('cancel'); openRoute({ sel: S.idx }); } else if (ev.key === 'mute') Audio.toggle(); return; }

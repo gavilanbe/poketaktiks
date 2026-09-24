@@ -43,7 +43,7 @@ function launchTowerFloor(T) {
   const i = T.i, F = TOWER[i], map = towerMap(i), level = F.level, R = loadRecords(); R.towerCo = T.co; writeRecords(R);
   const army = TOWER_RENTALS.map(n => Object.assign(partyUnit(n, level, 1), { loaner: true }));
   const ch = { title: 'Battle Tower ' + (i + 1) + 'F', num: 0, label: 'BATTLE TOWER · ' + (i + 1) + 'F', level, slots: 4, par: F.par, map, rewards: {} };
-  const P = { chapter: ch, party: army, bag: {}, deploy: [], preset: true, back: () => goScene('tower', T) }; autoDeploy(P);
+  const P = { chapter: ch, party: army, bag: {}, deploy: [], preset: true, steps: ['FLOOR', 'TEAM', 'BATTLE'], backLabel: '◂ FLOOR', back: () => goScene('tower', T) }; autoDeploy(P);
   P.start = () => {
     const deployed = P.deploy.map(k => Object.assign({}, army[k], { pid: null })), box = army.filter((p, k) => !P.deploy.includes(k)).map(p => Object.assign({}, p, { pid: null }));
     const onMap = map.units.filter(u => u.team == null || u.team === 1).map(u => u.mon);
@@ -68,7 +68,7 @@ function towerEnd(result) {
 // rank earned there; floors open one by one. Beside it the chosen floor: the commander's card and line, its rules, your
 // commander and the record.
 function towerLayout() {
-  const W = VIEW.w, H = VIEW.h, narrow = narrowView() || portraitView(), bh = btnH(), top = 4 + (narrow ? 18 : 26), foot = H - (narrow ? 2 * (bh + 4) + 8 : bh + 12);
+  const W = VIEW.w, H = VIEW.h, narrow = narrowView() || portraitView(), bh = btnH(), top = H >= 220 ? 35 : 20, foot = setupFootTop();
   const tw = narrow ? W - 12 : Math.min(244, Math.floor(W * .42) - 6), rowH = narrow ? clamp(Math.floor((foot - top) * .44 / 10.6), 14, 18) : clamp(Math.floor((foot - top - 22) / 10), 14, 24);
   const roof = narrow ? 10 : 18, th = roof + rowH * 10 + 4, tx = narrow ? 6 : 12, ty = top + (narrow ? 2 : Math.max(2, Math.floor((foot - top - th) / 2)));
   const px = narrow ? 6 : tx + tw + 8, py = narrow ? ty + th + 6 : top + 2, pw = narrow ? W - 12 : W - px - 6, ph = foot - 6 - py;
@@ -79,7 +79,7 @@ function towerDraw() {
   rect(0, 0, W, H, '#100c24'); for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .5 * (1 - y / H); hline(0, y, W, '#2a1c5a'); } ctx.globalAlpha = 1; // dusk sky
   for (let k = 0; k < 40; k++) { const sx = (k * 97) % W, sy = (k * 53) % Math.round(H * .6), tw2 = Math.sin(t * 2 + k) > .6; px(sx, sy, tw2 ? '#ffffff' : '#6a64a0'); }
   const recs = Object.values(T.recs.tower || {}), sub = recs.length ? 'Cleared ' + recs.length + '/' + TOWER.length + ' · S ranks ' + recs.filter(r => r.rank === 'S').length + ' · best total ' + recs.reduce((a, r) => a + r.total, 0) : 'Ten floors · one commander on each · ranked S to C';
-  SC.hits = []; screenTitle('BATTLE TOWER', L.narrow ? null : sub, 4);
+  SC.hits = []; setupHeader('BATTLE TOWER', H >= 220 ? ['FLOOR', 'TEAM', 'BATTLE'] : null, 0, null, 4);
   // the tower: a spire, then the floors from the top (10F) down to 1F
   const { tx, ty, tw, rowH } = L, cx = tx + Math.round(tw / 2);
   for (let k = 0; k < L.roof; k++) { const half = Math.round((tw / 2 - 6) * (k + 1) / L.roof); hline(cx - half, ty + k, half * 2, k % 3 === 0 ? '#5a4a9a' : '#46387e'); } vline(cx, ty - 6, 6, '#c8c0e8'); rect(cx + 1, ty - 6, 5, 3, UI.red);
@@ -120,17 +120,15 @@ function towerDraw() {
   for (const [label, list, foe] of armies) { if (!list.length || y + 30 > p.y + p.h - 4) continue; sectionLabel(label, p.x + 8, y, p.w - 16, foe ? '#ff9a9a' : '#8ab4ff'); y += 10;
     list.slice(0, per * 2).forEach((n, k) => { const ix = p.x + 6 + (k % per) * 20, iy = y + Math.floor(k / per) * 16; if (iy + 16 > p.y + p.h - 3) return; const bob = !REDUCED && k === Math.floor(t * 3) % list.length ? -1 : 0; ctx.drawImage(monIcon(n, foe), ix - 2, iy + bob, 24, 18); if (foe && k === 0) drawCrown(ix + 13, iy); });
     y += Math.ceil(Math.min(list.length, per * 2) / per) * 16 + 4; }
-  // footer
-  const back = () => { Audio.sfx('cancel'); goScene('quick'); };
-  if (L.narrow) { footerBand(2 * (L.bh + 4) + 4); bigButton(6, H - 2 * (L.bh + 4), W - 12, L.bh, 'CHALLENGE', T.go, open ? { variant: 'primary' } : { disabled: true }); bigButton(6, H - L.bh - 4, W - 12, L.bh, 'BACK', back, { variant: 'ghost' }); return; }
-  const fy = footerBand(L.bh + 12) + 6; bigButton(W - 106, fy, 100, L.bh, 'CHALLENGE', T.go, open ? { variant: 'primary' } : { disabled: true }); bigButton(6, fy, 70, L.bh, 'BACK', back, { variant: 'ghost' });
-  if (W > 360) hintLine([['▲▼', 'floor'], ['◂▸', 'commander'], ['Z', 'challenge']], W / 2, fy + (L.bh - 7) / 2, { pill: false });
+  // the tower's record so far, under the floors
+  if (!L.narrow && recs.length && ty + L.th + 12 <= L.foot - 4) textC(fitLabel(sub, L.tw), tx + tw / 2, ty + L.th + 4, UI.muted);
+  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 2 }); } }, next: { label: 'TEAM ▸', run: T.go, disabled: !open }, hints: VIEW.touch ? null : [['▲▼', 'floor'], ['◂▸', 'commander'], ['Z', 'team']] });
 }
 function towerInput(ev) {
   const T = SC.data; if (ev.type === 'key') {
     if (ev.key === 'up') { T.i = Math.min(TOWER.length - 1, T.i + 1); T.at = SC.t; Audio.sfx('cursor'); } else if (ev.key === 'down') { T.i = Math.max(0, T.i - 1); T.at = SC.t; Audio.sfx('cursor'); }
     else if (ev.key === 'left' || ev.key === 'right') vsCycle(T, { k: 'co', vals: S => S.cos }, ev.key === 'left' ? -1 : 1);
-    else if (ev.key === 'ok' || ev.key === 'next') T.go(); else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick'); } else if (ev.key === 'mute') Audio.toggle(); return;
+    else if (ev.key === 'ok' || ev.key === 'next') T.go(); else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick', { i: 2 }); } else if (ev.key === 'mute') Audio.toggle(); return;
   }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
@@ -215,15 +213,36 @@ function startSafari() {
   // a small collection is topped up to four with loaners (plain stats, never kept)
   const team = party.concat(skirmishLoaners(party, level, 4 - party.length).map(l => Object.assign(partyUnit(l.num, l.level, 1), { loaner: true })));
   const ch = { title: 'Safari Zone', num: 0, label: 'SAFARI ZONE', level, slots: 4, par: SAFARI.days, map, rewards: {} };
-  const P = { chapter: ch, party: team, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: { pokeball: SAFARI.balls }, deploy: [], preset, back: () => goScene('quick') }; autoDeploy(P);
+  const P = { chapter: ch, party: team, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: { pokeball: SAFARI.balls }, deploy: [], preset, steps: ['RULES', 'TEAM', 'BATTLE'], backLabel: '◂ RULES', back: () => goScene('safariBrief', B2) }; autoDeploy(P);
+  const B2 = { P, map, level, best: loadRecords().safari || 0 };
   P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, team[i], { pid: preset || i >= party.length ? null : i })); goScene('card', { chapter: ch, next: () => {
     BACKDROP = makeBackdrop(map);
     startBattle(map, deployed, { pokeball: SAFARI.balls }, { skirmish: true, safari: { days: SAFARI.days, score: [0, 0], catches: [[], []], balls: [SAFARI.balls, SAFARI.balls], preset }, seed: seed * 17 + 1, defer: true, cos: ['you', 'blue'], captain: preset ? { pid: null, root: 4, chapter: 8 } : { pid: SAVE.captainPid, root: SAVE.starter, chapter: 8 } });
     B.map.def = map; SC.data = { preset }; const go = () => { goScene('battle'); SC.data = { preset }; beginPhase(0, true); };
     if (PARAMS.has('nostory')) go(); else { goScene('battle'); startDialog([{ who: 'Blue', text: 'The Safari Zone! Eight days, twelve Safari Balls each. Whoever brings back the *rarest* haul wins.' }, { who: 'Blue', text: 'Knock one out and it counts for *nothing*, and a wounded one may *run off* at dawn. Try to keep up. Smell ya later!' }], go); }
   } }); };
-  goScene('prep', P);
+  goScene('safariBrief', B2);
 }
+// The Safari's RULES step: the meadow, what each rarity scores (with who you may meet), the balls and the days, what
+// makes a catch worth nothing, Blue's team racing yours, and your best haul. TEAM ▸ picks who goes in.
+function safariBriefDraw() {
+  const D = SC.data, W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(); if (!D.bd) D.bd = makeBackdrop(D.map); rect(0, 0, W, H, UI.bg); drawBackdrop(D.bd, (W - D.bd.canvas.width) / 2 - t * 3, (H - D.bd.canvas.height) / 2, .8); SC.hits = [];
+  const top = setupHeader('SAFARI ZONE', H >= 220 ? ['RULES', 'TEAM', 'BATTLE'] : null, 0, null, 4), foot = setupFootTop();
+  const mw = narrow ? W - 12 : Math.min(250, Math.floor(W * .42)), rx = narrow ? 6 : 12 + mw, rw = narrow ? W - 12 : W - rx - 6;
+  // the meadow, with Blue's team on the far side
+  const mapH = narrow ? Math.min(90, Math.floor((foot - top) * .32)) : foot - top - 8, sc = Math.min((mw - 8) / D.bd.canvas.width, (mapH - 8) / D.bd.canvas.height), pw = Math.floor(D.bd.canvas.width * sc), ph = Math.floor(D.bd.canvas.height * sc), px0 = 6 + Math.floor((mw - pw) / 2), py0 = top + 2 + Math.floor((mapH - ph) / 2);
+  rrect(px0 - 4, py0 - 4, pw + 8, ph + 8, UI.inset, 2); ctx.drawImage(D.bd.canvas, px0, py0, pw, ph); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border); drawWarPreview(D.map, D.bd, px0, py0, pw, ph);
+  // the rules
+  const ry = narrow ? py0 + ph + 8 : top + 2, rh = foot - 6 - ry, p = panel(rx, ry, rw, rh, { header: 'OUT-CATCH BLUE', headerRight: D.best ? 'BEST ' + D.best + ' PTS' : null, headerRightCol: UI.gold, headerFill: '#1c4a2a' }); let y = p.cy;
+  const line = (icon, col, s) => { if (y + 9 > ry + rh - 4) return; iconAt(icon, rx + 6, y - 1, col); const ls = wrap(s, rw - 22).slice(0, 2); ls.forEach((l, k) => text(l, rx + 18, y + k * 9, UI.ink)); y += ls.length * 9 + 3; };
+  line('ball', UI.red, SAFARI.balls + ' Safari Balls each and ' + SAFARI.days + ' days. Weaken a wild Pokémon, then throw.');
+  line('flag', UI.gold, 'The bigger haul when the days run out wins. Each catch scores by rarity:');
+  for (const T of SAFARI.tiers) { if (y + 18 > ry + rh - 4) break; text(T.name, rx + 18, y + 5, T.col); textR(T.pts + (T.pts > 1 ? ' pts' : ' pt'), rx + 18 + 74, y + 5, T.col); const ix = rx + 18 + 80, per = Math.max(1, Math.floor((rx + rw - 6 - ix) / 18)); T.mons.slice(0, per).forEach((n, k) => ctx.drawImage(monIcon(n, true), ix + k * 18, y, 24, 18)); y += 18; }
+  y += 2; line('skull', '#ff9a9a', 'A knocked-out Pokémon scores nothing, and a wounded one may run off at dawn.');
+  line('vs', '#8ab4ff', 'Blue brings a team of four: it fights yours when that pays.');
+  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 3 }); } }, next: { label: 'TEAM ▸', run: () => { Audio.sfx('select'); goScene('prep', D.P); } }, hints: VIEW.touch ? null : [['Z', 'team'], ['X', 'modes']] });
+}
+function safariBriefInput(ev) { if (ev.type === 'key') { if (ev.key === 'ok' || ev.key === 'next') { Audio.sfx('select'); goScene('prep', SC.data.P); } else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick', { i: 3 }); } else if (ev.key === 'mute') Audio.toggle(); return; } if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); } }
 // Safari Pokémon are skittish: at dawn each wounded one may run off into the grass (a fifth of the time).
 const SAFARI_FLEE = .2;
 function safariFlee() { if (!B || !B.safari) return []; const out = []; for (const u of alive(2)) if (u.hp < u.maxHp && rnd() < SAFARI_FLEE) { u.hp = 0; u.fled = true; out.push(u); } return out; }

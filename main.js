@@ -19,7 +19,7 @@ function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; 
 function continueCampaign() { SAVE = loadSave(); if (!SAVE) { startNewGame(); return; } openRoute(); }
 function prepChapter(idx) {
   migrateCaptain(SAVE);
-  const ch = CHAPTERS[idx]; const P = { chapter: ch, party: SAVE.party, bag: SAVE.bag, deploy: [], start: null, noCaptain: idx >= 3 && !!SAVE.co && SAVE.co !== 'you' && coUnlocked(SAVE).includes(SAVE.co), back: () => openRoute({ sel: idx }) };
+  const ch = CHAPTERS[idx]; const P = { chapter: ch, party: SAVE.party, bag: SAVE.bag, deploy: [], start: null, noCaptain: idx >= 3 && !!SAVE.co && SAVE.co !== 'you' && coUnlocked(SAVE).includes(SAVE.co), steps: ['MISSION', 'TEAM', 'BATTLE'], backLabel: '◂ MISSION', back: () => briefChapter(idx) };
   autoDeploy(P);
   P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, SAVE.party[i], { pid: i })); goScene('card', { chapter: ch, next: () => launchChapter(idx, deployed) }); };
   goScene('prep', P);
@@ -123,7 +123,7 @@ function startSkirmishSetup() {
     if (SAVE && !preset) { SAVE.skirmishSetup = { co: S.co, foe: S.foe, funds: S.funds, weather: S.weather, biome: S.biome, size: S.size, diff: S.diff }; writeSave(); }
     // loaners (plain stats, never saved to the collection) make up an army of twelve
     const army = party.concat(skirmishLoaners(party, S.level, SKIRMISH.slots + SKIRMISH.box - party.length).map(l => Object.assign(partyUnit(l.num, l.level, 1), { loaner: true })));
-    const P = { chapter: ch, party: army, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: preset ? { pokeball: 3 } : SAVE.bag, deploy: [], preset, back: () => goScene('skirmish', S) }; autoDeploy(P);
+    const P = { chapter: ch, party: army, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: preset ? { pokeball: 3 } : SAVE.bag, deploy: [], preset, steps: ['RULES', 'TEAM', 'BATTLE'], backLabel: '◂ RULES', back: () => goScene('skirmish', S) }; autoDeploy(P);
     P.start = () => {
       const pid = i => i < party.length ? i : null, deployed = P.deploy.map(i => Object.assign({}, army[i], { pid: pid(i) })), box = army.map((p, i) => Object.assign({}, p, { pid: pid(i) })).filter((p, i) => !P.deploy.includes(i));
       const onMap = map.units.filter(u => u.team == null || u.team === 1).map(u => u.mon), D = SK_DIFF[S.diff] || SK_DIFF.normal;
@@ -165,7 +165,7 @@ function frame(t) {
     if (ev.type === 'key' && ev.key === 'mute' && SC.name !== 'battle') { Audio.toggle(); continue; }
     switch (SC.name) {
       case 'journey': journeyInput(ev); break; case 'territory': case 'territoryResults': territorySceneInput(ev); break; case 'title': titleInput(ev); break; case 'starter': starterInput(ev); break; case 'card': cardInput(ev); break; case 'story': storyInput(ev); break;
-      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break; case 'route': routeInput(ev); break; case 'tower': towerInput(ev); break; case 'rank': rankInput(ev); break; case 'brief': briefInput(ev); break; case 'cos': coRoomInput(ev); break; case 'options': optionsInput(ev); break;
+      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break; case 'route': routeInput(ev); break; case 'tower': towerInput(ev); break; case 'rank': rankInput(ev); break; case 'brief': briefInput(ev); break; case 'cos': coRoomInput(ev); break; case 'options': optionsInput(ev); break; case 'safariBrief': safariBriefInput(ev); break;
     }
   }
   // update
@@ -175,7 +175,7 @@ function frame(t) {
   switch (SC.name) {
     case 'loading': rect(0, 0, VIEW.w, VIEW.h, '#0e0c10'); textC('loading sprites…', VIEW.w / 2, VIEW.h / 2, UI.muted); break;
     case 'journey': journeyDraw(); break; case 'territory': territorySetupDraw(); break; case 'territoryResults': territoryResultsDraw(); break; case 'title': titleDraw(); break; case 'starter': starterDraw(); break; case 'card': cardDraw(); break; case 'story': storyDraw(); break;
-    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break; case 'route': routeDraw(); break; case 'tower': towerDraw(); break; case 'rank': rankDraw(); break; case 'brief': briefDraw(); break; case 'cos': coRoomDraw(); break; case 'options': optionsDraw(); break;
+    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break; case 'route': routeDraw(); break; case 'tower': towerDraw(); break; case 'rank': rankDraw(); break; case 'brief': briefDraw(); break; case 'cos': coRoomDraw(); break; case 'options': optionsDraw(); break; case 'safariBrief': safariBriefDraw(); break;
   }
   // every scene change closes and reopens a Poké Ball over the screen (see captureTransition)
   drawTransition(dt);

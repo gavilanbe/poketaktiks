@@ -5778,6 +5778,9 @@ function launchTerritory(seed = 7, defer = false, captains = [7, 7]) {
 }
 function startTerritorySetup(seed = 7) { goScene('territory', { seed, captain: 7, bd: makeBackdrop(TERRITORY_MAP) }); SC.i = 2; }
 function territorySceneInput(ev) {
+  if (SC.name === 'territory' && ev.type === 'key') { const S = SC.data; // the setup: arrows choose the Ace, Z starts, X goes back to the modes
+    if (['left', 'up', 'right', 'down'].includes(ev.key)) { const i = (STARTERS.indexOf(S.captain) + (ev.key === 'left' || ev.key === 'up' ? 2 : 1)) % 3; S.captain = STARTERS[i]; SC.i = i; Audio.sfx('catch'); }
+    else if (ev.key === 'ok' || ev.key === 'next') launchTerritory(S.seed, false, [S.captain, S.captain]); else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick', { i: 1 }); } return; }
   if (ev.type === 'key') {
     if (['left', 'up', 'right', 'down'].includes(ev.key)) { const count = Math.max(1, SC.hits.length); SC.i = (SC.i + (ev.key === 'left' || ev.key === 'up' ? count - 1 : 1)) % count; if (SC.name === 'territory' && SC.i < 3) SC.data.captain = STARTERS[SC.i]; Audio.sfx('cursor'); }
     else if (ev.key === 'ok' && SC.hits[SC.i]) SC.hits[SC.i].run();
@@ -5955,21 +5958,17 @@ function versusDraw() {
     hit(x, y, cw, chh, () => { SC.i = i; vsPick(S, n); }); });
   const d = DEX[VS_ROSTER[SC.i]]; const iy = gy + rows * chh + 5;
   if (d) { const u = makeUnit(d.num, S.level, 0); text(d.name, gx, iy, UI.ink, { outline: UI.shadow }); d.types.forEach((tp, j) => typeBadge(tp, gx + textWidth(d.name) + 6 + j * 26, iy - 1, 24)); const mv = u.moves.slice(0, 3).map(m => m.name).join(' / '); const R = ROLES[u.role]; if (narrow) { let s = mv; const avail = gx + cols * cw - (gx + textWidth(d.name) + 6 + d.types.length * 26 + 4); while (textWidth(s) > avail && s.length > 4) s = s.slice(0, -1); textR(s, gx + cols * cw, iy, UI.info, { outline: UI.shadow }); } else { textR(mv, gx + cols * cw, iy, UI.info, { outline: UI.shadow }); text('HP ' + u.maxHp + '  ATK ' + u.atk + '  DEF ' + u.def + '  SPA ' + u.spa + '  SPE ' + u.spe + '  MOV ' + u.mov, gx, iy + 10, UI.muted, { outline: UI.shadow }); const rx0 = gx + textWidth(d.name) + 6 + d.types.length * 26 + 4; let rs = R.name + ': ' + (u.skill ? u.skill.blurb.replace(/^[^:]+: /, '') : 'plain attacker'); while (textWidth(rs) > gx + cols * cw - textWidth(mv) - 8 - rx0 && rs.length > 8) rs = rs.slice(0, -1); text(rs, rx0, iy, R.col, { outline: UI.shadow }); } }
-  const go = () => { if (!full) { Audio.sfx('error'); return; } Audio.sfx('select'); S.go(); }; const goOpt = full ? { variant: 'danger' } : { disabled: true };
+  const go = () => { if (!full) { Audio.sfx('error'); return; } Audio.sfx('select'); S.go(); }, fy = setupFootTop();
   if (narrow) {
-    const r1 = H - 2 * (bh + 4), r2 = H - bh - 4, cw3 = Math.floor((W - 20) / 3); const rulesY = iy + 12, rows = Math.ceil(VS_RULES.length / 2), rh = clamp(Math.floor((r1 - 6 - rulesY) / rows) - 2, 14, 20);
+    const rulesY = iy + 12, rows = Math.ceil(VS_RULES.length / 2), rh = clamp(Math.floor((fy - 6 - rulesY) / rows) - 2, 14, 20);
     vsRuleGrid(S, 6, rulesY, W - 12, rh, VS_RULES);
-    footerBand(2 * (bh + 4) + 4);
-    bigButton(6, r1, cw3, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' }); bigButton(10 + cw3, r1, cw3, bh, 'RANDOM', () => vsRandom(S)); bigButton(14 + 2 * cw3, r1, cw3, bh, 'CLEAR', () => { S.teams = [[], []]; Audio.sfx('cancel'); }, { variant: 'dark' });
-    bigButton(6, r2, W - 12, bh, 'BATTLE!', go, goOpt);
   } else {
-    const rx = gx + cols * cw + 10, rw = W - 6 - rx, ry = gy; const fy = footerBand(28); const rh = 14, lines = wrap(VS_MODES[S.mode].blurb + (S.fog ? ' Fog of war hides foes beyond your Pokémon\'s sight.' : '') + ' Each commander\'s Ace joins the team.', rw - 16); const nl = Math.min(lines.length, Math.max(0, Math.floor((fy - 6 - ry - 21 - VS_RULES.length * rh - 10) / 9)));
+    const rx = gx + cols * cw + 10, rw = W - 6 - rx, ry = gy; const rh = 14, lines = wrap(VS_MODES[S.mode].blurb + (S.fog ? ' Fog of war hides foes beyond your Pokémon\'s sight.' : '') + ' Each commander\'s Ace joins the team.', rw - 16); const nl = Math.min(lines.length, Math.max(0, Math.floor((fy - 6 - ry - 21 - VS_RULES.length * rh - 10) / 9)));
     const p = panel(rx, ry, rw, Math.min(fy - 6 - ry, 21 + VS_RULES.length * rh + 8 + nl * 9 + 6), { header: 'MATCH RULES', headerRight: VS_MODES[S.mode].short + (S.fog ? ' · FOG' : '') });
     vsRuleRows(S, rx + 4, p.cy - 2, rw - 8, rh, VS_RULES);
     const by0 = p.cy - 2 + VS_RULES.length * rh + 3; if (nl) { hline(rx + 5, by0, rw - 10, UI.inset); lines.slice(0, nl).forEach((l, i) => text(l, rx + 8, by0 + 4 + i * 9, UI.muted)); }
-    const by = fy + 5; bigButton(6, by, 60, 18, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' }); bigButton(72, by, 70, 18, 'RANDOM', () => vsRandom(S)); bigButton(148, by, 60, 18, 'CLEAR', () => { S.teams = [[], []]; Audio.sfx('cancel'); }, { variant: 'dark' });
-    if (W > 470) hintLine(['Snake draft', 'click a picked slot to drop it'], 216, by + 5, { left: true, pill: false }); bigButton(W - 96, by, 90, 18, 'BATTLE!', go, goOpt);
   }
+  setupFooter({ back: { label: '◂ TITLE', run: () => { Audio.sfx('cancel'); goScene('title'); } }, extra: [{ label: 'RANDOM', run: () => vsRandom(S) }, { label: 'CLEAR', run: () => { S.teams = [[], []]; Audio.sfx('cancel'); }, variant: 'dark' }], next: { label: 'BATTLE! ▸', run: go, disabled: !full, variant: 'danger' }, hints: VIEW.touch ? ['tap a picked slot to drop it'] : ['Snake draft', 'click a picked slot to drop it'] });
 }
 function vsCols() { return VIEW.w < 300 ? 4 : VIEW.w < 330 ? 6 : 7; }
 function versusInput(ev) {
@@ -6115,21 +6114,39 @@ function storyInput(ev) { const d = SC.dialog; if (!d) return; if (ev.type === '
   const k = d.skipHit; if (ev.type === 'up' && k && ev.x >= k.x && ev.y >= k.y && ev.x < k.x + k.w && ev.y < k.y + k.h) { Audio.sfx('cancel'); finishDialog(); return; } if (ev.type === 'up' || (ev.type === 'key' && ev.key === 'ok')) { const line = d.lines[d.i]; if (d.chars < richLine(line).plain.length) { d.chars = richLine(line).plain.length; d.pause = 0; return; } d.i++; d.chars = 0; d.t = 0; d.pause = 0; d.focused = false; Audio.sfx('ok'); if (d.i >= d.lines.length) finishDialog(); } }
 function finishDialog() { const d = SC.dialog; SC.dialog = null; if (d && d.done) d.done(); }
 
-// ---------------------------------------------------------------- prep: choose who deploys
-// Layout: the headline, a TEAM bar with one box per slot (captain first, crowned), the collection as cards, and on wide
-// screens a MISSION column (goal, foes, the battlefield with deploy tiles and foes) with the focused Pokémon under it.
+// ---------------------------------------------------------------- prep: the TEAM step
+// The second step of every path into a battle (MISSION › TEAM › BATTLE and its cousins): who starts on the map. The TEAM
+// bar has one box per slot (the Ace first, crowned); the collection sits under it as cards; on wide screens a column says
+// what the team will face (the foes, the types that hit most of them hard, the ones they shrug off) and how the focused
+// Pokémon fares against them. Phones get the advice as one line. BACK returns to the previous step, BATTLE! starts.
+const PREP_STEPS = ['MISSION', 'TEAM', 'BATTLE'];
 function prepLayout(P) {
-  const W = VIEW.w, H = VIEW.h, narrow = narrowView(), bh = btnH(), foot = narrow ? 2 * (bh + 4) + 12 : bh + 12, side = W >= 400 && H >= 200;
-  const top = 4 + (H >= 240 && !narrow ? 28 : 16), sideW = side ? Math.min(170, Math.floor(W * .34)) : 0, lw = W - 12 - (side ? sideW + 6 : 0);
-  const slots = { x: 6, y: top, w: lw, h: narrow ? 30 : 32 };
-  const cols = narrow ? 1 : lw >= 380 ? 3 : 2, gap = 4, cw = Math.floor((lw - gap * (cols - 1)) / cols), ch = 30, gy = slots.y + slots.h + 6;
+  const W = VIEW.w, H = VIEW.h, narrow = narrowView(), bh = btnH(), foot = H - setupFootTop(), side = W >= 400 && H >= 200, steps = H >= 220;
+  const top = steps ? 35 : 20, sideW = side ? Math.min(176, Math.floor(W * .35)) : 0, lw = W - 12 - (side ? sideW + 6 : 0);
+  const slots = { x: 6, y: top, w: lw, h: narrow ? 30 : 32 }, tip = !side && H >= 300 ? 12 : 0;
+  const cols = narrow ? 1 : lw >= 380 ? 3 : 2, gap = 4, cw = Math.floor((lw - gap * (cols - 1)) / cols), ch = 30, gy = slots.y + slots.h + 6 + tip;
   const rowsVisible = Math.max(1, Math.floor((H - foot - gy + 2) / (ch + 3)));
-  return { W, H, narrow, bh, foot, side, top, sideW, lw, slots, cols, gap, cw, ch, gx: 6, gy, rowsVisible, sideX: W - 6 - sideW };
+  return { W, H, narrow, bh, foot, side, top, steps, sideW, lw, slots, tip, cols, gap, cw, ch, gx: 6, gy, rowsVisible, sideX: W - 6 - sideW };
 }
+// What the team will face: the foes' commonest types, the attacking types that hit at least half of them hard (and more
+// than shrug them off), and the ones most of them resist. Pure.
+const GEN1_TYPES = TYPES.filter(t => DEX_LIST.some(d => d.types.includes(t)));
+function enemyAdvice(units) {
+  const foes = (units || []).filter(u => u.team == null || u.team === 1).map(u => DEX[u.mon]).filter(Boolean), n = foes.length; if (!n) return null;
+  const count = {}; for (const d of foes) for (const t of d.types) count[t] = (count[t] || 0) + 1;
+  const common = Object.keys(count).sort((a, b) => count[b] - count[a]).slice(0, 2);
+  const rows = GEN1_TYPES.map(t => ({ t, hard: foes.filter(d => effRaw(t, d.types) > 1).length, soft: foes.filter(d => effRaw(t, d.types) < 1).length }));
+  let strong = rows.filter(r => r.hard * 2 >= n && r.hard > r.soft).sort((a, b) => b.hard - a.hard || a.soft - b.soft).slice(0, 3).map(r => r.t);
+  if (!strong.length) strong = rows.filter(r => r.hard > r.soft).sort((a, b) => (b.hard - b.soft) - (a.hard - a.soft)).slice(0, 2).map(r => r.t);
+  const weak = rows.filter(r => r.soft * 2 >= n && r.hard === 0).sort((a, b) => b.soft - a.soft).slice(0, 3).map(r => r.t);
+  return { n, foes, common, strong, weak };
+}
+// How many of the foes a Pokémon's moves hit hard.
+function hardHits(u, adv) { const types = u.moves.filter(m => m.pow > 0).map(m => m.type); return adv ? adv.foes.filter(d => types.some(t => effRaw(t, d.types) > 1)).length : 0; }
 function prepDraw() {
   const P = SC.data, ch = P.chapter, L = prepLayout(P), W = L.W, H = L.H, t = SC.t; rect(0, 0, W, H, UI.bg); if (!P.bd) P.bd = makeBackdrop(ch.map); drawBackdrop(P.bd, (W - P.bd.canvas.width) / 2 - t * 3, (H - P.bd.canvas.height) / 2, .8);
-  SC.hits = []; const cap = prepCaptain(P);
-  screenTitle((ch.num ? 'FRONT ' + ch.num + ' · ' : '') + ch.title.toUpperCase(), H >= 240 && !L.narrow ? objectiveTextFor(ch.map.objective, ch.map) : null, 4);
+  SC.hits = []; const cap = prepCaptain(P), adv = P.adv !== undefined ? P.adv : (P.adv = enemyAdvice(ch.map.units)), steps = P.steps || PREP_STEPS, back = () => { Audio.sfx('cancel'); if (P.back) P.back(); else goScene('title'); };
+  setupHeader((ch.num ? 'FRONT ' + ch.num + ' · ' : '') + ch.title.toUpperCase(), L.steps ? steps : null, 1, () => back());
   // TEAM bar: one box per slot, filled in deploy order
   const S = L.slots, bw = Math.max(20, Math.min(34, Math.floor((S.w - 60) / ch.slots) - 3));
   panel(S.x, S.y, S.w, S.h, { fill: UI.panelDark, flat: true }); text('TEAM', S.x + 7, S.y + Math.round(S.h / 2) - 4, UI.gold); text(P.deploy.length + '/' + ch.slots, S.x + 7, S.y + Math.round(S.h / 2) + 4, P.deploy.length ? UI.ink : UI.muted);
@@ -6140,7 +6157,9 @@ function prepDraw() {
     ctx.save(); ctx.beginPath(); ctx.rect(bx + 1, by + 1, bw - 2, bhh - 2); ctx.clip(); const sc = Math.max(.3, pop); drawMon(u.num, bx + bw / 2, by + bhh + 2 - Math.round((1 - Math.min(1, pop)) * 6), { sx: .8 * sc, sy: .8 * sc }); ctx.restore();
     if (pid === cap) drawCrown(bx + 1, by + 1);
   }
-  // the collection: one card per Pokémon, deployed ones lit and numbered, the captain locked in with its crown
+  // phones: the advice as one line under the bar
+  if (L.tip && adv && adv.strong.length) { let x = S.x + 2; const y = S.y + S.h + 3; text('Hit them with', x, y, UI.muted); x += textWidth('Hit them with') + 4; for (const tp of adv.strong) { if (x + 26 > S.x + S.w) break; x += typeBadge(tp, x, y - 1, 24) + 2; } }
+  // the collection: one card per Pokémon, deployed ones lit and numbered, the Ace locked in with its crown
   const party = P.party, total = Math.ceil(party.length / L.cols); SC.scroll = clamp(SC.scroll, 0, Math.max(0, total - L.rowsVisible));
   ctx.save(); ctx.beginPath(); ctx.rect(0, L.gy - 2, L.lw + 12, L.rowsVisible * (L.ch + 3) + 2); ctx.clip();
   party.forEach((p, i) => {
@@ -6150,34 +6169,34 @@ function prepDraw() {
     ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2 + lift, 30, L.ch - 4); ctx.clip(); rect(x + 2, y + 2 + lift, 30, L.ch - 4, on ? '#17306e' : '#141736'); drawMon(u.num, x + 17, y + L.ch - 2 + lift - (on && !REDUCED ? Math.round(Math.abs(Math.sin(t * 5 + i)) * 1) : 0), { outline: on ? teamColor(0) : null }); ctx.restore();
     const nx = x + 35, lv = 'Lv' + u.level, avail = L.cw - 39 - textWidth(lv) - (on || i === cap ? 14 : 0); text(fitLabel(u.name, avail), nx, y + 4 + lift, UI.ink); textR(lv, x + L.cw - 5 - (on || i === cap ? 14 : 0), y + 4 + lift, UI.gold);
     let bx = nx; for (const tp of u.types) { if (bx + 24 > x + L.cw - 4) break; bx += typeBadge(tp, bx, y + 13 + lift, 24) + 2; } hpBar(nx, y + L.ch - 7 + lift, L.cw - 40, u.hp, u.maxHp);
+    // a green arrow when its moves hit at least half the foes hard
+    if (adv && hardHits(u, adv) * 2 >= adv.n && bx + 8 <= x + L.cw - 4) { const ax = bx + 2, ay = y + 14 + lift; for (let k = 0; k < 3; k++) hline(ax + 2 - k, ay + k, 1 + 2 * k, '#5ee06a'); }
     if (p.loaner && bx + 28 <= x + L.cw - 4) textR('LOAN', x + L.cw - 5, y + 14 + lift, UI.info);
     if (i === cap) { rrect(x + L.cw - 15, y + 3 + lift, 12, 10, UI.gold, 1); drawCrown(x + L.cw - 13, y + 5 + lift); } else if (on) { circle(x + L.cw - 9, y + 8 + lift, 5, UI.inset); circle(x + L.cw - 9, y + 8 + lift, 4, '#6a9aff'); textC(String(slot + 1), x + L.cw - 8, y + 5 + lift, '#ffffff'); }
     hit(x, y, L.cw, L.ch, () => { SC.i = i; toggleDeploy(P, i); });
   });
   ctx.restore();
   if (total > L.rowsVisible) { const sy = L.gy + L.rowsVisible * (L.ch + 3) - 1; textC((SC.scroll > 0 ? '▲ ' : '') + 'more' + (SC.scroll < total - L.rowsVisible ? ' ▼' : ''), L.gx + L.lw / 2, Math.min(sy, H - L.foot - 9), UI.muted); }
-  // MISSION column: goal, foes and the battlefield, then the focused Pokémon
+  // THE ENEMY: who they are, what hits them hard, what they shrug off; then the focused Pokémon against them
   if (L.side) {
-    const x = L.sideX, w = L.sideW; let y = L.slots.y; const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), wild = (ch.map.units || []).filter(u => u.team === 2), lv = foes.map(u => u.level);
-    const goal = objectiveTextFor(ch.map.objective, ch.map).replace('Objective: ', ''), gw = wrap(goal[0].toUpperCase() + goal.slice(1), w - 22), gl = gw.slice(0, 2); if (gw.length > 2) gl[1] = fitLabel(gl[1] + '...', w - 22); // the goal wraps to two lines
-    const bd = P.bd, previewH = Math.max(0, Math.min(Math.round(w * bd.canvas.height / bd.canvas.width), H - L.foot - y - 110 - (gl.length - 1) * 9)), mh = 34 + (gl.length - 1) * 9 + (previewH > 24 ? previewH + 6 : 0);
-    const mp = panel(x, y, w, mh, { header: 'MISSION', headerRight: foes.length + ' foes' + (lv.length ? ' · Lv' + Math.min(...lv) : ''), headerRightCol: UI.red });
-    iconAt('flag', x + 6, mp.cy - 1, UI.gold); gl.forEach((l, i) => text(l, x + 17, mp.cy + i * 9, UI.ink));
-    if (previewH > 24) { const sc = previewH / bd.canvas.height, pw = Math.round(bd.canvas.width * sc), px0 = x + Math.round((w - pw) / 2), py0 = mp.cy + 11 + (gl.length - 1) * 9; rect(px0 - 1, py0 - 1, pw + 2, previewH + 2, UI.inset); ctx.drawImage(bd.canvas, px0, py0, pw, previewH); const cell = TILE * sc;
-      for (const d of bd.map.deploy) { const X = px0 + d.x * cell, Y = py0 + d.y * cell; rect(X, Y, Math.ceil(cell), Math.ceil(cell), '#3d7dff70'); outline(X, Y, Math.ceil(cell), Math.ceil(cell), teamColor(0)); }
-      for (const u of ch.map.units || []) { const team = u.team == null ? 1 : u.team, ux = px0 + (u.x + .5) * cell, uy = py0 + (u.y + 1) * cell; ctx.drawImage(monIcon(u.mon, true), Math.round(ux - 8), Math.round(uy - 12), 16, 12); if (u.boss) drawSkull(Math.round(ux - 2), Math.round(uy - 18)); else { rect(Math.round(ux) - 1, Math.round(uy), 3, 2, teamColor(team)); } } }
-    y += mh + 6;
-    const sel = party[SC.i]; if (sel && y + 60 <= H - L.foot - 4) { const u = restoreUnit(sel), R = ROLES[u.role], hh = Math.min(H - L.foot - 4 - y, 96); const up = panel(x, y, w, hh, { header: fitLabel(u.name, w - 50), headerRight: 'Lv' + u.level, headerRightCol: UI.gold, headerFill: '#1c3a8a' });
-      let yy = up.cy; iconAt(R.icon, x + 6, yy - 1, R.col); text(R.name, x + 17, yy, R.col); textR('MOVE ' + u.mov, x + w - 6, yy, UI.ink); yy += 10;
-      for (const m of u.moves.slice(0, 3)) { if (yy + 9 > y + hh - 4) break; typeBadge(m.type, x + 6, yy - 1, 24); text(fitLabel(m.name + ' ' + m.pow, w - 40), x + 33, yy, UI.ink); yy += 10; }
-      if (yy + 7 <= y + hh - 4) { const ev = u.dex.evos.length ? 'Evolves Lv' + Math.min(...u.dex.evos.map(e => e[1])) : 'Final form'; text(fitLabel(ev, w - 12), x + 6, yy, UI.info); } }
+    const x = L.sideX, w = L.sideW; let y = L.slots.y; const foes = (ch.map.units || []).filter(u => u.team == null || u.team === 1), lv = foes.map(u => u.level);
+    const icons = Math.min(foes.length, Math.floor((w - 12) / 18)), eh = 20 + (foes.length ? 20 : 0) + (adv ? 11 + (adv.strong.length ? 12 : 0) + (adv.weak.length ? 12 : 0) : 0) + 4;
+    const ep = panel(x, y, w, eh, { header: 'THE ENEMY', headerRight: foes.length ? foes.length + ' foes · Lv' + Math.min(...lv) + (Math.max(...lv) > Math.min(...lv) ? '-' + Math.max(...lv) : '') : null, headerRightCol: UI.red, headerFill: '#5a1d2e' }); let yy = ep.cy;
+    const lead = foes.find(u => u.boss) || null, order = (lead ? [lead] : []).concat(foes.filter(u => u !== lead));
+    order.slice(0, icons).forEach((u, k) => { const bob = !REDUCED && k === Math.floor(t * 3) % Math.max(1, icons) ? -1 : 0; ctx.drawImage(monIcon(u.mon, true), x + 4 + k * 18, yy + bob, 24, 18); if (u.boss) drawSkull(x + 14 + k * 18, yy - 2); }); if (foes.length) yy += 20;
+    if (adv) { let bx = x + 6; text('Mostly', bx, yy, UI.muted); bx += textWidth('Mostly') + 4; for (const tp of adv.common) bx += typeBadge(tp, bx, yy - 1, 24) + 2; yy += 11;
+      const tr = (label, list, col) => { if (!list.length) return; let bx2 = x + 6; text(label, bx2, yy, col); bx2 += textWidth(label) + 4; for (const tp of list) { if (bx2 + 24 > x + w - 4) break; bx2 += typeBadge(tp, bx2, yy - 1, 24) + 2; } yy += 12; };
+      tr('Hit them with', adv.strong, '#8ae89a'); tr('They resist', adv.weak, '#ff9a9a'); }
+    y += eh + 6;
+    const sel = party[SC.i]; if (sel && y + 60 <= H - L.foot - 4) { const u = restoreUnit(sel), R = ROLES[u.role], hh = Math.min(H - L.foot - 4 - y, 100); const up = panel(x, y, w, hh, { header: fitLabel(u.name, w - 50), headerRight: 'Lv' + u.level, headerRightCol: UI.gold, headerFill: '#1c3a8a' });
+      let yy2 = up.cy; iconAt(R.icon, x + 6, yy2 - 1, R.col); text(R.name, x + 17, yy2, R.col); textR('MOVE ' + u.mov, x + w - 6, yy2, UI.ink); yy2 += 10;
+      for (const m of u.moves.slice(0, 3)) { if (yy2 + 9 > y + hh - 14) break; typeBadge(m.type, x + 6, yy2 - 1, 24); const good = adv && m.pow > 0 && adv.strong.includes(m.type); text(fitLabel(m.name + ' ' + m.pow, w - 44), x + 33, yy2, good ? '#8ae89a' : UI.ink); yy2 += 10; }
+      if (adv && yy2 + 7 <= y + hh - 4) { const k = hardHits(u, adv); text(fitLabel(k ? 'Hits ' + k + ' of ' + adv.n + ' foes hard' : 'No super-effective hits here', w - 12), x + 6, yy2, k * 2 >= adv.n ? '#8ae89a' : k ? UI.gold : UI.dim); yy2 += 10; }
+      if (yy2 + 7 <= y + hh - 4) { const ev = u.dex.evos.length ? 'Evolves Lv' + Math.min(...u.dex.evos.map(e => e[1])) : 'Final form'; text(fitLabel(ev, w - 12), x + 6, yy2, UI.info); } }
   }
-  const start = () => { if (!P.deploy.length) { Audio.sfx('error'); return; } Audio.sfx('select'); P.start(); }, auto = () => { Audio.sfx('ok'); autoDeploy(P); }, back = () => { Audio.sfx('cancel'); if (P.back) P.back(); else goScene('title'); };
-  if (L.narrow) { footerBand(L.foot); const r1 = H - 2 * (L.bh + 4), r2 = H - L.bh - 4;
-    bigButton(6, r1, 60, L.bh, 'BACK', back, { variant: 'ghost' }); bigButton(72, r1, W - 78, L.bh, 'AUTO PICK', auto); bigButton(6, r2, W - 12, L.bh, 'START', start, P.deploy.length ? { variant: 'primary' } : { disabled: true }); return; }
-  const by = footerBand(L.foot) + 6; bigButton(W - 96, by, 90, L.bh, 'START', start, P.deploy.length ? { variant: 'primary' } : { disabled: true });
-  bigButton(W - 190, by, 88, L.bh, 'AUTO PICK', auto); bigButton(6, by, 70, L.bh, 'BACK', back, { variant: 'ghost' });
-  if (W - 278 > 60) text(fitLabel(VIEW.touch ? 'Tap a Pokémon to add or remove it' : 'Z add / remove · Tab start', W - 278), 82, by + Math.round((L.bh - 7) / 2), UI.muted);
+  const start = () => { if (!P.deploy.length) { Audio.sfx('error'); return; } Audio.sfx('select'); P.start(); }, auto = () => { Audio.sfx('ok'); autoDeploy(P); };
+  setupFooter({ back: { label: P.backLabel || '◂ BACK', run: back }, extra: [{ label: 'AUTO PICK', run: auto }], next: { label: 'BATTLE! ▸', run: start, disabled: !P.deploy.length, variant: 'danger' },
+    hints: VIEW.touch ? ['tap to add or remove'] : [['Z', 'add / remove'], ['Tab', 'battle']] });
 }
 function toggleDeploy(P, i) { if (i === prepCaptain(P)) { Audio.sfx('error'); return; } const k = P.deploy.indexOf(i); if (k >= 0) { P.deploy.splice(k, 1); Audio.sfx('cancel'); } else if (P.deploy.length < P.chapter.slots) { P.deploy.push(i); Audio.sfx('ok'); } else Audio.sfx('error'); }
 function autoDeploy(P) {
@@ -6262,18 +6281,18 @@ function creditsInput(ev) { if (ev.type === 'up' || ev.type === 'key') SC.skip =
 
 // ---------------------------------------------------------------- quick battle: pick a mode against the CPU
 const QUICK_MODES = [
-  { id: 'skirmish', label: 'SKIRMISH', tag: 'HQ vs HQ', lines: ['A random battlefield.', 'Earn funds, deploy your Box,', 'catch wild Pokémon mid-war.'], goal: 'Rout them or take their HQ', run: () => startSkirmishSetup() },
-  { id: 'conquest', label: 'CONQUEST', tag: 'CENTERS', lines: ['Three bridges, six teammates.', 'Capture centers to earn points', 'and call reserves.'], goal: 'Take the HQ or hold 2 centers', run: () => startTerritorySetup() },
-  { id: 'tower', label: 'BATTLE TOWER', tag: 'RANKED', lines: ['Ten floors, a commander on each.', 'Rental armies, equal terms:', 'climb for an S rank.'], goal: 'Rank S on every floor', run: () => startTower() },
-  { id: 'safari', label: 'SAFARI ZONE', tag: 'CATCH RACE', lines: ['Eight days, twelve Safari Balls.', 'Weaken, never knock out:', 'rare ones score more.'], goal: 'Out-catch Blue', run: () => startSafari() },
+  { id: 'skirmish', label: 'SKIRMISH', tag: 'HQ vs HQ', lines: ['A random battlefield.', 'Earn funds, deploy your Box,', 'catch wild Pokémon mid-war.'], goal: 'Rout them or take their HQ', next: 'RULES', run: () => startSkirmishSetup() },
+  { id: 'conquest', label: 'CONQUEST', tag: 'CENTERS', lines: ['Three bridges, six teammates.', 'Capture centers to earn points', 'and call reserves.'], goal: 'Take the HQ or hold 2 centers', next: 'SETUP', run: () => startTerritorySetup() },
+  { id: 'tower', label: 'BATTLE TOWER', tag: 'RANKED', lines: ['Ten floors, a commander on each.', 'Rental armies, equal terms:', 'climb for an S rank.'], goal: 'Rank S on every floor', next: 'FLOORS', run: () => startTower() },
+  { id: 'safari', label: 'SAFARI ZONE', tag: 'CATCH RACE', lines: ['Eight days, twelve Safari Balls.', 'Weaken, never knock out:', 'rare ones score more.'], goal: 'Out-catch Blue', next: 'RULES', run: () => startSafari() },
 ];
 function quickPreview(m) { const S = SC.data || (SC.data = {}); if (!S[m.id]) S[m.id] = makeBackdrop(m.id === 'conquest' ? TERRITORY_MAP : m.id === 'tower' ? towerMap(4) : m.id === 'safari' ? safariMap(21, 16) : skirmishMap(412, 16, 11, 12)); return S[m.id]; }
 function quickCols() { return narrowView() || portraitView() ? 1 : 2; }
 function quickDraw() {
-  const W = VIEW.w, H = VIEW.h, narrow = narrowView() || portraitView(), bh = btnH(); rect(0, 0, W, H, UI.bg); SC.hits = [];
+  const W = VIEW.w, H = VIEW.h, narrow = narrowView() || portraitView(), bh = btnH(); rect(0, 0, W, H, UI.bg); SC.hits = []; if (SC.data && SC.data.i != null) { SC.i = SC.data.i; delete SC.data.i; } // back from a mode: that mode keeps the focus
   const bd = quickPreview(QUICK_MODES[SC.i]); drawBackdrop(bd, (W - bd.canvas.width) / 2 - SC.t * 5, (H - bd.canvas.height) / 2, .78);
   const top = screenTitle('QUICK BATTLE', 'Battle the CPU · four ways to play', 5);
-  const foot = footerBand(bh + 12), gap = narrow ? 5 : 8, n = QUICK_MODES.length, cols = quickCols(), rows = Math.ceil(n / cols);
+  const foot = setupFootTop(), gap = narrow ? 5 : 8, n = QUICK_MODES.length, cols = quickCols(), rows = Math.ceil(n / cols);
   const cw = narrow ? W - 16 : Math.min(230, Math.floor((W - 24 - gap) / 2)), ch = Math.min(narrow ? 999 : 150, Math.floor((foot - top - 8 - gap * (rows - 1)) / rows));
   const x0 = narrow ? 8 : Math.round(W / 2 - (cw * 2 + gap) / 2), y0 = top + Math.max(4, Math.round((foot - top - (ch * rows + gap * (rows - 1))) / 2) - 2);
   QUICK_MODES.forEach((m, i) => {
@@ -6290,9 +6309,7 @@ function quickDraw() {
     if (sel && !REDUCED) { const k = SC.t * 2.2; sparkle(x + cw - 6, y + lift + 3 + Math.round(Math.sin(k) * 1), Math.round(1 + (Math.sin(k * 1.7) + 1)), '#fff2b0'); }
     hit(x, y, cw, ch, () => { if (SC.i === i) quickGo(); else { SC.i = i; Audio.sfx('cursor'); } }, m.label);
   });
-  const fy = foot + 6; bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
-  bigButton(W - 96, fy, 90, bh, 'CHOOSE', quickGo, { variant: 'primary' });
-  if (!narrow && W > 330) hintLine(VIEW.touch ? ['tap a card twice'] : [['◂▸', 'mode'], ['Z', 'choose']], W / 2, fy + (bh - 7) / 2, { pill: false });
+  setupFooter({ back: { label: '◂ TITLE', run: () => { Audio.sfx('cancel'); goScene('title'); } }, next: { label: QUICK_MODES[SC.i].next + ' ▸', run: quickGo }, hints: VIEW.touch ? ['tap a card twice'] : [['◂▸', 'mode'], ['Z', 'choose']] });
 }
 function quickGo() { Audio.sfx('select'); QUICK_MODES[SC.i].run(); }
 function quickInput(ev) {
@@ -6329,7 +6346,7 @@ function skirmishDraw() {
   const size = SKIRMISH.sizes[S.size] || SKIRMISH.sizes.m, mapKey = [S.seed, S.level, S.foe, S.biome, S.size, S.diff].join('|'); if (!S.bd || S.bdKey !== mapKey) { S.map = skirmishMap(S.seed, size[0], size[1], S.level + (SK_DIFF[S.diff] || SK_DIFF.normal).level, { foe: S.foe, biome: skirmishBiome(S) }); S.bd = makeBackdrop(S.map); if (S.bdKey && S.bdKey.split('|')[0] !== String(S.seed)) S.rolledAt = SC.t; S.bdKey = mapKey; }
   drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 + 40 - t * 4, (H - S.bd.canvas.height) / 2 + 30, .84); drawCloudShadows(t);
   const narrow = narrowView() || portraitView(), bh = btnH(); SC.hits = []; S.focus = clamp(S.focus || 0, 0, SK_RULES.length - 1);
-  const top = screenTitle('SKIRMISH', narrow ? null : 'Random battlefield · rout the foe or take their HQ', 4), foot = footerBand(bh + 12), fy = foot + 6;
+  const top = setupHeader('SKIRMISH', H >= 220 ? ['RULES', 'TEAM', 'BATTLE'] : null, 0, null, 4), foot = setupFootTop();
   const rh = narrow ? 16 : 14, cardH = narrow ? 58 : clamp(foot - top - 8 - 22 - SK_RULES.length * rh - 40, 50, 66), sideH = 22 + cardH + 14 + SK_RULES.length * rh + 28;
   const sideW = narrow ? W - 12 : Math.min(190, Math.floor(W * .36)), mapW = narrow ? W - 12 : W - 18 - sideW, mapH = narrow ? Math.max(60, foot - 8 - top - sideH) : foot - 10 - top;
   // the map, framed, with a dice to reroll it; it shakes when rolled
@@ -6349,14 +6366,13 @@ function skirmishDraw() {
   y += cardH + 3; { const a = coOf({ co: S.co, root: skirmishRoot() }), b = coOf({ co: S.foe }); text(fitLabel(a.power.name, cw), sx + 6, y, UI.info); textR(fitLabel(b.power.name, cw), sx + sideW - 6, y, UI.info); } y += 11;
   vsRuleRows(S, sx + 4, y, sideW - 8, rh, SK_RULES, S.focus); y += SK_RULES.length * rh + 4;
   if (y + 18 <= pnl.y + pnl.h) { const box = SKIRMISH.slots, rest = Math.max(SKIRMISH.slots + SKIRMISH.box, S.party.length) - box; text(fitLabel('You: ' + box + ' on the map · ' + rest + ' in the Box', sideW - 12), sx + 6, y, UI.muted); text(fitLabel(COS[S.foe].name + ': squad + Ace · 8 in the Box', sideW - 12), sx + 6, y + 9, UI.muted); }
-  bigButton(W - 96, fy, 90, bh, 'PREPARE', () => { Audio.sfx('select'); S.go(); }, { variant: 'primary' }); bigButton(6, fy, 70, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('quick'); }, { variant: 'ghost' });
-  if (!narrow && W > 360) hintLine([['▲▼', 'rule'], ['◂▸', 'change'], ['Z', 'prepare']], W / 2, fy + (bh - 7) / 2, { pill: false });
+  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 0 }); } }, next: { label: 'TEAM ▸', run: () => { Audio.sfx('select'); S.go(); } }, hints: VIEW.touch ? null : [['▲▼', 'rule'], ['◂▸', 'change'], ['Z', 'team']] });
 }
 function skirmishInput(ev) {
   const S = SC.data; if (ev.type === 'key') { const n = SK_RULES.length; S.focus = S.focus || 0;
     if (ev.key === 'up') { S.focus = (S.focus + n - 1) % n; Audio.sfx('cursor'); } else if (ev.key === 'down') { S.focus = (S.focus + 1) % n; Audio.sfx('cursor'); }
     else if (ev.key === 'left' || ev.key === 'right') { const rule = SK_RULES[S.focus]; vsCycle(S, rule, ev.key === 'left' ? -1 : 1); if (rule.k === 'co') S.coAt = SC.t; if (rule.k === 'foe') S.foeAt = SC.t; }
-    else if (ev.key === 'ok' || ev.key === 'next') { Audio.sfx('select'); S.go(); } else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick'); } else if (ev.key === 'mute') Audio.toggle(); return; }
+    else if (ev.key === 'ok' || ev.key === 'next') { Audio.sfx('select'); S.go(); } else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick', { i: 0 }); } else if (ev.key === 'mute') Audio.toggle(); return; }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
 // ============================================================================
@@ -7033,7 +7049,7 @@ function drawLab(st, tableY) {
 function captainChoiceDraw() {
   const W = VIEW.w, H = VIEW.h, t = SC.t, wide = W >= 380 && W > H, bh = btnH(); SC.hits = [];
   rect(0, 0, W, H, '#120f2a');
-  const top = screenTitle('CHOOSE YOUR PARTNER', H >= 240 ? 'Your partner becomes your captain' : null, 5), foot = H - bh - 10;
+  const top = screenTitle('CHOOSE YOUR PARTNER', H >= 240 ? (W >= 300 ? 'It becomes your Ace: it wears the crown and leads your team' : 'It becomes your Ace and leads your team') : null, 5), foot = setupFootTop() - 4;
   const stage = wide ? { x: 6, y: top, w: Math.round(W * .54) - 6, h: foot - top - 4 } : { x: 6, y: top, w: W - 12, h: Math.max(64, Math.round((foot - top) * .48)) };
   const card = wide ? { x: stage.x + stage.w + 6, y: top + 4, w: W - stage.w - 18, h: foot - top - 10 } : { x: 8, y: stage.y + stage.h + 6, w: W - 16, h: foot - stage.y - stage.h - 12 };
   const big = stage.h >= 150 && stage.w >= 240 ? 2 : 1, tableY = stage.y + Math.round(stage.h * .72), gap = Math.min(96, Math.round(stage.w / 3.1));
@@ -7053,11 +7069,14 @@ function captainChoiceDraw() {
       if (animReady(n)) drawAnim(n, cx, by + 1 - hop, t, { sx: grow, sy: grow }); else drawBig(n, cx, by + 1 - hop, { sx: .45 * grow, sy: .45 * grow });
     } else { const wob = !REDUCED && (t + i) % 3 < .3 ? Math.round(Math.sin((t + i) * 40)) : 0; ctx.globalAlpha = .4; ellipse(cx, by + 1, 7, 2, '#000'); ctx.globalAlpha = 1; drawTitleBall(cx + wob, by - 6, 6, t + i); }
   });
+  // each ball's name on the table's edge, so the three choices read at a glance
+  const allNames = STARTERS.every(n => textWidth(DEX[n].name.toUpperCase()) + 4 <= gap); // on a narrow table only the chosen one is named
+  STARTERS.forEach((n, i) => { const cx = Math.round(stage.x + stage.w / 2 + (i - 1) * gap), sel = SC.i === i; if (sel || allNames) textC(DEX[n].name.toUpperCase(), cx, tableY + 15, sel ? '#ffffff' : '#c8b8a0', { outline: '#2a1a10' }); });
   ctx.restore();
   STARTERS.forEach((n, i) => { const cx = Math.round(stage.x + stage.w / 2 + (i - 1) * gap); hit(cx - Math.round(gap / 2) + 1, stage.y, gap - 2, stage.h, () => { if (SC.i === i) confirmStarter(); else starterFocus(i); }, DEX[n].name.toUpperCase()); });
   // the card for the focused partner
   const n = STARTERS[SC.i], c = CAPTAINS[n], d = DEX[n], tok = unfold('starter' + SC.i, card.x, card.y, card.w, card.h, .18);
-  const p = panel(card.x, card.y, card.w, card.h, { header: c.style, headerFill: shade(c.col, -.45), headerCol: '#ffffff', headerRight: 'CAPTAIN', headerRightCol: shade(c.col, .5), border: c.col });
+  const p = panel(card.x, card.y, card.w, card.h, { header: c.style, headerFill: shade(c.col, -.45), headerCol: '#ffffff', headerRight: 'YOUR ACE', headerRightCol: shade(c.col, .5), border: c.col });
   let y = p.cy; const x = card.x + 8, w = card.w - 16, room = card.y + card.h - 6;
   const line = (str, col, bigText2) => { if (y + (bigText2 ? 9 : 7) > room) return false; if (bigText2) bigText(fitLabel(str.toUpperCase(), w), x, y, col, { shadow: UI.inset }); else text(fitLabel(str, w), x, y, col); y += bigText2 ? 12 : 9; return true; };
   if (y + 9 <= room) { bigText(d.name.toUpperCase(), x, y, c.col, { shadow: UI.inset }); let bx = x + textWidth(d.name.toUpperCase(), BIG) + 6; for (const tp of d.types) { if (bx + 24 > x + w) break; bx += typeBadge(tp, bx, y, 24) + 2; } y += 12; }
@@ -7068,8 +7087,7 @@ function captainChoiceDraw() {
   const stats = [['HP', d.base.hp], ['ATK', d.base.atk], ['DEF', d.base.def], ['SP.A', d.base.spa], ['SPE', d.base.spe]];
   if (y + 12 + stats.length * 9 <= room) { y += 2; sectionLabel('Strengths', x, y, w, UI.gold); y += 10; for (const [lb, v] of stats) { text(lb, x, y, UI.muted); bar(x + 28, y + 1, w - 28, 5, v / 110, v >= 60 ? c.col : shade(c.col, -.25)); y += 9; } }
   unfoldEnd(tok);
-  const fy = foot + 3; bigButton(6, fy, 64, bh, 'BACK', () => { Audio.sfx('cancel'); goScene('title'); }, { variant: 'ghost' });
-  const cw = Math.min(150, W - 82); bigButton(W - cw - 6, fy, cw, bh, 'CHOOSE ' + d.name.toUpperCase(), confirmStarter, { variant: 'primary', small: textWidth('CHOOSE ' + d.name.toUpperCase(), BIG) > cw - 8 });
+  setupFooter({ back: { label: '◂ TITLE', run: () => { Audio.sfx('cancel'); goScene('title'); } }, next: { label: 'CHOOSE ' + d.name.toUpperCase() + ' ▸', run: confirmStarter }, hints: VIEW.touch ? ['tap a ball'] : [['◂▸', 'partner'], ['Z', 'choose']] });
 }
 function starterFocus(i) { if (SC.i === i) return; SC.i = i; SC.popAt = SC.t; Audio.sfx('catch'); }
 function confirmStarter() { Audio.sfx('select'); pickStarter(STARTERS[SC.i]); }
@@ -7198,7 +7216,7 @@ function drawOutposts() {
 function territorySetupDraw() {
   const W = VIEW.w, H = VIEW.h, S = SC.data, t = SC.t, bh = btnH(); S.captain = CAPTAINS[S.captain] ? S.captain : 7; rect(0, 0, W, H, UI.bg); SC.hits = [];
   drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 - t * 4, (H - S.bd.canvas.height) / 2, .82);
-  const top = screenTitle('CONQUEST', H >= 240 ? (W >= 220 ? 'Three Bridges · centers, points and reserves' : 'Three Bridges') : null, 5), by = H - bh - 6, wide = W >= 420;
+  const top = setupHeader('CONQUEST', H >= 220 ? ['SETUP', 'BATTLE'] : null, 0, null, 5), by = setupFootTop() - 2, wide = W >= 420;
   const colW = wide ? Math.min(250, Math.floor((W - 20) / 2)) : Math.min(W - 12, 300), x0 = wide ? Math.round(W / 2 - colW - 4) : Math.round((W - colW) / 2);
   // captains
   const cw = Math.floor((colW - 8) / 3), chh = H >= 260 ? 50 : 38, cy0 = top + 2;
@@ -7224,8 +7242,7 @@ function territorySetupDraw() {
   const mapTop = wide ? y + 2 : rY + 4, avail = by - 6 - mapTop;
   if (avail > 50) { const bd = S.bd, sc = Math.min(colW / bd.canvas.width, avail / bd.canvas.height), mw = Math.floor(bd.canvas.width * sc), mh = Math.floor(bd.canvas.height * sc), mx = (wide ? x0 : x0) + Math.floor((colW - mw) / 2), my = mapTop + Math.floor((avail - mh) / 2);
     rect(mx - 2, my - 2, mw + 4, mh + 4, UI.inset); ctx.drawImage(bd.canvas, mx, my, mw, mh); outline(mx - 1, my - 1, mw + 2, mh + 2, UI.border2); }
-  bigButton(x0, by, Math.floor(colW * .3), bh, 'BACK', () => goScene('quick'), { variant: 'ghost', hot: SC.i === 3 });
-  bigButton(x0 + Math.floor(colW * .3) + 4, by, (wide ? colW * 2 + 8 : colW) - Math.floor(colW * .3) - 4, bh, 'START', () => launchTerritory(S.seed, false, [S.captain, S.captain]), { variant: 'primary', hot: SC.i === 4 });
+  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 1 }); } }, next: { label: 'BATTLE! ▸', run: () => launchTerritory(S.seed, false, [S.captain, S.captain]), variant: 'danger' }, hints: VIEW.touch ? ['tap your Ace'] : [['◂▸', 'your Ace'], ['Z', 'battle']] });
 }
 
 // ---------------------------------------------------------------- the briefing before a front
@@ -7236,7 +7253,7 @@ function briefGo(S) { if (SAVE) { SAVE.co = S.co; writeSave(); } Audio.sfx('sele
 function briefDraw() {
   const S = SC.data, ch = CHAPTERS[S.idx], W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(), bh = btnH(); if (!S.bd) S.bd = makeBackdrop(ch.map);
   rect(0, 0, W, H, UI.bg); drawBackdrop(S.bd, (W - S.bd.canvas.width) / 2 - t * 3, (H - S.bd.canvas.height) / 2, .8); SC.hits = [];
-  const top = screenTitle('FRONT ' + ch.num + ' · ' + ch.title.toUpperCase(), narrow ? null : objectiveTextFor(ch.map.objective, ch.map), 4), foot = narrow ? H - 2 * (bh + 4) - 8 : footerBand(bh + 12);
+  const top = setupHeader('FRONT ' + ch.num + ' · ' + ch.title.toUpperCase(), H >= 220 ? ['MISSION', 'TEAM', 'BATTLE'] : null, 0, null, 4), foot = setupFootTop();
   const co = ch.co ? COS[ch.co] : null, sp = ch.foe ? SPEAKERS[ch.foe] : null, as = co ? null : { tr: sp ? sp.tr : 'rocketgrunt', name: ch.foe || 'Rocket', col: sp ? sp.col : UI.red };
   const lw = narrow ? W - 12 : Math.min(250, Math.floor(W * .42)), lx = 6, ly = top + 2, cardW = narrow ? 70 : 84, cardH = narrow ? 60 : 76;
   // the enemy commander and their words
@@ -7268,9 +7285,7 @@ function briefDraw() {
   const room = my + mh - 6 - y; if (room >= 40) { const sc = Math.min((mw - 16) / S.bd.canvas.width, room / S.bd.canvas.height), pw = Math.floor(S.bd.canvas.width * sc), ph = Math.floor(S.bd.canvas.height * sc), px0 = mx + Math.round((mw - pw) / 2), py0 = y + 2;
     rect(px0 - 2, py0 - 2, pw + 4, ph + 4, UI.inset); ctx.drawImage(S.bd.canvas, px0, py0, pw, ph); drawWarPreview(ch.map, S.bd, px0, py0, pw, ph, 0); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border2); }
   const back = () => { Audio.sfx('cancel'); openRoute({ sel: S.idx }); };
-  if (narrow) { footerBand(2 * (bh + 4) + 4); bigButton(6, H - 2 * (bh + 4), W - 12, bh, 'PREPARE', () => briefGo(S), { variant: 'primary' }); bigButton(6, H - bh - 4, W - 12, bh, 'ROUTE', back, { variant: 'ghost' }); return; }
-  const fy = foot + 6; bigButton(W - 96, fy, 90, bh, 'PREPARE', () => briefGo(S), { variant: 'primary' }); bigButton(6, fy, 70, bh, 'ROUTE', back, { variant: 'ghost' });
-  if (W > 360) hintLine(S.cos.length > 1 ? [['◂▸', 'commander'], ['Z', 'prepare']] : [['Z', 'prepare'], ['X', 'route']], W / 2, fy + (bh - 7) / 2, { pill: false });
+  setupFooter({ back: { label: '◂ ROUTE', run: back }, next: { label: 'TEAM ▸', run: () => briefGo(S) }, hints: VIEW.touch ? null : S.cos.length > 1 ? [['◂▸', 'commander'], ['Z', 'team']] : [['Z', 'team'], ['X', 'route']] });
 }
 function briefInput(ev) {
   const S = SC.data; if (ev.type === 'key') { if (ev.key === 'left' || ev.key === 'right') { if (S.cos.length > 1) vsCycle(S, { k: 'co', vals: X => X.cos }, ev.key === 'left' ? -1 : 1); } else if (ev.key === 'ok' || ev.key === 'next') briefGo(S); else if (ev.key === 'back') { Audio.sfx('cancel'); openRoute({ sel: S.idx }); } else if (ev.key === 'mute') Audio.toggle(); return; }
@@ -7348,7 +7363,7 @@ function launchTowerFloor(T) {
   const i = T.i, F = TOWER[i], map = towerMap(i), level = F.level, R = loadRecords(); R.towerCo = T.co; writeRecords(R);
   const army = TOWER_RENTALS.map(n => Object.assign(partyUnit(n, level, 1), { loaner: true }));
   const ch = { title: 'Battle Tower ' + (i + 1) + 'F', num: 0, label: 'BATTLE TOWER · ' + (i + 1) + 'F', level, slots: 4, par: F.par, map, rewards: {} };
-  const P = { chapter: ch, party: army, bag: {}, deploy: [], preset: true, back: () => goScene('tower', T) }; autoDeploy(P);
+  const P = { chapter: ch, party: army, bag: {}, deploy: [], preset: true, steps: ['FLOOR', 'TEAM', 'BATTLE'], backLabel: '◂ FLOOR', back: () => goScene('tower', T) }; autoDeploy(P);
   P.start = () => {
     const deployed = P.deploy.map(k => Object.assign({}, army[k], { pid: null })), box = army.filter((p, k) => !P.deploy.includes(k)).map(p => Object.assign({}, p, { pid: null }));
     const onMap = map.units.filter(u => u.team == null || u.team === 1).map(u => u.mon);
@@ -7373,7 +7388,7 @@ function towerEnd(result) {
 // rank earned there; floors open one by one. Beside it the chosen floor: the commander's card and line, its rules, your
 // commander and the record.
 function towerLayout() {
-  const W = VIEW.w, H = VIEW.h, narrow = narrowView() || portraitView(), bh = btnH(), top = 4 + (narrow ? 18 : 26), foot = H - (narrow ? 2 * (bh + 4) + 8 : bh + 12);
+  const W = VIEW.w, H = VIEW.h, narrow = narrowView() || portraitView(), bh = btnH(), top = H >= 220 ? 35 : 20, foot = setupFootTop();
   const tw = narrow ? W - 12 : Math.min(244, Math.floor(W * .42) - 6), rowH = narrow ? clamp(Math.floor((foot - top) * .44 / 10.6), 14, 18) : clamp(Math.floor((foot - top - 22) / 10), 14, 24);
   const roof = narrow ? 10 : 18, th = roof + rowH * 10 + 4, tx = narrow ? 6 : 12, ty = top + (narrow ? 2 : Math.max(2, Math.floor((foot - top - th) / 2)));
   const px = narrow ? 6 : tx + tw + 8, py = narrow ? ty + th + 6 : top + 2, pw = narrow ? W - 12 : W - px - 6, ph = foot - 6 - py;
@@ -7384,7 +7399,7 @@ function towerDraw() {
   rect(0, 0, W, H, '#100c24'); for (let y = 0; y < H; y += 2) { ctx.globalAlpha = .5 * (1 - y / H); hline(0, y, W, '#2a1c5a'); } ctx.globalAlpha = 1; // dusk sky
   for (let k = 0; k < 40; k++) { const sx = (k * 97) % W, sy = (k * 53) % Math.round(H * .6), tw2 = Math.sin(t * 2 + k) > .6; px(sx, sy, tw2 ? '#ffffff' : '#6a64a0'); }
   const recs = Object.values(T.recs.tower || {}), sub = recs.length ? 'Cleared ' + recs.length + '/' + TOWER.length + ' · S ranks ' + recs.filter(r => r.rank === 'S').length + ' · best total ' + recs.reduce((a, r) => a + r.total, 0) : 'Ten floors · one commander on each · ranked S to C';
-  SC.hits = []; screenTitle('BATTLE TOWER', L.narrow ? null : sub, 4);
+  SC.hits = []; setupHeader('BATTLE TOWER', H >= 220 ? ['FLOOR', 'TEAM', 'BATTLE'] : null, 0, null, 4);
   // the tower: a spire, then the floors from the top (10F) down to 1F
   const { tx, ty, tw, rowH } = L, cx = tx + Math.round(tw / 2);
   for (let k = 0; k < L.roof; k++) { const half = Math.round((tw / 2 - 6) * (k + 1) / L.roof); hline(cx - half, ty + k, half * 2, k % 3 === 0 ? '#5a4a9a' : '#46387e'); } vline(cx, ty - 6, 6, '#c8c0e8'); rect(cx + 1, ty - 6, 5, 3, UI.red);
@@ -7425,17 +7440,15 @@ function towerDraw() {
   for (const [label, list, foe] of armies) { if (!list.length || y + 30 > p.y + p.h - 4) continue; sectionLabel(label, p.x + 8, y, p.w - 16, foe ? '#ff9a9a' : '#8ab4ff'); y += 10;
     list.slice(0, per * 2).forEach((n, k) => { const ix = p.x + 6 + (k % per) * 20, iy = y + Math.floor(k / per) * 16; if (iy + 16 > p.y + p.h - 3) return; const bob = !REDUCED && k === Math.floor(t * 3) % list.length ? -1 : 0; ctx.drawImage(monIcon(n, foe), ix - 2, iy + bob, 24, 18); if (foe && k === 0) drawCrown(ix + 13, iy); });
     y += Math.ceil(Math.min(list.length, per * 2) / per) * 16 + 4; }
-  // footer
-  const back = () => { Audio.sfx('cancel'); goScene('quick'); };
-  if (L.narrow) { footerBand(2 * (L.bh + 4) + 4); bigButton(6, H - 2 * (L.bh + 4), W - 12, L.bh, 'CHALLENGE', T.go, open ? { variant: 'primary' } : { disabled: true }); bigButton(6, H - L.bh - 4, W - 12, L.bh, 'BACK', back, { variant: 'ghost' }); return; }
-  const fy = footerBand(L.bh + 12) + 6; bigButton(W - 106, fy, 100, L.bh, 'CHALLENGE', T.go, open ? { variant: 'primary' } : { disabled: true }); bigButton(6, fy, 70, L.bh, 'BACK', back, { variant: 'ghost' });
-  if (W > 360) hintLine([['▲▼', 'floor'], ['◂▸', 'commander'], ['Z', 'challenge']], W / 2, fy + (L.bh - 7) / 2, { pill: false });
+  // the tower's record so far, under the floors
+  if (!L.narrow && recs.length && ty + L.th + 12 <= L.foot - 4) textC(fitLabel(sub, L.tw), tx + tw / 2, ty + L.th + 4, UI.muted);
+  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 2 }); } }, next: { label: 'TEAM ▸', run: T.go, disabled: !open }, hints: VIEW.touch ? null : [['▲▼', 'floor'], ['◂▸', 'commander'], ['Z', 'team']] });
 }
 function towerInput(ev) {
   const T = SC.data; if (ev.type === 'key') {
     if (ev.key === 'up') { T.i = Math.min(TOWER.length - 1, T.i + 1); T.at = SC.t; Audio.sfx('cursor'); } else if (ev.key === 'down') { T.i = Math.max(0, T.i - 1); T.at = SC.t; Audio.sfx('cursor'); }
     else if (ev.key === 'left' || ev.key === 'right') vsCycle(T, { k: 'co', vals: S => S.cos }, ev.key === 'left' ? -1 : 1);
-    else if (ev.key === 'ok' || ev.key === 'next') T.go(); else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick'); } else if (ev.key === 'mute') Audio.toggle(); return;
+    else if (ev.key === 'ok' || ev.key === 'next') T.go(); else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick', { i: 2 }); } else if (ev.key === 'mute') Audio.toggle(); return;
   }
   if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); }
 }
@@ -7520,15 +7533,36 @@ function startSafari() {
   // a small collection is topped up to four with loaners (plain stats, never kept)
   const team = party.concat(skirmishLoaners(party, level, 4 - party.length).map(l => Object.assign(partyUnit(l.num, l.level, 1), { loaner: true })));
   const ch = { title: 'Safari Zone', num: 0, label: 'SAFARI ZONE', level, slots: 4, par: SAFARI.days, map, rewards: {} };
-  const P = { chapter: ch, party: team, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: { pokeball: SAFARI.balls }, deploy: [], preset, back: () => goScene('quick') }; autoDeploy(P);
+  const P = { chapter: ch, party: team, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: { pokeball: SAFARI.balls }, deploy: [], preset, steps: ['RULES', 'TEAM', 'BATTLE'], backLabel: '◂ RULES', back: () => goScene('safariBrief', B2) }; autoDeploy(P);
+  const B2 = { P, map, level, best: loadRecords().safari || 0 };
   P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, team[i], { pid: preset || i >= party.length ? null : i })); goScene('card', { chapter: ch, next: () => {
     BACKDROP = makeBackdrop(map);
     startBattle(map, deployed, { pokeball: SAFARI.balls }, { skirmish: true, safari: { days: SAFARI.days, score: [0, 0], catches: [[], []], balls: [SAFARI.balls, SAFARI.balls], preset }, seed: seed * 17 + 1, defer: true, cos: ['you', 'blue'], captain: preset ? { pid: null, root: 4, chapter: 8 } : { pid: SAVE.captainPid, root: SAVE.starter, chapter: 8 } });
     B.map.def = map; SC.data = { preset }; const go = () => { goScene('battle'); SC.data = { preset }; beginPhase(0, true); };
     if (PARAMS.has('nostory')) go(); else { goScene('battle'); startDialog([{ who: 'Blue', text: 'The Safari Zone! Eight days, twelve Safari Balls each. Whoever brings back the *rarest* haul wins.' }, { who: 'Blue', text: 'Knock one out and it counts for *nothing*, and a wounded one may *run off* at dawn. Try to keep up. Smell ya later!' }], go); }
   } }); };
-  goScene('prep', P);
+  goScene('safariBrief', B2);
 }
+// The Safari's RULES step: the meadow, what each rarity scores (with who you may meet), the balls and the days, what
+// makes a catch worth nothing, Blue's team racing yours, and your best haul. TEAM ▸ picks who goes in.
+function safariBriefDraw() {
+  const D = SC.data, W = VIEW.w, H = VIEW.h, t = SC.t, narrow = narrowView() || portraitView(); if (!D.bd) D.bd = makeBackdrop(D.map); rect(0, 0, W, H, UI.bg); drawBackdrop(D.bd, (W - D.bd.canvas.width) / 2 - t * 3, (H - D.bd.canvas.height) / 2, .8); SC.hits = [];
+  const top = setupHeader('SAFARI ZONE', H >= 220 ? ['RULES', 'TEAM', 'BATTLE'] : null, 0, null, 4), foot = setupFootTop();
+  const mw = narrow ? W - 12 : Math.min(250, Math.floor(W * .42)), rx = narrow ? 6 : 12 + mw, rw = narrow ? W - 12 : W - rx - 6;
+  // the meadow, with Blue's team on the far side
+  const mapH = narrow ? Math.min(90, Math.floor((foot - top) * .32)) : foot - top - 8, sc = Math.min((mw - 8) / D.bd.canvas.width, (mapH - 8) / D.bd.canvas.height), pw = Math.floor(D.bd.canvas.width * sc), ph = Math.floor(D.bd.canvas.height * sc), px0 = 6 + Math.floor((mw - pw) / 2), py0 = top + 2 + Math.floor((mapH - ph) / 2);
+  rrect(px0 - 4, py0 - 4, pw + 8, ph + 8, UI.inset, 2); ctx.drawImage(D.bd.canvas, px0, py0, pw, ph); outline(px0 - 1, py0 - 1, pw + 2, ph + 2, UI.border); drawWarPreview(D.map, D.bd, px0, py0, pw, ph);
+  // the rules
+  const ry = narrow ? py0 + ph + 8 : top + 2, rh = foot - 6 - ry, p = panel(rx, ry, rw, rh, { header: 'OUT-CATCH BLUE', headerRight: D.best ? 'BEST ' + D.best + ' PTS' : null, headerRightCol: UI.gold, headerFill: '#1c4a2a' }); let y = p.cy;
+  const line = (icon, col, s) => { if (y + 9 > ry + rh - 4) return; iconAt(icon, rx + 6, y - 1, col); const ls = wrap(s, rw - 22).slice(0, 2); ls.forEach((l, k) => text(l, rx + 18, y + k * 9, UI.ink)); y += ls.length * 9 + 3; };
+  line('ball', UI.red, SAFARI.balls + ' Safari Balls each and ' + SAFARI.days + ' days. Weaken a wild Pokémon, then throw.');
+  line('flag', UI.gold, 'The bigger haul when the days run out wins. Each catch scores by rarity:');
+  for (const T of SAFARI.tiers) { if (y + 18 > ry + rh - 4) break; text(T.name, rx + 18, y + 5, T.col); textR(T.pts + (T.pts > 1 ? ' pts' : ' pt'), rx + 18 + 74, y + 5, T.col); const ix = rx + 18 + 80, per = Math.max(1, Math.floor((rx + rw - 6 - ix) / 18)); T.mons.slice(0, per).forEach((n, k) => ctx.drawImage(monIcon(n, true), ix + k * 18, y, 24, 18)); y += 18; }
+  y += 2; line('skull', '#ff9a9a', 'A knocked-out Pokémon scores nothing, and a wounded one may run off at dawn.');
+  line('vs', '#8ab4ff', 'Blue brings a team of four: it fights yours when that pays.');
+  setupFooter({ back: { label: '◂ MODES', run: () => { Audio.sfx('cancel'); goScene('quick', { i: 3 }); } }, next: { label: 'TEAM ▸', run: () => { Audio.sfx('select'); goScene('prep', D.P); } }, hints: VIEW.touch ? null : [['Z', 'team'], ['X', 'modes']] });
+}
+function safariBriefInput(ev) { if (ev.type === 'key') { if (ev.key === 'ok' || ev.key === 'next') { Audio.sfx('select'); goScene('prep', SC.data.P); } else if (ev.key === 'back') { Audio.sfx('cancel'); goScene('quick', { i: 3 }); } else if (ev.key === 'mute') Audio.toggle(); return; } if (ev.type === 'up') { const h = hitAt(ev.x, ev.y); if (h) h.run(); } }
 // Safari Pokémon are skittish: at dawn each wounded one may run off into the grass (a fifth of the time).
 const SAFARI_FLEE = .2;
 function safariFlee() { if (!B || !B.safari) return []; const out = []; for (const u of alive(2)) if (u.hp < u.maxHp && rnd() < SAFARI_FLEE) { u.hp = 0; u.fled = true; out.push(u); } return out; }
@@ -7660,7 +7694,7 @@ function pickStarter(num) { SAVE.party = [partyUnit(num, 5), partyUnit(16, 3)]; 
 function continueCampaign() { SAVE = loadSave(); if (!SAVE) { startNewGame(); return; } openRoute(); }
 function prepChapter(idx) {
   migrateCaptain(SAVE);
-  const ch = CHAPTERS[idx]; const P = { chapter: ch, party: SAVE.party, bag: SAVE.bag, deploy: [], start: null, noCaptain: idx >= 3 && !!SAVE.co && SAVE.co !== 'you' && coUnlocked(SAVE).includes(SAVE.co), back: () => openRoute({ sel: idx }) };
+  const ch = CHAPTERS[idx]; const P = { chapter: ch, party: SAVE.party, bag: SAVE.bag, deploy: [], start: null, noCaptain: idx >= 3 && !!SAVE.co && SAVE.co !== 'you' && coUnlocked(SAVE).includes(SAVE.co), steps: ['MISSION', 'TEAM', 'BATTLE'], backLabel: '◂ MISSION', back: () => briefChapter(idx) };
   autoDeploy(P);
   P.start = () => { const deployed = P.deploy.map(i => Object.assign({}, SAVE.party[i], { pid: i })); goScene('card', { chapter: ch, next: () => launchChapter(idx, deployed) }); };
   goScene('prep', P);
@@ -7764,7 +7798,7 @@ function startSkirmishSetup() {
     if (SAVE && !preset) { SAVE.skirmishSetup = { co: S.co, foe: S.foe, funds: S.funds, weather: S.weather, biome: S.biome, size: S.size, diff: S.diff }; writeSave(); }
     // loaners (plain stats, never saved to the collection) make up an army of twelve
     const army = party.concat(skirmishLoaners(party, S.level, SKIRMISH.slots + SKIRMISH.box - party.length).map(l => Object.assign(partyUnit(l.num, l.level, 1), { loaner: true })));
-    const P = { chapter: ch, party: army, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: preset ? { pokeball: 3 } : SAVE.bag, deploy: [], preset, back: () => goScene('skirmish', S) }; autoDeploy(P);
+    const P = { chapter: ch, party: army, captain: preset ? null : (migrateCaptain(SAVE), SAVE.captainPid), bag: preset ? { pokeball: 3 } : SAVE.bag, deploy: [], preset, steps: ['RULES', 'TEAM', 'BATTLE'], backLabel: '◂ RULES', back: () => goScene('skirmish', S) }; autoDeploy(P);
     P.start = () => {
       const pid = i => i < party.length ? i : null, deployed = P.deploy.map(i => Object.assign({}, army[i], { pid: pid(i) })), box = army.map((p, i) => Object.assign({}, p, { pid: pid(i) })).filter((p, i) => !P.deploy.includes(i));
       const onMap = map.units.filter(u => u.team == null || u.team === 1).map(u => u.mon), D = SK_DIFF[S.diff] || SK_DIFF.normal;
@@ -7806,7 +7840,7 @@ function frame(t) {
     if (ev.type === 'key' && ev.key === 'mute' && SC.name !== 'battle') { Audio.toggle(); continue; }
     switch (SC.name) {
       case 'journey': journeyInput(ev); break; case 'territory': case 'territoryResults': territorySceneInput(ev); break; case 'title': titleInput(ev); break; case 'starter': starterInput(ev); break; case 'card': cardInput(ev); break; case 'story': storyInput(ev); break;
-      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break; case 'route': routeInput(ev); break; case 'tower': towerInput(ev); break; case 'rank': rankInput(ev); break; case 'brief': briefInput(ev); break; case 'cos': coRoomInput(ev); break; case 'options': optionsInput(ev); break;
+      case 'prep': prepInput(ev); break; case 'battle': battleInput(ev); break; case 'results': resultsInput(ev); break; case 'credits': creditsInput(ev); break; case 'skirmish': skirmishInput(ev); break; case 'versus': versusInput(ev); break; case 'quick': quickInput(ev); break; case 'route': routeInput(ev); break; case 'tower': towerInput(ev); break; case 'rank': rankInput(ev); break; case 'brief': briefInput(ev); break; case 'cos': coRoomInput(ev); break; case 'options': optionsInput(ev); break; case 'safariBrief': safariBriefInput(ev); break;
     }
   }
   // update
@@ -7816,7 +7850,7 @@ function frame(t) {
   switch (SC.name) {
     case 'loading': rect(0, 0, VIEW.w, VIEW.h, '#0e0c10'); textC('loading sprites…', VIEW.w / 2, VIEW.h / 2, UI.muted); break;
     case 'journey': journeyDraw(); break; case 'territory': territorySetupDraw(); break; case 'territoryResults': territoryResultsDraw(); break; case 'title': titleDraw(); break; case 'starter': starterDraw(); break; case 'card': cardDraw(); break; case 'story': storyDraw(); break;
-    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break; case 'route': routeDraw(); break; case 'tower': towerDraw(); break; case 'rank': rankDraw(); break; case 'brief': briefDraw(); break; case 'cos': coRoomDraw(); break; case 'options': optionsDraw(); break;
+    case 'prep': prepDraw(); break; case 'battle': battleDraw(); break; case 'results': resultsDraw(); break; case 'credits': creditsDraw(); break; case 'skirmish': skirmishDraw(); break; case 'versus': versusDraw(); break; case 'quick': quickDraw(); break; case 'route': routeDraw(); break; case 'tower': towerDraw(); break; case 'rank': rankDraw(); break; case 'brief': briefDraw(); break; case 'cos': coRoomDraw(); break; case 'options': optionsDraw(); break; case 'safariBrief': safariBriefDraw(); break;
   }
   // every scene change closes and reopens a Poké Ball over the screen (see captureTransition)
   drawTransition(dt);
