@@ -201,6 +201,14 @@ async function main() {
       const t0 = Date.now(); let i = 0; while (Date.now() - t0 < +(process.env.PK_DUEL_MS || 5600)) { await shot((mobile ? 'duelm-' : 'duel-') + (process.env.PK_KO ? 'ko-' : '') + String(i).padStart(2, '0')); i++; await sleep(40); }
       out.push('mode after: ' + await ev('__pk.BT.mode'));
     }
+    if (script === 'fx' || script === 'fx-m') {
+      // attack animations, moment by moment (tools/fx-lab.js): PK_FX='{"moves":["Ember","Surf"],"view":"duel"}' paints a
+      // row per move into artifacts/fx-PK_NAME.png ("view":"board" shows the strike on the map instead of the scene)
+      await nav('silent&nosave'); await sleep(400); const spec = process.env.PK_FX || '{"moves":["Ember"]}';
+      out.push('prepare: ' + await ev(fs.readFileSync(path.join(__dirname, 'fx-lab.js'), 'utf8') + '; fxLabPrepare(' + spec + ')')); await sleep(2500);
+      out.push('render: ' + await ev('fxLabRender(' + spec + ')'));
+      const sz = JSON.parse(out[out.length - 1].slice(8) || '{}'); if (sz.w) { const r = await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: sz.w, height: sz.h, scale: 1 }, captureBeyondViewport: true }); fs.writeFileSync(path.join(ROOT, 'artifacts', 'fx-' + (process.env.PK_NAME || 'lab') + (mobile ? '-m' : '') + '.png'), Buffer.from(r.result.data, 'base64')); }
+    }
     if (script === 'vs' || script === 'vs-m') {
       // the versus setup with its match rules, then a capture-the-flag arena with fog and a king-of-the-hill arena
       await nav('versus=5&silent&nosave'); await sleep(500); await shot('vs-setup');

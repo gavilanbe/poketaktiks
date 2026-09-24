@@ -253,6 +253,17 @@ Only Scouts and Strikers follow up, with a lead of at least 10 speed.
   bridge, town, cave, base, volcano, snow) with team-coloured HP plates,
   Black/White animated sprites, charge auras, impact frames, huge damage numbers,
   muzzle flashes, explosions, smoke and bouncing debris, weather and a KO stamp.
+- **Attacks**: every move has its own choreography (attackfx.js), in the scene and,
+  smaller, on the board: a wind-up on the attacker (a charge gathering at its
+  mouth, an aura, a glint, a crouch), the travel and an impact in the type's
+  colours. Ember throws three embers, Flamethrower a widening stream, Fire Blast
+  a fireball that bursts into 大; Surf rolls a breaking wave, Hydro Pump a thick
+  jet; Thunder gathers a storm cloud and strikes from the sky; Earthquake stomps
+  and cracks race to the target, Dig burrows and erupts under it; Rock Slide
+  drops boulders; Psychic lifts its target and slams it down; Bite and Crunch
+  snap fangs shut; claws rake, chops cross, Megahorn charges behind a horn of
+  light. Targets react to the type (jolted, scorched, frozen still, flattened).
+  Criticals and super-effective hits escalate; reduced motion keeps it calm.
 - **Catching**: a spinning throw, an open ball with a red beam, bounces, glowing
   shakes, GOTCHA! and the flight to the PC.
 - **Sending out and recalling**: a Pokémon deployed from the PC comes out the
@@ -306,7 +317,11 @@ and its stars, and UI bounds at phone and desktop sizes.
 Browser walks (Chrome over the DevTools protocol) save screenshots to
 `artifacts/`: `node tools/cdp.cjs <smoke|flow|mech|mobile|ui|ui2|duel|vs|title|tiles|scenes>`
 (append `-m` for a phone viewport), and `PK_Q=… PK_EXPR=… PK_NAME=… node
-tools/cdp.cjs page` for a one-off capture.
+tools/cdp.cjs page` for a one-off capture. `PK_FX='{"moves":["Surf","Thunder"]}'
+PK_NAME=… node tools/cdp.cjs fx` plays moves through the real exchange with a
+fixed clock and paints the same beats of each (wind-up, travel, impact,
+aftermath) into one sheet, `artifacts/fx-….png` (`"view":"board"` for the map;
+`"crit":true` or `"miss":true` to force either).
 
 **Languages.** The code is written in English; `i18n.js` translates at the text
 layer, so whatever is drawn or measured goes through `TRX()` and a layout

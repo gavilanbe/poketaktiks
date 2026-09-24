@@ -147,7 +147,7 @@ function nextAnim() {
   if (q.kind === 'event') { setupEvent(q); }
   if (q.kind === 'duel') { startDuel(q); queueRecalls(q.events); }
   if (q.kind === 'move') { q.unit.fx.dx = 0; q.unit.fx.dy = 0; q.unit.fx.walk = true; q.i = 0; q.dur = (BT.fast ? .05 : .11); if (q.path.length > 1) { const l = q.path[q.path.length - 1]; if (!unitVisible(q.unit) || !unitVisible(l)) centerCam((q.path[0].x + l.x) / 2, (q.path[0].y + l.y) / 2); } }
-  if (q.kind === 'strike') { q.dur = BT.fast ? .3 : .5; centerCamBetween(q.att, q.def); }
+  if (q.kind === 'strike') { q.style = atkStyle(q.move); q.dur = (BT.fast ? .3 : .5) * (q.style.board || 1); centerCamBetween(q.att, q.def); } // big moves take a little longer
   if (q.kind === 'msg') { q.dur = BT.fast ? .4 : .9; }
   if (q.kind === 'wait') { q.dur = BT.fast ? q.t2 * .3 : q.t2; }
   if (q.kind === 'fn') { q.fn(); nextAnim(); }
@@ -223,9 +223,14 @@ function updateAnim(dt) {
     let off = 0; if (k < .3) off = -easeOut(k / .3) * 4; else if (k < .45) off = lerp(-4, 14, easeIn((k - .3) / .15)); else off = lerp(14, 0, easeOut((k - .45) / .55));
     if (q.ranged) off = k < .3 ? -easeOut(k / .3) * 3 : k < .45 ? lerp(-3, 6, (k - .3) / .15) : lerp(6, 0, easeOut((k - .45) / .55));
     A.fx.dx = dx * off; A.fx.dy = dy * off; A.fx.sx = k < .3 ? 1 - k * .3 : 1; A.fx.sy = k < .3 ? 1 + k * .3 : 1;
+    // the move's own look (attackfx.js): its charge from the start, its travel from .3, its impact at .45
+    const pose = q.style && q.style.pose; if (pose === 'leap' && k >= .3 && k < .45) A.fx.dy -= Math.round(Math.sin((k - .3) / .15 * Math.PI) * 12); // Body Slam hops on
+    if (pose === 'burrow') { const b = k < .3 ? k / .3 : k < .5 ? 1 : Math.max(0, 1 - (k - .5) / .3); A.fx.alpha = 1 - .75 * b; A.fx.dy += Math.round(b * 6); } // Dig goes under
+    if (!q.charged) { q.charged = true; atkWindup(boardAtkCtx(q)); }
     if (!q.hitDone && k >= .45) { q.hitDone = true; impact(q); }
-    if (q.ranged && k >= .3 && k < .45 && !q.projDone) { q.projDone = true; spawnProjectile(A, D, q.move); }
-    if (k >= 1) { A.fx.dx = A.fx.dy = 0; A.fx.sx = A.fx.sy = 1; D.fx.dx = D.fx.dy = 0; nextAnim(); }
+    if (k >= .3 && !q.projDone) { q.projDone = true; atkLaunch(boardAtkCtx(q)); }
+    if (q.react && q.hitDone && k < .92) { const hk = (k - .45) * q.dur; D.fx.tint = q.react === 'shock' ? (Math.floor(hk * 22) % 2 ? '#fff7a0' : '#3a3200') : q.react === 'chill' ? '#bde4f8' : Math.floor(hk * 16) % 2 ? '#ff8a40' : null; }
+    if (k >= 1) { A.fx.dx = A.fx.dy = 0; A.fx.sx = A.fx.sy = 1; D.fx.dx = D.fx.dy = 0; if (pose === 'burrow') A.fx.alpha = 1; if (q.react) D.fx.tint = null; nextAnim(); }
     return;
   }
   if (q.kind === 'event') {
@@ -255,15 +260,21 @@ function stepFx(u, x, y, land) {
   else spawnParts(cx, fy, 3, col, { speed: 20, life: .35, grav: -10, flat: true });
   if (id === 'tall' && !REDUCED) for (let i = 0; i < (land ? 3 : 2); i++) spawnSprite('leaf', cx + (i - 1) * 6, fy - 8, { size: 3, life: .6, col: '#3d8a3c', col2: '#a6dc7c', vx: (i - 1) * 20 + (vrnd() - .5) * 10, vy: -34 - vrnd() * 16, grav: 90, rot: i, spin: 10 });
 }
-function spawnProjectile(A, D, move) { const ax = A.x * TILE + TILE / 2, ay = A.y * TILE + 12, bx = D.x * TILE + TILE / 2, by = D.y * TILE + 12; projectileFX(move.type, ax, ay, bx, by, (BT.fast ? .5 : 1) * .15 * .9); }
+// The strike context for attackfx.js on the board (world pixels, a third of the scene's size): the attack leaves the
+// attacker's front, lands on the defender's chest; wind-up is the first .3 of the strike, travel .3 → .45.
+function boardAtkCtx(q) {
+  const A = q.att, D = q.def, ax0 = A.x * TILE + TILE / 2, ay0 = A.y * TILE + 12, tx = D.x * TILE + TILE / 2, ty = D.y * TILE + 12, dx = tx - ax0, dy = ty - ay0, n = Math.hypot(dx, dy) || 1, ux = dx / n, uy = dy / n, miss = q.ev.type === 'miss';
+  return { S: .36, board: true, A: { x: ax0, y: A.y * TILE + TILE - 4 }, D: { x: tx, y: D.y * TILE + TILE - 4 }, dir: ux > .2 ? 1 : ux < -.2 ? -1 : (A.fx.facing || 1), ax: ax0 + ux * 8, ay: ay0 + uy * 8, tx: tx - ux * 2, ty, ex: miss ? tx + ux * 18 : tx, ey: miss ? ty + uy * 18 : ty, ux, uy,
+    gy: D.y * TILE + TILE - 5, gyA: A.y * TILE + TILE - 5, top: D.y * TILE - 54, H: 26, wt: .3 * q.dur, dur: .15 * q.dur, rate: 1, move: q.move, type: q.move.type, pal: atkPal(q.move.type), e: q.ev, miss, q, att: A, def: D, fol: u => () => [u.fx.dx || 0, u.fx.dy || 0] };
+}
 function impact(q) {
   const A = q.att, D = q.def, e = q.ev; const cx = D.x * TILE + TILE / 2, cy = D.y * TILE + 10; const col = TYPE_COL[q.move.type];
   if (e.type === 'miss') { Audio.sfx('miss'); floatText(cx, cy - 10, 'MISS', '#c0c0c0', { big: true }); D.fx.dx = (D.x - A.x) * 6; D.fx.dodge = .25; return; }
   const kb = e.crit ? 8 : e.eff > 1 ? 6 : 5; D.fx.flash = 1; D.fx.dx = Math.sign(D.x - A.x) * kb; D.fx.dy = Math.sign(D.y - A.y) * kb - 2; D.fx.hit = .3; D.fx.sx = 1.18; D.fx.sy = .84;
   Audio.sfx(e.crit ? 'crit' : e.eff > 1 ? 'hit2' : 'hit'); if (e.crit || e.hpAfter <= 0) Audio.sfx('thud'); shake(e.crit ? 7 : e.eff > 1 ? 5 : 3); if (!BT.fast) FX.hitstop = e.crit ? .12 : e.eff > 1 ? .07 : .05;
-  hitEffect(q.move.type, cx, cy, e.crit, e.eff);
-  // an ink star under the type effect, a ring when it is super effective, dust kicked back from the defender's feet
-  if (e.dmg > 0) { spawnSprite('impact', cx, cy, { size: e.crit ? 20 : 14, life: .26, col: col || '#ffffff', rot: vrnd() * 3 }); spawnSprite('impact', cx, cy, { size: e.crit ? 11 : 8, life: .18, col: '#ffffff', rot: vrnd() * 3, delay: .02 }); const fx = Math.sign(D.x - A.x), fy = Math.sign(D.y - A.y); for (let i = 0; i < 3; i++) spawnSprite('poof', cx - fx * (4 + i * 4), D.y * TILE + TILE - 5, { size: 3, life: .32, col: '#e8e0d0', col2: '#ffffff', vx: fx * (20 + i * 8), vy: -6 + fy * 10, delay: i * .03 }); }
+  const ac = boardAtkCtx(q); atkImpact(ac); if (e.dmg > 0 && q.style && ['shock', 'chill', 'burn'].includes(q.style.react)) q.react = q.style.react; // the move's own impact (attackfx.js)
+  // dust kicked back from the defender's feet
+  if (e.dmg > 0) { const fx = Math.sign(D.x - A.x), fy = Math.sign(D.y - A.y); for (let i = 0; i < 3; i++) spawnSprite('poof', cx - fx * (4 + i * 4), D.y * TILE + TILE - 5, { size: 3, life: .32, col: '#e8e0d0', col2: '#ffffff', vx: fx * (20 + i * 8), vy: -6 + fy * 10, delay: i * .03 }); }
   if (e.eff > 1) { spawnSprite('ring', cx, cy, { size: 22, life: .4, col: '#ffd24a', delay: .04 }); flashScreen(shade(col || '#ffffff', .5), .25); }
   if (e.crit) { flashScreen('#fff2c0', .5); FX.zoom = 1; spawnSprite('burst', cx, cy, { size: 26, life: .42, col: UI.gold, delay: .05 }); }
   floatText(cx, cy - 12, String(e.dmg), e.crit ? UI.gold : e.eff > 1 ? '#ffb040' : '#ffffff', e.crit || e.dmg >= 20 ? { huge: 2, life: 1.1, vy: -16, outline: '#1a0a14' } : { big: true, life: 1.1 });
@@ -272,7 +283,7 @@ function impact(q) {
   else if (e.eff === 0) floatText(cx, cy + 4, 'No effect...', '#c0c0c0', { delay: .25, life: 1.2, vy: -10 });
   else if (e.eff < 1) floatText(cx, cy + 4, 'Not very effective', '#a0d0ff', { delay: .25, life: 1.1, vy: -10 });
   if (e.status) { floatText(cx, cy + 14, STATUS[e.status].text.toUpperCase() + '!', STATUS[e.status].col, { delay: .5, life: 1.2, outline: '#000', vy: -10 }); }
-  if (e.drain) floatText(A.x * TILE + TILE / 2, A.y * TILE, '+' + e.drain, UI.green, { delay: .3 });
+  if (e.drain) { floatText(A.x * TILE + TILE / 2, A.y * TILE, '+' + e.drain, UI.green, { delay: .3 }); atkDrain(ac); }
   BT.hpShow.set(D.id, { from: e.hpAfter + e.dmg, to: e.hpAfter, t: 0 }); if (e.drain) BT.hpShow.set(A.id, { from: e.attHpAfter - e.drain, to: e.attHpAfter, t: 0 });
 }
 // The catch, as the games play it: the ball arcs over spinning, pops open above the Pokémon, a red beam pulls it in, the
